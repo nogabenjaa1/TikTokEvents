@@ -5,6 +5,12 @@ const db = require('./db');
 // Eliminación antes de revelar a quién le tocó.
 const ELIM_REVEAL_MS = 4000;
 
+// Espejo del catálogo de frontend/src/ThemeContext.jsx: valida lo que manda
+// el cliente antes de guardarlo/emitirlo, para que un socket manipulado a
+// mano no pueda meter un valor arbitrario en --theme-style/--accent.
+const VALID_THEME_STYLES = ['default', 'kawaii', 'minimal', 'cute'];
+const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
+
 // ==========================================
 // Tenant: encapsula TODO lo que antes era estado global de server.js,
 // una instancia por licencia activa. Cada tenant tiene su propio Rey del
@@ -55,6 +61,16 @@ class Tenant {
         // Estado para el overlay multi-app (Color Says no participa: se
         // transmite directo desde su propia pantalla)
         this.activeApp = 'king';
+
+        // ── TEMA (material + acento) ──
+        // El panel de control elige un "skin"; el overlay de OBS lo replica
+        // en tiempo real por este mismo canal, porque el overlay corre en un
+        // navegador aparte (la ventana de OBS) que nunca comparte localStorage
+        // con el panel — sin este broadcast, el streamer sería la única
+        // persona que ve el tema elegido. No persiste en disco a propósito
+        // (mismo criterio que `prizes`): vive mientras el tenant está en
+        // memoria, se resetea a `default`/`purple` si el server reinicia.
+        this.theme = { style: 'default', accent: 'purple' };
 
         // ── PREMIOS (opcionales, por modo) ──
         // { title, image } donde image es un data URL chico (≤ ~100px de
@@ -446,6 +462,7 @@ class Tenant {
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
+        socket.emit('theme_updated', this.theme);
 
         // ── PREMIOS ─────────────────────────────────
         // La imagen llega ya redimensionada por el cliente (~100px de lado)
@@ -712,6 +729,19 @@ class Tenant {
         socket.on('set_active_app', (appId) => {
             this.activeApp = appId;
             this.broadcast.emit('active_app_changed', this.activeApp);
+        });
+
+        // ── TEMA (panel -> overlay) ──────────────────
+        // El panel emite esto cada vez que el streamer cambia de skin (y una
+        // vez al conectar, para sincronizar el estado inicial). Se reenvía a
+        // TODO el room, overlay incluido, así el streamer y su audiencia ven
+        // siempre el mismo skin.
+        socket.on('set_theme', (theme) => {
+            const style = VALID_THEME_STYLES.includes(theme?.style) ? theme.style : this.theme.style;
+            const accent = VALID_THEME_ACCENTS.includes(theme?.accent) ? theme.accent : this.theme.accent;
+            if (style === this.theme.style && accent === this.theme.accent) return;
+            this.theme = { style, accent };
+            this.broadcast.emit('theme_updated', this.theme);
         });
     }
 }

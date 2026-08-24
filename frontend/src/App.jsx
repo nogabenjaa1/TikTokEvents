@@ -8,7 +8,7 @@ import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
 import ThemeSwitcher from './ThemeSwitcher';
-import { ThemedShell } from './ThemeContext';
+import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 
 const MODES = [
@@ -44,6 +44,15 @@ export default function App() {
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
+  // Skin (material + acento) que el overlay debe reflejar — le llega por
+  // socket desde el tenant, nunca de su propio localStorage: el overlay
+  // corre en la ventana de OBS, un navegador aparte que nunca comparte
+  // sesión con el panel de control.
+  const [overlayTheme, setOverlayTheme] = useState({ style: 'default', accent: 'purple' });
+  // El panel SÍ tiene su propio tema local (useTheme, persistido en este
+  // dispositivo); lo usamos acá solo para emitirlo al backend cada vez que
+  // cambia, para que el overlay lo replique.
+  const { style: panelThemeStyle, accent: panelThemeAccent } = useTheme();
 
   // Premios por modo (título + imagen opcional), seteados desde los paneles
   // y mostrados en el overlay. El backend es la fuente de verdad.
@@ -96,6 +105,9 @@ export default function App() {
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
     socket.on('prizes_updated', setPrizes);
+    // El overlay se pinta con el skin que le llega acá — nunca con su
+    // propio localStorage (ver comment de overlayTheme más arriba).
+    socket.on('theme_updated', setOverlayTheme);
 
     // Un solo dispositivo activo por licencia: si nos desconectan por esto,
     // volvemos a la pantalla de login con un mensaje claro (el overlay,
@@ -120,6 +132,14 @@ export default function App() {
 
     return () => socket.off();
   }, [socket]);
+
+  // Emite el skin del panel al backend cada vez que cambia (y una vez al
+  // conectar, para sincronizar de entrada) — nunca en modo overlay, que solo
+  // debe RECIBIR el tema, jamás pisarlo con el suyo propio.
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
+  }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
 
   // Verificar el usuario de TikTok una sola vez para todos los módulos.
   // Apenas se encuentra (existe y tiene regalos), se pasa a "connecting" y
@@ -164,7 +184,7 @@ export default function App() {
         </div>
       );
     }
-    return <Overlay state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} />;
+    return <Overlay state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
   }
 
   if (!session) {

@@ -1,0 +1,13 @@
+{
+  "name": "tiktok-concurso",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently -n BACKEND,FRONTEND -c yellow,cyan \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend && node scripts/copy-frontend-build.js && npm install --prefix backend --omit=dev",
+    "start": "node backend/seed-admin.js && npm run server --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

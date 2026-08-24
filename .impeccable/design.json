@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-24T00:00:00.000Z",
+  "title": "Design System: TikTok Concurso",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Neón Violeta", "canonical": "#7C3AED", "tonalRamp": ["#1B0F33", "#2B1858", "#3D227D", "#552EA8", "#7C3AED", "#9B63F1", "#B794F6", "#DDD0FB"] },
+      "accent-secondary": { "role": "primary", "displayName": "Índigo Profundo", "canonical": "#6366F1", "tonalRamp": ["#141244", "#211D6E", "#302A99", "#4740C2", "#6366F1", "#8B8DF5", "#B4B5F9", "#E1E2FD"] },
+      "accent-blue": { "role": "secondary", "displayName": "Azul Transmisión", "canonical": "#3B82F6", "tonalRamp": ["#0B1F44", "#123069", "#1A4590", "#245FC2", "#3B82F6", "#6FA3F9", "#A6C6FC", "#DCE9FE"] },
+      "accent-pink": { "role": "secondary", "displayName": "Rosa Neón", "canonical": "#EC4899", "tonalRamp": ["#3C0F28", "#5E1841", "#872259", "#B7307A", "#EC4899", "#F276B3", "#F8A8D0", "#FCDCEA"] },
+      "accent-green": { "role": "secondary", "displayName": "Verde Esmeralda Eléctrico", "canonical": "#10B981", "tonalRamp": ["#052E22", "#0A4A36", "#0E6B4E", "#0F9269", "#10B981", "#4DD3A6", "#8FE6C7", "#D3F7E8"] },
+      "page-void": { "role": "neutral", "displayName": "Vacío Casi-Negro", "canonical": "#05030A", "tonalRamp": ["#000000", "#05030A", "#0D081A", "#130E24", "#2D1B4E", "#5C4A8A", "#9C8FC2", "#E4DFF3"] },
+      "surface-deep": { "role": "neutral", "displayName": "Panel Profundo", "canonical": "#0D081A", "tonalRamp": ["#000000", "#05030A", "#0D081A", "#130E24", "#2D1B4E", "#5C4A8A", "#9C8FC2", "#E4DFF3"] },
+      "surface-raised": { "role": "neutral", "displayName": "Panel Elevado", "canonical": "#130E24", "tonalRamp": ["#000000", "#05030A", "#0D081A", "#130E24", "#2D1B4E", "#5C4A8A", "#9C8FC2", "#E4DFF3"] },
+      "surface-line": { "role": "neutral", "displayName": "Línea Violeta Apagada", "canonical": "#2D1B4E", "tonalRamp": ["#000000", "#05030A", "#0D081A", "#130E24", "#2D1B4E", "#5C4A8A", "#9C8FC2", "#E4DFF3"] },
+      "danger": { "role": "error", "displayName": "Rojo Alerta", "canonical": "#EF4444", "tonalRamp": ["#2E0A0A", "#4A1010", "#6E1616", "#A62A2A", "#EF4444", "#F47C7C", "#F9AFAF", "#FDE1E1"] },
+      "warning": { "role": "warning", "displayName": "Ámbar Aviso", "canonical": "#F59E0B", "tonalRamp": ["#2E1D02", "#4A3004", "#6E4707", "#A6690C", "#F59E0B", "#F8B848", "#FBD08C", "#FDEACB"] },
+      "success": { "role": "success", "displayName": "Esmeralda Premio", "canonical": "#10B981", "tonalRamp": ["#052E22", "#0A4A36", "#0E6B4E", "#0F9269", "#10B981", "#4DD3A6", "#8FE6C7", "#D3F7E8"] },
+      "neutral-muted": { "role": "neutral", "displayName": "Gris Apagado", "canonical": "#6B7280", "tonalRamp": ["#111214", "#1F2124", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#F3F4F6"] },
+      "ink": { "role": "neutral", "displayName": "Blanco Puro", "canonical": "#FFFFFF", "tonalRamp": ["#000000", "#1A1A1A", "#404040", "#737373", "#A6A6A6", "#D4D4D4", "#F0F0F0", "#FFFFFF"] }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title (eyebrow)", "purpose": "Encabezado de módulo dominante — actúa como título en toda la app." },
+      "headline": { "displayName": "Headline", "purpose": "Título de pantalla completa, poco frecuente (ej. tarjeta OFFLINE del overlay)." },
+      "body": { "displayName": "Body", "purpose": "Contenido variable: usernames, mensajes de error, texto libre." },
+      "label": { "displayName": "Label", "purpose": "Etiquetas de formulario, badges de estado, metadata secundaria." }
+    },
+    "shadows": [
+      { "name": "default-glow", "value": "0 0 50px rgba(107, 33, 168, 0.15)", "purpose": "Glow ambiental violeta del material Default, no ligado a interacción." },
+      { "name": "glass-relief", "value": "inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 .5px rgba(255,255,255,.06), 0 8px 32px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.25)", "purpose": "Relieve de vidrio del material Glass." },
+      { "name": "clay-relief", "value": "12px 12px 28px rgba(0,0,0,.55), -10px -10px 24px rgba(255,255,255,.07)", "purpose": "Relieve softui doble del material Clay." },
+      { "name": "clay-inset", "value": "inset 5px 5px 10px rgba(0,0,0,.45), inset -4px -4px 8px rgba(255,255,255,.05)", "purpose": "Inputs hundidos del material Clay." }
+    ],
+    "motion": [
+      { "name": "theme-transition", "value": "all 0.35s ease", "purpose": "Interpolación suave de color/borde/sombra/radio al cambiar de material o acento." },
+      { "name": "pop-in", "value": "cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.4s", "purpose": "Entrada con rebote para eventos de juego (ej. nuevo líder en Rey del Trono)." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Botón Primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal (START, ENTRAR, CREAR LICENCIA). Degradé del acento activo, mayúsculas gruesas.",
+      "html": "<button class=\"ds-btn-primary\">ENTRAR</button>",
+      "css": ".ds-btn-primary { background: linear-gradient(to right, #7C3AED, #6366F1); color: #FFFFFF; border: none; border-radius: 0.75rem; padding: 16px 32px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; font-size: 13px; cursor: pointer; transition: filter 0.2s; } .ds-btn-primary:hover { filter: brightness(1.12); } .ds-btn-primary:focus-visible { outline: 2px solid #7C3AED; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Botón Secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acción secundaria sobre una superficie — fondo tenue del acento, borde y texto en el tono suave del acento.",
+      "html": "<button class=\"ds-btn-secondary\">Cancelar</button>",
+      "css": ".ds-btn-secondary { background: color-mix(in srgb, #7C3AED 16%, #0D081A); border: 1px solid color-mix(in srgb, #7C3AED 55%, transparent); color: #A78BFA; border-radius: 0.75rem; padding: 12px 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; cursor: pointer; transition: background 0.2s; } .ds-btn-secondary:hover { background: color-mix(in srgb, #7C3AED 26%, #0D081A); } .ds-btn-secondary:focus-visible { outline: 2px solid #7C3AED; outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo de Texto",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Input estándar — fondo elevado, foco con borde y glow del acento activo.",
+      "html": "<input class=\"ds-input\" placeholder=\"username\" />",
+      "css": ".ds-input { background: #130E24; border: 1px solid #2D1B4E; border-radius: 0.75rem; padding: 10px 14px; color: #FFFFFF; font-weight: 700; font-size: 14px; width: 100%; transition: border-color 0.2s, box-shadow 0.2s; } .ds-input::placeholder { color: #4B5563; } .ds-input:focus { outline: none; border-color: #7C3AED; box-shadow: 0 0 0 3px color-mix(in srgb, #7C3AED 18%, transparent); }"
+    },
+    {
+      "name": "Chip de Acento",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Etiqueta pill tintada con el acento activo — usada para metadata liviana.",
+      "html": "<span class=\"ds-chip\">MULTI-DISPOSITIVO</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; background: color-mix(in srgb, #7C3AED 22%, transparent); color: #A78BFA; border-radius: 999px; padding: 4px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }"
+    },
+    {
+      "name": "Badge de Estado",
+      "kind": "chip",
+      "refersTo": "status-badge",
+      "description": "Badge de color fijo (no sigue el acento) para estados de negocio: activa/revocada/por vencer/expirada.",
+      "html": "<span class=\"ds-badge-success\">Activa</span>",
+      "css": ".ds-badge-success { display: inline-flex; align-items: center; background: color-mix(in srgb, #10B981 40%, transparent); border: 1px solid color-mix(in srgb, #10B981 50%, transparent); color: #6EE7B7; border-radius: 0.375rem; padding: 2px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }"
+    },
+    {
+      "name": "Botón de Navegación (dock)",
+      "kind": "nav",
+      "refersTo": "nav-btn",
+      "description": "Ícono + micro-label del dock lateral. Estado activo suma fondo y borde tintados del acento.",
+      "html": "<button class=\"ds-nav-btn ds-nav-btn-active\"><span class=\"ds-nav-icon\">👑</span><span class=\"ds-nav-label\">Rey del Trono</span></button>",
+      "css": ".ds-nav-btn { width: 52px; height: 52px; border-radius: 14px; border: 1px solid transparent; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; transition: all 0.2s ease; } .ds-nav-btn:hover { background: color-mix(in srgb, #7C3AED 10%, transparent); border-color: color-mix(in srgb, #7C3AED 30%, transparent); } .ds-nav-btn-active { background: color-mix(in srgb, #7C3AED 20%, #0D081A); border-color: #7C3AED; } .ds-nav-icon { font-size: 20px; line-height: 1; } .ds-nav-label { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #A78BFA; text-align: center; }"
+    },
+    {
+      "name": "Franja de Premio",
+      "kind": "custom",
+      "refersTo": "prize-strip",
+      "description": "Componente propio compartido por los tres juegos de regalos. Siempre esmeralda fija, independiente del acento activo.",
+      "html": "<div class=\"ds-prize-strip\"><img class=\"ds-prize-img\" src=\"https://cdn-icons-png.flaticon.com/512/1828/1828843.png\" /><div><span class=\"ds-prize-label\">🎁 PREMIO:</span><span class=\"ds-prize-title\">Auriculares inalámbricos</span></div></div>",
+      "css": ".ds-prize-strip { display: flex; align-items: center; gap: 12px; background: rgba(6, 78, 59, 0.25); border: 1px solid rgba(16, 185, 129, 0.4); padding: 8px 16px; border-radius: 0.75rem; width: 100%; } .ds-prize-img { width: 50px; height: 50px; border-radius: 0.5rem; object-fit: cover; border: 1px solid rgba(52, 211, 153, 0.4); flex-shrink: 0; } .ds-prize-label { display: block; font-size: 8px; text-transform: uppercase; letter-spacing: 0.1em; color: #34D399; font-weight: 700; } .ds-prize-title { font-size: 14px; font-weight: 900; color: #D1FAE5; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La Cabina de Control",
+    "overview": "TikTok Concurso es la cabina de control nocturna del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE, donde un único acento de color hace de faro sobre un fondo casi negro. El sistema es deliberadamente táctil y de arcade — botones con peso, glows de acento, tipografía en mayúsculas y trazo grueso — no un dashboard corporativo silencioso. El fondo, casi negro (#05030A), nunca compite con el acento: existe para que el morado (o el azul, rosa o verde elegido) sea lo único que brille. Lo más distintivo del sistema no es una paleta fija sino su pluralismo controlado: cuatro materiales (Default, Glass, Minimal, Clay) combinables con cuatro acentos de color — 16 combinaciones reales sobre el mismo esqueleto de tokens CSS. El overlay de OBS está deliberadamente fuera de este sistema de temas, para que la captura de video nunca cambie de aspecto sin que el streamer lo note.",
+    "keyCharacteristics": [
+      "Fondo casi negro + un único acento vivo como faro de atención.",
+      "Cuatro materiales seleccionables (Default / Glass / Minimal / Clay), un mismo esqueleto de tokens.",
+      "Mayúsculas, tracking amplio y peso black para todo lo que es etiqueta o acción.",
+      "Táctil y de arcade, no SaaS corporativo: glows, gradientes, transiciones de 0.35s en cada cambio de tema.",
+      "El overlay de OBS vive fuera del sistema de temas — su aspecto es fijo, nunca varía."
+    ],
+    "rules": [
+      { "name": "La Regla del Faro Único", "body": "El acento vivo es siempre el único color saturado en pantalla fuera de los badges de estado (rojo/ámbar/esmeralda). Ningún otro elemento decorativo compite por atención con él.", "section": "colors" },
+      { "name": "La Regla de la Mayúscula Obligatoria", "body": "Todo lo que es etiqueta, botón o estado va en mayúsculas con tracking amplio. El texto en minúsculas queda reservado casi exclusivamente para contenido variable.", "section": "typography" },
+      { "name": "La Regla del Glow Único", "body": "Cuando hay sombra de color, siempre es el acento activo (nunca un color ajeno) y siempre en baja opacidad (12-18%) — es ambiente, no un efecto llamativo.", "section": "elevation" },
+      { "name": "La Regla del Radio No Fijo", "body": "El radio de esquina no es un token único: es parte de la identidad seleccionable. Cualquier componente nuevo debe leer var(--surface-radius) / var(--surface-radius-sm), nunca un valor hardcodeado.", "section": "typography" }
+    ],
+    "dos": [
+      "Do leer siempre los tokens CSS (var(--surface-bg), var(--accent), var(--surface-radius)) en vez de hardcodear color o radio.",
+      "Do usar mayúsculas + tracking amplio + peso black para cualquier etiqueta, botón o estado nuevo.",
+      "Do reservar los colores de estado fijos (rojo/ámbar/esmeralda/gris) exclusivamente para semántica de juego o licencia.",
+      "Do mantener el overlay de OBS completamente fuera de ThemedShell."
+    ],
+    "donts": [
+      "Don't introducir un look plano/claro tipo SaaS corporativo.",
+      "Don't usar el color de acento para estados de negocio (premio, error, aviso).",
+      "Don't agregar una quinta familia tipográfica sin decisión explícita."
+    ]
+  }
+}

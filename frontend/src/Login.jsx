@@ -15,8 +15,11 @@ export default function Login({ onLoggedIn, notice = '' }) {
     setLoading(true);
     setError('');
     try {
-      const { token, license } = await loginWithKey(key.trim());
-      saveSession({ token, ...license });
+      const trimmedKey = key.trim();
+      const { token, license } = await loginWithKey(trimmedKey);
+      // Se guarda además del token para poder armar la URL del overlay
+      // (?overlay=true&key=...) sin pedírsela de nuevo — ver auth.buildOverlayUrl.
+      saveSession({ token, licenseKey: trimmedKey, ...license });
       onLoggedIn();
     } catch (err) {
       setError(err.message || 'Licencia inválida, revocada o expirada');

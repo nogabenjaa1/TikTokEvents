@@ -9,10 +9,12 @@ import Login from './Login';
 import LicenseManager from './LicenseManager';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
+import OverlayLink from './OverlayLink';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 
 const MODES = [
+  { id: 'overlay', label: 'Overlay',       icon: '🖥️' },
   { id: 'king',  label: 'Rey del\nTrono',  icon: '👑' },
   { id: 'zub',   label: 'Zubast\ninis',    icon: '🏆' },
   { id: 'elim',  label: 'Elimina\nción',   icon: '💀' },
@@ -307,6 +309,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex overflow-hidden">
+        {sidebarMode === 'overlay' && <OverlayLink />}
         {sidebarMode === 'king' && (
           <AdminPanel
             state={state} socket={socket}

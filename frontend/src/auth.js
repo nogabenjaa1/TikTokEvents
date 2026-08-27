@@ -1,7 +1,7 @@
 // Helpers de sesión/licencia, sin JSX: se usan desde App.jsx y LicenseManager.jsx.
 import { io } from 'socket.io-client';
 
-const SESSION_KEY = 'tkc_session'; // { token, username, licenseType, isAdmin, expiresAt }
+const SESSION_KEY = 'tkc_session'; // { token, licenseKey, username, licenseType, isAdmin, expiresAt }
 
 export function saveSession(session) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -28,6 +28,17 @@ export function isOverlayMode() {
 
 export function getOverlayKeyFromUrl() {
   return new URLSearchParams(window.location.search).get('key');
+}
+
+// URL lista para pegar como fuente de navegador en OBS/TikTok LIVE Studio:
+// mismo origen en el que corre el panel (el overlay es un modo de este
+// mismo frontend, nunca del backend) + la license key cruda guardada en la
+// sesión al loguearse. Devuelve null si la sesión no la tiene guardada
+// (p. ej. quedó de un login anterior a que existiera este campo).
+export function buildOverlayUrl() {
+  const session = loadSession();
+  if (!session?.licenseKey) return null;
+  return `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
 }
 
 // Si el frontend y el backend viven en orígenes distintos (p. ej. frontend

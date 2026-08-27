@@ -30,15 +30,26 @@ export function getOverlayKeyFromUrl() {
   return new URLSearchParams(window.location.search).get('key');
 }
 
+// Qué pantalla mostrar dentro del overlay: 'games' (Rey del Trono/
+// Zubastinis/Eliminación, el overlay de siempre) o 'colors' (el overlay
+// horizontal de Color Says, ver DiceOverlay.jsx). Se agrega como
+// ?screen=colors a la URL normal de overlay, nunca reemplaza a `key`.
+export function getOverlayScreen() {
+  return new URLSearchParams(window.location.search).get('screen') || 'games';
+}
+
 // URL lista para pegar como fuente de navegador en OBS/TikTok LIVE Studio:
 // mismo origen en el que corre el panel (el overlay es un modo de este
 // mismo frontend, nunca del backend) + la license key cruda guardada en la
 // sesión al loguearse. Devuelve null si la sesión no la tiene guardada
 // (p. ej. quedó de un login anterior a que existiera este campo).
-export function buildOverlayUrl() {
+// `screen`: 'games' (por defecto, Rey del Trono/Zubastinis/Eliminación) o
+// 'colors' (overlay horizontal de dados, ver DiceOverlay.jsx).
+export function buildOverlayUrl(screen = 'games') {
   const session = loadSession();
   if (!session?.licenseKey) return null;
-  return `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
+  const base = `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
+  return screen === 'colors' ? `${base}&screen=colors` : base;
 }
 
 // Si el frontend y el backend viven en orígenes distintos (p. ej. frontend
@@ -82,6 +93,19 @@ export async function loginWithKey(key) {
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Login fallido');
   return data; // { token, license }
+}
+
+// Prueba gratis de 7 días: solo pide un alias (texto libre, no se valida
+// contra TikTok) y devuelve sesión ya lista, igual que loginWithKey.
+export async function requestFreeTrial(alias) {
+  const res = await fetch(`${backendUrl()}/api/free-trial`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'No se pudo crear la prueba gratis');
+  return data; // { key, token, license }
 }
 
 export function authHeaders() {

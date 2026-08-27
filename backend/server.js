@@ -24,6 +24,11 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
 const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'lifetime'];
+// Nivel de Color Says — independiente de is_admin (ver comentario en
+// db.js): 'admin' acá es un nivel más que se le puede vender a cualquier
+// licencia paga (Modo Seguro en el juego de dados), nunca permisos reales
+// de administración de la plataforma.
+const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 
 const app = express();
 app.use(express.json());
@@ -39,10 +44,10 @@ const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
 // ==========================================
 const tenants = new Map(); // licenseId -> Tenant
 
-function getOrCreateTenant(licenseId) {
+function getOrCreateTenant(licenseId, licenseType) {
     let tenant = tenants.get(licenseId);
     if (!tenant) {
-        tenant = new Tenant(licenseId, io);
+        tenant = new Tenant(licenseId, io, licenseType);
         tenants.set(licenseId, tenant);
     }
     return tenant;
@@ -54,6 +59,10 @@ function getOrCreateTenant(licenseId) {
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 const adminLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+// Estricto a propósito: es la única barrera contra scripts pidiendo
+// pruebas gratis en cadena (la barrera real es el bloqueo por usuario de
+// TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
+const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 
 // Un solo dispositivo activo por licencia: al loguearse, se desconectan de
 // inmediato los sockets del PANEL DE CONTROL (auth vía JWT) que hubiera
@@ -100,6 +109,56 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
             licenseType: row.license_type,
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
+            diceTier: row.dice_tier,
+        },
+    });
+});
+
+// ==========================================
+// PRUEBA GRATIS: 7 días de acceso completo, autoservicio, sin tarjeta.
+// El alias es texto libre (no se pide ni se valida un usuario de TikTok
+// acá) — el usuario de TikTok real recién se conoce y se bloquea cuando
+// esta licencia se conecta por primera vez a un LIVE (ver
+// db.claimTrialConnection y tenant.js). Se loguea de una: devuelve token
+// + license igual que /api/auth/login, así queda con acceso completo sin
+// tener que copiar/pegar la key generada.
+// ==========================================
+app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
+    const { alias } = req.body || {};
+    if (!alias || typeof alias !== 'string' || !alias.trim()) {
+        return res.status(400).json({ success: false, error: 'Falta un alias' });
+    }
+    const cleanAlias = alias.trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!cleanAlias) {
+        return res.status(400).json({ success: false, error: 'Alias inválido — usa letras, números, "_" o "-"' });
+    }
+
+    const key = `${cleanAlias.toLowerCase()}-FREE7DAY-${crypto.randomBytes(9).toString('base64url')}`;
+    const row = await db.insertLicense({
+        id: crypto.randomUUID(),
+        keyHash: auth.hashKey(key),
+        keyPrefix: auth.keyPrefix(key),
+        username: cleanAlias,
+        licenseType: 'trial',
+        isAdmin: false,
+        createdAt: Date.now(),
+        expiresAt: auth.computeExpiresAt('trial'),
+        trialAlias: cleanAlias,
+    });
+
+    const sessionId = auth.generateSessionId();
+    await db.setSession(row.id, sessionId);
+    const token = auth.signSession(row, sessionId);
+    res.json({
+        success: true,
+        key,
+        token,
+        license: {
+            username: row.username,
+            licenseType: row.license_type,
+            isAdmin: false,
+            expiresAt: row.expires_at,
+            diceTier: row.dice_tier,
         },
     });
 });
@@ -124,6 +183,7 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, (req, res) => {
             licenseType: row.license_type,
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
+            diceTier: row.dice_tier,
         },
     });
 });
@@ -150,18 +210,24 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asyn
         elimStarts: row.elim_starts,
         lastActiveAt: row.last_active_at,
         multiDevice: !!row.multi_device,
+        trialAlias: row.trial_alias,
+        trialConnectedUsername: row.trial_connected_username,
+        diceTier: row.dice_tier,
     }));
     res.json({ success: true, licenses });
 });
 
 app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
-    const { username, licenseType } = req.body || {};
+    const { username, licenseType, diceTier } = req.body || {};
 
     if (!username || typeof username !== 'string' || !username.trim()) {
         return res.status(400).json({ success: false, error: 'Falta el usuario' });
     }
     if (!VALID_LICENSE_TYPES.includes(licenseType)) {
         return res.status(400).json({ success: false, error: 'Tipo de licencia inválido' });
+    }
+    if (diceTier !== undefined && !VALID_DICE_TIERS.includes(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Nivel de Color Says inválido' });
     }
 
     const key = auth.generateLicenseKey();
@@ -174,6 +240,7 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
         isAdmin: false,
         createdAt: Date.now(),
         expiresAt: auth.computeExpiresAt(licenseType),
+        diceTier: diceTier || 'regular',
     });
 
     // La key en claro se devuelve UNA sola vez: a partir de acá solo vive hasheada.
@@ -205,6 +272,38 @@ app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, 
     res.json({ success: true });
 });
 
+// Cambia el tipo/duración de una licencia existente (ej. convertir una
+// prueba gratis en una licencia paga sin generar una key nueva). Reusa
+// auth.computeExpiresAt igual que la creación, calculando desde ahora.
+app.post('/api/licenses/:id/extend', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const { licenseType, diceTier } = req.body || {};
+    if (!VALID_LICENSE_TYPES.includes(licenseType)) {
+        return res.status(400).json({ success: false, error: 'Tipo de licencia inválido' });
+    }
+    if (!VALID_DICE_TIERS.includes(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Nivel de Color Says inválido' });
+    }
+    await db.extendLicense(row.id, licenseType, auth.computeExpiresAt(licenseType), diceTier);
+    res.json({ success: true });
+});
+
+// Borrado real de la DB — a diferencia de "revocar" (que solo marca la
+// fila y la conserva). Solo se permite sobre licencias ya revocadas o
+// expiradas: es una barrera para no borrar sin querer una licencia paga
+// activa (si se quiere borrar una activa, primero hay que revocarla).
+app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const stillActive = !row.revoked && (row.expires_at === null || row.expires_at > Date.now());
+    if (stillActive) {
+        return res.status(400).json({ success: false, error: 'Revoca la licencia antes de eliminarla' });
+    }
+    await db.deleteLicense(row.id);
+    res.json({ success: true });
+});
+
 // ==========================================
 // API: CARGAR Y ORDENAR REGALOS (requiere cualquier licencia válida)
 // ==========================================
@@ -232,7 +331,7 @@ io.use(auth.socketAuthMiddleware);
 
 io.on('connection', (socket) => {
     socket.join(socket.licenseId);
-    const tenant = getOrCreateTenant(socket.licenseId);
+    const tenant = getOrCreateTenant(socket.licenseId, socket.licenseType);
     tenant.attachSocket(socket);
 });
 

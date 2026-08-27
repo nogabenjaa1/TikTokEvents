@@ -49,18 +49,42 @@ const ready = pool.query(`
     session_id TEXT,
     multi_device BOOLEAN NOT NULL DEFAULT FALSE
   )
-`).then(() => pool.query(`
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
-  ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
-`));
+`)
+  // Migraciones aditivas: CREATE TABLE IF NOT EXISTS no toca una tabla que
+  // ya existe (la de producción, hoy), así que las columnas nuevas se
+  // agregan acá — Postgres soporta ADD COLUMN IF NOT EXISTS nativo, sin
+  // necesitar el chequeo manual que hacía la versión vieja en SQLite.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_alias TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_connected_username TEXT`))
+  // dice_tier: nivel de Color Says (regular/pro/vip/admin) — a propósito
+  // SEPARADO de is_admin. is_admin sigue siendo exclusivamente "administra
+  // la plataforma" (panel de Licencias, endpoints /api/licenses); dice_tier
+  // 'admin' es un nivel MÁS que se le puede vender a cualquier licencia
+  // paga (el panel de Modo Seguro de Color Says), sin darle ningún permiso
+  // real de administración. Mezclar los dos sería un agujero de seguridad
+  // real: cualquiera que comprara el nivel más caro terminaría pudiendo
+  // crear/revocar licencias de otros.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS dice_tier TEXT NOT NULL DEFAULT 'regular'`))
+  // Backfill de una sola vez: el dueño real de la plataforma (is_admin ya
+  // true de antes) mantiene su nivel 'admin' en Color Says sin tener que
+  // tocarlo a mano. El guard `AND dice_tier = 'regular'` lo hace
+  // idempotente — no pisa un valor ya cambiado a mano en un reinicio futuro.
+  .then(() => pool.query(`UPDATE licenses SET dice_tier = 'admin' WHERE is_admin = TRUE AND dice_tier = 'regular'`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
+    ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
+  `)).then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_connected
+    ON licenses(LOWER(trial_connected_username)) WHERE trial_connected_username IS NOT NULL
+  `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null }) {
+async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular' }) {
     await ready;
     await pool.query(`
-        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9)
-    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId]);
+        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier)
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier]);
     return findById(id);
 }
 
@@ -119,6 +143,44 @@ async function incrementUsage(id, field) {
     await pool.query(`UPDATE licenses SET ${field} = ${field} + 1, last_active_at = $1 WHERE id = $2`, [Date.now(), id]);
 }
 
+// Anti-abuso de pruebas gratis: la PRIMERA vez que una licencia trial se
+// conecta a un usuario de TikTok, ese usuario queda atado a ella para
+// siempre (nunca puede cambiar a otro). El índice único parcial
+// idx_licenses_trial_connected es quien de verdad impide que dos pruebas
+// distintas terminen sirviendo al mismo canal — acá solo se interpreta el
+// resultado. 'ok' = recién asignado o coincide con lo ya asignado (misma
+// licencia reconectándose al mismo usuario); 'locked-own' = esta licencia
+// ya está atada a OTRO usuario (el caller no revoca, solo rechaza);
+// 'used-by-other' = otra licencia trial ya reclamó ese usuario (el caller
+// sí revoca esta licencia — ver tenant.js).
+async function claimTrialConnection(id, targetUsername) {
+    await ready;
+    const row = await findById(id);
+    if (!row) return 'used-by-other'; // no debería pasar; tratamos como rechazo seguro
+    if (row.trial_connected_username) {
+        return row.trial_connected_username.toLowerCase() === targetUsername.toLowerCase() ? 'ok' : 'locked-own';
+    }
+    try {
+        await pool.query('UPDATE licenses SET trial_connected_username = $1 WHERE id = $2', [targetUsername, id]);
+        return 'ok';
+    } catch (err) {
+        if (err.code === '23505') return 'used-by-other'; // choca con el índice único parcial
+        throw err;
+    }
+}
+
+async function deleteLicense(id) {
+    await ready;
+    await pool.query('DELETE FROM licenses WHERE id = $1', [id]);
+}
+
+async function extendLicense(id, licenseType, expiresAt, diceTier) {
+    await ready;
+    await pool.query('UPDATE licenses SET license_type = $1, expires_at = $2, revoked = FALSE, dice_tier = $3 WHERE id = $4', [licenseType, expiresAt, diceTier, id]);
+    return findById(id);
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
+    claimTrialConnection, deleteLicense, extendLicense,
 };

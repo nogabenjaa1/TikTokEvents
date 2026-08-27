@@ -1,13 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-
-const COLORS = [
-  { name: 'Rojo',     emoji: '🔴', bgClass: 'bg-red-950',    borderClass: 'border-red-500',    textClass: 'text-red-400'    },
-  { name: 'Verde',    emoji: '🟢', bgClass: 'bg-green-950',  borderClass: 'border-green-500',  textClass: 'text-green-400'  },
-  { name: 'Azul',     emoji: '🔵', bgClass: 'bg-blue-950',   borderClass: 'border-blue-500',   textClass: 'text-blue-400'   },
-  { name: 'Amarillo', emoji: '🟡', bgClass: 'bg-yellow-950', borderClass: 'border-yellow-500', textClass: 'text-yellow-400' },
-  { name: 'Naranja',  emoji: '🟠', bgClass: 'bg-orange-950', borderClass: 'border-orange-500', textClass: 'text-orange-400' },
-  { name: 'Morado',   emoji: '🟣', bgClass: 'bg-purple-950', borderClass: 'border-purple-500', textClass: 'text-purple-400' },
-];
+import { COLORS, Die } from './colorsData';
 
 const MIN_DICE = 1;
 const MAX_DICE = 6;
@@ -21,24 +13,23 @@ function hasRepeat(results) {
   return Object.values(counts).some(c => c >= 2);
 }
 
-// Ajuste personal del admin (sin regalos ni apuestas de por medio, solo para
-// este mini-juego): sube la chance de que algún color quede repetido en la
-// tirada, en vez de dejar el dado 100% libre. Generalizado para N dados —
-// con 1 dado no hay repetición posible, y con 2 dados "forzar un par" es
-// literalmente forzar que ambos salgan iguales, que es EXACTAMENTE la
-// condición de "comodín" que dispara un re-tiro automático en finishRoll —
-// forzarla de forma determinística ahí metía el juego en un loop infinito.
-// Por eso el bias no hace nada con menos de 3 dados.
-// Se aplica SOLO a la sesión admin: el resto de licencias de pago siempre
-// tira con rollFair puro (igualdad de condiciones).
-const PAIR_BIAS_CHANCE = 1.0;
+// Sesgo hacia sacar pares, generalizado para N dados y con una intensidad
+// configurable (`biasChance`, 0 a 1) en vez de un valor fijo — así lo puede
+// usar tanto Admin (siempre al máximo, como antes) como PRO (un valor bajo
+// fijo) y VIP (lo que el streamer elija en su slider). Con 1 dado no hay
+// repetición posible, y con 2 dados "forzar un par" es literalmente forzar
+// que ambos salgan iguales, que es EXACTAMENTE la condición de "comodín"
+// que dispara un re-tiro automático en finishRoll — forzarla de forma
+// determinística ahí metía el juego en un loop infinito. Por eso el bias
+// no hace nada con menos de 3 dados.
+const ADMIN_DEFAULT_BIAS = 1.0;
 
-function rollWithPairBias(n) {
+function rollWithPairBias(n, biasChance = ADMIN_DEFAULT_BIAS) {
   const results = rollFair(n);
   if (n < 3) return results; // 1-2 dados: ver comentario arriba, el bias no aplica
   if (results.every(r => r === results[0])) return results; // todos iguales: comodín, se resuelve aparte
 
-  if (!hasRepeat(results) && Math.random() < PAIR_BIAS_CHANCE) {
+  if (!hasRepeat(results) && Math.random() < biasChance) {
     const idxA = Math.floor(Math.random() * n);
     let idxB = Math.floor(Math.random() * n);
     while (idxB === idxA) idxB = Math.floor(Math.random() * n);
@@ -121,41 +112,58 @@ function playResultSound() {
   });
 }
 
-// El dado en sí sigue el tema elegido (forma/sombra/vidrio/relieve), pero
-// NUNCA el color resultante una vez asentado: ese color es del juego
-// (COLORS[i].bgClass/borderClass), no del tema — theme-die-shape solo le
-// pone el radio/sombra/blur del estilo activo encima, sin tocar el color.
-function Die({ colorIdx, rolling }) {
-  const c = colorIdx !== null ? COLORS[colorIdx] : null;
+// Interruptor visual compartido para activar/desactivar el WIN BONUS —
+// mismas clases que el Toggle de TtsChat.jsx, para mantener un solo
+// lenguaje de "interruptor" en toda la app (no se comparte el componente
+// en sí porque acá no lleva label/descripción propios, se componen aparte).
+function WinBonusToggle({ checked, onChange }) {
   return (
-    <div className={['w-20 h-20 flex items-center justify-center text-4xl flex-shrink-0 transition-all duration-300',
-        rolling ? 'animate-[dieRoll_0.1s_ease-in-out_infinite_alternate] theme-die-rolling'
-                : (c ? `${c.bgClass} ${c.borderClass} border-2 theme-die-shape` : 'theme-surface'),
-      ].join(' ')}>
-      {rolling ? '❓' : (c ? c.emoji : '⬜')}
-    </div>
+    <label className="cursor-pointer flex-shrink-0">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="sr-only peer" />
+      <span aria-hidden="true" className="w-10 h-6 rounded-full bg-gray-700 peer-checked:theme-accent-bg relative inline-flex transition-colors after:absolute after:w-4 after:h-4 after:rounded-full after:bg-white after:left-1 after:top-1 after:transition-transform peer-checked:after:translate-x-4" />
+    </label>
   );
 }
 
-// Sin overlay ni conexión al backend: se transmite directo desde esta
-// pantalla (Window/Browser Capture en OBS), ya que no hay ajustes que
-// sincronizar entre el operador y los espectadores.
+// PRO paga por una ventaja fija y simple; VIP paga más y además puede
+// elegir la intensidad. Un valor bajo para PRO (perceptible pero discreto)
+// deja lugar para que VIP se sienta claramente superior al poder llegar
+// hasta el máximo — ver el slider de VIP más abajo.
+const PRO_WIN_BONUS = 0.2;
+const DEFAULT_VIP_WIN_BONUS_PCT = 50;
+
+// De acceso libre: funciona sin sesión ni conexión al backend, la lógica de
+// tiradas es 100% local. Si hay `socket` (sesión real), sincroniza el
+// estado con el overlay especial de Colores (?screen=colors, ver
+// DiceOverlay.jsx) — cliente autoritativo, el backend solo reenvía (ver
+// tenant.js). Sin socket, el juego funciona igual; simplemente no hay
+// overlay escuchando del otro lado.
 //
-// `isAdmin` gatea el sesgo de pares y el panel de Safe Mode: son ajustes
-// personales del dueño de la plataforma (sin regalos ni apuestas de por
-// medio), no algo que se le vende a las licencias de pago. El resto de
-// usuarios siempre tira con probabilidades limpias (rollFair), en igualdad
-// de condiciones entre ellos. El selector de cantidad de dados sí es una
-// función disponible para todos.
-export default function ColorSays({ isAdmin = false }) {
+// `tier` (regular/pro/vip/admin — ver dice_tier en la licencia, backend)
+// define la ventaja en el juego: Trial y Regular siempre tiran limpio
+// (rollFair, en igualdad de condiciones entre ellos); PRO puede activar un
+// WIN BONUS fijo y bajo; VIP tiene el mismo interruptor pero además elige
+// la intensidad (0-100%) con un slider; Admin es el único con el panel de
+// Modo Seguro (asegurar/bloquear un color puntual) — ojo, `tier === 'admin'`
+// es un nivel de Color Says que se le puede vender a cualquier licencia
+// paga, NO es lo mismo que session.isAdmin (que sigue siendo exclusivo del
+// panel de administración de licencias). El selector de cantidad de dados
+// es una función disponible para todos, sin importar el nivel.
+export default function ColorSays({ tier = 'regular', socket = null }) {
+  const isAdmin = tier === 'admin';
   const [diceCount, setDiceCount]   = useState(DEFAULT_DICE);
   const [diceResult, setDiceResult] = useState(() => Array(DEFAULT_DICE).fill(null));
   const [rolling, setRolling]       = useState(false);
   const [history, setHistory]       = useState([]);
   const tickIntervalRef             = useRef(null);
 
+  // WIN BONUS: PRO solo lo prende/apaga (intensidad fija, ver
+  // PRO_WIN_BONUS); VIP además elige el % con el slider.
+  const [winBonusEnabled, setWinBonusEnabled] = useState(false);
+  const [vipWinBonusPct, setVipWinBonusPct]   = useState(DEFAULT_VIP_WIN_BONUS_PCT);
+
   // Safe Mode: override manual para un color puntual. 'ensure' fuerza el
-  // camino difícil y 'block' fuerza el camino fácil. Solo aplica si isAdmin.
+  // camino difícil y 'block' fuerza el camino fácil. Solo aplica si es Admin.
   const [safeModeColor, setSafeModeColor]   = useState(null);
   const [safeModeAction, setSafeModeAction] = useState('none'); // 'none' | 'ensure' | 'block'
 
@@ -170,6 +178,14 @@ export default function ColorSays({ isAdmin = false }) {
   }, []);
 
   useEffect(() => stopTicking, [stopTicking]);
+
+  // Sincroniza el overlay especial de Colores con lo que se ve acá — mismo
+  // patrón que update_prize/set_theme (cliente autoritativo, el backend
+  // solo reenvía). Sin socket (sin sesión) no hace nada, el juego sigue
+  // funcionando igual de forma local.
+  useEffect(() => {
+    socket?.emit('set_dice_state', { diceCount, diceResult, rolling });
+  }, [socket, diceCount, diceResult, rolling]);
 
   // Cambiar la cantidad de dados resetea el tablero (nunca a mitad de tirada).
   const changeDiceCount = (n) => {
@@ -188,11 +204,18 @@ export default function ColorSays({ isAdmin = false }) {
   };
 
   const finishRoll = useCallback(() => {
-    const results = !isAdmin
-      ? rollFair(diceCount)
-      : (safeModeAction !== 'none' && safeModeColor !== null
-          ? rollForSafeMode(diceCount, safeModeColor, safeModeAction)
-          : rollWithPairBias(diceCount));
+    let results;
+    if (isAdmin && safeModeAction !== 'none' && safeModeColor !== null) {
+      results = rollForSafeMode(diceCount, safeModeColor, safeModeAction);
+    } else if (isAdmin) {
+      results = rollWithPairBias(diceCount); // Admin: sesgo máximo de siempre, sin cambios
+    } else if (tier === 'pro' && winBonusEnabled) {
+      results = rollWithPairBias(diceCount, PRO_WIN_BONUS);
+    } else if (tier === 'vip' && winBonusEnabled) {
+      results = rollWithPairBias(diceCount, vipWinBonusPct / 100);
+    } else {
+      results = rollFair(diceCount); // Trial/Regular, o PRO/VIP con el WIN BONUS apagado
+    }
 
     const allSame = diceCount > 1 && results.every(r => r === results[0]);
 
@@ -207,7 +230,7 @@ export default function ColorSays({ isAdmin = false }) {
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
-  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin]);
+  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, tier, winBonusEnabled, vipWinBonusPct]);
 
   const doRollInternal = useCallback(() => {
     setRolling(true);
@@ -271,6 +294,32 @@ export default function ColorSays({ isAdmin = false }) {
         ))}
       </div>
 
+      {/* WIN BONUS: exclusivo de PRO/VIP. PRO solo prende/apaga un sesgo
+          fijo y bajo; VIP además elige la intensidad con el slider. Trial,
+          Regular y Admin no ven esto — Admin tiene su propio Modo Seguro. */}
+      {(tier === 'pro' || tier === 'vip') && (
+        <div className="theme-surface flex flex-col gap-3 w-full max-w-xs px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-white">Win Bonus</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                {tier === 'vip' ? 'Sesgo ajustable a favor de sacar pares.' : 'Sesgo leve a favor de sacar pares.'}
+              </p>
+            </div>
+            <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
+          </div>
+          {tier === 'vip' && winBonusEnabled && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Intensidad</label>
+                <span className="theme-chip font-bold px-2 rounded text-xs">{vipWinBonusPct}%</span>
+              </div>
+              <input type="range" min="0" max="100" step="5" value={vipWinBonusPct} onChange={e => setVipWinBonusPct(Number(e.target.value))} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Altura fija (no depende de la cantidad de tiradas) para que los
           dados de arriba nunca se muevan al capturar una ventana recortada en OBS.
           También en su propio marco temático, igual que la zona de dados. */}
@@ -298,8 +347,8 @@ export default function ColorSays({ isAdmin = false }) {
         />
       )}
 
-      {/* Safe Mode: exclusivo del admin. El resto de licencias de pago no ve
-          este panel ni tiene el sesgo de pares — siempre tiran limpio. */}
+      {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
+          con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
         <div className="theme-surface fixed top-80 right-4 w-60 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>

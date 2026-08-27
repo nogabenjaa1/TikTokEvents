@@ -86,7 +86,7 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>
             <p className="theme-label text-[10px] uppercase tracking-[0.3em] font-black">🔊 Voz del Live</p>
-            <h1 className="text-2xl font-black tracking-wide mt-2">TTS CHAT</h1>
+            <h1 className="text-2xl font-black tracking-wide mt-2">TTS (BETA)</h1>
             <p className="text-sm text-gray-500 mt-2">Lee automáticamente los mensajes autorizados. Los mensajes con @ nunca se reproducen.</p>
           </div>
           <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-full border ${active ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' : settings.enabled ? 'bg-amber-950/70 border-amber-500/50 text-amber-300' : 'bg-[var(--surface-bg-alt)] border-[var(--surface-border-color)] text-gray-500'}`}>

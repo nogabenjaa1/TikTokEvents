@@ -4,6 +4,7 @@ import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
 import ColorSays from './Colorsays';
 import Overlay from './Overlay';
+import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
@@ -11,7 +12,7 @@ import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
 import { ThemedShell, useTheme } from './ThemeContext';
-import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
+import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 
 const MODES = [
   { id: 'overlay', label: 'Overlay',       icon: '🖥️' },
@@ -19,8 +20,13 @@ const MODES = [
   { id: 'zub',   label: 'Zubast\ninis',    icon: '🏆' },
   { id: 'elim',  label: 'Elimina\nción',   icon: '💀' },
   { id: 'color', label: 'Colores',         icon: '🎲' },
-  { id: 'tts',   label: 'TTS\nChat',       icon: '🔊' },
+  { id: 'tts',   label: 'TTS\n(BETA)',     icon: '🔊' },
 ];
+
+// Únicos módulos de acceso libre, sin licencia (Color Says, y "Tema" que es
+// puramente cosmético/local). Todo lo demás requiere sesión — sin ella se
+// muestra el login embebido con la opción de prueba gratis en su lugar.
+const FREE_MODES = ['overlay', 'color', 'theme'];
 
 // Modos que tienen representación en el overlay de OBS (Color Says no la
 // tiene: se transmite directo desde su propia pantalla)
@@ -61,6 +67,10 @@ export default function App() {
   // Premios por modo (título + imagen opcional), seteados desde los paneles
   // y mostrados en el overlay. El backend es la fuente de verdad.
   const [prizes, setPrizes] = useState({ king: null, zub: null, elim: null });
+
+  // Estado de Color Says (dados), sincronizado hacia/desde el overlay
+  // especial de Colores (?screen=colors) — ver Colorsays.jsx/tenant.js.
+  const [diceState, setDiceState] = useState({ diceCount: 4, diceResult: [], rolling: false });
 
   // ── Login TikTok normalizado: compartido entre Rey del Trono,
   // Zubastinis, Eliminación y cualquier módulo futuro que necesite la conexión live ──
@@ -110,6 +120,7 @@ export default function App() {
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
     socket.on('prizes_updated', setPrizes);
+    socket.on('dice_state_update', setDiceState);
     // El overlay se pinta con el skin que le llega acá — nunca con su
     // propio localStorage (ver comment de overlayTheme más arriba).
     socket.on('theme_updated', setOverlayTheme);
@@ -200,22 +211,14 @@ export default function App() {
         </div>
       );
     }
+    if (getOverlayScreen() === 'colors') {
+      return <DiceOverlay diceState={diceState} theme={overlayTheme} />;
+    }
     return <Overlay state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
   }
 
-  if (!session) {
-    return (
-      <ThemedShell>
-        <Login
-          onLoggedIn={() => { setKickedOutMessage(''); setSession(loadSession()); }}
-          notice={kickedOutMessage}
-        />
-      </ThemedShell>
-    );
-  }
-
   const logout = () => {
-    logoutSession(); // best-effort, no bloquea el logout local
+    if (session) logoutSession(); // best-effort, no bloquea el logout local
     socket?.disconnect();
     clearSession();
     setSession(null);
@@ -227,13 +230,26 @@ export default function App() {
   const usernameLocked = state.isActive || zubState.isActive || elimState.isActive;
 
   // Recordatorio de vencimiento in-app: licencias lifetime no tienen expiresAt.
-  const daysLeft = session.expiresAt
+  // Sin sesión (visitante anónimo, solo Color Says) no hay nada que recordar.
+  const daysLeft = session?.expiresAt
     ? Math.ceil((session.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
     : null;
   const showExpiryWarning = daysLeft !== null && daysLeft <= 3;
 
+  // Solo Color Says y Tema son de acceso libre; el resto necesita sesión
+  // (licencia paga o prueba gratis) — sin ella se muestra el login
+  // embebido con la opción de prueba gratis en el panel principal.
+  const needsAccess = (modeId) => !session && !FREE_MODES.includes(modeId);
+
+  const onLoggedIn = () => { setKickedOutMessage(''); setSession(loadSession()); };
+
   return (
     <ThemedShell className="flex flex-col">
+      {kickedOutMessage && (
+        <div className="w-full bg-red-950/80 border-b border-red-700/50 text-red-300 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
+          ⚠️ {kickedOutMessage}
+        </div>
+      )}
       {showExpiryWarning && (
         <div className="w-full bg-amber-950/80 border-b border-amber-700/50 text-amber-300 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
           ⚠️ Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
@@ -254,8 +270,8 @@ export default function App() {
             onClick={() => {
               setSidebarMode(m.id);
               // Avisamos al backend que cambiamos de modo (solo si ese modo
-              // tiene overlay; Color Says se ve desde su propia pantalla)
-              if (OVERLAY_APPS.includes(m.id)) socket.emit('set_active_app', m.id);
+              // tiene overlay y hay socket — sin sesión no hay nada que avisar)
+              if (socket && OVERLAY_APPS.includes(m.id)) socket.emit('set_active_app', m.id);
             }}
             className={[
               'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
@@ -284,7 +300,7 @@ export default function App() {
           </span>
         </button>
 
-        {session.isAdmin && (
+        {session?.isAdmin && (
           <button
             onClick={() => setSidebarMode('licenses')}
             title="Administrar licencias"
@@ -301,45 +317,69 @@ export default function App() {
         )}
 
         <div className="flex-1" />
-        <button onClick={logout} title="Cerrar sesión"
-          className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200">
-          <span className="text-xl leading-none">🚪</span>
-          <span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Salir</span>
-        </button>
+        {session && (
+          <button onClick={logout} title="Cerrar sesión"
+            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200">
+            <span className="text-xl leading-none">🚪</span>
+            <span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Salir</span>
+          </button>
+        )}
       </aside>
 
       <main className="flex-1 flex overflow-hidden">
         {sidebarMode === 'overlay' && <OverlayLink />}
         {sidebarMode === 'king' && (
-          <AdminPanel
-            state={state} socket={socket}
-            username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-            prize={prizes.king}
-          />
+          needsAccess('king') ? (
+            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
+          ) : (
+            <AdminPanel
+              state={state} socket={socket}
+              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+              prize={prizes.king}
+            />
+          )
         )}
         {sidebarMode === 'zub' && (
-          <Zubastinis
-            state={zubState} socket={socket}
-            username={username} connectionStatus={connectionStatus}
-            prize={prizes.zub}
-          />
+          needsAccess('zub') ? (
+            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
+          ) : (
+            <Zubastinis
+              state={zubState} socket={socket}
+              username={username} connectionStatus={connectionStatus}
+              prize={prizes.zub}
+            />
+          )
         )}
         {sidebarMode === 'elim' && (
-          <Elimination
-            state={elimState} socket={socket}
-            username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-            prize={prizes.elim}
-          />
+          needsAccess('elim') ? (
+            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
+          ) : (
+            <Elimination
+              state={elimState} socket={socket}
+              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+              prize={prizes.elim}
+            />
+          )
         )}
-        {/* Color Says no necesita socket: se transmite directo desde su pantalla.
-            isAdmin gatea el sesgo de pares y el Safe Mode: solo notbenjaa1 los ve,
-            el resto de licencias de pago siempre tira con probabilidades limpias. */}
-        {sidebarMode === 'color' && <ColorSays isAdmin={session.isAdmin} />}
+        {/* Color Says es de acceso libre: no necesita sesión ni socket para
+            jugar (la lógica es 100% local), y con sesión sincroniza el
+            estado con el overlay especial de Colores. `tier` (regular/pro/
+            vip/admin, ver dice_tier en la licencia) gatea el WIN BONUS y el
+            Modo Seguro — es un nivel de Color Says independiente de
+            session.isAdmin (que sigue siendo exclusivo del panel de
+            Licencias, no algo que se compre). Sin sesión, tier es 'regular'
+            (probabilidades limpias). */}
+        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} />}
+        {/* TTS también requiere sesión — se muestra el login embebido en su
+            lugar sin desmontar TtsChat (ver comentario de "visible" abajo). */}
+        {sidebarMode === 'tts' && needsAccess('tts') && (
+          <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
+        )}
         {/* Permanece montado al cambiar de módulo para que la lectura activa no
             se interrumpa mientras el streamer controla uno de los juegos. */}
-        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'tts'} />
+        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'tts' && !needsAccess('tts')} />
         {sidebarMode === 'theme' && <ThemeSwitcher />}
-        {sidebarMode === 'licenses' && session.isAdmin && <LicenseManager />}
+        {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
       </main>
     </div>
     </ThemedShell>

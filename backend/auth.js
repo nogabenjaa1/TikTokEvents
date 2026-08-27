@@ -14,7 +14,7 @@ if (!JWT_SECRET || !KEY_HASH_SECRET) {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, lifetime: null };
+const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, lifetime: null, trial: 7 * DAY_MS };
 const LIFETIME_JWT_EXPIRY = '365d'; // las licencias lifetime igual reautentican una vez al año
 
 // La key es el único "password": alta entropía (192 bits), codificada en
@@ -153,6 +153,7 @@ async function socketAuthMiddleware(socket, next) {
         socket.licenseId = row.id;
         socket.isAdmin = !!row.is_admin;
         socket.licenseUsername = row.username;
+        socket.licenseType = row.license_type;
         next();
     } catch {
         next(new Error('unauthorized'));

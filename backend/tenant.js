@@ -20,9 +20,10 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
 // vive en `this` en vez de en variables de módulo.
 // ==========================================
 class Tenant {
-    constructor(licenseId, io) {
+    constructor(licenseId, io, licenseType) {
         this.licenseId = licenseId;
         this.io = io;
+        this.licenseType = licenseType;
 
         // ── REY DEL TRONO (KING) ──
         this.contestState = {
@@ -58,8 +59,10 @@ class Tenant {
         this.elimSlotCounter = 0;
         this.elimRevealTimeout = null;
 
-        // Estado para el overlay multi-app (Color Says no participa: se
-        // transmite directo desde su propia pantalla)
+        // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
+        // Eliminación, elegidos con set_active_app). Color Says no participa
+        // de este selector: tiene su propio overlay aparte (?screen=colors,
+        // ver DiceOverlay.jsx) que se sincroniza con diceState más abajo.
         this.activeApp = 'king';
 
         // ── TEMA (material + acento) ──
@@ -71,6 +74,13 @@ class Tenant {
         // (mismo criterio que `prizes`): vive mientras el tenant está en
         // memoria, se resetea a `default`/`purple` si el server reinicia.
         this.theme = { style: 'default', accent: 'purple' };
+
+        // ── COLOR SAYS (dados) ──
+        // Client-autoritativo, igual que `theme`/`prizes`: el panel de
+        // control tira los dados y decide el resultado (con su propia
+        // lógica de Safe Mode), acá solo se reenvía tal cual al overlay
+        // especial de Colores para que la audiencia vea lo mismo en vivo.
+        this.diceState = { diceCount: 4, diceResult: [], rolling: false };
 
         // ── PREMIOS (opcionales, por modo) ──
         // { title, image } donde image es un data URL chico (≤ ~100px de
@@ -122,11 +132,39 @@ class Tenant {
         this.retryTimeout = setTimeout(() => this.ensureTikTokConnection(username).catch(() => {}), 3000);
     }
 
-    ensureTikTokConnection(username) {
+    async ensureTikTokConnection(username) {
         if (!username) return Promise.reject(new Error('username requerido'));
 
         if (this.liveConnected && this.currentTikTokUsername === username) return Promise.resolve();
         if (this.connectingPromise && this.currentTikTokUsername === username) return this.connectingPromise;
+
+        // Anti-abuso de pruebas gratis: se resuelve ANTES de tocar cualquier
+        // conexión existente, así un intento rechazado no desconecta nada
+        // que ya estuviera andando bien. Una prueba queda atada para
+        // siempre al primer usuario de TikTok al que se conecta con éxito
+        // (ver db.claimTrialConnection) — 'locked-own' rechaza sin revocar
+        // (está usando SU propia prueba con otro usuario, no es abuso
+        // cruzado); 'used-by-other' sí revoca: alguien más ya reclamó ese
+        // mismo usuario de TikTok con otra prueba antes.
+        if (this.licenseType === 'trial') {
+            const claim = await db.claimTrialConnection(this.licenseId, username.toLowerCase());
+            if (claim === 'locked-own') {
+                this.broadcast.emit('live_connection_error', {
+                    code: 'TrialLocked',
+                    message: 'Esta prueba gratis ya está en uso con otro usuario de TikTok.',
+                });
+                throw new Error('trial locked to another username');
+            }
+            if (claim === 'used-by-other') {
+                await db.revoke(this.licenseId);
+                this.broadcast.emit('live_connection_error', {
+                    code: 'TrialAbuse',
+                    message: 'Este usuario de TikTok ya se usó en otra prueba gratis. Esta licencia fue revocada.',
+                });
+                throw new Error('trial tiktok username already used elsewhere');
+            }
+        }
+
         if (this.tiktokConnection && this.currentTikTokUsername !== username) this.disconnectTikTok();
 
         this.currentTikTokUsername = username;
@@ -515,6 +553,20 @@ class Tenant {
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
         socket.emit('theme_updated', this.theme);
+        socket.emit('dice_state_update', this.diceState);
+
+        // ── COLOR SAYS (dados) ───────────────────────
+        // El panel tira los dados y decide el resultado (con su propia
+        // lógica, ver Colorsays.jsx); acá solo se valida la forma básica y
+        // se reenvía al overlay especial de Colores (?screen=colors).
+        socket.on('set_dice_state', ({ diceCount, diceResult, rolling } = {}) => {
+            this.diceState = {
+                diceCount: Number.isInteger(diceCount) ? Math.max(1, Math.min(6, diceCount)) : this.diceState.diceCount,
+                diceResult: Array.isArray(diceResult) ? diceResult.slice(0, 6) : this.diceState.diceResult,
+                rolling: !!rolling,
+            };
+            this.broadcast.emit('dice_state_update', this.diceState);
+        });
 
         // ── PREMIOS ─────────────────────────────────
         // La imagen llega ya redimensionada por el cliente (~100px de lado)

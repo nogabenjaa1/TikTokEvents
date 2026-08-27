@@ -18,6 +18,11 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
   const [alias, setAlias] = useState('');
   const [trialError, setTrialError] = useState('');
   const [trialLoading, setTrialLoading] = useState(false);
+  // Se muestra ANTES de loguear (ver submitTrial): la key es la única
+  // credencial de esta licencia, y si se pierde antes de guardarla no hay
+  // forma de recuperarla — ver auth.requestFreeTrial.
+  const [trialResult, setTrialResult] = useState(null); // { key, token, license }
+  const [trialCopied, setTrialCopied] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -44,14 +49,27 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
     setTrialLoading(true);
     setTrialError('');
     try {
-      const { key: trialKey, token, license } = await requestFreeTrial(alias.trim());
-      saveSession({ token, licenseKey: trialKey, ...license });
-      onLoggedIn();
+      const result = await requestFreeTrial(alias.trim());
+      setTrialResult(result); // se muestra para copiar antes de continuar, ver abajo
     } catch (err) {
       setTrialError(err.message || 'No se pudo crear la prueba gratis');
     } finally {
       setTrialLoading(false);
     }
+  };
+
+  const copyTrialKey = () => {
+    navigator.clipboard.writeText(trialResult.key);
+    setTrialCopied(true);
+    setTimeout(() => setTrialCopied(false), 2000);
+  };
+
+  const continueAfterTrial = () => {
+    const { token, key: trialKey, license } = trialResult;
+    // Se guarda además del token para poder armar la URL del overlay
+    // (?overlay=true&key=...) sin pedírsela de nuevo — ver auth.buildOverlayUrl.
+    saveSession({ token, licenseKey: trialKey, ...license });
+    onLoggedIn();
   };
 
   return (
@@ -63,7 +81,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">TikTok Concurso</h1>
           </div>
 
-          {notice && <p className="text-amber-400 text-xs font-bold mb-4">⚠️ {notice}</p>}
+          {notice && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{notice}</p>}
 
           <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
           <input
@@ -74,7 +92,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
             className="theme-input w-full p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm mb-4"
           />
 
-          {error && <p className="text-red-400 text-xs font-bold mb-4">❌ {error}</p>}
+          {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{error}</p>}
 
           <button
             type="submit"
@@ -91,7 +109,28 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
             usuario real de TikTok recién se registra y se bloquea cuando
             esta licencia se conecta a un LIVE por primera vez (backend). */}
         <div className="theme-surface p-6">
-          {!showTrial ? (
+          {trialResult ? (
+            <div className="flex flex-col gap-3">
+              <p className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave</p>
+              <p className="text-[11px] text-gray-500">
+                Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
+                plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{trialResult.key}</code>
+                <button type="button" onClick={copyTrialKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+                  {trialCopied ? 'Copiado' : 'Copiar'}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={continueAfterTrial}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                Continuar
+              </button>
+            </div>
+          ) : !showTrial ? (
             <button
               type="button"
               onClick={() => setShowTrial(true)}
@@ -109,7 +148,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
                 placeholder="Elige un alias"
                 className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
               />
-              {trialError && <p className="text-red-400 text-xs font-bold">❌ {trialError}</p>}
+              {trialError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
               <button
                 type="submit"
                 disabled={trialLoading || !alias.trim()}

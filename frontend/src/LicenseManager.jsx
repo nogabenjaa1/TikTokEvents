@@ -34,6 +34,26 @@ function fmtDate(ms) {
   return ms ? new Date(ms).toLocaleString() : '—';
 }
 
+// Toasts con los tokens de tema (theme-surface + borde de color fijo según
+// el tipo) — mismo criterio que los badges de estado: el color es fijo
+// (verde éxito / rojo error), no sigue el acento, pero el fondo sí respeta
+// el material activo en vez de quedar un cuadro oscuro fijo.
+function ToastStack({ toasts }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 w-72">
+      {toasts.map(t => (
+        <div key={t.id} className={[
+          'theme-surface px-4 py-3 text-xs font-bold shadow-lg border-l-4',
+          t.type === 'error' ? 'border-l-red-500 text-red-700' : 'border-l-emerald-500 text-emerald-700',
+        ].join(' ')}>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Panel de administración de licencias — solo visible si la sesión actual
 // tiene isAdmin (hoy, la única es notbenjaa1). No confundir con
 // AdminPanel.jsx, que es el panel de juego de Rey del Trono.
@@ -54,6 +74,13 @@ export default function LicenseManager() {
   const [extendingId, setExtendingId] = useState(null);
   const [extendType, setExtendType] = useState('week');
   const [extendDiceTier, setExtendDiceTier] = useState('regular');
+
+  const [toasts, setToasts] = useState([]);
+  const pushToast = useCallback((message, type = 'success') => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t, { id, message, type }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
+  }, []);
 
   const fetchLicenses = useCallback(async () => {
     setLoading(true);
@@ -89,7 +116,7 @@ export default function LicenseManager() {
       setUsername('');
       fetchLicenses();
     } catch (err) {
-      setError(err.message);
+      pushToast(err.message, 'error');
     } finally {
       setCreating(false);
     }
@@ -101,9 +128,10 @@ export default function LicenseManager() {
       const res = await fetch(`${backendUrl()}/api/licenses/${id}/revoke`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo revocar');
+      pushToast('Licencia revocada');
       fetchLicenses();
     } catch (err) {
-      setError(err.message);
+      pushToast(err.message, 'error');
     }
   };
 
@@ -116,9 +144,10 @@ export default function LicenseManager() {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}`, { method: 'DELETE', headers: authHeaders() });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo eliminar');
+      pushToast('Licencia eliminada');
       fetchLicenses();
     } catch (err) {
-      setError(err.message);
+      pushToast(err.message, 'error');
     }
   };
 
@@ -131,10 +160,11 @@ export default function LicenseManager() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo extender');
+      pushToast('Licencia actualizada');
       setExtendingId(null);
       fetchLicenses();
     } catch (err) {
-      setError(err.message);
+      pushToast(err.message, 'error');
     }
   };
 
@@ -151,9 +181,10 @@ export default function LicenseManager() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
+      pushToast(turningOn ? 'Licencia convertida en multi-dispositivo' : 'Multi-dispositivo desactivado');
       fetchLicenses();
     } catch (err) {
-      setError(err.message);
+      pushToast(err.message, 'error');
     }
   };
 
@@ -186,8 +217,8 @@ export default function LicenseManager() {
 
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
-        <div className="w-full max-w-lg bg-yellow-950/30 border-2 border-yellow-600/50 rounded-2xl p-5">
-          <p className="text-xs font-black uppercase tracking-widest text-yellow-400 mb-2">⚠️ Guarda esta clave ahora — no se vuelve a mostrar</p>
+        <div className="w-full max-w-lg bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-5">
+          <p className="text-xs font-black uppercase tracking-widest text-red-700 mb-2">Guarda esta clave ahora — no se vuelve a mostrar</p>
           <p className="text-sm text-gray-300 mb-2">Licencia para <strong className="text-white">@{newKey.username}</strong>:</p>
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{newKey.key}</code>
@@ -234,7 +265,7 @@ export default function LicenseManager() {
         </button>
       </form>
 
-      {error && <p className="text-red-400 text-xs font-bold">❌ {error}</p>}
+      {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
 
       {/* Resumen + filtros */}
       <div className="w-full max-w-lg flex flex-col gap-3">
@@ -346,6 +377,7 @@ export default function LicenseManager() {
           );
         })}
       </div>
+      <ToastStack toasts={toasts} />
     </div>
   );
 }

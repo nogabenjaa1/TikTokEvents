@@ -586,6 +586,42 @@ input[type=range]::-moz-range-thumb {
   border-radius: var(--surface-radius-sm);
 }
 .theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
+
+/* ==========================================
+   NORMALIZACIÓN DE COLORES DE ESTADO (panel de control)
+   Muchos textos/badges del panel (insta-win, premio, multi-dispositivo,
+   snipe, estados de licencia, etc.) usan las utilidades de Tailwind
+   -300/-400/-500 — tonos pensados para texto CLARO sobre fondo casi negro,
+   de cuando todo el sistema era oscuro. Ahora que los cuatro materiales son
+   pastel claro, esos mismos tonos quedan lavados/casi invisibles. Acá se
+   oscurecen (misma familia de color, versión ~700 de Tailwind) SOLO dentro
+   de `.themed-panel` (el panel de control vía ThemedShell) — el overlay de
+   OBS (Overlay.jsx/DiceOverlay.jsx) nunca lleva esta clase a propósito,
+   así que sus colores "de show" (dorado de ganador, verde de premio, etc.)
+   quedan intactos para la audiencia. `!important` por el mismo motivo que
+   las reglas de `.text-gray-*` de cada material: hace falta ganarle a la
+   capa de utilities de Tailwind de forma explícita.
+   ========================================== */
+.themed-panel .text-red-200,
+.themed-panel .text-red-300,
+.themed-panel .text-red-400,
+.themed-panel .text-red-500 { color: #B91C1C !important; }
+.themed-panel .text-yellow-100,
+.themed-panel .text-yellow-200,
+.themed-panel .text-yellow-300,
+.themed-panel .text-yellow-400,
+.themed-panel .text-yellow-500 { color: #A16207 !important; }
+.themed-panel .text-green-100,
+.themed-panel .text-green-300,
+.themed-panel .text-green-400 { color: #15803D !important; }
+.themed-panel .text-emerald-300,
+.themed-panel .text-emerald-400 { color: #047857 !important; }
+.themed-panel .text-sky-400 { color: #0369A1 !important; }
+/* Ámbar queda en su propia familia (no rojo): sigue usándose como un
+   tercer estado real y distinto de error/éxito (ej. "esperando LIVE" en
+   TTS Chat, ni activo ni apagado) — solo se oscurece para que se lea. */
+.themed-panel .text-amber-400,
+.themed-panel .text-amber-500 { color: #B45309 !important; }
 .theme-sidebar {
   background: var(--surface-bg);
   border-right: var(--surface-border);

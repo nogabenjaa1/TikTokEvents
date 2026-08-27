@@ -130,7 +130,7 @@ export function ThemedShell({ children, className = '', style, styleOverride, ac
   const { style: currentStyle, accent } = useTheme();
   return (
     <div
-      className={`themed-app ${className}`}
+      className={`themed-app themed-panel ${className}`}
       style={fitContent ? { minHeight: 0, ...style } : style}
       data-theme-style={styleOverride ?? currentStyle}
       data-accent={accentOverride ?? accent}

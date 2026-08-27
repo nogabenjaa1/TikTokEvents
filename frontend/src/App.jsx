@@ -246,13 +246,13 @@ export default function App() {
   return (
     <ThemedShell className="flex flex-col">
       {kickedOutMessage && (
-        <div className="w-full bg-red-950/80 border-b border-red-700/50 text-red-300 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
-          ⚠️ {kickedOutMessage}
+        <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
+          {kickedOutMessage}
         </div>
       )}
       {showExpiryWarning && (
-        <div className="w-full bg-amber-950/80 border-b border-amber-700/50 text-amber-300 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
-          ⚠️ Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
+        <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
+          Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
         </div>
       )}
     <div className="flex flex-1 min-h-0">

@@ -107,7 +107,7 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
             </div>
 
             {!('speechSynthesis' in window) && <p className="rounded-xl bg-red-950/60 border border-red-800 text-red-300 p-3 text-xs">Este navegador no admite Speech Synthesis.</p>}
-            {!connected && <p className="rounded-xl bg-amber-950/50 border border-amber-800/60 text-amber-300 p-3 text-xs mb-4">Conecta una cuenta que esté transmitiendo en TikTok LIVE para activar el TTS.</p>}
+            {!connected && <p className="rounded-xl bg-red-500/10 border border-red-500/40 text-red-700 p-3 text-xs mb-4">Conecta una cuenta que esté transmitiendo en TikTok LIVE para activar el TTS.</p>}
 
             <div className="space-y-3">
               <Toggle checked={settings.allUsers} onChange={(v) => update('allUsers', v)} label="Todos los usuarios" description="Lee a cualquier persona del chat; anula los filtros inferiores." />

@@ -3,7 +3,6 @@ import { buildOverlayUrl } from './auth';
 
 function OverlayUrlCard({ title, description, url }) {
   const [copied, setCopied] = useState(false);
-  const [previewBlocked, setPreviewBlocked] = useState(false);
 
   const copyUrl = () => {
     if (!url) return;
@@ -12,21 +11,13 @@ function OverlayUrlCard({ title, description, url }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const openPreview = () => {
-    if (!url) return;
-    const win = window.open(url, '_blank', 'width=1920,height=1080');
-    // Algunos navegadores bloquean la ventana igual (configuración estricta
-    // de ventanas emergentes); avisamos en vez de fallar en silencio.
-    setPreviewBlocked(!win);
-  };
-
   return (
     <div className="theme-surface w-full max-w-xl p-6">
       <h2 className="theme-heading text-lg font-bold mb-1">{title}</h2>
       <p className="text-gray-500 text-xs mb-5">{description}</p>
 
       {!url ? (
-        <p className="text-amber-400 text-xs font-bold">
+        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
           No pudimos recuperar tu clave de licencia de esta sesión. Cierra sesión y vuelve a entrar con tu clave para generar el enlace.
         </p>
       ) : (
@@ -38,15 +29,14 @@ function OverlayUrlCard({ title, description, url }) {
             <button onClick={copyUrl} className="theme-btn-primary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest">
               {copied ? '✅ Copiado' : 'Copiar URL'}
             </button>
-            <button onClick={openPreview} className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest">
+            {/* Enlace real (no window.open): un <a target="_blank"> nunca lo
+                bloquea un bloqueador de ventanas emergentes, a diferencia de
+                una ventana abierta por script. */}
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-center">
               👁️ Preview
-            </button>
+            </a>
           </div>
-          {previewBlocked && (
-            <p className="text-amber-400 text-[11px] font-bold mt-3">
-              ⚠️ Tu navegador bloqueó la ventana. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.
-            </p>
-          )}
         </>
       )}
     </div>

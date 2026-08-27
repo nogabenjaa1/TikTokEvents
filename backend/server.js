@@ -7,6 +7,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { WebcastPushConnection } = require('tiktok-live-connector');
 const path = require('path');
+const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
 const db = require('./db');
@@ -235,8 +236,15 @@ io.on('connection', (socket) => {
     tenant.attachSocket(socket);
 });
 
+// Solo existe backend/public/index.html cuando el frontend se buildeó y
+// copió ahí (modo "todo junto", ver scripts/copy-frontend-build.js). Si el
+// frontend se despliega aparte (p. ej. Vercel), esa carpeta no existe acá
+// y no hay nada que servir — devolver un 404 simple en vez de intentar un
+// sendFile que rompe con ENOENT.
+const FRONTEND_INDEX = path.join(__dirname, 'public', 'index.html');
 app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    if (fs.existsSync(FRONTEND_INDEX)) return res.sendFile(FRONTEND_INDEX);
+    res.status(404).json({ success: false, error: 'No encontrado. Este backend solo expone la API; el frontend se sirve por separado.' });
 });
 
 const PORT = process.env.PORT || 3001;

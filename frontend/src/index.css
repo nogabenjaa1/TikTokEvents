@@ -121,30 +121,61 @@ input[type=range]::-moz-range-thumb {
    parejos para los 4 — así los 4 acentos quedan igual de intensos en el
    fondo, no solo con el matiz correcto. */
 .themed-app[data-theme-style="default"] {
-  --page-bg: oklch(from var(--accent) 0.22 0.12 h);
-  --surface-bg: oklch(from var(--accent) 0.28 0.11 h);
-  --surface-bg-alt: oklch(from var(--accent) 0.34 0.08 h);
-  --surface-border-color: #2D1B4E;
+  --page-bg: oklch(from var(--accent) 0.72 0.09 h);
+  --surface-bg: oklch(from var(--accent) 0.8 0.1 h);
+  --surface-bg-alt: oklch(from var(--accent) 0.76 0.08 h);
+  --surface-border-color: color-mix(in oklch, var(--accent) 55%, transparent);
   --surface-border: 1px solid var(--surface-border-color);
   --surface-radius: 1.5rem;
   --surface-radius-sm: 0.75rem;
   --surface-shadow: 0 0 50px color-mix(in oklch,var(--accent) 22%, transparent);
   --surface-blur: none;
+  --ink-default: #2E2136;
+  /* Mismo motivo que Kawaii/Cute (ver esos bloques): fondo pastel claro de
+     punta a punta, así que el blanco/gris global del resto del sistema
+     necesita este fallback para no quedar ilegible. */
+  color: var(--ink-default);
+}
+.themed-app[data-theme-style="default"] .text-white,
+.themed-app[data-theme-style="default"] .text-gray-100,
+.themed-app[data-theme-style="default"] .text-gray-200,
+.themed-app[data-theme-style="default"] .text-gray-300,
+.themed-app[data-theme-style="default"] .text-gray-400,
+.themed-app[data-theme-style="default"] .text-gray-500,
+.themed-app[data-theme-style="default"] .text-gray-600 {
+  color: var(--ink-default) !important;
+}
+.themed-app[data-theme-style="default"] .placeholder-gray-600::placeholder {
+  color: color-mix(in oklch, var(--ink-default) 55%, transparent);
+}
+.themed-app[data-theme-style="default"] .theme-heading,
+.themed-app[data-theme-style="default"] .theme-label,
+.themed-app[data-theme-style="default"] .theme-accent-text {
+  color: oklch(from var(--accent) 0.42 0.16 h);
+}
+/* theme-btn-secondary y theme-chip heredan color: var(--accent-soft) de la
+   regla global (pensada para fondo oscuro) — sobre el fondo pastel de acá
+   ese tono queda demasiado claro para leerse; se reemplaza por el mismo
+   tono oscuro del acento que usan heading/label. theme-btn-primary no
+   necesita ajuste: su relleno sigue siendo el degradé vívido de --accent/
+   --accent-2 (no diluido a pastel), así que el texto blanco sigue
+   contrastando igual que antes. */
+.themed-app[data-theme-style="default"] .theme-btn-secondary,
+.themed-app[data-theme-style="default"] .theme-chip {
+  color: oklch(from var(--accent) 0.42 0.16 h);
 }
 
 /* ==========================================================
    KAWAII — "almohada de peluche en la cabina, iluminada de acento"
-   Reemplaza a Glassmorfismo. Base pastel/esponjosa como pidió el streamer:
-   radios ultra redondeados (rounded-3xl/rounded-full), sombras profundas
-   y difuminadas con el color del acento, un brillo diagonal interior que
-   simula relieve "inflado" (squishy) y — a diferencia de todo lo demás en
-   este sistema — texto OSCURO sobre los rellenos pastel llenos (botón
-   primario, chips), porque blanco sobre un pastel claro no tiene contraste;
-   en cambio las superficies grandes (tarjetas, sidebar) siguen con base
-   OSCURA apenas teñida del acento — full pastel ahí habría obligado a
-   reescribir el color de texto de toda la app para un solo material. El
-   fondo de página sigue siendo de noche, como todos: "cute" acá es forma
-   y luz, no una paleta clara.
+   Reemplaza a Glassmorfismo. Base pastel/esponjosa: radios ultra
+   redondeados (rounded-3xl/rounded-full), sombras profundas y difuminadas
+   con el color del acento, un brillo diagonal interior que simula relieve
+   "inflado" (squishy) y texto OSCURO sobre los rellenos pastel llenos
+   (botón primario, chips), porque blanco sobre un pastel claro no tiene
+   contraste. Hoy comparte la misma familia de color pastel que el resto
+   del sistema (Default/Minimal/Cute) — lo que distingue a Kawaii es la
+   forma (radio extremo, relleno pastel lleno en cada control, brillo
+   inflado), no la luz.
    ========================================================== */
 .themed-app[data-theme-style="kawaii"] {
   --page-bg: oklch(from var(--accent) 0.72 0.09 h);
@@ -262,10 +293,10 @@ input[type=range]::-moz-range-thumb {
    tipografía fina y espaciada.
    ========================================================== */
 .themed-app[data-theme-style="minimal"] {
-  --page-bg: oklch(from var(--accent) 0.19 0.1 h);
+  --page-bg: oklch(from var(--accent) 0.72 0.09 h);
   --surface-bg: transparent;
-  --surface-bg-alt: oklch(from var(--accent) 0.25 0.08 h);
-  --surface-border-color: rgba(255, 255, 255, 0.12);
+  --surface-bg-alt: oklch(from var(--accent) 0.76 0.08 h);
+  --surface-border-color: color-mix(in oklch, var(--accent) 45%, transparent);
   --surface-border: none;
   --surface-radius: 0px;
   --surface-radius-sm: 0px;
@@ -273,6 +304,23 @@ input[type=range]::-moz-range-thumb {
   --surface-blur: none;
   font-weight: 300;
   letter-spacing: 0.01em;
+  --ink-minimal: #2E2136;
+  /* Mismo motivo que Kawaii/Cute/Default: fondo pastel claro de punta a
+     punta, el blanco/gris global del resto del sistema necesita este
+     fallback para no quedar ilegible. */
+  color: var(--ink-minimal);
+}
+.themed-app[data-theme-style="minimal"] .text-white,
+.themed-app[data-theme-style="minimal"] .text-gray-100,
+.themed-app[data-theme-style="minimal"] .text-gray-200,
+.themed-app[data-theme-style="minimal"] .text-gray-300,
+.themed-app[data-theme-style="minimal"] .text-gray-400,
+.themed-app[data-theme-style="minimal"] .text-gray-500,
+.themed-app[data-theme-style="minimal"] .text-gray-600 {
+  color: var(--ink-minimal) !important;
+}
+.themed-app[data-theme-style="minimal"] .placeholder-gray-600::placeholder {
+  color: color-mix(in oklch, var(--ink-minimal) 55%, transparent);
 }
 .themed-app[data-theme-style="minimal"] .theme-surface,
 .themed-app[data-theme-style="minimal"] .theme-surface-featured {
@@ -283,8 +331,12 @@ input[type=range]::-moz-range-thumb {
   padding-left: 1.75rem;
 }
 .themed-app[data-theme-style="minimal"] .theme-surface-featured { border-left-color: var(--accent); }
+.themed-app[data-theme-style="minimal"] .theme-heading,
+.themed-app[data-theme-style="minimal"] .theme-label,
+.themed-app[data-theme-style="minimal"] .theme-accent-text {
+  color: oklch(from var(--accent) 0.42 0.16 h);
+}
 .themed-app[data-theme-style="minimal"] .theme-heading {
-  color: #fff;
   font-weight: 500;
   letter-spacing: 0.03em;
 }
@@ -296,11 +348,14 @@ input[type=range]::-moz-range-thumb {
   padding-left: 0;
 }
 .themed-app[data-theme-style="minimal"] .theme-input:focus { border-bottom-color: var(--accent); }
-/* Botón outline fino en vez de bloque sólido: refinado, sin degradés. */
+/* Botón outline fino en vez de bloque sólido: refinado, sin degradés.
+   Color de texto: --accent-soft (variable global, pensada para fondo
+   oscuro) queda ilegible sobre el fondo pastel de acá — se reemplaza por
+   el mismo tono oscuro del acento que usa theme-heading. */
 .themed-app[data-theme-style="minimal"] .theme-btn-primary {
   background: transparent;
   border: 1px solid var(--accent);
-  color: var(--accent-soft);
+  color: oklch(from var(--accent) 0.42 0.16 h);
   font-weight: 500;
   letter-spacing: 0.08em;
 }
@@ -311,8 +366,13 @@ input[type=range]::-moz-range-thumb {
 .themed-app[data-theme-style="minimal"] .theme-btn-secondary {
   background: transparent;
   border: 1px solid var(--surface-border-color);
+  color: oklch(from var(--accent) 0.42 0.16 h);
 }
-.themed-app[data-theme-style="minimal"] .theme-chip { background: transparent; color: var(--accent-soft); padding: 0; }
+.themed-app[data-theme-style="minimal"] .theme-chip {
+  background: transparent;
+  color: oklch(from var(--accent) 0.42 0.16 h);
+  padding: 0;
+}
 /* Sidebar: lista de texto, sin fondo propio, solo una línea divisoria fina. */
 .themed-app[data-theme-style="minimal"] .theme-sidebar {
   background: transparent;

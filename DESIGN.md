@@ -1,6 +1,6 @@
 ---
 name: TikTok Concurso
-description: Cabina de control nocturna para correr minijuegos de regalos de TikTok LIVE, con overlay para OBS.
+description: Cabina de control pastel para correr minijuegos de regalos de TikTok LIVE, con overlay para OBS.
 colors:
   accent: "#7C3AED"
   accent-secondary: "#6366F1"
@@ -10,15 +10,14 @@ colors:
   accent-pink-secondary: "#FB7185"
   accent-green: "#10B981"
   accent-green-secondary: "#34D399"
-  page-void: "#100030"
-  surface-deep: "#190A36"
-  surface-raised: "#251D3E"
-  surface-line: "#2D1B4E"
+  page-void: "#A69AD8"
+  surface-deep: "#C0B2F9"
+  surface-raised: "#B2A8E0"
   page-void-kawaii: "#A69AD8"
   surface-kawaii-base: "#C0B2F9"
   surface-kawaii-base-alt: "#B2A8E0"
-  page-void-minimal: "#0B0023"
-  surface-raised-minimal: "#130A29"
+  page-void-minimal: "#A69AD8"
+  surface-raised-minimal: "#B2A8E0"
   page-void-cute: "#ACA1DC"
   surface-cute-base: "#C6BAFA"
   surface-cute-base-alt: "#B8B0E1"
@@ -99,22 +98,22 @@ components:
 
 **Creative North Star: "La Cabina de Control"**
 
-TikTok Concurso es la cabina de control nocturna del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE, donde un único acento de color hace de faro sobre un fondo casi negro. El sistema es deliberadamente táctil y de arcade — botones con peso, glows de acento, tipografía en mayúsculas y trazo grueso — no un dashboard corporativo silencioso. El fondo, casi negro (#05030A), nunca compite con el acento: existe para que el morado (o el azul, rosa o verde elegido) sea lo único que brille.
+TikTok Concurso es la cabina de control del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE, donde un único acento de color hace de faro sobre un fondo pastel teñido de ese mismo acento. El sistema es deliberadamente táctil y de arcade — botones con peso, glows de acento, tipografía en mayúsculas y trazo grueso — no un dashboard corporativo silencioso.
 
-Lo más distintivo del sistema no es una paleta fija sino su **pluralismo controlado**: cuatro "materiales" (Default, Kawaii, Minimal, Cute) combinables con cuatro acentos de color (morado, azul, rosa, verde) — 16 combinaciones reales, todas construidas sobre el mismo esqueleto de tokens CSS (`--page-bg`, `--surface-bg`, `--surface-radius`, `--surface-shadow`, `--accent`). Cambiar de material cambia radicalmente el lenguaje de forma y profundidad, y en Kawaii/Cute también el lenguaje de luz: Default y Minimal se quedan en la cabina nocturna casi negra; Kawaii y Cute son los dos materiales "tiernos" del sistema y rompen deliberadamente con ese fondo oscuro — van a un **pastel claro de verdad** (`L` 0.72–0.82 en OKLCH), porque una skin que se elige para "sentirse tierna" no puede quedar apagada por un fondo casi negro. Son distintos entre sí en forma, no en luminosidad: Cute (reemplazo de Claymorfismo) es dulce y contenido — borde punteado tipo washi-tape, radios grandes (`1.75rem`), textura de puntitos tipo sprinkles; Kawaii (reemplazo de Glassmorfismo) es dulce y máximo — radios ultra redondeados (`2rem`/píldora completa en cada control), relleno pastel lleno en botones/chips con brillo diagonal interior tipo gomita inflada, sombra profunda y difuminada del color del acento. Al pasar a fondo claro, todo el texto blanco/gris del resto del sistema se sobreescribe a una tinta oscura propia de cada material (`--ink-kawaii`, `--ink-cute`) para mantener el contraste — ver Colors › Tinta de Material.
+Lo más distintivo del sistema no es una paleta fija sino su **pluralismo controlado**: cuatro "materiales" (Default, Kawaii, Minimal, Cute) combinables con cuatro acentos de color (morado, azul, rosa, verde) — 16 combinaciones reales, todas construidas sobre el mismo esqueleto de tokens CSS (`--page-bg`, `--surface-bg`, `--surface-radius`, `--surface-shadow`, `--accent`). Los cuatro materiales comparten la misma familia de color — un **pastel claro de verdad** (`L` 0.72–0.82 en OKLCH) — y se distinguen entre sí únicamente por forma y profundidad, no por luminosidad (decisión del dueño del producto: antes Default/Minimal eran una cabina nocturna casi negra y Kawaii/Cute los únicos pasteles; se homogenizó todo a la paleta clara porque es la que mejor representa la marca). Default es el punto de referencia del sistema — esquinas moderadas (`1.5rem`/`0.75rem`), sombra ambiental difusa; Minimal es plano y callado — sin cajas, una sola línea de borde tintada del acento como única seña de profundidad; Cute (reemplazo de Claymorfismo) es dulce y contenido — borde punteado tipo washi-tape, radios grandes (`1.75rem`), textura de puntitos tipo sprinkles; Kawaii (reemplazo de Glassmorfismo) es dulce y máximo — radios ultra redondeados (`2rem`/píldora completa en cada control), relleno pastel lleno en botones/chips con brillo diagonal interior tipo gomita inflada, sombra profunda y difuminada del color del acento. Al vivir los cuatro sobre fondo claro, todo el texto blanco/gris del resto del sistema se sobreescribe a una tinta oscura propia de cada material (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — mismo hex en los cuatro hoy) para mantener el contraste — ver Colors › Tinta de Material.
 
 El overlay de OBS (lo que ve la audiencia del stream) **replica el mismo skin** (material + acento) que el streamer eligió en el panel — sincronizado en tiempo real por Socket.io, no por `localStorage` (el overlay corre en la ventana de OBS, un navegador aparte que nunca comparte sesión con el panel). El streamer elige el skin justamente para que represente su marca frente a su audiencia; que solo él lo vea sería el fallo del sistema, no una protección.
 
 **Key Characteristics:**
-- Fondo casi negro + un único acento vivo como faro de atención.
-- Cuatro materiales seleccionables (Default / Kawaii / Minimal / Cute), un mismo esqueleto de tokens.
+- Fondo pastel teñido del acento activo + ese mismo acento como faro de atención en botones y texto de énfasis.
+- Cuatro materiales seleccionables (Default / Kawaii / Minimal / Cute), un mismo esqueleto de tokens, misma familia de color — se distinguen por forma y profundidad, no por luz.
 - Mayúsculas, tracking amplio y peso `black` para todo lo que es etiqueta o acción.
 - Táctil y de arcade, no SaaS corporativo: glows, gradientes, transiciones de 0.35s en cada cambio de tema.
 - El overlay de OBS sincroniza el mismo skin que el panel, en tiempo real, vía socket — nunca queda desfasado del tema elegido.
 
 ## Colors
 
-Paleta oscura de un solo acento vivo sobre neutros casi negros; los colores de estado (rojo, ámbar, esmeralda) son fijos y no cambian con el acento elegido.
+Paleta pastel de un solo acento vivo sobre neutros claros teñidos de ese acento; los colores de estado (rojo, ámbar, esmeralda) son fijos y no cambian con el acento elegido.
 
 ### Primary
 - **Neón Violeta** (`#7C3AED`): acento por defecto (`--accent`). Botones primarios, texto de énfasis, glow de foco, indicador de módulo activo. Es el faro del sistema — en el material Minimal es literalmente lo único con color en toda la pantalla.
@@ -129,20 +128,14 @@ El streamer elige uno de estos cuatro como su `--accent` activo; los otros tres 
 ### Neutral
 `--page-bg`, `--surface-bg` y `--surface-bg-alt` no tienen hex propio: se construyen en el momento con **sintaxis de color relativo**, `oklch(from var(--accent) L C h)` — se toma SOLO el matiz (`h`) del acento activo y se fija una luminosidad/croma (`L`/`C`) propios de cada token y cada material. Es deliberadamente distinto de `color-mix()` hacia una base: mezclar diluye luminosidad y croma en proporción al % mezclado, y el croma nativo en OKLCH no es igual entre los 4 acentos (rosa y verde parten "más flojos" que morado/azul), así que un mismo % de mezcla los deja menos saturados — ese fue el bug real detrás del "se ve grisáceo en rosa y verde". Fijando `L`/`C` a mano, los 4 acentos quedan con la misma intensidad, no solo el mismo matiz. Los hex de abajo son el resultado con el acento morado (por defecto) — cambian de matiz con cualquier otro acento, pero no de intensidad.
 
-Default y Minimal se quedan en la cabina nocturna casi negra; Kawaii y Cute cruzan a un **pastel claro de verdad** — misma sintaxis de color relativo, pero con `L` alto en vez de bajo. Son dos familias de luminosidad distintas dentro del mismo esqueleto de tokens:
+Los cuatro materiales viven en la misma familia de luminosidad — pastel claro de verdad, nunca la cabina nocturna casi negra que el sistema tenía antes de homogenizarse. Default y Minimal usan hoy exactamente la misma fórmula que Kawaii; Cute queda con valores de `L`/`C` levemente distintos (una diferencia de dos centésimas, no perceptible, pero no idéntica en el número):
 
-**Default / Minimal (fondo oscuro):**
-- **Vacío Casi-Negro** (`oklch(from var(--accent) 0.15 0.1 h)` → `#100030` en morado): fondo de página (`--page-bg`) en el material Default.
-- **Panel Profundo** (`oklch(from var(--accent) 0.2 0.08 h)` → `#190A36`): fondo de superficie (`--surface-bg`) — tarjetas, sidebar. Más croma que el `--page-bg` pese a ser más claro: la tarjeta debe sentirse "encima" y con más presencia que el vacío detrás.
-- **Panel Elevado** (`oklch(from var(--accent) 0.26 0.06 h)` → `#251D3E`): fondo de superficie secundaria (`--surface-bg-alt`) — inputs, filas alternas. Menos croma que las otras dos: es donde se escribe/lee texto, así que se aquieta un poco.
-- Minimal usa `0.13/0.08` (page) · `transparent` (surface, es su identidad) · `0.18/0.06` (surface-alt) — el material más contenido, a tono con su carácter callado.
-- **Línea Violeta Apagada** (`#2D1B4E`): borde de superficie por defecto (`--surface-border-color`) — este sí es un hex fijo, no sigue el acento; el contraste del borde importa más que su tinte.
-- **Blanco Puro** (`#FFFFFF`): texto primario sobre fondo oscuro, en estos dos materiales.
-
-**Kawaii / Cute (fondo pastel claro):**
-- Kawaii usa `0.74/0.085` (page) · `0.82/0.09` (surface) · `0.78/0.07` (surface-alt) → con acento morado: `#A69AD8` / `#C0B2F9` / `#B2A8E0`. Cute usa `0.74/0.085` · `0.82/0.09` · `0.78/0.07` → los mismos valores de luminosidad (ambos deben leerse igual de "pastel"); la diferencia entre los dos materiales vive en forma y textura (Shapes/Components), no en color.
-- **Tinta de Material** (`--ink-kawaii` `#2E2136`, `--ink-cute` `#2A1B2E` — violeta casi negro): en Kawaii y Cute, TODO el texto blanco/gris del resto del sistema se sobreescribe a esta tinta oscura (selector `.themed-app[data-theme-style="kawaii"] .text-white`, etc., con `!important` porque compite con utilidades de Tailwind en una capa distinta) — a diferencia de un fondo oscuro, un fondo pastel claro no tiene contraste suficiente para texto blanco. Es la razón por la que estos dos materiales son la única excepción de color de texto del sistema.
-- **Acento Suave** (`accent-soft`, uno por acento — `#A78BFA` morado, `#93C5FD` azul, `#F9A8D4` rosa, `#6EE7B7` verde): versión desaturada del acento activo, usada en texto de énfasis (`theme-label`, `theme-accent-text`) sobre fondo oscuro (Default/Minimal) y bordes de botón en Minimal.
+- **Vacío Pastel** (`oklch(from var(--accent) 0.72 0.09 h)` → `#A69AD8` en morado): fondo de página (`--page-bg`) en Default, Kawaii y Minimal (Cute usa `0.74/0.085` → `#ACA1DC`, casi indistinguible).
+- **Panel Pastel** (`oklch(from var(--accent) 0.8 0.1 h)` → `#C0B2F9`): fondo de superficie (`--surface-bg`) en Default y Kawaii — tarjetas, sidebar (Cute: `0.82/0.09` → `#C6BAFA`). Minimal se queda `transparent` acá: es su identidad de material, no un tema de color (ver Shapes).
+- **Panel Pastel Alterno** (`oklch(from var(--accent) 0.76 0.08 h)` → `#B2A8E0`): fondo de superficie secundaria (`--surface-bg-alt`) en los cuatro materiales — inputs, filas alternas, badges neutros (Cute: `0.78/0.07` → `#B8B0E1`).
+- **Borde Teñido** (`color-mix(in oklch, var(--accent) 55%, transparent)` en Default/Kawaii/Cute, `45%` en Minimal): borde de superficie por defecto (`--surface-border-color`) — ya no es un hex fijo en ningún material; sigue el acento activo como el resto del sistema. Minimal usa un porcentaje más bajo a propósito: su única señal de profundidad es esta línea, y tiene que leerse sutil, no como un borde de tarjeta.
+- **Tinta de Material** (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — hoy los cuatro en `#2E2136`/`#2A1B2E`, violeta casi negro): en los cuatro materiales, TODO el texto blanco/gris del resto del sistema se sobreescribe a esta tinta oscura (selector `.themed-app[data-theme-style="X"] .text-white`, etc., con `!important` porque compite con utilidades de Tailwind en una capa distinta) — un fondo pastel claro no tiene contraste suficiente para texto blanco. Antes esto era una excepción exclusiva de Kawaii/Cute; ahora es la regla del sistema completo.
+- **Acento Suave** (`accent-soft`, uno por acento — `#A78BFA` morado, `#93C5FD` azul, `#F9A8D4` rosa, `#6EE7B7` verde): versión desaturada del acento activo. Ya no se usa para texto de énfasis sobre el fondo claro (quedaba ilegible ahí) — `theme-label`/`theme-accent-text`/`theme-btn-secondary`/`theme-chip` usan en su lugar un tono oscuro construido al vuelo (`oklch(from var(--accent) 0.42 0.16 h)`) en Default y Minimal, igual que Kawaii/Cute. `accent-soft` sigue vivo como color base de acentos alternos en el selector de Tema.
 - **Acento Pastel** (`--accent-pastel`, solo en Kawaii — `oklch(from var(--accent) 0.6 0.15 h)`): un tono del acento más saturado que el fondo pastel del material, usado para rellenar botones/chips por completo y darles presencia sobre un fondo que ya es claro. Construido con la misma sintaxis de color relativo que el resto — no mezclado hacia blanco, para no perder croma nativo del acento.
 
 ### Estado (fijos, no siguen el acento elegido)
@@ -207,11 +200,11 @@ Táctil y de arcade: los componentes tienen peso, glow y transición suave (0.35
 - **Shape:** radio `var(--surface-radius-sm)` (12px en Default), píldora completa en Kawaii/Cute.
 - **Primary:** degradé del acento activo a su color secundario (`linear-gradient(to right, var(--accent), var(--accent-2))`), texto blanco, `padding` generoso (12px 32px), mayúsculas con tracking amplio.
 - **Hover / Focus:** `filter: brightness(1.12)` en primary; en Cute/Kawaii suma un `translateY(-2px)` suave (sin rebote/elastic easing — la calidez viene de la forma y el glow, no de una animación exagerada); en Kawaii, `:active` suma `scale(0.96)` — el único material con feedback de "apretado" al soltar el clic.
-- **Secondary:** fondo tenue del acento sobre la superficie (`color-mix` 16%), borde del acento al 55%, texto en el tono suave del acento (`--accent-soft`).
-- **Kawaii/Cute son la excepción de color de texto:** al vivir sobre fondo pastel claro (no el casi-negro de Default/Minimal), todo su texto —incluido el botón primario— usa la tinta oscura del material (`--ink-kawaii`/`--ink-cute`) en vez de blanco. El botón primario de Kawaii además usa un degradé **pastel lleno** (`linear-gradient(145deg, var(--accent-pastel), color-mix(accent-2 55% white))`, no el degradé eléctrico del resto) — ver Colors › Acento Pastel / Tinta de Material.
+- **Secondary:** fondo tenue del acento sobre la superficie (`color-mix` 16%), borde del acento al 55%, texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.42 0.16 h)`) en los cuatro materiales — `--accent-soft` (la versión clara) quedaba ilegible sobre el fondo pastel y se reemplazó en todos.
+- **El botón primario nunca usa la tinta oscura salvo en Kawaii:** en Default/Minimal/Cute sigue siendo el degradé eléctrico de `--accent`/`--accent-2` con texto blanco — ese relleno es vívido, no pastel-diluido, así que blanco sigue contrastando igual que siempre. Kawaii es la única excepción: su botón primario usa un degradé **pastel lleno** (`linear-gradient(145deg, var(--accent-pastel), color-mix(accent-2 55% white))`, más claro que el resto) y por eso necesita texto en `--ink-kawaii` — ver Colors › Acento Pastel / Tinta de Material.
 
 ### Chips
-- **Style:** fondo del acento activo al 22% de opacidad, texto en `--accent-soft`, siempre píldora completa. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado, mismo criterio de tinta oscura por vivir sobre fondo claro.
+- **Style:** fondo del acento activo al 22% de opacidad, siempre píldora completa. Texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.42 0.16 h)`, no `--accent-soft`) en Default y Minimal. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado — los cuatro materiales resuelven el mismo problema (texto legible sobre fondo claro), cada uno con su propio tono.
 - **State:** los badges de estado (Activa/Revocada/Por vencer/Expirada en licencias) no usan el acento — usan los colores de estado fijos (verde/rojo/ámbar/gris) con el mismo tratamiento de badge (fondo 40% + borde 50%).
 
 ### Cards / Containers (`.theme-surface`)
@@ -241,8 +234,8 @@ La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como f
 - **Do** usar mayúsculas + tracking amplio + peso `black` para cualquier etiqueta, botón o estado nuevo — es la voz tipográfica dominante del sistema.
 - **Do** reservar los colores de estado fijos (rojo/ámbar/esmeralda/gris) exclusivamente para semántica de juego o licencia (peligro, aviso, premio/éxito, offline) — nunca para decoración.
 - **Do** sincronizar el overlay de OBS (`Overlay.jsx`) con el skin elegido en el panel — recibe `theme` por socket (evento `theme_updated`, ver `tenant.js`/`App.jsx`) y se pinta con `.themed-app`/`data-theme-style`/`data-accent` igual que cualquier otra pantalla. El overlay nunca decide su propio tema ni lo lee de `localStorage`.
-- **Do** mantener el fondo casi negro en Default y Minimal — son la cabina nocturna base del sistema, no candidatos a pastel claro.
-- **Do** usar tinta oscura (`--ink-kawaii` / `--ink-cute`) en TODO el texto blanco/gris dentro del scope de esos dos materiales — a diferencia de Default/Minimal (fondo oscuro, texto blanco), Kawaii y Cute son fondo claro de punta a punta, así que la sobreescritura de tinta no se limita a un botón o chip puntual.
+- **Do** mantener el fondo pastel claro en los cuatro materiales — Default y Minimal usaban antes un fondo casi negro, pero el sistema se homogenizó a una sola paleta clara; ningún material nuevo debería reintroducir un fondo oscuro sin decisión explícita del dueño del producto.
+- **Do** usar tinta oscura (`--ink-default` / `--ink-kawaii` / `--ink-minimal` / `--ink-cute`) en TODO el texto blanco/gris dentro del scope de cada material — los cuatro son fondo claro de punta a punta, así que la sobreescritura de tinta no se limita a un botón o chip puntual, y tampoco es ya una excepción de solo dos materiales.
 - **Do** definir `--page-bg`/`--surface-bg`/`--surface-bg-alt` de cualquier material (nuevo o existente) como `oklch(from var(--accent) L C h)` con `L`/`C` fijos a mano — nunca un hex fijo, nunca `color-mix()` hacia una base. Ver La Regla del Fondo Teñido y La Regla del Color Construido, No Mezclado.
 
 ### Don't:

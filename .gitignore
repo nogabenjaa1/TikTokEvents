@@ -16,6 +16,16 @@ backend/data/
 .DS_Store
 *.log
 
+# Configuración/skills de herramientas de IA (Claude Code, Gemini, Codex,
+# etc.) — locales al entorno de cada uno, no son parte de la app.
+.agents/
+.claude/
+.codex/
+.gemini/
+agent/
+.impeccable/
+skills-lock.json
+
 # Large binary archive, not source
 backend/tiktokevents.rar
 

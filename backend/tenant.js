@@ -133,6 +133,11 @@ class Tenant {
         console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
         this.tiktokConnection = new WebcastPushConnection(username, { enableExtendedGiftInfo: true });
         this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
+        this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
+        this.tiktokConnection.on('error', ({ info, exception } = {}) => {
+            const message = exception?.message || info || 'Error interno del conector';
+            console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
+        });
         this.tiktokConnection.on('disconnected', () => {
             console.log(`[${this.licenseId}] [TIKTOK] 🔌 Desconectado de @${username}`);
             this.liveConnected = false;
@@ -148,11 +153,36 @@ class Tenant {
         }).catch(err => {
             console.error(`[${this.licenseId}] [TIKTOK] ❌ Error: ${err.message}`);
             this.connectingPromise = null;
+            this.liveConnected = false;
+            this.broadcast.emit('live_connection_error', {
+                code: err?.name || 'ConnectionError',
+                message: this.getTikTokConnectionErrorMessage(err),
+            });
             this.scheduleReconnect(username);
             throw err;
         });
 
         return this.connectingPromise;
+    }
+
+    getTikTokConnectionErrorMessage(error) {
+        const raw = String(error?.message || '').toLowerCase();
+        if (error?.name === 'UserOfflineError' || raw.includes("isn't online") || raw.includes('offline')) {
+            return 'TikTok indica que esta cuenta no está transmitiendo en vivo.';
+        }
+        if (raw.includes('rate limit') || raw.includes('too many') || raw.includes('429')) {
+            return 'Euler Stream alcanzó su límite de conexiones. Se volverá a intentar automáticamente.';
+        }
+        if (raw.includes('permission') || raw.includes('api key') || raw.includes('sign') || raw.includes('euler')) {
+            return 'No se pudo firmar la conexión con Euler Stream. Revisa su servicio o configura una API key.';
+        }
+        if (raw.includes('room id') || raw.includes('uniqueid') || raw.includes('unique id')) {
+            return 'No se pudo encontrar la sala LIVE. Revisa el username exacto de TikTok.';
+        }
+        if (raw.includes('timeout') || raw.includes('timed out') || raw.includes('network')) {
+            return 'TikTok o Euler Stream no respondieron a tiempo. Se volverá a intentar automáticamente.';
+        }
+        return error?.message ? String(error.message).slice(0, 180) : 'No se pudo conectar al LIVE. Se volverá a intentar.';
     }
 
     // ==========================================
@@ -173,6 +203,28 @@ class Tenant {
         this.processGiftKing(event);
         this.processGiftZub(event);
         this.processGiftElim(event);
+    }
+
+    // Reenviamos únicamente los datos necesarios para que el panel decida
+    // qué voces pueden entrar al TTS. La síntesis ocurre en el navegador del
+    // streamer; el backend nunca reproduce ni almacena los comentarios.
+    handleChatEvent(data) {
+        const comment = typeof data.comment === 'string' ? data.comment.trim() : '';
+        if (!comment) return;
+
+        const badges = Array.isArray(data.userBadges) ? data.userBadges : [];
+        const badgeText = badges.map((badge) => [badge.type, badge.name, badge.url].filter(Boolean).join(' ')).join(' ').toLowerCase();
+        const identity = data.userIdentity || {};
+
+        this.broadcast.emit('tts_chat_message', {
+            id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
+            username: data.nickname || data.uniqueId || 'Usuario',
+            comment: comment.slice(0, 300),
+            isModerator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
+            isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
+            isSubscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
+            fanLevel: Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0),
+        });
     }
 
     // ==========================================
@@ -479,7 +531,7 @@ class Tenant {
 
         // ── VERIFICACIÓN DE USUARIO LIVE (independiente de cualquier módulo) ──
         socket.on('set_desired_username', (uname) => {
-            this.desiredUsername = uname && uname.trim() ? uname.trim() : null;
+            this.desiredUsername = uname && uname.trim() ? uname.trim().replace(/^@+/, '') : null;
             if (this.desiredUsername) {
                 this.ensureTikTokConnection(this.desiredUsername).catch(() => {});
             } else {
@@ -490,7 +542,7 @@ class Tenant {
         // ── REY DEL TRONO ──────────────────────────
         socket.on('start_contest', (config) => {
             console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO REY DEL TRONO...`);
-            db.incrementUsage(this.licenseId, 'king_starts');
+            db.incrementUsage(this.licenseId, 'king_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(king_starts):`, err.message));
 
             this.contestState = {
                 ...this.contestState,
@@ -569,7 +621,7 @@ class Tenant {
         // ── ZUBASTINIS ──────────────────────────────
         socket.on('start_zubastinis', (config) => {
             console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO ZUBASTINIS...`);
-            db.incrementUsage(this.licenseId, 'zub_starts');
+            db.incrementUsage(this.licenseId, 'zub_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(zub_starts):`, err.message));
 
             this.zubState = {
                 isActive: true, mode: 'main', paused: false,
@@ -644,7 +696,7 @@ class Tenant {
         // ── ELIMINACIÓN ──────────────────────────────
         socket.on('start_elimination', (config) => {
             console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO ELIMINACIÓN...`);
-            db.incrementUsage(this.licenseId, 'elim_starts');
+            db.incrementUsage(this.licenseId, 'elim_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(elim_starts):`, err.message));
 
             if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
             this.elimState = {

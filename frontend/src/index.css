@@ -1,4 +1,15 @@
 @import "tailwindcss";
+/* Sora reemplaza el font-sans genérico de Tailwind (ui-sans-serif/system-ui):
+   una sola familia con pesos negros reales para la voz tipográfica dominante
+   del sistema (mayúsculas + tracking amplio + peso black), en vez de la
+   fuente por defecto de cada SO — sin esto "font-black" cae en un peso
+   sintético/borroso en muchos sistemas. Se sobreescribe la variable de tema
+   de Tailwind, así toda clase font-sans existente la hereda sin tocar cada
+   archivo. */
+@theme {
+  --font-sans: 'Sora', ui-sans-serif, system-ui, sans-serif;
+}
+
 /* ==========================================
    PERSONALIZACIÓN DE SCROLLBAR (ESTILO DARK)
    ========================================== */
@@ -13,15 +24,20 @@
 body {
   background-color: #05030A;
   color: white;
+  font-family: var(--font-sans);
   user-select: none;
 }
 
-/* Ocultar flechas de inputs numéricos */
+/* Ocultar flechas nativas de inputs numéricos (no se pueden themear: los
+   navegadores no exponen sus colores a CSS) — cuando un input numérico
+   necesita subir/bajar de a uno, se arma con botones propios en el
+   componente (ver el stepper de TTS Chat), no con esta flecha nativa. */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+input[type="number"] { -moz-appearance: textfield; }
 
 /* Range slider */
 input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
@@ -37,9 +53,25 @@ input[type=range]::-webkit-slider-thumb {
   transition: transform 0.1s;
 }
 input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+/* currentColor = la tinta legible de cada material (blanco en Default/Minimal,
+   --ink-kawaii/--ink-cute en Kawaii/Cute vía la herencia del bloque de
+   material) — así el track siempre contrasta contra su propio fondo sin
+   tener que condicionar el color por material a mano. var(--surface-border-color)
+   estaba pensado para bordes sutiles (1.2:1 de contraste en Default: invisible
+   como track), no para un control interactivo. */
 input[type=range]::-webkit-slider-runnable-track {
   width: 100%; height: 8px; cursor: pointer;
-  background: var(--surface-border-color, #2D1B4E); border-radius: 10px;
+  background: color-mix(in oklch, currentColor 30%, transparent); border-radius: 10px;
+}
+input[type=range]::-moz-range-track {
+  width: 100%; height: 8px; cursor: pointer;
+  background: color-mix(in oklch, currentColor 30%, transparent); border-radius: 10px;
+}
+input[type=range]::-moz-range-thumb {
+  height: 20px; width: 20px; border-radius: 50%; border: none;
+  background: var(--accent, #A855F7);
+  cursor: pointer;
+  box-shadow: 0 0 10px color-mix(in oklch,var(--accent, #A855F7) 50%, transparent);
 }
 
 /* ==========================================
@@ -129,6 +161,13 @@ input[type=range]::-webkit-slider-runnable-track {
      sobre un fondo que ahora también es pastel. */
   --accent-pastel: oklch(from var(--accent) 0.6 0.15 h);
   --ink-kawaii: #2E2136;
+  /* Fondo claro de punta a punta: cualquier texto que NO tenga una clase
+     Tailwind de color explícita (y por eso hereda el blanco global del
+     body, en vez de matchear una de las reglas .text-white/.text-gray-*
+     de abajo) necesita este fallback — si no, queda blanco sobre pastel
+     claro e ilegible (el bug real detrás de "cajas blancas" como el input
+     de nivel mínimo en TTS Chat). */
+  color: var(--ink-kawaii);
   font-weight: 600;
 }
 /* Pastel de verdad = fondo CLARO, así que el texto blanco/gris del resto
@@ -316,6 +355,9 @@ input[type=range]::-webkit-slider-runnable-track {
   --surface-shadow: 0 14px 32px -10px oklch(from var(--accent) 0.42 0.12 h / 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   --surface-blur: none;
   --ink-cute: #2A1B2E;
+  /* Ver el mismo comentario en el bloque Kawaii: fallback de color heredado
+     para texto sin clase Tailwind explícita. */
+  color: var(--ink-cute);
   font-weight: 500;
 }
 /* Pastel de verdad = fondo CLARO; mismo criterio que Kawaii: se
@@ -466,6 +508,24 @@ input[type=range]::-webkit-slider-runnable-track {
   border-radius: var(--surface-radius-sm);
 }
 .theme-btn-secondary:hover { background: color-mix(in oklch,var(--accent) 26%, var(--surface-bg)); }
+/* Botones de acción de estado (restart/stop en los juegos) — mismo criterio
+   que los badges de estado: color fijo (no sigue el acento), pero la base
+   SÍ tiene que ser var(--surface-bg-alt) para no quedar como una caja
+   oscura fija flotando sobre un material pastel claro (Kawaii/Cute). */
+.theme-btn-warning {
+  background: color-mix(in oklch, #F59E0B 14%, var(--surface-bg-alt));
+  border: 1px solid color-mix(in oklch, #F59E0B 45%, transparent);
+  color: #F59E0B;
+  border-radius: var(--surface-radius-sm);
+}
+.theme-btn-warning:hover { background: color-mix(in oklch, #F59E0B 26%, var(--surface-bg-alt)); }
+.theme-btn-danger {
+  background: color-mix(in oklch, #EF4444 14%, var(--surface-bg-alt));
+  border: 1px solid color-mix(in oklch, #EF4444 45%, transparent);
+  color: #EF4444;
+  border-radius: var(--surface-radius-sm);
+}
+.theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
 .theme-sidebar {
   background: var(--surface-bg);
   border-right: var(--surface-border);

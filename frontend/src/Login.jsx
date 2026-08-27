@@ -35,12 +35,12 @@ export default function Login({ onLoggedIn, notice = '' }) {
 
         {notice && <p className="text-amber-400 text-xs font-bold mb-4">⚠️ {notice}</p>}
 
-        <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">License Key</label>
+        <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
         <input
           autoFocus
           value={key}
           onChange={e => setKey(e.target.value)}
-          placeholder="pegá tu license key acá"
+          placeholder="Pega tu clave aquí"
           className="theme-input w-full p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm mb-4"
         />
 
@@ -54,7 +54,7 @@ export default function Login({ onLoggedIn, notice = '' }) {
           {loading ? 'VERIFICANDO...' : 'ENTRAR'}
         </button>
 
-        <p className="text-[10px] text-gray-600 mt-4 text-center">¿No tenés una license key? Pedísela al administrador.</p>
+        <p className="text-[10px] text-gray-600 mt-4 text-center">¿Sin clave? Pídesela al administrador.</p>
       </form>
     </div>
   );

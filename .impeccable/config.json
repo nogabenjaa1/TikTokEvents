@@ -155,6 +155,78 @@
         ],
         "createdAt": "2026-08-24T18:24:40.060Z",
         "reason": "fondo estatico del body (fallback antes de que .themed-app monte, y para cualquier area fuera del contenedor tematizado) — no es un token del sistema de acentos, es un valor fijo independiente por diseno, igual que los colores del scrollbar"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "text-gray-500",
+        "files": [
+          "frontend/src/TtsChat.jsx"
+        ],
+        "createdAt": "2026-08-24T19:50:24.880Z",
+        "reason": "Agent: badge de estado Apagado preexistente (gris apagado intencional, mismo criterio que otros badges offline/disabled del sistema) - no forma parte del cambio de TTS de esta sesion"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8px",
+        "files": [
+          "frontend/src/Zubastinis.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:09.065Z",
+        "reason": "Agent: mismo patron ya aceptado en App.jsx/Overlay.jsx - micro-labels preexistentes del juego (ej. bajo los sliders de tiempo), no forman parte del cambio de botones RESTART/STOP de esta sesion"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "9px",
+        "files": [
+          "frontend/src/Elimination.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:23.120Z",
+        "reason": "Agent: tamanos preexistentes (no tocados en el cambio de botones RESTART/STOP de esta sesion)"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8px",
+        "files": [
+          "frontend/src/Elimination.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:23.201Z",
+        "reason": "Agent: tamanos preexistentes (no tocados en el cambio de botones RESTART/STOP de esta sesion)"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "7px",
+        "files": [
+          "frontend/src/Elimination.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:23.285Z",
+        "reason": "Agent: tamanos preexistentes (no tocados en el cambio de botones RESTART/STOP de esta sesion)"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "6px",
+        "files": [
+          "frontend/src/Elimination.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:23.366Z",
+        "reason": "Agent: tamanos preexistentes (no tocados en el cambio de botones RESTART/STOP de esta sesion)"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8px",
+        "files": [
+          "frontend/src/AdminPanel.jsx"
+        ],
+        "createdAt": "2026-08-24T19:54:43.607Z",
+        "reason": "Agent: mismo patron ya aceptado en App.jsx/Overlay.jsx/Zubastinis.jsx - micro-labels preexistentes, no forman parte del cambio de botones RESTART/STOP de esta sesion"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "9px",
+        "files": [
+          "frontend/src/Colorsays.jsx"
+        ],
+        "createdAt": "2026-08-24T19:55:44.646Z",
+        "reason": "Agent: micro-texto preexistente del panel Safe Mode admin-only, no forma parte del cambio de colores de esta sesion"
       }
     ]
   }

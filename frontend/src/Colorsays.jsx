@@ -228,7 +228,7 @@ export default function ColorSays({ isAdmin = false }) {
 
   return (
     <div className="flex-1 min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-16 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎲 Color Says</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎲 Colores</p>
 
       <div className="flex gap-x-3 gap-y-1 justify-center flex-wrap max-w-sm">
         {COLORS.map((c, i) => (
@@ -293,7 +293,7 @@ export default function ColorSays({ isAdmin = false }) {
       {isAdmin && (
         <button
           onClick={() => setSafeModeHidden(h => !h)}
-          aria-label="Mostrar u ocultar Safe Mode"
+          aria-label="Mostrar u ocultar Modo Seguro"
           className="fixed right-0 top-1/2 -translate-y-1/2 w-1.5 h-14 rounded-l-full bg-white/5 hover:bg-white/25 transition-colors z-50"
         />
       )}
@@ -302,13 +302,13 @@ export default function ColorSays({ isAdmin = false }) {
           este panel ni tiene el sesgo de pares — siempre tiran limpio. */}
       {isAdmin && !safeModeHidden && (
         <div className="theme-surface fixed top-80 right-4 w-60 p-4">
-          <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Safe Mode</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
             {COLORS.map((c, i) => (
               <button key={i} onClick={() => setSafeModeColor(i)}
                 className={['flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all',
-                  safeModeColor === i ? `${c.bgClass} ${c.borderClass} border` : 'border border-transparent hover:bg-[#1A122E]'].join(' ')}>
+                  safeModeColor === i ? `${c.bgClass} ${c.borderClass} border` : 'border border-transparent hover:bg-[var(--surface-bg-alt)]'].join(' ')}>
                 <span>{c.emoji}</span>
                 <span className={`text-xs font-bold ${c.textClass}`}>{c.name}</span>
               </button>
@@ -319,19 +319,19 @@ export default function ColorSays({ isAdmin = false }) {
             <button onClick={() => safeModeColor !== null && setSafeAction(safeModeColor, 'ensure')}
               disabled={safeModeColor === null}
               className={['flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed',
-                safeModeColor !== null && safeModeAction === 'ensure' ? 'bg-green-600 text-white' : 'bg-[#130E24] border border-green-800/50 text-green-400 hover:bg-green-950/50'].join(' ')}>
+                safeModeColor !== null && safeModeAction === 'ensure' ? 'bg-green-600 text-white' : 'bg-[var(--surface-bg-alt)] border border-green-800/50 text-green-400 hover:bg-green-950/50'].join(' ')}>
               Asegurar
             </button>
             <button onClick={() => safeModeColor !== null && setSafeAction(safeModeColor, 'block')}
               disabled={safeModeColor === null}
               className={['flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed',
-                safeModeColor !== null && safeModeAction === 'block' ? 'bg-red-600 text-white' : 'bg-[#130E24] border border-red-800/50 text-red-400 hover:bg-red-950/50'].join(' ')}>
+                safeModeColor !== null && safeModeAction === 'block' ? 'bg-red-600 text-white' : 'bg-[var(--surface-bg-alt)] border border-red-800/50 text-red-400 hover:bg-red-950/50'].join(' ')}>
               Bloquear
             </button>
           </div>
 
           <p className="text-[9px] text-gray-500 mt-3 leading-snug">
-            {safeModeAction === 'none' && 'Elegí un color y una acción. Sin nada activo, tira con sesgo normal.'}
+            {safeModeAction === 'none' && 'Elige un color y una acción. Sin nada activo, tira con sesgo normal.'}
             {safeModeAction === 'ensure' && safeModeColor !== null && <>✅ Asegurando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: sale exactamente 1 vez.</>}
             {safeModeAction === 'block' && safeModeColor !== null && <>🔒 Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
           </p>

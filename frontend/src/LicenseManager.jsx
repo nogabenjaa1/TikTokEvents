@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
-const DURATION_LABELS = { day: '1 día', week: '1 semana', month: '1 mes', lifetime: 'Lifetime' };
+const DURATION_LABELS = { day: '1 día', week: '1 semana', month: '1 mes', lifetime: 'De por vida' };
 const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000; // 3 días
 
 function statusOf(license) {
   if (license.revoked) return { label: 'Revocada', className: 'text-red-400 bg-red-950/40 border-red-800/50' };
-  if (license.expiresAt !== null && license.expiresAt <= Date.now()) return { label: 'Expirada', className: 'text-gray-500 bg-[#130E24] border-[#2D1B4E]' };
+  if (license.expiresAt !== null && license.expiresAt <= Date.now()) return { label: 'Expirada', className: 'text-gray-500 bg-[var(--surface-bg-alt)] border-[var(--surface-border-color)]' };
   if (license.expiresAt !== null && license.expiresAt - Date.now() <= EXPIRING_SOON_MS) return { label: 'Por vencer', className: 'text-amber-400 bg-amber-950/40 border-amber-800/50' };
   return { label: 'Activa', className: 'text-green-400 bg-green-950/40 border-green-800/50' };
 }
@@ -113,7 +113,7 @@ export default function LicenseManager() {
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
         <div className="w-full max-w-lg bg-yellow-950/30 border-2 border-yellow-600/50 rounded-2xl p-5">
-          <p className="text-xs font-black uppercase tracking-widest text-yellow-400 mb-2">⚠️ Guardá esta key ahora — no se vuelve a mostrar</p>
+          <p className="text-xs font-black uppercase tracking-widest text-yellow-400 mb-2">⚠️ Guarda esta clave ahora — no se vuelve a mostrar</p>
           <p className="text-sm text-gray-300 mb-2">Licencia para <strong className="text-white">@{newKey.username}</strong>:</p>
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{newKey.key}</code>
@@ -131,7 +131,7 @@ export default function LicenseManager() {
         <div className="flex gap-2">
           <input
             value={username} onChange={e => setUsername(e.target.value)}
-            placeholder="username del TikToker"
+            placeholder="usuario de TikTok"
             className="theme-input flex-1 p-3 outline-none text-sm placeholder-gray-600"
           />
           <select
@@ -168,7 +168,7 @@ export default function LicenseManager() {
                 </span>
                 <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${status.className}`}>{status.label}</span>
               </div>
-              <p className="text-[11px] text-gray-500">key: {lic.keyPrefix}••••••••• · tipo: {DURATION_LABELS[lic.licenseType] || lic.licenseType}</p>
+              <p className="text-[11px] text-gray-500">clave: {lic.keyPrefix}••••••••• · tipo: {DURATION_LABELS[lic.licenseType] || lic.licenseType}</p>
               <p className="text-[11px] text-gray-500">creada: {fmtDate(lic.createdAt)} · expira: {lic.expiresAt ? fmtDate(lic.expiresAt) : 'Nunca'}</p>
               <p className="text-[11px] text-gray-600">último login: {fmtDate(lic.lastLoginAt)}</p>
               <p className="text-[11px] text-gray-600">

@@ -6,7 +6,7 @@ const DEFAULT_THEME = { style: 'default', accent: 'purple' };
 const MAX_RECENTS = 3;
 
 export const THEME_STYLES = [
-  { id: 'default', label: 'Default',      shortLabel: 'Default', hint: 'Glow nocturno' },
+  { id: 'default', label: 'Clásico',      shortLabel: 'Clásico', hint: 'Glow nocturno' },
   { id: 'kawaii',  label: 'Kawaii',        shortLabel: 'Kawaii',  hint: 'Pastel, esponjoso' },
   { id: 'minimal', label: 'Minimalista',   shortLabel: 'Minimal', hint: 'Plano, sin cajas' },
   { id: 'cute',    label: 'Cute',          shortLabel: 'Cute',    hint: 'Dulce y redondeado' },

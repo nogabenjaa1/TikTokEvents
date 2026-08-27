@@ -1,101 +1,122 @@
 // ==========================================
-// PERSISTENCIA DE LICENCIAS (SQLite / better-sqlite3)
-// Un solo archivo, API síncrona, sin infraestructura externa.
-// Este módulo solo sabe de guardar/leer filas: la generación de keys,
-// el hashing y los JWT viven en auth.js.
+// PERSISTENCIA DE LICENCIAS (Postgres / Supabase)
+// Pool de conexión + API async. Este módulo solo sabe de guardar/leer
+// filas: la generación de keys, el hashing y los JWT viven en auth.js.
+//
+// Antes esto era SQLite (better-sqlite3, un solo archivo local). Se migró
+// a Supabase para que los datos sobrevivan a redeploys/reinicios del
+// backend sin importar dónde corra (Railway, Render, Fly, un VPS, etc.) —
+// ver backend/migrate-to-supabase.js para pasar los datos de una DB SQLite
+// existente.
 // ==========================================
-const path = require('path');
-const fs = require('fs');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+    throw new Error('Falta DATABASE_URL en las variables de entorno (backend/.env) — connection string de Postgres de Supabase');
+}
 
-const db = new Database(path.join(DATA_DIR, 'licenses.db'));
-db.pragma('journal_mode = WAL');
+const pool = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+});
 
-db.exec(`
+// Se ejecuta una sola vez al cargar el módulo; toda función exportada espera
+// esta promesa antes de tocar la tabla, así no hace falta un init() aparte
+// que cada caller tenga que acordarse de llamar.
+// Cada función exportada espera esta promesa antes de tocar la tabla (ver
+// más abajo); el .catch() de acá abajo es solo para que un fallo al
+// arrancar (Supabase caído, DATABASE_URL mal) no tumbe el proceso entero
+// por un unhandled rejection — cada caller sigue viendo el error propio
+// cuando le toque hacer `await ready`.
+const ready = pool.query(`
   CREATE TABLE IF NOT EXISTS licenses (
     id TEXT PRIMARY KEY,
     key_hash TEXT UNIQUE NOT NULL,
     key_prefix TEXT NOT NULL,
     username TEXT NOT NULL,
     license_type TEXT NOT NULL,
-    is_admin INTEGER NOT NULL DEFAULT 0,
-    revoked INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER,
-    last_login_at INTEGER
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at BIGINT NOT NULL,
+    expires_at BIGINT,
+    last_login_at BIGINT,
+    mp_payment_id TEXT,
+    king_starts INTEGER NOT NULL DEFAULT 0,
+    zub_starts INTEGER NOT NULL DEFAULT 0,
+    elim_starts INTEGER NOT NULL DEFAULT 0,
+    last_active_at BIGINT,
+    session_id TEXT,
+    multi_device BOOLEAN NOT NULL DEFAULT FALSE
   )
-`);
+`).then(() => pool.query(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
+  ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
+`));
+ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-// Migraciones aditivas simples: agrega columnas nuevas solo si todavía no
-// existen, así una DB ya creada (como la de producción) no se rompe.
-const existingColumns = db.prepare(`PRAGMA table_info(licenses)`).all().map(c => c.name);
-for (const [name, ddlType] of [
-    ['mp_payment_id', 'TEXT'],
-    ['king_starts', 'INTEGER NOT NULL DEFAULT 0'],
-    ['zub_starts', 'INTEGER NOT NULL DEFAULT 0'],
-    ['elim_starts', 'INTEGER NOT NULL DEFAULT 0'],
-    ['last_active_at', 'INTEGER'],
-    ['session_id', 'TEXT'],
-    ['multi_device', 'INTEGER NOT NULL DEFAULT 0'],
-]) {
-    if (!existingColumns.includes(name)) db.exec(`ALTER TABLE licenses ADD COLUMN ${name} ${ddlType}`);
-}
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL`);
-
-function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null }) {
-    db.prepare(`
+async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null }) {
+    await ready;
+    await pool.query(`
         INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL, ?)
-    `).run(id, keyHash, keyPrefix, username, licenseType, isAdmin ? 1 : 0, createdAt, expiresAt, mpPaymentId);
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId]);
     return findById(id);
 }
 
-function findByKeyHash(keyHash) {
-    return db.prepare('SELECT * FROM licenses WHERE key_hash = ?').get(keyHash);
+async function findByKeyHash(keyHash) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM licenses WHERE key_hash = $1', [keyHash]);
+    return rows[0];
 }
 
-function findById(id) {
-    return db.prepare('SELECT * FROM licenses WHERE id = ?').get(id);
+async function findById(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM licenses WHERE id = $1', [id]);
+    return rows[0];
 }
 
-
-function listAll() {
-    return db.prepare('SELECT * FROM licenses ORDER BY created_at DESC').all();
+async function listAll() {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM licenses ORDER BY created_at DESC');
+    return rows;
 }
 
-function revoke(id) {
-    db.prepare('UPDATE licenses SET revoked = 1 WHERE id = ?').run(id);
+async function revoke(id) {
+    await ready;
+    await pool.query('UPDATE licenses SET revoked = TRUE WHERE id = $1', [id]);
     return findById(id);
 }
 
-function touchLastLogin(id) {
-    db.prepare('UPDATE licenses SET last_login_at = ? WHERE id = ?').run(Date.now(), id);
+async function touchLastLogin(id) {
+    await ready;
+    await pool.query('UPDATE licenses SET last_login_at = $1 WHERE id = $2', [Date.now(), id]);
 }
 
 // Un solo dispositivo activo por licencia: cada login pisa el session_id
 // anterior, así que el JWT de la sesión vieja deja de validar (ver
 // auth.resolveFromToken). Cambiar de dispositivo funciona siempre; usar
 // dos a la vez, no.
-function setSession(id, sessionId) {
-    db.prepare('UPDATE licenses SET session_id = ? WHERE id = ?').run(sessionId, id);
+async function setSession(id, sessionId) {
+    await ready;
+    await pool.query('UPDATE licenses SET session_id = $1 WHERE id = $2', [sessionId, id]);
 }
 
 // Licencias "todopoderosas" (pensada para el owner, no para vender): se
 // saltan por completo la restricción de un solo dispositivo — ver
 // auth.checkTokenStatus y el login en server.js.
-function setMultiDevice(id, enabled) {
-    db.prepare('UPDATE licenses SET multi_device = ? WHERE id = ?').run(enabled ? 1 : 0, id);
+async function setMultiDevice(id, enabled) {
+    await ready;
+    await pool.query('UPDATE licenses SET multi_device = $1 WHERE id = $2', [!!enabled, id]);
     return findById(id);
 }
 
 const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts'];
 
-function incrementUsage(id, field) {
+async function incrementUsage(id, field) {
     if (!USAGE_FIELDS.includes(field)) throw new Error('Campo de uso inválido: ' + field);
-    db.prepare(`UPDATE licenses SET ${field} = ${field} + 1, last_active_at = ? WHERE id = ?`).run(Date.now(), id);
+    await ready;
+    await pool.query(`UPDATE licenses SET ${field} = ${field} + 1, last_active_at = $1 WHERE id = $2`, [Date.now(), id]);
 }
 
 module.exports = {

@@ -4,8 +4,8 @@ import PrizeEditor from './PrizeEditor';
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 const MODE_LABEL = {
-  main:     'TIMER',
-  snipe:    'SNIPE!',
+  main:     'TIEMPO',
+  snipe:    'SNIPE',
   tiebreak: 'DESEMPATE',
 };
 
@@ -47,7 +47,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   }, [mainTime, snipeTime, tiebreakTime, minCoins, state.isActive]);
 
   const startZubastinis = () => {
-    if (connectionStatus !== 'connected') return alert('Esperá a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     socket.emit('start_zubastinis', { tiktokUsername: username, mainTime, snipeTime, tiebreakTime, minCoins });
   };
 
@@ -64,7 +64,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   const timerColorClass = state.paused
     ? 'text-gray-500'
     : state.mode === 'snipe' ? 'text-red-500'
-    : state.mode === 'tiebreak' ? 'text-orange-400'
+    : state.mode === 'tiebreak' ? 'text-amber-400'
     : 'text-white';
 
   const noWinnerMessage = state.mode === 'finished' && !state.winner
@@ -86,13 +86,13 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
         <div className="flex justify-between items-center relative z-10 mb-3">
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🏆 ZUBASTINIS</p>
           <span className="theme-input text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md text-gray-300">
-            MÍNIMO: {minCoins > 0 ? `${minCoins} 🪙` : 'NO MINIMUM'}
+            MÍNIMO: {minCoins > 0 ? `${minCoins} 🪙` : 'SIN MÍNIMO'}
           </span>
         </div>
 
         <div className="flex justify-between items-center relative z-10 mb-3">
           {state.mode === 'tiebreak' && (
-            <span className="text-[10px] font-black uppercase tracking-widest text-orange-400 animate-pulse">🤝 EMPATE</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 animate-pulse">🤝 EMPATE</span>
           )}
           <div className="text-right ml-auto">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerLabel}</p>
@@ -128,7 +128,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
       <div className="theme-surface w-full max-w-md p-8 relative">
         <div className="flex items-center gap-3 mb-8">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">SETTINGS</h1>
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
         <div className="space-y-5">
@@ -138,7 +138,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  BASE TIME {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(LIVE)</span>}
+                  TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
                 <span className="theme-chip font-bold px-2 rounded text-xs">{mainTime}s</span>
               </div>
@@ -149,7 +149,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  SNIPE TIME {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(LIVE)</span>}
+                  TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
                 <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{snipeTime}s</span>
               </div>
@@ -159,10 +159,10 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {/* Tiebreak Time */}
             <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-orange-400 font-semibold">
-                  TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(LIVE)</span>}
+                <label className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold">
+                  TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
-                <span className="text-orange-200 font-bold bg-orange-900/50 px-2 rounded text-xs">{tiebreakTime}s</span>
+                <span className="text-amber-200 font-bold bg-amber-900/50 px-2 rounded text-xs">{tiebreakTime}s</span>
               </div>
               <input type="range" min="5" max="120" step="5" value={tiebreakTime} onChange={e => setTiebreakTime(Number(e.target.value))} />
             </div>
@@ -171,13 +171,13 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             <div className="mb-6">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">
-                  MÍNIMO PARA GANAR {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(LIVE)</span>}
+                  MÍNIMO PARA GANAR {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
               </div>
               <input
                 type="number" min="0" step="50" value={minCoins || ''}
                 onChange={e => setMinCoins(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
-                placeholder="NO MINIMUM"
+                placeholder="SIN MÍNIMO"
                 className="theme-input w-full p-3 outline-none text-sm placeholder-gray-600"
               />
               <p className="text-[10px] text-gray-600 mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
@@ -191,7 +191,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                   disabled={connectionStatus !== 'connected'}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'START'}
+                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
               ) : (
                 <>
@@ -204,15 +204,15 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                   </button>
                   <button
                     onClick={restartZubastinis}
-                    className="flex-1 bg-[#1A122E] border border-yellow-700/50 hover:bg-yellow-900/30 text-yellow-400 py-4 rounded-xl font-bold tracking-wide transition-all"
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
                   >
-                    RESTART ⟲
+                    REINICIAR ⟲
                   </button>
                 </>
               )}
               <button
                 onClick={stopZubastinis}
-                className="px-6 bg-[#1A122E] border border-red-900/50 hover:bg-red-900/30 text-red-400 py-4 rounded-xl font-bold transition-all"
+                className="theme-btn-danger px-6 py-4 font-bold transition-all"
               >
                 ⏹
               </button>

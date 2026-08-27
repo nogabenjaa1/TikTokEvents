@@ -3,7 +3,7 @@ import PrizeEditor from './PrizeEditor';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
-  name: 'None',
+  name: 'Ninguno',
   coins: 0,
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
@@ -31,7 +31,7 @@ function ParticipantBlock({ p, size }) {
 const MODE_LABEL = {
   joining:   'TIEMPO PARA UNIRSE',
   revealing: 'SORTEANDO...',
-  rejoin:    'TIEMPO DE RE-JOIN',
+  rejoin:    'TIEMPO DE REINGRESO',
 };
 
 // ─────────────────────────────────────────────
@@ -86,7 +86,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
   }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, state.isActive]);
 
   const startElimination = () => {
-    if (connectionStatus !== 'connected') return alert('Esperá a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     if (!selectedGift) return alert('¡Elige el regalo para unirse!');
     socket.emit('start_elimination', {
       tiktokUsername: username,
@@ -118,7 +118,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [participants]);
 
-  const timerTitle = state.paused ? 'PAUSADO' : state.mode === 'finished' ? 'FINALIZADO' : (MODE_LABEL[state.mode] || 'TIMER');
+  const timerTitle = state.paused ? 'PAUSADO' : state.mode === 'finished' ? 'FINALIZADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
@@ -182,7 +182,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
       <div className="theme-surface w-full max-w-md p-8 relative">
         <div className="flex items-center gap-3 mb-8">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">SETTINGS</h1>
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
         <div className="space-y-5">
@@ -206,7 +206,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                     </span>
                   </div>
                 ) : (
-                  <span className="text-gray-500 text-sm">Waiting...</span>
+                  <span className="text-gray-500 text-sm">Esperando...</span>
                 )}
               </div>
               {isDropOpen && (
@@ -246,11 +246,11 @@ export default function Elimination({ state, socket, username, connectionStatus,
                     )}
                   </div>
                 ) : (
-                  <span className="text-gray-500 text-sm">Waiting...</span>
+                  <span className="text-gray-500 text-sm">Esperando...</span>
                 )}
               </div>
               {isInstaDropOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-[#130E24] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
+                <div className="absolute top-full left-0 w-full mt-1 bg-[var(--surface-bg-alt)] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
                   {giftsList.map((gift, i) => (
                     <div
                       key={`ei-${gift.id || 'none'}-${i}`}
@@ -274,7 +274,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO PARA UNIRSE {state.isActive && <span className="text-cyan-400 ml-1 text-[8px]" title="No corta la ventana de unirse actual: se aplica en la próxima ronda">(próx. ronda)</span>}
+                  TIEMPO PARA UNIRSE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de unirse actual: se aplica en la próxima ronda">(próx. ronda)</span>}
                 </label>
                 <span className="theme-chip font-bold px-2 rounded text-xs">{baseTime}s</span>
               </div>
@@ -285,7 +285,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <div className="mb-6">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE RE-JOIN {state.isActive && <span className="text-cyan-400 ml-1 text-[8px]" title="No corta la ventana de rejoin actual: se aplica en la próxima eliminación">(próx. ronda)</span>}
+                  TIEMPO DE REINGRESO {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de reingreso actual: se aplica en la próxima eliminación">(próx. ronda)</span>}
                 </label>
                 <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{rejoinTime}s</span>
               </div>
@@ -300,7 +300,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   disabled={connectionStatus !== 'connected'}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'START'}
+                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
               ) : (
                 <>
@@ -313,15 +313,15 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   </button>
                   <button
                     onClick={restartElimination}
-                    className="flex-1 bg-[#1A122E] border border-yellow-700/50 hover:bg-yellow-900/30 text-yellow-400 py-4 rounded-xl font-bold tracking-wide transition-all"
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
                   >
-                    RESTART ⟲
+                    REINICIAR ⟲
                   </button>
                 </>
               )}
               <button
                 onClick={stopElimination}
-                className="px-6 bg-[#1A122E] border border-red-900/50 hover:bg-red-900/30 text-red-400 py-4 rounded-xl font-bold transition-all"
+                className="theme-btn-danger px-6 py-4 font-bold transition-all"
               >
                 ⏹
               </button>

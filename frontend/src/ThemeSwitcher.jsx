@@ -49,8 +49,8 @@ export default function ThemeSwitcher() {
       {/* ── Encabezado ── */}
       <div>
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🎨 TEMA</p>
-        <h2 className="theme-heading text-2xl font-black tracking-wide">Elegí el skin de tu cabina</h2>
-        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. Pasá el mouse sobre un skin para probarlo antes de confirmarlo.</p>
+        <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
+        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. Pasa el mouse sobre un skin para probarlo antes de confirmarlo.</p>
       </div>
 
       {/* ── 1. Vista previa en vivo — domina la pantalla, no un preview chico al final ── */}
@@ -69,7 +69,7 @@ export default function ThemeSwitcher() {
               <div className="theme-accent-bg w-3 h-8 rounded-full" />
               <h1 className="theme-heading text-lg font-semibold tracking-wide">Rey del Trono</h1>
             </div>
-            <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Username de TikTok</label>
+            <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Usuario de TikTok</label>
             <input readOnly value="streamer_oficial" className="theme-input w-full p-3 outline-none text-sm font-bold text-white mb-4" />
             <button className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs shadow-lg">
               Empezar
@@ -152,16 +152,16 @@ export default function ThemeSwitcher() {
       </div>
 
       {/* ── 4. Confirmación no bloqueante ── */}
-      <div className="flex items-start gap-3 bg-[#0D081A] border border-[#2D1B4E] rounded-xl px-4 py-3">
+      <div className="flex items-start gap-3 bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] rounded-xl px-4 py-3">
         <span className="text-sm flex-shrink-0">ℹ️</span>
         <p className="text-[11px] text-gray-500 leading-snug">
-          No hace falta guardar — cada clic aplica el skin al instante, acá y también en el overlay de OBS que ve tu audiencia, así el tema que elijas te representa de verdad.
+          No hace falta guardar — cada clic aplica el skin al instante, aquí y también en el overlay de OBS que ve tu audiencia, así el tema que elijas te representa de verdad.
         </p>
       </div>
 
       {/* ── Toast de confirmación — no bloqueante, se cierra solo ── */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-[#130E24] border border-[#2D1B4E] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
+        <div className="fixed bottom-6 right-6 z-[100] bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
           {toast.kawaii ? (
             <>🎀 ¡"{toast.name}" aplicado! Te quedó tiernísimo</>
           ) : (

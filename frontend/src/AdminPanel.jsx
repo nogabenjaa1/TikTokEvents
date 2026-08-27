@@ -3,7 +3,7 @@ import PrizeEditor from './PrizeEditor';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
-  name: 'None',
+  name: 'Ninguno',
   coins: 0,
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
@@ -65,7 +65,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   }, [selectedGift, selectedInstaWin, mainTime, snipeTime, state.isActive]);
 
   const startContest = () => {
-    if (connectionStatus !== 'connected') return alert('Esperá a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     socket.emit('start_contest', {
       tiktokUsername:    username,
       targetGiftName:    selectedGift.name,
@@ -87,7 +87,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
 
-  const timerLabel = state.paused ? 'PAUSADO' : (state.mode === 'waiting' ? 'WAITING' : 'TIMER');
+  const timerLabel = state.paused ? 'PAUSADO' : (state.mode === 'waiting' ? 'ESPERANDO' : 'TIEMPO');
   const timerColorClass = state.paused
     ? 'text-gray-500'
     : state.mode === 'snipe' ? 'text-red-500'
@@ -104,7 +104,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
         )}
         <div className="flex justify-between items-center relative z-10">
           <div>
-            <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">KING</p>
+            <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">REY DEL TRONO</p>
             {state.lastParticipant ? (
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -122,7 +122,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                 </div>
               </div>
             ) : (
-              <p className="text-gray-600 text-sm italic font-medium">Nobody...</p>
+              <p className="text-gray-600 text-sm italic font-medium">Nadie todavía...</p>
             )}
           </div>
           <div className="text-right">
@@ -140,7 +140,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
       <div className="theme-surface w-full max-w-md p-8 relative">
         <div className="flex items-center gap-3 mb-8">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">SETTINGS</h1>
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
         <div className="space-y-5">
@@ -148,7 +148,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector regalo normal */}
             <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">⚔️ TARGET GIFT</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">⚔️ REGALO OBJETIVO</label>
               <div
                 onClick={() => { setIsNormalDropOpen(!isNormalDropOpen); setIsInstaDropOpen(false); }}
                 className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
@@ -164,7 +164,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                     </span>
                   </div>
                 ) : (
-                  <span className="text-gray-500 text-sm">Waiting...</span>
+                  <span className="text-gray-500 text-sm">Esperando...</span>
                 )}
               </div>
               {isNormalDropOpen && (
@@ -204,11 +204,11 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                     )}
                   </div>
                 ) : (
-                  <span className="text-gray-500 text-sm">Waiting...</span>
+                  <span className="text-gray-500 text-sm">Esperando...</span>
                 )}
               </div>
               {isInstaDropOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-[#130E24] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
+                <div className="absolute top-full left-0 w-full mt-1 bg-[var(--surface-bg-alt)] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
                   {giftsList.map((gift, i) => (
                     <div
                       key={`i-${gift.id || 'none'}-${i}`}
@@ -232,7 +232,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  BASE TIME {state.isActive && <span className="text-cyan-400 ml-1 text-[8px]" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
+                  TIEMPO BASE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
                 </label>
                 <span className="theme-chip font-bold px-2 rounded text-xs">{mainTime}s</span>
               </div>
@@ -243,7 +243,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             <div className="mb-6">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  SNIPE TIME {state.isActive && <span className="text-cyan-400 ml-1 text-[8px]" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
+                  TIEMPO DE SNIPE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
                 </label>
                 <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{snipeTime}s</span>
               </div>
@@ -258,7 +258,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   disabled={connectionStatus !== 'connected'}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'START'}
+                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
               ) : (
                 <>
@@ -271,15 +271,15 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   </button>
                   <button
                     onClick={restartContest}
-                    className="flex-1 bg-[#1A122E] border border-yellow-700/50 hover:bg-yellow-900/30 text-yellow-400 py-4 rounded-xl font-bold tracking-wide transition-all"
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
                   >
-                    RESTART ⟲
+                    REINICIAR ⟲
                   </button>
                 </>
               )}
               <button
                 onClick={stopContest}
-                className="px-6 bg-[#1A122E] border border-red-900/50 hover:bg-red-900/30 text-red-400 py-4 rounded-xl font-bold transition-all"
+                className="theme-btn-danger px-6 py-4 font-bold transition-all"
               >
                 ⏹
               </button>

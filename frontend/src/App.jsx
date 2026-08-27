@@ -8,6 +8,7 @@ import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
 import ThemeSwitcher from './ThemeSwitcher';
+import TtsChat from './TtsChat';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 
@@ -15,7 +16,8 @@ const MODES = [
   { id: 'king',  label: 'Rey del\nTrono',  icon: '👑' },
   { id: 'zub',   label: 'Zubast\ninis',    icon: '🏆' },
   { id: 'elim',  label: 'Elimina\nción',   icon: '💀' },
-  { id: 'color', label: 'Color\nSays',     icon: '🎲' },
+  { id: 'color', label: 'Colores',         icon: '🎲' },
+  { id: 'tts',   label: 'TTS\nChat',       icon: '🔊' },
 ];
 
 // Modos que tienen representación en el overlay de OBS (Color Says no la
@@ -24,7 +26,7 @@ const OVERLAY_APPS = ['king', 'zub', 'elim'];
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
-  name: 'None',
+  name: 'Ninguno',
   coins: 0,
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
@@ -66,6 +68,7 @@ export default function App() {
   //   connected           -> conexión live confirmada (único estado que habilita "START").
   const [username, setUsername]                 = useState('');
   const [connectionStatus, setConnectionStatus]  = useState('idle');
+  const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
 
   const usernameRef = useRef(username);
@@ -114,7 +117,7 @@ export default function App() {
     // autenticado con la key cruda, nunca recibe este evento).
     socket.on('session_replaced', () => {
       clearSession();
-      setKickedOutMessage('Cerraste sesión acá porque la licencia se usó desde otro dispositivo.');
+      setKickedOutMessage('Cerraste la sesión aquí porque la licencia se usó desde otro dispositivo.');
       setSession(null);
     });
 
@@ -122,13 +125,17 @@ export default function App() {
     // (cada 3s) mientras haya un username deseado, así que si se cae la
     // conexión mientras seguimos con el mismo username escrito, volvemos a
     // "connecting" en vez de "error" (el backend ya está reintentando).
-    const onLiveConnected = () => setConnectionStatus('connected');
+    const onLiveConnected = () => { setConnectionError(''); setConnectionStatus('connected'); };
     const onLiveDisconnected = () => {
       if (usernameRef.current.trim()) setConnectionStatus('connecting');
     };
     socket.on('live_status', ({ connected }) => { if (connected) setConnectionStatus('connected'); });
     socket.on('live_connected', onLiveConnected);
     socket.on('live_disconnected', onLiveDisconnected);
+    socket.on('live_connection_error', ({ message } = {}) => {
+      setConnectionError(message || 'No se pudo conectar al LIVE.');
+      setConnectionStatus('error');
+    });
 
     return () => socket.off();
   }, [socket]);
@@ -141,15 +148,16 @@ export default function App() {
     socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
   }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
 
-  // Verificar el usuario de TikTok una sola vez para todos los módulos.
-  // Apenas se encuentra (existe y tiene regalos), se pasa a "connecting" y
-  // se le pide al backend que intente la conexión live de inmediato,
-  // reintentando cada 3s hasta lograrla (sin esperar a que se presione START).
+  // Conectar al LIVE y cargar regalos son operaciones independientes. La
+  // lista de regalos puede fallar o venir vacía aunque el usuario sí esté en
+  // vivo, por lo que nunca debe bloquear la conexión (TTS tampoco la necesita).
   useEffect(() => {
     if (!socket || overlayMode) return;
 
-    if (!username.trim()) {
+    const normalizedUsername = username.trim().replace(/^@+/, '');
+    if (!normalizedUsername) {
       setConnectionStatus('idle');
+      setConnectionError('');
       setGiftsList([]);
       socket.emit('set_desired_username', null);
       return;
@@ -157,18 +165,24 @@ export default function App() {
     setConnectionStatus('checking');
 
     const timeoutId = setTimeout(async () => {
+      // Socket.io guarda el emit incluso si todavía está terminando su propio
+      // handshake. El tenant se encarga de reintentar cada 3 segundos.
+      setConnectionStatus('connecting');
+      setConnectionError('');
+      socket.emit('set_desired_username', normalizedUsername);
+
       try {
-        const res  = await fetch(`${backendUrl()}/api/setup/${username.trim()}`, { headers: authHeaders() });
+        const res  = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
         const data = await res.json();
-        if (data.success && data.gifts.length > 0) {
+        if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) {
           setGiftsList([NO_INSTA_WIN, ...data.gifts]);
-          setConnectionStatus('connecting');
-          socket.emit('set_desired_username', username.trim());
         } else {
-          setConnectionStatus('error');
+          setGiftsList([]);
         }
       } catch {
-        setConnectionStatus('error');
+        // Los juegos no tendrán selector de regalos hasta que se vuelva a
+        // escribir el usuario, pero la conexión LIVE y el TTS siguen activos.
+        setGiftsList([]);
       }
     }, 2000);
 
@@ -180,7 +194,7 @@ export default function App() {
     if (!socket) {
       return (
         <div className="min-h-screen bg-[#05030A] text-red-400 flex items-center justify-center font-sans text-sm">
-          Falta la license key en la URL del overlay (?overlay=true&amp;key=...)
+          Falta la clave de licencia en la URL del overlay (?overlay=true&amp;key=...)
         </div>
       );
     }
@@ -220,13 +234,14 @@ export default function App() {
     <ThemedShell className="flex flex-col">
       {showExpiryWarning && (
         <div className="w-full bg-amber-950/80 border-b border-amber-700/50 text-amber-300 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
-          ⚠️ Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contactá al admin para renovarla.
+          ⚠️ Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
         </div>
       )}
     <div className="flex flex-1 min-h-0">
       <TikTokLoginBar
         username={username} setUsername={setUsername}
         connectionStatus={connectionStatus}
+        connectionError={connectionError}
         disabled={usernameLocked}
       />
 
@@ -317,6 +332,9 @@ export default function App() {
             isAdmin gatea el sesgo de pares y el Safe Mode: solo notbenjaa1 los ve,
             el resto de licencias de pago siempre tira con probabilidades limpias. */}
         {sidebarMode === 'color' && <ColorSays isAdmin={session.isAdmin} />}
+        {/* Permanece montado al cambiar de módulo para que la lectura activa no
+            se interrumpa mientras el streamer controla uno de los juegos. */}
+        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'tts'} />
         {sidebarMode === 'theme' && <ThemeSwitcher />}
         {sidebarMode === 'licenses' && session.isAdmin && <LicenseManager />}
       </main>

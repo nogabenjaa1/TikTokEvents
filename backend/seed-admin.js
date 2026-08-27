@@ -10,8 +10,9 @@ const auth = require('./auth');
 
 const ADMIN_USERNAME = 'notbenjaa1';
 
-function main() {
-    const existing = db.listAll().find(row => row.username === ADMIN_USERNAME && row.is_admin);
+async function main() {
+    const rows = await db.listAll();
+    const existing = rows.find(row => row.username === ADMIN_USERNAME && row.is_admin);
     if (existing) {
         console.log(`Ya existe una licencia admin para "${ADMIN_USERNAME}" (id: ${existing.id}).`);
         console.log('La key no se puede volver a mostrar (solo se ve una vez al crearla).');
@@ -20,7 +21,7 @@ function main() {
     }
 
     const key = auth.generateLicenseKey();
-    const row = db.insertLicense({
+    const row = await db.insertLicense({
         id: crypto.randomUUID(),
         keyHash: auth.hashKey(key),
         keyPrefix: auth.keyPrefix(key),
@@ -40,4 +41,6 @@ function main() {
     console.log('');
 }
 
-main();
+main()
+    .catch(err => { console.error('Error al seedear el admin:', err); process.exitCode = 1; })
+    .finally(() => process.exit(process.exitCode || 0));

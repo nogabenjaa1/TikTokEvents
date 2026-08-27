@@ -77,7 +77,7 @@ export default function PrizeEditor({ socket, app, prize }) {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
-          title="Arrastrá una imagen acá o hacé clic para elegirla (opcional)"
+          title="Arrastra una imagen aquí o haz clic para elegirla (opcional)"
           className={[
             'w-[50px] h-[50px] rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer flex-shrink-0 overflow-hidden transition-colors',
             dragOver ? 'border-emerald-400 bg-emerald-900/30' : 'border-gray-600 hover:border-emerald-500',

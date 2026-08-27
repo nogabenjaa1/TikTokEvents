@@ -30,13 +30,18 @@ export function getOverlayKeyFromUrl() {
   return new URLSearchParams(window.location.search).get('key');
 }
 
-// En dev, Vite (5173) y el backend (3001) corren en puertos separados. En
-// producción el backend sirve el build del frontend + la API + los sockets
-// desde el mismo origen (ver server.js), así que usamos ese mismo origen:
-// evita hardcodear el puerto 3001 y respeta HTTPS automáticamente (si se
-// devolviera "http://..." fijo, el navegador bloquearía el fetch por
-// contenido mixto en un sitio servido por HTTPS).
+// Si el frontend y el backend viven en orígenes distintos (p. ej. frontend
+// en Vercel y backend en Railway/Render/Fly), VITE_BACKEND_URL apunta al
+// backend explícitamente. Sin esa variable, se asume el modo "todo junto"
+// de siempre: en dev, Vite (5173) y el backend (3001) corren en puertos
+// separados; en producción el backend sirve el build del frontend + la API
+// + los sockets desde el mismo origen (ver server.js), así que usamos ese
+// mismo origen — evita hardcodear el puerto 3001 y respeta HTTPS
+// automáticamente (si se devolviera "http://..." fijo, el navegador
+// bloquearía el fetch por contenido mixto en un sitio servido por HTTPS).
 export function backendUrl() {
+  const configured = import.meta.env.VITE_BACKEND_URL;
+  if (configured) return configured.replace(/\/+$/, '');
   if (import.meta.env.DEV) {
     return `http://${window.location.hostname}:3001`;
   }

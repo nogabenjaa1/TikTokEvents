@@ -70,9 +70,9 @@ function verifySession(token) {
 // permite distinguir "te desconectaron de otro lado" de "licencia inválida"
 // en el mensaje que ve el usuario. Deja pasar las excepciones de jwt.verify
 // (token roto/vencido) tal como antes — los callers ya las atrapan.
-function checkTokenStatus(token) {
+async function checkTokenStatus(token) {
     const decoded = verifySession(token);
-    const row = db.findById(decoded.sub);
+    const row = await db.findById(decoded.sub);
     if (!isLicenseValid(row)) return { row: null, sessionId: null, reason: 'invalid' };
     // Comparación directa (no un "if row.session_id existe"): así un logout
     // explícito (que deja session_id en null) también mata cualquier token
@@ -84,24 +84,24 @@ function checkTokenStatus(token) {
     return { row, sessionId: decoded.sid, reason: null };
 }
 
-function resolveFromToken(token) {
-    return checkTokenStatus(token).row;
+async function resolveFromToken(token) {
+    return (await checkTokenStatus(token)).row;
 }
 
-function resolveFromRawKey(key) {
-    const row = db.findByKeyHash(hashKey(key));
+async function resolveFromRawKey(key) {
+    const row = await db.findByKeyHash(hashKey(key));
     if (!isLicenseValid(row)) return null;
     return row;
 }
 
 // ── Middleware HTTP (Express) ──────────────────────────────
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ success: false, error: 'No autenticado' });
 
     try {
-        const { row, reason } = checkTokenStatus(token);
+        const { row, reason } = await checkTokenStatus(token);
         if (!row) {
             // "session_replaced" cubre tanto un logout propio como que la
             // licencia se usó desde otro dispositivo — no sabemos cuál sin
@@ -133,18 +133,18 @@ function requireAdmin(req, res, next) {
 //                       queda a propósito EXENTO de la restricción de
 //                       dispositivo único: corre en paralelo al panel de
 //                       control por diseño, no es "otro dispositivo humano".
-function socketAuthMiddleware(socket, next) {
+async function socketAuthMiddleware(socket, next) {
     const { token, licenseKey } = socket.handshake.auth || {};
 
     try {
         let row = null;
         if (token) {
-            const status = checkTokenStatus(token);
+            const status = await checkTokenStatus(token);
             row = status.row;
             socket.sessionId = status.sessionId;
             socket.authMethod = 'jwt';
         } else if (licenseKey) {
-            row = resolveFromRawKey(licenseKey);
+            row = await resolveFromRawKey(licenseKey);
             socket.authMethod = 'key';
         }
 

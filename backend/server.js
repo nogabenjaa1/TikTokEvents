@@ -13,7 +13,14 @@ const db = require('./db');
 const auth = require('./auth');
 const Tenant = require('./tenant');
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+// Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
+// un dominio propio). Con un solo valor, cors/socket.io lo tratan igual
+// que antes (string simple); con varios, se pasa el array.
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'lifetime'];
 
@@ -67,17 +74,17 @@ async function kickOtherDevices(licenseId, newSessionId) {
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const { key } = req.body || {};
     if (!key || typeof key !== 'string') {
-        return res.status(400).json({ success: false, error: 'Falta la license key' });
+        return res.status(400).json({ success: false, error: 'Falta la clave de licencia' });
     }
 
-    const row = auth.resolveFromRawKey(key.trim());
+    const row = await auth.resolveFromRawKey(key.trim());
     if (!row) {
         return res.status(401).json({ success: false, error: 'Licencia inválida, revocada o expirada' });
     }
 
     const sessionId = auth.generateSessionId();
-    db.setSession(row.id, sessionId);
-    db.touchLastLogin(row.id);
+    await db.setSession(row.id, sessionId);
+    await db.touchLastLogin(row.id);
     // Las licencias "todopoderosas" (multi_device) nunca expulsan otros
     // dispositivos — están pensadas para el owner, que puede tener el panel
     // abierto en varias PCs a la vez sin cortarse entre sí.
@@ -98,8 +105,8 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
 // Logout explícito: mata la sesión server-side de inmediato (no hace falta
 // esperar a que otro dispositivo se loguee para invalidar este token).
-app.post('/api/auth/logout', auth.requireAuth, (req, res) => {
-    db.setSession(req.license.id, null);
+app.post('/api/auth/logout', auth.requireAuth, async (req, res) => {
+    await db.setSession(req.license.id, null);
     res.json({ success: true });
 });
 
@@ -125,8 +132,9 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, (req, res) => {
 // ==========================================
 // ADMINISTRACIÓN DE LICENCIAS (solo notbenjaa1 / cualquier licencia isAdmin)
 // ==========================================
-app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, (req, res) => {
-    const licenses = db.listAll().map(row => ({
+app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const rows = await db.listAll();
+    const licenses = rows.map(row => ({
         id: row.id,
         keyPrefix: row.key_prefix,
         username: row.username,
@@ -145,18 +153,18 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, (req
     res.json({ success: true, licenses });
 });
 
-app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, (req, res) => {
+app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const { username, licenseType } = req.body || {};
 
     if (!username || typeof username !== 'string' || !username.trim()) {
-        return res.status(400).json({ success: false, error: 'Falta el username' });
+        return res.status(400).json({ success: false, error: 'Falta el usuario' });
     }
     if (!VALID_LICENSE_TYPES.includes(licenseType)) {
         return res.status(400).json({ success: false, error: 'Tipo de licencia inválido' });
     }
 
     const key = auth.generateLicenseKey();
-    const row = db.insertLicense({
+    const row = await db.insertLicense({
         id: crypto.randomUUID(),
         keyHash: auth.hashKey(key),
         keyPrefix: auth.keyPrefix(key),
@@ -178,21 +186,21 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, (re
     });
 });
 
-app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminLimiter, (req, res) => {
-    const row = db.findById(req.params.id);
+app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
-    db.revoke(row.id);
+    await db.revoke(row.id);
     res.json({ success: true });
 });
 
 // Licencias "todopoderosas": se saltan la restricción de un solo
 // dispositivo por completo. Pensado para el owner, no para vender —
 // úsalo con cuidado, cualquiera con esa key puede usarla desde donde quiera.
-app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, adminLimiter, (req, res) => {
-    const row = db.findById(req.params.id);
+app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
-    db.setMultiDevice(row.id, !!enabled);
+    await db.setMultiDevice(row.id, !!enabled);
     res.json({ success: true });
 });
 

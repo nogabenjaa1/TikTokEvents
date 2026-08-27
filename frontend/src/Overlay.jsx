@@ -92,10 +92,10 @@ function OfflineCard() {
       <div className="w-32 h-32 rounded-full border-4 border-dashed flex items-center justify-center mb-8 animate-pulse" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}>
         <span className="text-5xl opacity-40">💤</span>
       </div>
-      <h2 className="text-2xl font-black text-gray-500 tracking-widest uppercase mb-3 text-center">OFFLINE</h2>
+      <h2 className="text-2xl font-black text-gray-500 tracking-widest uppercase mb-3 text-center">Sin conexión</h2>
       <div className="flex items-center gap-2">
         <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
-        <p className="text-[10px] text-gray-600 font-bold text-center uppercase tracking-[0.3em]">Esperando al Admin...</p>
+        <p className="text-[10px] text-gray-600 font-bold text-center uppercase tracking-[0.3em]">Esperando al streamer...</p>
       </div>
     </div>
   );
@@ -132,7 +132,7 @@ function KingOverlay({ state, prize }) {
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">STEAL SPOT WITH:</p>
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">ROBA EL LUGAR CON:</p>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
@@ -146,7 +146,7 @@ function KingOverlay({ state, prize }) {
             <div className="flex items-center gap-2">
               <img src={state.instaWinGiftIcon} className="w-6 h-6" />
               <div className="text-left leading-tight">
-                <span className="block text-[8px] uppercase tracking-widest text-yellow-500 font-bold">OR INSTA-WIN:</span>
+                <span className="block text-[8px] uppercase tracking-widest text-yellow-500 font-bold">O INSTA-WIN:</span>
                 <span className="text-sm font-bold text-yellow-100">{state.instaWinGiftName}</span>
               </div>
             </div>
@@ -175,7 +175,7 @@ function KingOverlay({ state, prize }) {
           <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse py-4">WINNER!</div>
         ) : (
           <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
-            <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">{state.paused ? 'PAUSADO' : state.mode === 'waiting' ? 'WAITING...' : 'TIME LEFT'}</p>
+            <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">{state.paused ? 'PAUSADO' : state.mode === 'waiting' ? 'ESPERANDO...' : 'TIEMPO RESTANTE'}</p>
             <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'waiting' ? 'text-gray-500' : 'text-white'}`}>{state.timeLeft}</p>          </div>
         )}
       </div>
@@ -206,14 +206,14 @@ function ZubastinisOverlay({ state, prize }) {
   return (
     <div className="theme-die-frame w-[400px] min-h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
-      {state.mode === 'tiebreak' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-orange-500 to-orange-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🤝 DESEMPATE 🤝</div>}
+      {state.mode === 'tiebreak' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-amber-500 to-amber-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🤝 DESEMPATE 🤝</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
       <div className="mt-6 w-full">
         <TimeWarningBadge label="Snipe" seconds={state.snipeTime} />
       </div>
 
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mt-3 mb-4">🏆 TOP GIFTERS</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mt-3 mb-4">🏆 TOP REGALADORES</p>
 
       <div className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
         <span className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">Mínimo para ganar:</span>
@@ -244,7 +244,7 @@ function ZubastinisOverlay({ state, prize }) {
           <div className="flex flex-col items-center gap-2 py-2">
             {state.winner ? (
               <>
-                <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">WINNER!</div>
+                <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
                 <p className="text-lg font-black text-yellow-200">@{state.winner.username} · {state.winner.coins} 🪙</p>
               </>
             ) : (
@@ -257,9 +257,9 @@ function ZubastinisOverlay({ state, prize }) {
         ) : (
           <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">
-              {state.paused ? 'PAUSADO' : state.mode === 'tiebreak' ? 'DESEMPATE' : 'TIME LEFT'}
+              {state.paused ? 'PAUSADO' : state.mode === 'tiebreak' ? 'DESEMPATE' : 'TIEMPO RESTANTE'}
             </p>
-            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'tiebreak' ? 'text-orange-400 drop-shadow-[0_0_15px_rgba(251,146,60,0.5)]' : 'text-white'}`}>{state.timeLeft}</p>          </div>
+            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'tiebreak' ? 'text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]' : 'text-white'}`}>{state.timeLeft}</p>          </div>
         )}
       </div>
     </div>
@@ -335,7 +335,7 @@ function EliminationOverlay({ state, prize }) {
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 
-  const timerTitle = state.mode === 'rejoin' ? 'RE-JOIN' : 'TIEMPO PARA UNIRSE';
+  const timerTitle = state.mode === 'rejoin' ? 'REINGRESO' : 'TIEMPO PARA UNIRSE';
   const showLabel = boxSize >= 18;
 
   return (
@@ -343,7 +343,7 @@ function EliminationOverlay({ state, prize }) {
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
     <div className="theme-die-frame w-[400px] h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
-      {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ RE-JOIN ⚠️</div>}
+      {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
@@ -351,7 +351,7 @@ function EliminationOverlay({ state, prize }) {
           se muestra desde el arranque para que sepan cuánto tiempo van a
           tener para volver a entrar después de cada eliminación. */}
       <div className="mt-6 w-full">
-        <TimeWarningBadge label="Re-Join" seconds={state.rejoinTime} />
+        <TimeWarningBadge label="Reingreso" seconds={state.rejoinTime} />
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
@@ -369,7 +369,7 @@ function EliminationOverlay({ state, prize }) {
             <div className="flex items-center gap-2">
               <img src={state.instaWinGiftIcon} className="w-6 h-6" />
               <div className="text-left leading-tight">
-                <span className="block text-[8px] uppercase tracking-widest text-yellow-500 font-bold">OR INSTA-WIN:</span>
+                <span className="block text-[8px] uppercase tracking-widest text-yellow-500 font-bold">O INSTA-WIN:</span>
                 <span className="text-sm font-bold text-yellow-100">{state.instaWinGiftName}</span>
               </div>
             </div>
@@ -424,7 +424,7 @@ function EliminationOverlay({ state, prize }) {
           <div className="flex flex-col items-center gap-2 py-2">
             {state.winner ? (
               <>
-                <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">WINNER!</div>
+                <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
                 <p className="text-lg font-black text-yellow-200">@{state.winner.username}</p>
               </>
             ) : (

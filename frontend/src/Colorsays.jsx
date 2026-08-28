@@ -3,6 +3,7 @@ import { COLORS, Die } from './colorsData';
 import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
+import NativeAdBanner from './NativeAdBanner';
 import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
 import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
@@ -353,7 +354,10 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
           mientras el interstitial está abierto sin pisarse — solo se apaga
           en cuanto hay banco activo. */}
       {isGuest && (
-        <AdBanner active={!bankedActive} />
+        <>
+          <AdBanner active={!bankedActive} />
+          <NativeAdBanner active={!bankedActive} />
+        </>
       )}
 
       {/* Invitado sin sesión: banco de horas sin ads. Va en el mismo lugar

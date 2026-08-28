@@ -9,12 +9,11 @@
 // Dominio con protección anti-adblock (el mismo zone ID, distinto host).
 export const SMARTLINK_URL = 'https://beastscarnival.com/msynw10i?key=a4e47c8a93a86dfed922d3519bef717e';
 
-// Banner (formato "atOptions" + invoke.js, distinto del NativeBanner que se
-// usaba antes): cada zona corre aislada dentro de su propio iframe que
-// nosotros mismos creamos — ver AdIframeBanner.jsx. Eso evita el problema
-// del NativeBanner (contenedor/id compartido entre el banner fijo y el
-// interstitial, y el script no volvía a renderizar en una segunda
-// invocación dentro de la misma carga de página).
+// Banner (formato "atOptions" + invoke.js, distinto del NativeBanner de más
+// abajo): cada zona corre aislada dentro de su propio iframe que nosotros
+// mismos creamos — ver AdIframeBanner.jsx. Eso evita el problema que tenía
+// el NativeBanner cuando dos lugares usaban la misma zona (contenedor/id
+// compartido entre el banner fijo y el interstitial).
 export const AD_SCRIPT_HOST = 'https://beastscarnival.com';
 
 // 300x250: se usa en el interstitial propio (InterstitialAd.jsx) — llena
@@ -24,6 +23,14 @@ export const INTERSTITIAL_AD_ZONE = { key: '7b8487fedbea8eaf0994eff85fc669d9', w
 // 320x50: se usa en el banner fijo debajo del historial de Color Says
 // (AdBanner.jsx) — calza exacto con el ancho de esa columna.
 export const PERSISTENT_BANNER_ZONE = { key: '5df1727ae4b077fe00c975fe19ce0983', width: 320, height: 50 };
+
+// NativeBanner: zona aparte (propia, no compartida con nada) que se apila
+// junto al banner de 320x50 — ver NativeAdBanner.jsx. Se inyecta una sola
+// vez por montaje, sin refresco (el script de Adsterra no vuelve a
+// renderizar en una segunda invocación dentro de la misma carga de página,
+// ver el comentario largo que tenía antes AdBanner.jsx en el historial de git).
+export const NATIVE_BANNER_SCRIPT_SRC = 'https://beastscarnival.com/8a597f34f920548368a4283c01d1d87d/invoke.js';
+export const NATIVE_BANNER_CONTAINER_ID = 'container-8a597f34f920548368a4283c01d1d87d';
 
 // Tiempo mínimo (ms) que hay que dejar pasar tras abrir el Smartlink antes
 // de poder reclamar la recompensa — evita el "abrir y cerrar" instantáneo.

@@ -274,7 +274,7 @@ export default function App() {
           Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
         </div>
       )}
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <TikTokLoginBar
         username={username} setUsername={setUsername}
         connectionStatus={connectionStatus}
@@ -282,7 +282,9 @@ export default function App() {
         disabled={usernameLocked}
       />
 
-      <aside className="theme-sidebar flex flex-col items-center gap-2 w-[72px] min-h-screen py-4 flex-shrink-0 z-50">
+      {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
+          Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
+      <aside className="theme-sidebar flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -293,7 +295,7 @@ export default function App() {
               if (socket && OVERLAY_APPS.includes(m.id)) socket.emit('set_active_app', m.id);
             }}
             className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
               sidebarMode === m.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
@@ -304,12 +306,12 @@ export default function App() {
           </button>
         ))}
 
-        <div className="w-8 h-px my-1" style={{ background: 'var(--surface-border-color)' }} />
+        <div className="w-px h-8 md:w-8 md:h-px mx-1 my-0 md:mx-0 md:my-1 flex-shrink-0" style={{ background: 'var(--surface-border-color)' }} />
         <button
           onClick={() => setSidebarMode('theme')}
           title="Elegir tema"
           className={[
-            'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+            'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
             sidebarMode === 'theme' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
           ].join(' ')}
         >
@@ -324,7 +326,7 @@ export default function App() {
             onClick={() => setSidebarMode('licenses')}
             title="Administrar licencias"
             className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
               sidebarMode === 'licenses' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
@@ -335,10 +337,10 @@ export default function App() {
           </button>
         )}
 
-        <div className="flex-1" />
+        <div className="hidden md:block flex-1" />
         {session && (
           <button onClick={logout} title="Cerrar sesión"
-            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200">
+            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0">
             <span className="text-xl leading-none">🚪</span>
             <span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Salir</span>
           </button>

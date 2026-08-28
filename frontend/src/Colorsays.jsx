@@ -195,6 +195,12 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
   const [guestAdOpen, setGuestAdOpen]             = useState(false);
   const bankedActive = isGuest && bankedRemainingMs > 0;
 
+  // Botón de pánico para los banners fijos (mismo patrón que Win
+  // Bonus/Modo Seguro) — no apaga los anuncios de verdad (siguen contando
+  // como impresiones para el streamer), solo los tapa de la vista por si
+  // hace falta compartir pantalla sin que se vean.
+  const [adsHidden, setAdsHidden] = useState(false);
+
   useEffect(() => {
     if (!isGuest) return;
     const id = setInterval(() => setBankedRemainingMs(getBankedRemainingMs()), 1000);
@@ -355,17 +361,28 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
           en cuanto hay banco activo. */}
       {isGuest && (
         <>
-          <AdBanner active={!bankedActive} />
-          <NativeAdBanner active={!bankedActive} />
+          <div className={adsHidden ? 'hidden' : 'contents'}>
+            <AdBanner active={!bankedActive} />
+            <NativeAdBanner active={!bankedActive} />
+          </div>
+          {/* Botón de pánico para los banners, mismo patrón que Win Bonus/
+              Modo Seguro más abajo (línea casi invisible pegada al borde
+              derecho). Va en top-2/3 para no pisarse con los otros dos. */}
+          <button
+            onClick={() => setAdsHidden(h => !h)}
+            aria-label="Mostrar u ocultar anuncios"
+            className="fixed right-0 top-2/3 -translate-y-1/2 w-1.5 h-14 rounded-l-full bg-white/5 hover:bg-white/25 transition-colors z-50"
+          />
         </>
       )}
 
-      {/* Invitado sin sesión: banco de horas sin ads. Va en el mismo lugar
-          que el panel de WIN BONUS (top-48) — nunca se pisan porque un
-          invitado siempre tiene tier 'regular' (sin WIN BONUS ni Modo
-          Seguro). top-4 right-4 ya lo ocupa TikTokLoginBar. */}
+      {/* Invitado sin sesión: banco de horas sin ads. En desktop (md:) va en
+          el mismo lugar que el panel de WIN BONUS (top-48) — nunca se pisan
+          porque un invitado siempre tiene tier 'regular' (sin WIN BONUS ni
+          Modo Seguro). En mobile no hay espacio libre a la derecha para
+          flotar, así que queda en el flujo normal debajo del resto. */}
       {isGuest && (
-        <div className="theme-surface fixed top-48 right-4 w-56 p-3">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-56 p-3">
           <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1">Modo invitado</p>
           <p className="text-[10px] text-gray-500 leading-snug mb-2">
             {bankedActive
@@ -406,7 +423,7 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
           va arriba de ese panel. PRO solo prende/apaga un sesgo fijo y
           bajo; VIP y Admin además eligen la intensidad con el slider. */}
       {hasWinBonus && !winBonusHidden && (
-        <div className="theme-surface fixed top-48 right-4 w-52 p-3">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-52 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
@@ -429,7 +446,7 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
       {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
-        <div className="theme-surface fixed top-80 right-4 w-60 p-4">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-80 md:right-4 md:w-60 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">

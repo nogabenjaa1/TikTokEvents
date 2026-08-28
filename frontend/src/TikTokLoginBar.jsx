@@ -1,8 +1,11 @@
 import React from 'react';
 
-// Barra de conexión TikTok, fija en la esquina superior derecha, compartida
-// por todos los módulos (Rey del Trono, Zubastinis, Eliminación y cualquier
-// futuro módulo que necesite escuchar regalos del mismo usuario en vivo).
+// Barra de conexión TikTok, compartida por todos los módulos (Rey del
+// Trono, Zubastinis, Eliminación y cualquier futuro módulo que necesite
+// escuchar regalos del mismo usuario en vivo). En desktop (md:) queda fija
+// en la esquina superior derecha, como siempre; en mobile no hay espacio
+// libre para flotar sobre el contenido, así que pasa a ser una barra
+// normal arriba de todo (ver el flex-col del contenedor en App.jsx).
 //
 // connectionStatus: idle | checking | error | connecting | connected
 //   connecting = el username existe pero todavía no se confirmó el live.
@@ -12,7 +15,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
   const verifying = connectionStatus === 'connecting';
 
   return (
-    <div className="theme-surface fixed top-4 right-4 z-50 w-64 p-4">
+    <div className="theme-surface w-full md:fixed md:top-4 md:right-4 md:z-50 md:w-64 p-4 flex-shrink-0">
       <div className="flex justify-between items-center mb-2">
         <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Usuario de TikTok</label>
         {connectionStatus === 'checking' && <span className="text-[10px] text-yellow-400 animate-pulse">Buscando...</span>}

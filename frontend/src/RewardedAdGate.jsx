@@ -29,7 +29,6 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
   if (!open) return null;
 
   const startWatch = () => {
-    window.open(SMARTLINK_URL, '_blank', 'noopener,noreferrer');
     setWatching(true);
     setReady(false);
     setSecondsLeft(Math.ceil(REWARD_MIN_WAIT_MS / 1000));
@@ -52,12 +51,20 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
         {description && <p className="text-[11px] text-gray-500 leading-snug">{description}</p>}
 
         {!watching ? (
-          <button
+          // <a target="_blank"> real en vez de window.open(): los
+          // navegadores tratan un click nativo sobre un link como una
+          // navegación genuina del usuario, mientras que window.open()
+          // disparado desde JS es justo lo que los bloqueadores de
+          // pop-ups/ads interceptan primero — con eso el botón no abría nada.
+          <a
+            href={SMARTLINK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={startWatch}
-            className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+            className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all text-center block"
           >
             Ver anuncio
-          </button>
+          </a>
         ) : (
           <button
             onClick={() => ready && claim()}

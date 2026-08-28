@@ -12,7 +12,9 @@ export const SMARTLINK_URL = 'https://beastscarnival.com/msynw10i?key=a4e47c8a93
 // NativeBanner: usado para el interstitial propio (ads pasivos/periódicos)
 // que se muestra a invitados sin banco activo en Color Says y a licencias
 // trial mientras usan el panel — ver InterstitialAd.jsx.
-export const NATIVE_BANNER_SCRIPT_SRC = 'https://pl31061265.profitableratecpmnetwork.com/8a597f34f920548368a4283c01d1d87d/invoke.js';
+// Mismo dominio anti-adblock que el Smartlink (antes era el subdominio
+// pl31061265.profitableratecpmnetwork.com).
+export const NATIVE_BANNER_SCRIPT_SRC = 'https://beastscarnival.com/8a597f34f920548368a4283c01d1d87d/invoke.js';
 export const NATIVE_BANNER_CONTAINER_ID = 'container-8a597f34f920548368a4283c01d1d87d';
 
 // Tiempo mínimo (ms) que hay que dejar pasar tras abrir el Smartlink antes

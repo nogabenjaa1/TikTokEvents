@@ -25,6 +25,11 @@ export const REWARD_MIN_WAIT_MS = 15_000;
 // Tiempo mínimo (ms) que el interstitial queda en pantalla antes de poder cerrarlo.
 export const INTERSTITIAL_MIN_WAIT_MS = 12_000;
 
+// Si nadie lo cierra a mano, el interstitial se cierra solo a los 15s de
+// abierto — así nunca queda bloqueando el juego indefinidamente (por
+// ejemplo si el anuncio no cargó nada, ver comentario en AdBanner.jsx).
+export const INTERSTITIAL_AUTO_CLOSE_MS = 15_000;
+
 // Color Says como invitado (sin sesión): cada anuncio recompensado suma
 // esto al banco de horas sin ads.
 export const GUEST_BANK_HOUR_MS = 60 * 60 * 1000;

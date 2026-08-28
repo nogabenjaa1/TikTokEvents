@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { NATIVE_BANNER_SCRIPT_SRC, NATIVE_BANNER_CONTAINER_ID, INTERSTITIAL_MIN_WAIT_MS } from './adConfig';
+import { NATIVE_BANNER_SCRIPT_SRC, NATIVE_BANNER_CONTAINER_ID, INTERSTITIAL_MIN_WAIT_MS, INTERSTITIAL_AUTO_CLOSE_MS } from './adConfig';
 
 // Interstitial propio armado alrededor del NativeBanner de Adsterra:
 // Adsterra no ofrece un formato de interstitial de video nativo para sitios
@@ -13,6 +13,14 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
   const mountRef = useRef(null);
   const [canClose, setCanClose] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(Math.ceil(INTERSTITIAL_MIN_WAIT_MS / 1000));
+
+  // Ref para poder llamar siempre a la versión más reciente de onDone desde
+  // el timer de auto-cierre sin meterlo en las deps del efecto de abajo —
+  // onDone llega como una arrow function nueva en cada render del padre, así
+  // que listarlo ahí reinyectaría el script en cada re-render, no solo al
+  // abrir/cerrar el modal.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
   useEffect(() => {
     const mountNode = mountRef.current;
@@ -32,10 +40,14 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
 
     const tickInterval = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     const doneTimeout = setTimeout(() => setCanClose(true), INTERSTITIAL_MIN_WAIT_MS);
+    // Si nadie lo cierra a mano, se cierra solo — nunca debe quedar
+    // bloqueando el juego indefinidamente.
+    const autoCloseTimeout = setTimeout(() => onDoneRef.current(), INTERSTITIAL_AUTO_CLOSE_MS);
 
     return () => {
       clearInterval(tickInterval);
       clearTimeout(doneTimeout);
+      clearTimeout(autoCloseTimeout);
       mountNode.replaceChildren();
     };
   }, [open]);

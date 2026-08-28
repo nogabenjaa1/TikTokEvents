@@ -9,13 +9,21 @@
 // Dominio con protección anti-adblock (el mismo zone ID, distinto host).
 export const SMARTLINK_URL = 'https://beastscarnival.com/msynw10i?key=a4e47c8a93a86dfed922d3519bef717e';
 
-// NativeBanner: usado para el interstitial propio (ads pasivos/periódicos)
-// que se muestra a invitados sin banco activo en Color Says y a licencias
-// trial mientras usan el panel — ver InterstitialAd.jsx.
-// Mismo dominio anti-adblock que el Smartlink (antes era el subdominio
-// pl31061265.profitableratecpmnetwork.com).
-export const NATIVE_BANNER_SCRIPT_SRC = 'https://beastscarnival.com/8a597f34f920548368a4283c01d1d87d/invoke.js';
-export const NATIVE_BANNER_CONTAINER_ID = 'container-8a597f34f920548368a4283c01d1d87d';
+// Banner (formato "atOptions" + invoke.js, distinto del NativeBanner que se
+// usaba antes): cada zona corre aislada dentro de su propio iframe que
+// nosotros mismos creamos — ver AdIframeBanner.jsx. Eso evita el problema
+// del NativeBanner (contenedor/id compartido entre el banner fijo y el
+// interstitial, y el script no volvía a renderizar en una segunda
+// invocación dentro de la misma carga de página).
+export const AD_SCRIPT_HOST = 'https://beastscarnival.com';
+
+// 300x250: se usa en el interstitial propio (InterstitialAd.jsx) — llena
+// mejor el modal que un formato angosto.
+export const INTERSTITIAL_AD_ZONE = { key: '7b8487fedbea8eaf0994eff85fc669d9', width: 300, height: 250 };
+
+// 320x50: se usa en el banner fijo debajo del historial de Color Says
+// (AdBanner.jsx) — calza exacto con el ancho de esa columna.
+export const PERSISTENT_BANNER_ZONE = { key: '5df1727ae4b077fe00c975fe19ce0983', width: 320, height: 50 };
 
 // Tiempo mínimo (ms) que hay que dejar pasar tras abrir el Smartlink antes
 // de poder reclamar la recompensa — evita el "abrir y cerrar" instantáneo.

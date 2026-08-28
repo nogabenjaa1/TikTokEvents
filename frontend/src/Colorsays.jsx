@@ -348,11 +348,12 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
 
       {/* Banner fijo debajo del historial: ingreso pasivo constante para el
           invitado sin banco activo, aparte del interstitial de cada 15 min
-          (ver useEffect de guestAdOpen más arriba). Se apaga mientras el
-          interstitial está abierto (comparten la misma zona/id, ver
-          AdBanner.jsx) y también en cuanto hay banco activo. */}
+          (ver useEffect de guestAdOpen más arriba). Zona propia (ver
+          AdBanner.jsx/AdIframeBanner.jsx), así que puede seguir mostrado
+          mientras el interstitial está abierto sin pisarse — solo se apaga
+          en cuanto hay banco activo. */}
       {isGuest && (
-        <AdBanner active={!bankedActive && !guestAdOpen} />
+        <AdBanner active={!bankedActive} />
       )}
 
       {/* Invitado sin sesión: banco de horas sin ads. Va en el mismo lugar

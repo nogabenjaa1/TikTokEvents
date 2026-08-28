@@ -15,7 +15,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
   const verifying = connectionStatus === 'connecting';
 
   return (
-    <div className="theme-surface w-full md:fixed md:top-4 md:right-4 md:z-50 md:w-64 p-4 flex-shrink-0">
+    <div className="theme-surface tkc-mobile-flush w-full md:fixed md:top-4 md:right-4 md:z-50 md:w-64 p-4 flex-shrink-0">
       <div className="flex justify-between items-center mb-2">
         <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Usuario de TikTok</label>
         {connectionStatus === 'checking' && <span className="text-[10px] text-yellow-400 animate-pulse">Buscando...</span>}

@@ -41,6 +41,31 @@ const NO_INSTA_WIN = {
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
 
+// La tarjeta del overlay mide 400x680 fijo (pensada para el recorte de OBS)
+// — se achica a este factor para que entre en un celular sin desbordar.
+const OVERLAY_PREVIEW_SCALE = 0.75;
+
+// Vista previa del overlay embebida, solo mobile: desde el celular no se
+// puede tener a la vez el panel y una ventana aparte de OBS para chequear
+// cómo se ve en vivo (a diferencia de desktop, donde el streamer sí puede
+// tener las dos ventanas abiertas), así que se resuelve deslizando hacia
+// abajo del panel de King/Zub/Elim. Reusa el mismo Overlay.jsx que corre en
+// OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
+// forzado al modo que se esté mirando, porque la idea es confirmar qué ve
+// la audiencia ahora mismo, no simular un modo que no está activo.
+function MobileOverlayPreview({ state, zubState, elimState, activeApp, prizes, theme }) {
+  return (
+    <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
+      <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 680 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
+        <div style={{ width: 400, height: 680, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
+          <Overlay embedded state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={theme} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const overlayMode = isOverlayMode();
   const [session, setSession] = useState(() => loadSession());
@@ -284,7 +309,7 @@ export default function App() {
 
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
-      <aside className="theme-sidebar flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
+      <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -347,39 +372,48 @@ export default function App() {
         )}
       </aside>
 
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
         {sidebarMode === 'overlay' && <OverlayLink />}
         {sidebarMode === 'king' && (
           needsAccess('king') ? (
             <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
           ) : (
-            <AdminPanel
-              state={state} socket={socket}
-              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-              prize={prizes.king}
-            />
+            <>
+              <AdminPanel
+                state={state} socket={socket}
+                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                prize={prizes.king}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {sidebarMode === 'zub' && (
           needsAccess('zub') ? (
             <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
           ) : (
-            <Zubastinis
-              state={zubState} socket={socket}
-              username={username} connectionStatus={connectionStatus}
-              prize={prizes.zub}
-            />
+            <>
+              <Zubastinis
+                state={zubState} socket={socket}
+                username={username} connectionStatus={connectionStatus}
+                prize={prizes.zub}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {sidebarMode === 'elim' && (
           needsAccess('elim') ? (
             <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
           ) : (
-            <Elimination
-              state={elimState} socket={socket}
-              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-              prize={prizes.elim}
-            />
+            <>
+              <Elimination
+                state={elimState} socket={socket}
+                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                prize={prizes.elim}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {/* Color Says es de acceso libre: no necesita sesión ni socket para

@@ -17,6 +17,10 @@ export const SMARTLINK_URL = 'https://beastscarnival.com/msynw10i?key=a4e47c8a93
 export const NATIVE_BANNER_SCRIPT_SRC = 'https://beastscarnival.com/8a597f34f920548368a4283c01d1d87d/invoke.js';
 export const NATIVE_BANNER_CONTAINER_ID = 'container-8a597f34f920548368a4283c01d1d87d';
 
+// Cada cuánto se recarga el banner fijo de Color Says (AdBanner.jsx) para
+// traer una creatividad nueva mientras está en pantalla.
+export const AD_BANNER_REFRESH_MS = 30_000;
+
 // Tiempo mínimo (ms) que hay que dejar pasar tras abrir el Smartlink antes
 // de poder reclamar la recompensa — evita el "abrir y cerrar" instantáneo.
 // No es infalible, es una barrera proporcional al beneficio que desbloquea.

@@ -4,7 +4,6 @@ import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
 import NativeAdBanner from './NativeAdBanner';
-import AdSenseLoader from './AdSenseLoader';
 import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
 import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
@@ -203,12 +202,16 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
   }, [isGuest]);
 
   // AdSense (Auto ads) se inserta donde Google decide en TODA la página, no
-  // solo acá dentro — por eso la clase que lo oculta va en <body>, no en un
-  // contenedor local (ver .tkc-ads-suppressed en index.css).
+  // solo acá dentro, y el script vive fijo en index.html (lo necesita el
+  // rastreador de AdSense para verificar el sitio, ver ese archivo) — por
+  // eso <body> arranca CON tkc-ads-suppressed puesto por defecto (oculto en
+  // cualquier otra pantalla) y esto solo lo saca mientras el invitado sea
+  // elegible, restaurando el default seguro al salir de Color Says.
   useEffect(() => {
-    document.body.classList.toggle('tkc-ads-suppressed', bankedActive);
-    return () => document.body.classList.remove('tkc-ads-suppressed');
-  }, [bankedActive]);
+    const eligible = isGuest && !bankedActive;
+    document.body.classList.toggle('tkc-ads-suppressed', !eligible);
+    return () => document.body.classList.add('tkc-ads-suppressed');
+  }, [isGuest, bankedActive]);
 
   useEffect(() => {
     if (!isGuest || bankedActive) return;
@@ -366,7 +369,6 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
         <>
           <AdBanner active={!bankedActive} />
           <NativeAdBanner active={!bankedActive} />
-          <AdSenseLoader active={!bankedActive} />
         </>
       )}
 

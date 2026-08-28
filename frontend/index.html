@@ -8,8 +8,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>TikTok Concurso</title>
+    <!-- AdSense necesita este script presente en el HTML de entrada desde
+         el inicio para poder verificar el sitio — el rastreador no navega
+         por las pestañas de la app para encontrarlo, así que no puede ir
+         inyectado condicionalmente desde React (ver Colorsays.jsx, que
+         antes lo cargaba solo al entrar a Color Says). Auto ads decide
+         sola dónde insertar anuncios; se mantiene oculto por CSS por
+         defecto (body con tkc-ads-suppressed) y Color Says lo destapa solo
+         para invitados sin banco de horas activo. -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5961182005770214" crossorigin="anonymous"></script>
   </head>
-  <body>
+  <body class="tkc-ads-suppressed">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
 </body>

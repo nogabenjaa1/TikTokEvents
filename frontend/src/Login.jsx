@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { loginWithKey, requestFreeTrial, saveSession } from './auth';
+import RewardedAdGate from './RewardedAdGate';
 
 // Pantalla de login: pide la license key (no hay username/password
 // separado, la key ES la credencial), o permite pedir una prueba gratis de
@@ -15,6 +16,9 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
   const [loading, setLoading] = useState(false);
 
   const [showTrial, setShowTrial] = useState(false);
+  // Ver un anuncio es obligatorio ANTES de poder pedir la prueba gratis —
+  // se gatea la revelación del formulario (showTrial), no el submit en sí.
+  const [showAdGate, setShowAdGate] = useState(false);
   const [alias, setAlias] = useState('');
   const [trialError, setTrialError] = useState('');
   const [trialLoading, setTrialLoading] = useState(false);
@@ -133,7 +137,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
           ) : !showTrial ? (
             <button
               type="button"
-              onClick={() => setShowTrial(true)}
+              onClick={() => setShowAdGate(true)}
               className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
             >
               ¿No tienes una licencia? Solicita 7 días gratis
@@ -160,6 +164,14 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
           )}
         </div>
       </div>
+
+      <RewardedAdGate
+        open={showAdGate}
+        onClaim={() => { setShowAdGate(false); setShowTrial(true); }}
+        onCancel={() => setShowAdGate(false)}
+        title="Mira un anuncio para continuar"
+        description="Antes de pedir tu prueba gratis de 7 días, mira un anuncio corto — nos ayuda a mantener el servicio gratis."
+      />
     </div>
   );
 }

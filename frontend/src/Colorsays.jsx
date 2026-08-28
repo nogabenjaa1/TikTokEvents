@@ -1,5 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
+import RewardedAdGate from './RewardedAdGate';
+import InterstitialAd from './InterstitialAd';
+import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
+import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
 const MIN_DICE = 1;
 const MAX_DICE = 6;
@@ -151,7 +155,7 @@ const DEFAULT_WIN_BONUS_PCT = 50;
 // vender a cualquier licencia paga, NO es lo mismo que session.isAdmin
 // (que sigue siendo exclusivo del panel de administración de licencias).
 // El selector de cantidad de dados es una función disponible para todos.
-export default function ColorSays({ tier = 'regular', socket = null }) {
+export default function ColorSays({ tier = 'regular', socket = null, isGuest = false }) {
   const isAdmin = tier === 'admin';
   const hasWinBonus = tier === 'pro' || tier === 'vip' || isAdmin;
   const winBonusHasSlider = tier === 'vip' || isAdmin; // PRO: solo on/off, intensidad fija
@@ -179,6 +183,33 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
   // a propósito (arranca visible siempre), así nunca queda "oculto sin
   // querer" en la próxima sesión sin que el dueño se dé cuenta.
   const [safeModeHidden, setSafeModeHidden] = useState(false);
+
+  // Invitado (sin sesión): banco de horas sin ads en localStorage (ver
+  // adBank.js). Mientras no haya banco activo, se interrumpe el juego cada
+  // GUEST_INTERSTITIAL_INTERVAL_MS con un anuncio; mirar el Smartlink de
+  // RewardedAdGate suma 1h al banco, hasta un tope de 48h acumuladas.
+  const [bankedRemainingMs, setBankedRemainingMs] = useState(() => (isGuest ? getBankedRemainingMs() : 0));
+  const [rewardGateOpen, setRewardGateOpen]       = useState(false);
+  const [guestAdOpen, setGuestAdOpen]             = useState(false);
+  const bankedActive = isGuest && bankedRemainingMs > 0;
+
+  useEffect(() => {
+    if (!isGuest) return;
+    const id = setInterval(() => setBankedRemainingMs(getBankedRemainingMs()), 1000);
+    return () => clearInterval(id);
+  }, [isGuest]);
+
+  useEffect(() => {
+    if (!isGuest || bankedActive) return;
+    const id = setInterval(() => setGuestAdOpen(true), GUEST_INTERSTITIAL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isGuest, bankedActive]);
+
+  const claimBankedHour = () => {
+    const newBankedUntil = addBankedHour();
+    setBankedRemainingMs(Math.max(0, newBankedUntil - Date.now()));
+    setRewardGateOpen(false);
+  };
 
   const stopTicking = useCallback(() => {
     if (tickIntervalRef.current) { clearInterval(tickIntervalRef.current); tickIntervalRef.current = null; }
@@ -314,6 +345,28 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
         )}
       </div>
 
+      {/* Invitado sin sesión: banco de horas sin ads. Va en el mismo lugar
+          que el panel de WIN BONUS (top-48) — nunca se pisan porque un
+          invitado siempre tiene tier 'regular' (sin WIN BONUS ni Modo
+          Seguro). top-4 right-4 ya lo ocupa TikTokLoginBar. */}
+      {isGuest && (
+        <div className="theme-surface fixed top-48 right-4 w-56 p-3">
+          <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1">Modo invitado</p>
+          <p className="text-[10px] text-gray-500 leading-snug mb-2">
+            {bankedActive
+              ? `Sin anuncios por ${formatBankedDuration(bankedRemainingMs)} más.`
+              : 'Vas a ver anuncios cada tanto mientras juegas.'}
+          </p>
+          <button
+            onClick={() => setRewardGateOpen(true)}
+            disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
+            className="theme-btn-secondary w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Ver anuncio: +1h sin anuncios
+          </button>
+        </div>
+      )}
+
       {/* Botones de pánico: líneas casi invisibles pegadas al borde derecho,
           una por panel — a propósito sin ícono, texto ni tooltip, nada que
           delate que ahí hay un control si alguien comparte pantalla
@@ -396,6 +449,23 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
             {safeModeAction === 'block' && safeModeColor !== null && <>🔒 Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
           </p>
         </div>
+      )}
+
+      {isGuest && (
+        <>
+          <RewardedAdGate
+            open={rewardGateOpen}
+            onClaim={claimBankedHour}
+            onCancel={() => setRewardGateOpen(false)}
+            title="Suma 1 hora sin anuncios"
+            description="Mira un anuncio corto y juega 1 hora sin interrupciones. Se acumula hasta 48 horas."
+          />
+          <InterstitialAd
+            open={guestAdOpen}
+            onDone={() => setGuestAdOpen(false)}
+            title="Un mensaje de nuestros sponsors"
+          />
+        </>
       )}
     </div>
   );

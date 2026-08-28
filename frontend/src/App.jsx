@@ -11,8 +11,10 @@ import LicenseManager from './LicenseManager';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
+import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
+import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 
 const MODES = [
   { id: 'overlay', label: 'Overlay',       icon: '🖥️' },
@@ -46,6 +48,13 @@ export default function App() {
   // Un solo dispositivo activo por licencia: si otro dispositivo se loguea
   // con la misma key, el backend nos desconecta y avisa por este evento.
   const [kickedOutMessage, setKickedOutMessage] = useState('');
+
+  // Ads periódicos para licencia trial: se muestra un interstitial cada
+  // TRIAL_AD_INTERVAL_MS (3 cada 2 horas) mientras haya sesión trial activa
+  // en el panel — es un beneficio de la prueba gratis vs. el invitado sin
+  // cuenta, que ve ads con más frecuencia dentro de Color Says (ver ese
+  // componente). Nunca corre en el overlay de OBS.
+  const [trialAdOpen, setTrialAdOpen] = useState(false);
 
   const [state, setState]         = useState({ isActive: false, mode: 'idle', timeLeft: 0 });
   const [zubState, setZubState]   = useState({ isActive: false, mode: 'idle', timeLeft: 0, top3: [], winner: null });
@@ -160,6 +169,16 @@ export default function App() {
     if (overlayMode || !socket) return;
     socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
   }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
+
+  // Cadencia de ads de la licencia trial (ver TRIAL_AD_INTERVAL_MS). Si deja
+  // de ser trial a mitad de un anuncio ya abierto (logout, upgrade a paga),
+  // ese anuncio no se corta solo — el usuario lo cierra con su propio botón
+  // "Continuar", que igual no vuelve a abrirse porque el interval ya se limpió.
+  useEffect(() => {
+    if (overlayMode || session?.licenseType !== 'trial') return;
+    const id = setInterval(() => setTrialAdOpen(true), TRIAL_AD_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [overlayMode, session?.licenseType]);
 
   // Conectar al LIVE y cargar regalos son operaciones independientes. La
   // lista de regalos puede fallar o venir vacía aunque el usuario sí esté en
@@ -368,8 +387,9 @@ export default function App() {
             Modo Seguro — es un nivel de Color Says independiente de
             session.isAdmin (que sigue siendo exclusivo del panel de
             Licencias, no algo que se compre). Sin sesión, tier es 'regular'
-            (probabilidades limpias). */}
-        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} />}
+            (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
+            los ads dentro del propio componente — ver Colorsays.jsx. */}
+        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} isGuest={!session} />}
         {/* TTS también requiere sesión — se muestra el login embebido en su
             lugar sin desmontar TtsChat (ver comentario de "visible" abajo). */}
         {sidebarMode === 'tts' && needsAccess('tts') && (
@@ -382,6 +402,7 @@ export default function App() {
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
       </main>
     </div>
+    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar TikTok Concurso" />
     </ThemedShell>
   );
 }

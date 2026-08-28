@@ -661,3 +661,15 @@ input[type=range]::-moz-range-thumb {
 .animate-pop {
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
+/* ==========================================
+   ADS: banco de horas del invitado (Color Says)
+   ========================================== */
+/* Google Auto ads no tiene una API para "apagarse" — una vez que insertó
+   un anuncio en la página no hay forma soportada de sacarlo por JS. Se
+   oculta por CSS en cuanto el invitado reclama horas sin ads (ver
+   Colorsays.jsx/AdSenseLoader.jsx). */
+.tkc-ads-suppressed .adsbygoogle,
+.tkc-ads-suppressed ins.adsbygoogle {
+  display: none !important;
+}

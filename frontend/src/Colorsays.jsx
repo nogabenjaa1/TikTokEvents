@@ -4,6 +4,7 @@ import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
 import NativeAdBanner from './NativeAdBanner';
+import AdSenseLoader from './AdSenseLoader';
 import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
 import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
@@ -195,17 +196,19 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
   const [guestAdOpen, setGuestAdOpen]             = useState(false);
   const bankedActive = isGuest && bankedRemainingMs > 0;
 
-  // Botón de pánico para los banners fijos (mismo patrón que Win
-  // Bonus/Modo Seguro) — no apaga los anuncios de verdad (siguen contando
-  // como impresiones para el streamer), solo los tapa de la vista por si
-  // hace falta compartir pantalla sin que se vean.
-  const [adsHidden, setAdsHidden] = useState(false);
-
   useEffect(() => {
     if (!isGuest) return;
     const id = setInterval(() => setBankedRemainingMs(getBankedRemainingMs()), 1000);
     return () => clearInterval(id);
   }, [isGuest]);
+
+  // AdSense (Auto ads) se inserta donde Google decide en TODA la página, no
+  // solo acá dentro — por eso la clase que lo oculta va en <body>, no en un
+  // contenedor local (ver .tkc-ads-suppressed en index.css).
+  useEffect(() => {
+    document.body.classList.toggle('tkc-ads-suppressed', bankedActive);
+    return () => document.body.classList.remove('tkc-ads-suppressed');
+  }, [bankedActive]);
 
   useEffect(() => {
     if (!isGuest || bankedActive) return;
@@ -361,18 +364,9 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
           en cuanto hay banco activo. */}
       {isGuest && (
         <>
-          <div className={adsHidden ? 'hidden' : 'contents'}>
-            <AdBanner active={!bankedActive} />
-            <NativeAdBanner active={!bankedActive} />
-          </div>
-          {/* Botón de pánico para los banners, mismo patrón que Win Bonus/
-              Modo Seguro más abajo (línea casi invisible pegada al borde
-              derecho). Va en top-2/3 para no pisarse con los otros dos. */}
-          <button
-            onClick={() => setAdsHidden(h => !h)}
-            aria-label="Mostrar u ocultar anuncios"
-            className="fixed right-0 top-2/3 -translate-y-1/2 w-1.5 h-14 rounded-l-full bg-white/5 hover:bg-white/25 transition-colors z-50"
-          />
+          <AdBanner active={!bankedActive} />
+          <NativeAdBanner active={!bankedActive} />
+          <AdSenseLoader active={!bankedActive} />
         </>
       )}
 

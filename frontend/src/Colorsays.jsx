@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
 import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
+import AdBanner from './AdBanner';
 import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
 import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
@@ -344,6 +345,15 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
           <p className="text-gray-700 text-xs italic text-center mt-2">Sin tiradas todavía...</p>
         )}
       </div>
+
+      {/* Banner fijo debajo del historial: ingreso pasivo constante para el
+          invitado sin banco activo, aparte del interstitial de cada 15 min
+          (ver useEffect de guestAdOpen más arriba). Se apaga mientras el
+          interstitial está abierto (comparten la misma zona/id, ver
+          AdBanner.jsx) y también en cuanto hay banco activo. */}
+      {isGuest && (
+        <AdBanner active={!bankedActive && !guestAdOpen} />
+      )}
 
       {/* Invitado sin sesión: banco de horas sin ads. Va en el mismo lugar
           que el panel de WIN BONUS (top-48) — nunca se pisan porque un

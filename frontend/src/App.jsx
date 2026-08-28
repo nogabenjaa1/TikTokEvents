@@ -84,7 +84,11 @@ export default function App() {
   const [state, setState]         = useState({ isActive: false, mode: 'idle', timeLeft: 0 });
   const [zubState, setZubState]   = useState({ isActive: false, mode: 'idle', timeLeft: 0, top3: [], winner: null });
   const [elimState, setElimState] = useState({ isActive: false, mode: 'idle', timeLeft: 0, participants: [], lastEliminated: null, winner: null });
-  const [sidebarMode, setSidebarMode] = useState('king');
+  // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
+  // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
+  // recarga la página cae directo donde se muestran los anuncios, sin
+  // tener que navegar hasta ahí primero.
+  const [sidebarMode, setSidebarMode] = useState('color');
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
@@ -266,7 +270,7 @@ export default function App() {
     socket?.disconnect();
     clearSession();
     setSession(null);
-    setSidebarMode('king');
+    setSidebarMode('color');
   };
 
   // El username queda bloqueado mientras cualquier módulo que dependa de la

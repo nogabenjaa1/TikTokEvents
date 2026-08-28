@@ -6,7 +6,8 @@
 // para sitios web comunes (eso es propio de SDKs de apps), así que se
 // simula: se abre este link en una pestaña nueva y se exige un tiempo
 // mínimo de espera antes de habilitar la recompensa — ver RewardedAdGate.jsx.
-export const SMARTLINK_URL = 'https://www.profitableratecpmnetwork.com/msynw10i?key=a4e47c8a93a86dfed922d3519bef717e';
+// Dominio con protección anti-adblock (el mismo zone ID, distinto host).
+export const SMARTLINK_URL = 'https://beastscarnival.com/msynw10i?key=a4e47c8a93a86dfed922d3519bef717e';
 
 // NativeBanner: usado para el interstitial propio (ads pasivos/periódicos)
 // que se muestra a invitados sin banco activo en Color Says y a licencias

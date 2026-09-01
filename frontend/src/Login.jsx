@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { loginWithKey, requestFreeTrial, saveSession } from './auth';
 import RewardedAdGate from './RewardedAdGate';
+import CardVerifyForm from './CardVerifyForm';
+import { TRIAL_UNLOCK_AD_COUNT } from './adConfig';
 
 // Pantalla de login: pide la license key (no hay username/password
 // separado, la key ES la credencial), o permite pedir una prueba gratis de
@@ -16,9 +18,18 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
   const [loading, setLoading] = useState(false);
 
   const [showTrial, setShowTrial] = useState(false);
-  // Ver un anuncio es obligatorio ANTES de poder pedir la prueba gratis —
+  // Ver anuncios es una de las 3 vías para desbloquear la prueba gratis —
   // se gatea la revelación del formulario (showTrial), no el submit en sí.
+  // Hace falta reclamar el gate TRIAL_UNLOCK_AD_COUNT veces seguidas (no
+  // solo una) — RewardedAdGate resetea su propio estado interno en cada
+  // claim(), así que basta con no cerrar el gate hasta llegar al total.
   const [showAdGate, setShowAdGate] = useState(false);
+  const [adsWatched, setAdsWatched] = useState(0);
+  // Vía alternativa a los anuncios: verificar una tarjeta real (sin cobrar
+  // ni guardarla, ver CardVerifyForm.jsx) — el propio formulario pide el
+  // alias y llama a requestFreeTrial, así que termina en el mismo
+  // trialResult de abajo, compartido con el camino de anuncios.
+  const [showCardForm, setShowCardForm] = useState(false);
   const [alias, setAlias] = useState('');
   const [trialError, setTrialError] = useState('');
   const [trialLoading, setTrialLoading] = useState(false);
@@ -134,19 +145,34 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
                 Continuar
               </button>
             </div>
+          ) : showCardForm ? (
+            <CardVerifyForm
+              onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
+              onCancel={() => setShowCardForm(false)}
+            />
           ) : !showTrial ? (
             <div className="flex flex-col gap-2">
+              <p className="theme-label text-[10px] uppercase tracking-widest font-semibold text-center mb-1">
+                ¿No tienes una licencia? Elige cómo obtener 7 días gratis
+              </p>
               <button
                 type="button"
                 onClick={() => setShowAdGate(true)}
                 className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
               >
-                ¿No tienes una licencia? Solicita 7 días gratis
+                Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCardForm(true)}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                Verificar una tarjeta (sin cobro)
               </button>
               {/* Acceso directo a la pantalla de planes para quien ya sabe que
-                  quiere pagar y no necesita ver un anuncio ni pasar por la
-                  prueba gratis primero — ver Membership.jsx, funciona sin
-                  sesión y pide un alias recién al momento de pagar. */}
+                  quiere pagar y no necesita ver anuncios, verificar tarjeta,
+                  ni pasar por la prueba gratis primero — ver Membership.jsx,
+                  funciona sin sesión y pide un alias recién al momento de pagar. */}
               {onWantsMembership && (
                 <button
                   type="button"
@@ -182,10 +208,20 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
 
       <RewardedAdGate
         open={showAdGate}
-        onClaim={() => { setShowAdGate(false); setShowTrial(true); }}
-        onCancel={() => setShowAdGate(false)}
-        title="Mira un anuncio para continuar"
-        description="Antes de pedir tu prueba gratis de 7 días, mira un anuncio corto — nos ayuda a mantener el servicio gratis."
+        onClaim={() => {
+          const next = adsWatched + 1;
+          setAdsWatched(next);
+          if (next >= TRIAL_UNLOCK_AD_COUNT) {
+            setShowAdGate(false);
+            setShowTrial(true);
+          }
+          // Si todavía faltan rondas, el gate se queda abierto — ya se
+          // reseteó solo (ver RewardedAdGate.reset() en cada claim()) y
+          // vuelve a mostrar el link para el siguiente anuncio.
+        }}
+        onCancel={() => { setShowAdGate(false); setAdsWatched(0); }}
+        title={`Anuncio ${Math.min(adsWatched + 1, TRIAL_UNLOCK_AD_COUNT)} de ${TRIAL_UNLOCK_AD_COUNT}`}
+        description="Mira este anuncio corto para avanzar — nos ayuda a mantener el servicio gratis."
       />
     </div>
   );

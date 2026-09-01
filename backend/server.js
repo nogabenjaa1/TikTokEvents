@@ -10,7 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
+const { MercadoPagoConfig, Preference, Payment, CardToken } = require('mercadopago');
 
 const db = require('./db');
 const auth = require('./auth');
@@ -156,13 +156,35 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 // tener que copiar/pegar la key generada.
 // ==========================================
 app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
-    const { alias } = req.body || {};
+    const { alias, cardToken } = req.body || {};
     if (!alias || typeof alias !== 'string' || !alias.trim()) {
         return res.status(400).json({ success: false, error: 'Falta un alias' });
     }
     const cleanAlias = alias.trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
     if (!cleanAlias) {
         return res.status(400).json({ success: false, error: 'Alias inválido — usa letras, números, "_" o "-"' });
+    }
+
+    // Vía alternativa al anuncio: en vez de mirar un video, verificar una
+    // tarjeta real. A propósito NO se guarda ni se cobra nada — el único
+    // objetivo es subir el costo de fabricar pruebas gratis en cadena con
+    // datos inventados. El token es de un solo uso y ya viene de
+    // MercadoPago (tokenizado en el navegador vía Secure Fields, ver
+    // CardVerifyForm.jsx); acá solo se le pregunta a MercadoPago si ese
+    // token es real y pasa el chequeo de Luhn antes de dejarlo pasar.
+    if (cardToken !== undefined) {
+        if (typeof cardToken !== 'string' || !cardToken.trim()) {
+            return res.status(400).json({ success: false, error: 'Token de tarjeta inválido' });
+        }
+        try {
+            const tokenInfo = await new CardToken(getMpClient()).get({ id: cardToken.trim() });
+            if (!tokenInfo.luhn_validation || tokenInfo.status !== 'active') {
+                return res.status(400).json({ success: false, error: 'La tarjeta no pasó la validación. Verifica los datos e intenta de nuevo.' });
+            }
+        } catch (err) {
+            console.error('[MP] Error verificando card token para prueba gratis:', err.message);
+            return res.status(400).json({ success: false, error: 'No se pudo verificar la tarjeta. Intenta de nuevo.' });
+        }
     }
 
     const key = `${cleanAlias.toLowerCase()}-FREE7DAY-${crypto.randomBytes(9).toString('base64url')}`;

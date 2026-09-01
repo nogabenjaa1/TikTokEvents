@@ -56,3 +56,8 @@ export const GUEST_INTERSTITIAL_INTERVAL_MS = 15 * 60 * 1000; // 15 min
 // Licencia trial: "3 anuncios cada 2 horas" repartidos parejo en el tiempo,
 // mientras haya sesión trial activa en el panel (no solo en Color Says).
 export const TRIAL_AD_INTERVAL_MS = (2 * 60 * 60 * 1000) / 3; // ~40 min
+
+// Cuántas veces hay que reclamar el RewardedAdGate en Login.jsx para
+// desbloquear el formulario de la prueba gratis (la alternativa es
+// verificar una tarjeta en vez de ver anuncios, ver CardVerifyForm.jsx).
+export const TRIAL_UNLOCK_AD_COUNT = 5;

@@ -97,11 +97,14 @@ export async function loginWithKey(key) {
 
 // Prueba gratis de 7 días: solo pide un alias (texto libre, no se valida
 // contra TikTok) y devuelve sesión ya lista, igual que loginWithKey.
-export async function requestFreeTrial(alias) {
+// `cardToken` es opcional — la vía alternativa a ver anuncios (ver
+// CardVerifyForm.jsx): el backend lo verifica contra MercadoPago sin
+// cobrar ni guardar nada, ver server.js.
+export async function requestFreeTrial(alias, cardToken) {
   const res = await fetch(`${backendUrl()}/api/free-trial`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias }),
+    body: JSON.stringify({ alias, cardToken }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'No se pudo crear la prueba gratis');

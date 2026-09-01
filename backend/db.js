@@ -70,12 +70,39 @@ const ready = pool.query(`
   // tocarlo a mano. El guard `AND dice_tier = 'regular'` lo hace
   // idempotente — no pisa un valor ya cambiado a mano en un reinicio futuro.
   .then(() => pool.query(`UPDATE licenses SET dice_tier = 'admin' WHERE is_admin = TRUE AND dice_tier = 'regular'`))
+  // Al comprar un plan pago, la key se rota (ver /api/payments/webhook) para
+  // que siga el formato legible alias-TIER-hash — pero el webhook no tiene
+  // forma de mandarle la key nueva al navegador (es una notificación
+  // servidor-a-servidor, sin respuesta HTTP hacia el streamer). Se guarda
+  // acá temporalmente en texto plano (única excepción a "solo se guarda
+  // hasheada": esta SÍ tiene que poder mostrarse una vez) y /api/auth/verify
+  // la devuelve y la borra la primera vez que el frontend vuelve a
+  // preguntar — de ahí "reveal" en el nombre, es de un solo uso.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS pending_key_reveal TEXT`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
   `)).then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_connected
     ON licenses(LOWER(trial_connected_username)) WHERE trial_connected_username IS NOT NULL
+  `))
+  // Historial de pagos de MercadoPago — separado de licenses.mp_payment_id
+  // (que solo guarda el último pago) porque el webhook necesita poder
+  // distinguir "ya procesé esta notificación" de "es la primera vez que la
+  // veo" sin perder el rastro de compras anteriores. El UNIQUE sobre
+  // mp_payment_id es lo que hace el webhook idempotente ante los reintentos
+  // de notificación de MercadoPago (ver applyPaymentOnce más abajo).
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      mp_payment_id TEXT UNIQUE NOT NULL,
+      plan_type TEXT,
+      dice_tier TEXT,
+      amount_cents INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
@@ -180,7 +207,67 @@ async function extendLicense(id, licenseType, expiresAt, diceTier) {
     return findById(id);
 }
 
+// Autoservicio de compra (webhook de MercadoPago, ver server.js): a
+// diferencia de extendLicense (admin, siempre pisa los 3 campos), acá
+// licenseType/diceTier/keyHash son independientes — una compra de "solo
+// addon" no debe tocar license_type/expires_at/la key, y viceversa.
+// Undefined = no tocar. keyHash/keyPrefix/pendingKeyReveal van juntos: se
+// rota la key al mismo tiempo que se aplica la compra (ver generateLabeledKey
+// en auth.js) para que el streamer vea su plan nuevo reflejado en el
+// prefijo de la key, sin generar una licencia nueva ni tocar el id/sesión.
+async function applyPurchase(id, { licenseType, expiresAt, diceTier, keyHash, keyPrefix, pendingKeyReveal } = {}) {
+    await ready;
+    const sets = ['revoked = FALSE'];
+    const params = [];
+    if (licenseType !== undefined) {
+        params.push(licenseType);
+        sets.push(`license_type = $${params.length}`);
+        params.push(expiresAt);
+        sets.push(`expires_at = $${params.length}`);
+    }
+    if (diceTier !== undefined) {
+        params.push(diceTier);
+        sets.push(`dice_tier = $${params.length}`);
+    }
+    if (keyHash !== undefined) {
+        params.push(keyHash);
+        sets.push(`key_hash = $${params.length}`);
+        params.push(keyPrefix);
+        sets.push(`key_prefix = $${params.length}`);
+        params.push(pendingKeyReveal);
+        sets.push(`pending_key_reveal = $${params.length}`);
+    }
+    params.push(id);
+    await pool.query(`UPDATE licenses SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    return findById(id);
+}
+
+// Lee y borra en el mismo paso la key pendiente de mostrar (ver el
+// comentario de pending_key_reveal más arriba) — de un solo uso a propósito,
+// así no queda una key en texto plano dando vueltas en la DB más de lo
+// necesario. `findById` ya la había leído antes de llamar a esto si hace
+// falta mostrarla en la misma respuesta.
+async function consumePendingKeyReveal(id) {
+    await ready;
+    await pool.query('UPDATE licenses SET pending_key_reveal = NULL WHERE id = $1', [id]);
+}
+
+// INSERT ... ON CONFLICT DO NOTHING sobre el UNIQUE sobre mp_payment_id:
+// devuelve true la primera vez que se ve ese pago, false en cualquier
+// reintento posterior de la misma notificación — así el webhook sabe si
+// tiene que aplicar la compra o si ya la aplicó antes.
+async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTier, amountCents, status, createdAt }) {
+    await ready;
+    const { rows } = await pool.query(`
+        INSERT INTO payments (id, license_id, mp_payment_id, plan_type, dice_tier, amount_cents, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (mp_payment_id) DO NOTHING
+        RETURNING id
+    `, [id, licenseId, mpPaymentId, planType || null, diceTier || null, amountCents, status, createdAt]);
+    return rows.length > 0;
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
-    claimTrialConnection, deleteLicense, extendLicense,
+    claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
 };

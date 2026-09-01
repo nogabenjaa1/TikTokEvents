@@ -113,6 +113,29 @@ export function authHeaders() {
   return session?.token ? { Authorization: `Bearer ${session.token}` } : {};
 }
 
+// Re-lee el estado de la licencia del backend y lo pisa sobre la sesión
+// guardada (mismo patrón que Login.jsx: token/licenseKey se conservan, el
+// resto viene de `license`). Se usa después de una compra — el webhook de
+// MercadoPago actualiza la licencia en la DB, pero el token/sesión local
+// sigue teniendo los valores viejos hasta que se vuelve a pedir esto.
+// Si `data.newKey` viene presente (el webhook de MercadoPago rotó la key al
+// aplicar una compra, ver backend/server.js), se guarda como el nuevo
+// `licenseKey` de la sesión (así la URL del overlay se arma con la key
+// correcta de ahí en más) y se devuelve aparte en `revealedKey` para que el
+// caller pueda mostrárselo al streamer una única vez — el backend ya la
+// borró de la DB al responder esto, no hay una segunda oportunidad de verla.
+export async function refreshSession() {
+  const session = loadSession();
+  if (!session?.token) return null;
+  const res = await fetch(`${backendUrl()}/api/auth/verify`, { headers: authHeaders() });
+  const data = await res.json();
+  if (!data.success) return null;
+  const updated = { ...session, ...data.license };
+  if (data.newKey) updated.licenseKey = data.newKey;
+  saveSession(updated);
+  return { ...updated, revealedKey: data.newKey || null };
+}
+
 // Avisa al backend que mate la sesión ya mismo (no hace falta esperar a que
 // otro dispositivo se loguee para que este token deje de servir). Es un
 // best-effort: si falla (sin conexión, etc.) el logout local sigue andando

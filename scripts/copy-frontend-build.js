@@ -8,7 +8,7 @@ const src = path.join(__dirname, '..', 'frontend', 'dist');
 const dest = path.join(__dirname, '..', 'backend', 'public');
 
 if (!fs.existsSync(src)) {
-    console.error('No existe frontend/dist — corré "npm run build --prefix frontend" primero.');
+    console.error('No existe frontend/dist — corre "npm run build --prefix frontend" primero.');
     process.exit(1);
 }
 

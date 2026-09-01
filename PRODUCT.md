@@ -31,9 +31,9 @@ One license bundles four distinct gift-driven game modes — King of the Throne,
   - **King of the Throne (Rey del Trono):** race to be the last/target gifter before time runs out, with an insta-win gift and a "snipe" extension window.
   - **Zubastinis:** top-3 gifters by total coins within a fixed window, optional minimum coin threshold, tiebreak round on a tie for first.
   - **Elimination (Eliminación):** viewers join by sending a specific gift; rounds randomly eliminate one joined participant at a time (with a reveal/roulette animation) until a winner remains; supports a rejoin window.
-  - **Color Says:** standalone color-guess dice mini-game; admin-only has a configurable "pair bias" toggle, all paying licenses always get a fair roll.
+  - **Color Says:** standalone color-guess dice mini-game; a configurable "pair bias" toggle is a paid upsell (PRO: fixed-intensity toggle; VIP: same toggle with a 0–100% intensity slider), admin-only additionally gets an exclusive Safe Mode panel. Regular/trial licenses always get a fair roll.
 - **Multi-tenant backend:** one `Tenant` instance per active license, each with its own isolated Socket.io room — licenses never see each other's state or TikTok connection.
-- **Licensing is manual and single-owner:** the admin (today, one person: `notbenjaa1`) hand-issues license keys from the License Manager panel; there is no self-serve signup or payment flow. License durations: day / week / month / lifetime.
+- **Licensing is admin-issued OR self-serve payment.** The admin (today, one person: `notbenjaa1`) can still hand-issue/extend license keys from the License Manager panel, but streamers can also buy or renew their own plan (Monthly/Annual/Lifetime) and optionally add the PRO/VIP Color Says addon through a self-serve MercadoPago Checkout Pro flow in the control panel, with no admin involvement. License durations: day / week / month / annual / lifetime (day/week are admin-only, not offered in the self-serve store).
 - **One active device per license by default:** logging in elsewhere kicks the prior session out with a visible notice; a license can be explicitly flagged "multi-device" (todopoderosa) to lift this, intended for the owner, not paying customers.
 - **Theming:** the control panel supports switchable UI themes via a dedicated theme picker.
 - **Live-connection resilience:** the backend retries the TikTok LIVE connection every ~3s while a username is set, independent of the operator pressing Start, so a dropped connection recovers without manual intervention.
@@ -46,12 +46,12 @@ One license bundles four distinct gift-driven game modes — King of the Throne,
 
 ## Evidence on Hand
 
-None. No testimonials, case studies, pricing page, press, or other proof assets exist in the repo. Future work must not fabricate any of these.
+A pricing/membership screen exists in-app (`frontend/src/Membership.jsx`, plans + Color Says addons). No testimonials, case studies, external marketing pricing page, press, or other proof assets exist in the repo. Future work must not fabricate any of these.
 
 ## Product Principles
 
 1. **One license, four games.** The bundled suite's breadth is the pitch — new work should extend or polish the shared panel/overlay, not fragment into single-game side tools.
 2. **Live-connection resilience over game polish.** The backend auto-retries the TikTok LIVE connection continuously; every game must degrade gracefully on a flaky connection rather than strand the streamer mid-broadcast.
 3. **Panel and overlay are one shared truth.** The operator-facing control panel and the OBS-facing overlay are separate surfaces that must never visually disagree about current game state.
-4. **Manual trust, not self-serve.** Licensing is hand-issued by one admin to a small, personally vetted set of streamers — don't design flows that assume anonymous signup, checkout, or account self-management.
+4. **Self-serve payment, admin-issued trust for edge cases.** Streamers buy and renew their own plan and Color Says addon through MercadoPago Checkout Pro, no admin involvement required; the admin panel remains for manual overrides (comps, corrections, disputes) rather than as the primary path.
 5. **Spanish-first, LatAm creator voice.** Copy, tone, and any new surface default to Spanish and to the energetic, emoji-forward register already established.

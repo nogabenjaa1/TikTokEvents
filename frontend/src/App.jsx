@@ -8,6 +8,7 @@ import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
+import Membership from './Membership';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
@@ -300,6 +301,27 @@ export default function App() {
           </span>
         </button>
 
+        {/* Visible siempre (con o sin sesión): un usuario nuevo sin licencia
+            también tiene que poder llegar a comprar una membresía, no solo
+            quien ya está logueado. Sin sesión, needsAccess('membership')
+            muestra el login embebido con la prueba gratis en su lugar —
+            mismo patrón que king/zub/elim/tts más abajo. */}
+        {(
+          <button
+            onClick={() => setSidebarMode('membership')}
+            title="Membresía"
+            className={[
+              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+              sidebarMode === 'membership' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+            ].join(' ')}
+          >
+            <span className="text-xl leading-none">💳</span>
+            <span className={[ 'text-[8px] font-bold uppercase tracking-wider', sidebarMode === 'membership' ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+              Membresía
+            </span>
+          </button>
+        )}
+
         {session?.isAdmin && (
           <button
             onClick={() => setSidebarMode('licenses')}
@@ -330,7 +352,7 @@ export default function App() {
         {sidebarMode === 'overlay' && <OverlayLink />}
         {sidebarMode === 'king' && (
           needsAccess('king') ? (
-            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
           ) : (
             <AdminPanel
               state={state} socket={socket}
@@ -341,7 +363,7 @@ export default function App() {
         )}
         {sidebarMode === 'zub' && (
           needsAccess('zub') ? (
-            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
           ) : (
             <Zubastinis
               state={zubState} socket={socket}
@@ -352,7 +374,7 @@ export default function App() {
         )}
         {sidebarMode === 'elim' && (
           needsAccess('elim') ? (
-            <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
           ) : (
             <Elimination
               state={elimState} socket={socket}
@@ -373,12 +395,19 @@ export default function App() {
         {/* TTS también requiere sesión — se muestra el login embebido en su
             lugar sin desmontar TtsChat (ver comentario de "visible" abajo). */}
         {sidebarMode === 'tts' && needsAccess('tts') && (
-          <Login embedded onLoggedIn={onLoggedIn} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
+          <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
         )}
         {/* Permanece montado al cambiar de módulo para que la lectura activa no
             se interrumpa mientras el streamer controla uno de los juegos. */}
         <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'tts' && !needsAccess('tts')} />
         {sidebarMode === 'theme' && <ThemeSwitcher />}
+        {/* A diferencia de king/zub/elim/tts, Membership NO pide sesión para
+            verse: los planes y precios son públicos, y recién pide un alias
+            al momento de pagar (ver Membership.jsx/ensureSession) — así
+            alguien sin cuenta también puede llegar a comprar directo. */}
+        {sidebarMode === 'membership' && (
+          <Membership session={session} onSessionUpdate={setSession} />
+        )}
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
       </main>
     </div>

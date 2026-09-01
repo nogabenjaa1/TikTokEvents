@@ -8,6 +8,7 @@ backend/public/
 # Backend runtime data & secrets
 backend/.env
 backend/data/
+frontend/.env
 
 # Editor / OS
 .vscode/*

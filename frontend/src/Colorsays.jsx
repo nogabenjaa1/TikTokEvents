@@ -1,44 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
+import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
 
 const MIN_DICE = 1;
 const MAX_DICE = 6;
 const DEFAULT_DICE = 4;
-
-function rollFair(n) { return Array.from({ length: n }, () => Math.floor(Math.random() * COLORS.length)); }
-
-function hasRepeat(results) {
-  const counts = {};
-  results.forEach(r => { counts[r] = (counts[r] || 0) + 1; });
-  return Object.values(counts).some(c => c >= 2);
-}
-
-// Sesgo hacia sacar pares, generalizado para N dados y con una intensidad
-// configurable (`biasChance`, 0 a 1) en vez de un valor fijo — así lo puede
-// usar tanto Admin (siempre al máximo, como antes) como PRO (un valor bajo
-// fijo) y VIP (lo que el streamer elija en su slider). Con 1 dado no hay
-// repetición posible, y con 2 dados "forzar un par" es literalmente forzar
-// que ambos salgan iguales, que es EXACTAMENTE la condición de "comodín"
-// que dispara un re-tiro automático en finishRoll — forzarla de forma
-// determinística ahí metía el juego en un loop infinito. Por eso el bias
-// no hace nada con menos de 3 dados.
-const ADMIN_DEFAULT_BIAS = 1.0;
-
-function rollWithPairBias(n, biasChance = ADMIN_DEFAULT_BIAS) {
-  const results = rollFair(n);
-  if (n < 3) return results; // 1-2 dados: ver comentario arriba, el bias no aplica
-  if (results.every(r => r === results[0])) return results; // todos iguales: comodín, se resuelve aparte
-
-  if (!hasRepeat(results) && Math.random() < biasChance) {
-    const idxA = Math.floor(Math.random() * n);
-    let idxB = Math.floor(Math.random() * n);
-    while (idxB === idxA) idxB = Math.floor(Math.random() * n);
-    const adjusted = [...results];
-    adjusted[idxB] = adjusted[idxA];
-    return adjusted;
-  }
-  return results;
-}
 
 // Safe Mode: fuerza que `colorIdx` aparezca EXACTAMENTE `targetCount` veces
 // entre los N dados. Las demás posiciones se llenan con otros colores al
@@ -125,11 +91,8 @@ function WinBonusToggle({ checked, onChange }) {
   );
 }
 
-// PRO paga por una ventaja fija y simple; VIP y Admin además pueden elegir
-// la intensidad con el slider. Un valor bajo para PRO (perceptible pero
-// discreto) deja lugar para que VIP/Admin se sientan claramente superiores
-// al poder llegar hasta el máximo.
-const PRO_WIN_BONUS = 0.2;
+// PRO paga por una ventaja fija y simple (PRO_WIN_BONUS, en ./diceBias);
+// VIP y Admin además pueden elegir la intensidad con el slider.
 const DEFAULT_WIN_BONUS_PCT = 50;
 
 // De acceso libre: funciona sin sesión ni conexión al backend, la lógica de

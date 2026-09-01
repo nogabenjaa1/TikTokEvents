@@ -16,11 +16,11 @@ async function main() {
     if (existing) {
         console.log(`Ya existe una licencia admin para "${ADMIN_USERNAME}" (id: ${existing.id}).`);
         console.log('La key no se puede volver a mostrar (solo se ve una vez al crearla).');
-        console.log('Si la perdiste, revocá esta licencia y corré este script de nuevo para generar una nueva.');
+        console.log('Si la perdiste o quieres el formato nuevo (notbenjaa1-admin-hash), revoca Y BORRA esta licencia desde el panel de Licencias, y corre este script de nuevo para generar una con el formato actual.');
         return;
     }
 
-    const key = auth.generateLicenseKey();
+    const key = auth.generateLabeledKey(ADMIN_USERNAME, 'admin');
     const row = await db.insertLicense({
         id: crypto.randomUUID(),
         keyHash: auth.hashKey(key),

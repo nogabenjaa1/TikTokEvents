@@ -14,7 +14,7 @@ if (!JWT_SECRET || !KEY_HASH_SECRET) {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, lifetime: null, trial: 7 * DAY_MS };
+const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, annual: 365 * DAY_MS, lifetime: null, trial: 7 * DAY_MS };
 const LIFETIME_JWT_EXPIRY = '365d'; // las licencias lifetime igual reautentican una vez al año
 
 // La key es el único "password": alta entropía (192 bits), codificada en
@@ -31,6 +31,19 @@ function hashKey(key) {
 
 function keyPrefix(key) {
     return key.slice(0, 8);
+}
+
+// Mismo formato "legible" que ya usaba la prueba gratis (alias-FREE7DAY-hash,
+// ver server.js): alias-ETIQUETA-hash. Se usa al rotar la key de una
+// licencia que pasa de prueba/nivel anterior a un plan pago (ver
+// /api/payments/webhook) — el alias y la etiqueta son cosméticos, la
+// entropía real vive en el sufijo aleatorio de 72 bits.
+function sanitizeAlias(alias) {
+    return String(alias || '').trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function generateLabeledKey(alias, label) {
+    return `${alias.toLowerCase()}-${label}-${crypto.randomBytes(9).toString('base64url')}`;
 }
 
 function computeExpiresAt(licenseType, fromMs = Date.now()) {
@@ -161,7 +174,7 @@ async function socketAuthMiddleware(socket, next) {
 }
 
 module.exports = {
-    generateLicenseKey, hashKey, keyPrefix, computeExpiresAt, isLicenseValid,
+    generateLicenseKey, hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
     generateSessionId, signSession, verifySession, checkTokenStatus, resolveFromToken, resolveFromRawKey,
     requireAuth, requireAdmin, socketAuthMiddleware,
 };

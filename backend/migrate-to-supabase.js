@@ -29,7 +29,7 @@ async function main() {
     try {
         Database = require('better-sqlite3');
     } catch {
-        throw new Error('Falta better-sqlite3 — corré: npm install better-sqlite3 --no-save');
+        throw new Error('Falta better-sqlite3 — corre: npm install better-sqlite3 --no-save');
     }
 
     const sqlite = new Database(SQLITE_PATH, { readonly: true });

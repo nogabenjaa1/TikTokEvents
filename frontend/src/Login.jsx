@@ -9,7 +9,7 @@ import { loginWithKey, requestFreeTrial, saveSession } from './auth';
 // función bloqueada cuando se usa `embedded`). `embedded`: se usa dentro de
 // un panel ya bloqueado (Rey del Trono/Zubastinis/Eliminación/TTS sin
 // sesión) en vez de la pantalla de login inicial de pantalla completa.
-export default function Login({ onLoggedIn, notice = '', embedded = false }) {
+export default function Login({ onLoggedIn, notice = '', embedded = false, onWantsMembership }) {
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -131,13 +131,28 @@ export default function Login({ onLoggedIn, notice = '', embedded = false }) {
               </button>
             </div>
           ) : !showTrial ? (
-            <button
-              type="button"
-              onClick={() => setShowTrial(true)}
-              className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
-            >
-              ¿No tienes una licencia? Solicita 7 días gratis
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTrial(true)}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                ¿No tienes una licencia? Solicita 7 días gratis
+              </button>
+              {/* Acceso directo a la pantalla de planes para quien ya sabe que
+                  quiere pagar y no necesita pasar por la prueba gratis primero
+                  — ver Membership.jsx, funciona sin sesión y pide un alias
+                  recién al momento de pagar. */}
+              {onWantsMembership && (
+                <button
+                  type="button"
+                  onClick={onWantsMembership}
+                  className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                >
+                  Comprar licencia
+                </button>
+              )}
+            </div>
           ) : (
             <form onSubmit={submitTrial} className="flex flex-col gap-3">
               <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>

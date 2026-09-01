@@ -4,7 +4,7 @@ import { backendUrl, authHeaders } from './auth';
 // Tipos que el admin puede elegir a mano (crear o extender). Las pruebas
 // gratis ('trial') se generan solo desde /api/free-trial, autoservicio —
 // no aparecen acá como opción para crear, solo se muestran si ya existen.
-const CREATE_TYPES = { day: '1 día', week: '1 semana', month: '1 mes', lifetime: 'De por vida' };
+const CREATE_TYPES = { day: '1 día', week: '1 semana', month: '1 mes', annual: '1 año', lifetime: 'De por vida' };
 const DURATION_LABELS = { ...CREATE_TYPES, trial: 'Prueba (7 días)' };
 const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000; // 3 días
 

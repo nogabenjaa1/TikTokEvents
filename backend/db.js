@@ -9,7 +9,19 @@
 // ver backend/migrate-to-supabase.js para pasar los datos de una DB SQLite
 // existente.
 // ==========================================
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// BIGINT (OID 20) viene como STRING por defecto en node-postgres — es una
+// protección genérica del driver contra enteros que no entran en un
+// Number sin perder precisión. Acá todas las columnas BIGINT son
+// timestamps epoch en ms (created_at, expires_at, last_login_at,
+// last_active_at), muy por debajo de Number.MAX_SAFE_INTEGER, así que
+// convertirlas a número es seguro. Sin esto, `new Date(row.expires_at)` en
+// el frontend daba "Invalid Date": un string numérico como "1788219753914"
+// se interpreta como una fecha con formato inválido, no como epoch — a
+// diferencia de comparaciones como `<=` que sí coercionan el string a
+// número solas y por eso el bug pasó desapercibido en otros lados.
+types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {

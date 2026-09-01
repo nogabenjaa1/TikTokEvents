@@ -61,8 +61,10 @@ export default function CardVerifyForm({ onResult, onCancel }) {
     mpRef.current = mp;
     // Color fijo, no un token del tema: estos campos se pintan dentro de un
     // iframe de MercadoPago (otro documento), que no tiene acceso a las
-    // variables CSS de esta página.
-    const style = { color: '#1f2937', fontSize: '14px', placeholderColor: '#9ca3af' };
+    // variables CSS de esta página. Negro para el texto (pedido explícito,
+    // el gris anterior se notaba muy poco) y un gris más oscuro para el
+    // placeholder, para que siga leyéndose como placeholder sin perderse.
+    const style = { color: '#000000', fontSize: '14px', placeholderColor: '#6b7280' };
     mp.fields.create('cardNumber', { placeholder: 'Número de tarjeta', style }).mount('cvf-card-number');
     mp.fields.create('expirationDate', { placeholder: 'MM/AA', style }).mount('cvf-expiration-date');
     mp.fields.create('securityCode', { placeholder: 'CVV', style }).mount('cvf-security-code');

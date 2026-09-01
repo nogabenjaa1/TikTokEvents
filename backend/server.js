@@ -53,6 +53,11 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
 
 const app = express();
+// Render (y cualquier host detrás de un proxy/balanceador) manda el IP real
+// del cliente en X-Forwarded-For — sin esto, express-rate-limit no confía
+// en ese header y tira ERR_ERL_UNEXPECTED_X_FORWARDED_FOR en cada request
+// a una ruta con rate limit (login, free-trial, admin, pagos, etc.).
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.static(path.join(__dirname, 'public')));

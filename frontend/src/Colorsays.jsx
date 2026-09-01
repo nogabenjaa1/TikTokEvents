@@ -1,6 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
 import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
+import RewardedAdGate from './RewardedAdGate';
+import InterstitialAd from './InterstitialAd';
+import AdBanner from './AdBanner';
+import NativeAdBanner from './NativeAdBanner';
+import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
+import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
 const MIN_DICE = 1;
 const MAX_DICE = 6;
@@ -114,7 +120,7 @@ const DEFAULT_WIN_BONUS_PCT = 50;
 // vender a cualquier licencia paga, NO es lo mismo que session.isAdmin
 // (que sigue siendo exclusivo del panel de administración de licencias).
 // El selector de cantidad de dados es una función disponible para todos.
-export default function ColorSays({ tier = 'regular', socket = null }) {
+export default function ColorSays({ tier = 'regular', socket = null, isGuest = false }) {
   const isAdmin = tier === 'admin';
   const hasWinBonus = tier === 'pro' || tier === 'vip' || isAdmin;
   const winBonusHasSlider = tier === 'vip' || isAdmin; // PRO: solo on/off, intensidad fija
@@ -142,6 +148,45 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
   // a propósito (arranca visible siempre), así nunca queda "oculto sin
   // querer" en la próxima sesión sin que el dueño se dé cuenta.
   const [safeModeHidden, setSafeModeHidden] = useState(false);
+
+  // Invitado (sin sesión): banco de horas sin ads en localStorage (ver
+  // adBank.js). Mientras no haya banco activo, se interrumpe el juego cada
+  // GUEST_INTERSTITIAL_INTERVAL_MS con un anuncio; mirar el Smartlink de
+  // RewardedAdGate suma 1h al banco, hasta un tope de 48h acumuladas.
+  const [bankedRemainingMs, setBankedRemainingMs] = useState(() => (isGuest ? getBankedRemainingMs() : 0));
+  const [rewardGateOpen, setRewardGateOpen]       = useState(false);
+  const [guestAdOpen, setGuestAdOpen]             = useState(false);
+  const bankedActive = isGuest && bankedRemainingMs > 0;
+
+  useEffect(() => {
+    if (!isGuest) return;
+    const id = setInterval(() => setBankedRemainingMs(getBankedRemainingMs()), 1000);
+    return () => clearInterval(id);
+  }, [isGuest]);
+
+  // AdSense (Auto ads) se inserta donde Google decide en TODA la página, no
+  // solo acá dentro, y el script vive fijo en index.html (lo necesita el
+  // rastreador de AdSense para verificar el sitio, ver ese archivo) — por
+  // eso <body> arranca CON tkc-ads-suppressed puesto por defecto (oculto en
+  // cualquier otra pantalla) y esto solo lo saca mientras el invitado sea
+  // elegible, restaurando el default seguro al salir de Color Says.
+  useEffect(() => {
+    const eligible = isGuest && !bankedActive;
+    document.body.classList.toggle('tkc-ads-suppressed', !eligible);
+    return () => document.body.classList.add('tkc-ads-suppressed');
+  }, [isGuest, bankedActive]);
+
+  useEffect(() => {
+    if (!isGuest || bankedActive) return;
+    const id = setInterval(() => setGuestAdOpen(true), GUEST_INTERSTITIAL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isGuest, bankedActive]);
+
+  const claimBankedHour = () => {
+    const newBankedUntil = addBankedHour();
+    setBankedRemainingMs(Math.max(0, newBankedUntil - Date.now()));
+    setRewardGateOpen(false);
+  };
 
   const stopTicking = useCallback(() => {
     if (tickIntervalRef.current) { clearInterval(tickIntervalRef.current); tickIntervalRef.current = null; }
@@ -277,6 +322,42 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
         )}
       </div>
 
+      {/* Banner fijo debajo del historial: ingreso pasivo constante para el
+          invitado sin banco activo, aparte del interstitial de cada 15 min
+          (ver useEffect de guestAdOpen más arriba). Zona propia (ver
+          AdBanner.jsx/AdIframeBanner.jsx), así que puede seguir mostrado
+          mientras el interstitial está abierto sin pisarse — solo se apaga
+          en cuanto hay banco activo. */}
+      {isGuest && (
+        <>
+          <AdBanner active={!bankedActive} />
+          <NativeAdBanner active={!bankedActive} />
+        </>
+      )}
+
+      {/* Invitado sin sesión: banco de horas sin ads. En desktop (md:) va en
+          el mismo lugar que el panel de WIN BONUS (top-48) — nunca se pisan
+          porque un invitado siempre tiene tier 'regular' (sin WIN BONUS ni
+          Modo Seguro). En mobile no hay espacio libre a la derecha para
+          flotar, así que queda en el flujo normal debajo del resto. */}
+      {isGuest && (
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-56 p-3">
+          <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1">Modo invitado</p>
+          <p className="text-[10px] text-gray-500 leading-snug mb-2">
+            {bankedActive
+              ? `Sin anuncios por ${formatBankedDuration(bankedRemainingMs)} más.`
+              : 'Vas a ver anuncios cada tanto mientras juegas.'}
+          </p>
+          <button
+            onClick={() => setRewardGateOpen(true)}
+            disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
+            className="theme-btn-secondary w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Ver anuncio: +1h sin anuncios
+          </button>
+        </div>
+      )}
+
       {/* Botones de pánico: líneas casi invisibles pegadas al borde derecho,
           una por panel — a propósito sin ícono, texto ni tooltip, nada que
           delate que ahí hay un control si alguien comparte pantalla
@@ -301,7 +382,7 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
           va arriba de ese panel. PRO solo prende/apaga un sesgo fijo y
           bajo; VIP y Admin además eligen la intensidad con el slider. */}
       {hasWinBonus && !winBonusHidden && (
-        <div className="theme-surface fixed top-48 right-4 w-52 p-3">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-52 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
@@ -324,7 +405,7 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
       {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
-        <div className="theme-surface fixed top-80 right-4 w-60 p-4">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-80 md:right-4 md:w-60 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
@@ -359,6 +440,23 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
             {safeModeAction === 'block' && safeModeColor !== null && <>🔒 Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
           </p>
         </div>
+      )}
+
+      {isGuest && (
+        <>
+          <RewardedAdGate
+            open={rewardGateOpen}
+            onClaim={claimBankedHour}
+            onCancel={() => setRewardGateOpen(false)}
+            title="Suma 1 hora sin anuncios"
+            description="Mira un anuncio corto y juega 1 hora sin interrupciones. Se acumula hasta 48 horas."
+          />
+          <InterstitialAd
+            open={guestAdOpen}
+            onDone={() => setGuestAdOpen(false)}
+            title="Un mensaje de nuestros sponsors"
+          />
+        </>
       )}
     </div>
   );

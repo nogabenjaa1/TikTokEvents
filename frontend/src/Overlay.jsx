@@ -452,9 +452,15 @@ function EliminationOverlay({ state, prize }) {
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente
 // que la audiencia vea el mismo skin que el streamer eligió para representarse.
-export default function Overlay({ state, zubState, elimState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' } }) {
+//
+// `embedded`: además del uso normal como página completa de OBS
+// (min-h-screen), este mismo componente se reusa como vista previa dentro
+// del panel en mobile — ver App.jsx, donde no hay forma de tener OBS y el
+// panel abiertos a la vez en un solo teléfono. En ese caso no debe reservar
+// el viewport entero, solo el tamaño real de la tarjeta (400x680).
+export default function Overlay({ state, zubState, elimState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false }) {
   return (
-    <div className="themed-app grid place-items-center min-h-screen" data-theme-style={theme.style} data-accent={theme.accent}>
+    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} data-theme-style={theme.style} data-accent={theme.accent}>
       <div className="relative grid">
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'king' ? 1 : 0, visibility: activeApp === 'king' ? 'visible' : 'hidden', transform: activeApp === 'king' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>

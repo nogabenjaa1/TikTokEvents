@@ -661,3 +661,34 @@ input[type=range]::-moz-range-thumb {
 .animate-pop {
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
+/* ==========================================
+   ADS: banco de horas del invitado (Color Says)
+   ========================================== */
+/* Google Auto ads no tiene una API para "apagarse" — una vez que insertó
+   un anuncio en la página no hay forma soportada de sacarlo por JS. Se
+   oculta por CSS en cuanto el invitado reclama horas sin ads (ver
+   Colorsays.jsx; el script en sí vive fijo en index.html). */
+.tkc-ads-suppressed .adsbygoogle,
+.tkc-ads-suppressed ins.adsbygoogle {
+  display: none !important;
+}
+
+/* ==========================================
+   MOBILE: barras superiores a sangre completa
+   ========================================== */
+/* TikTokLoginBar y el rail de navegación (App.jsx) están pensados como
+   tarjetas/cajas flotantes en desktop — con bordes redondeados eso se ve
+   bien porque flotan sobre espacio libre. En mobile pasan a ocupar el
+   ancho completo apiladas una sobre otra (ver el flex-col del contenedor
+   en App.jsx), y esos mismos bordes redondeados dejan ver triangulitos del
+   fondo en cada esquina, como si las secciones no encajaran entre sí. Se
+   sacan los bordes/márgenes solo en mobile; a partir de md: no se toca
+   nada (algunos temas — Kawaii/Cute — sí le dan margen y radio propios al
+   sidebar ahí, y eso se mantiene intacto en desktop). */
+@media (max-width: 767px) {
+  .tkc-mobile-flush {
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+}

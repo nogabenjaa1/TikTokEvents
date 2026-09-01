@@ -12,8 +12,10 @@ import Membership from './Membership';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
+import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
+import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 
 const MODES = [
   { id: 'overlay', label: 'Overlay',       icon: '🖥️' },
@@ -40,6 +42,31 @@ const NO_INSTA_WIN = {
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
 
+// La tarjeta del overlay mide 400x680 fijo (pensada para el recorte de OBS)
+// — se achica a este factor para que entre en un celular sin desbordar.
+const OVERLAY_PREVIEW_SCALE = 0.75;
+
+// Vista previa del overlay embebida, solo mobile: desde el celular no se
+// puede tener a la vez el panel y una ventana aparte de OBS para chequear
+// cómo se ve en vivo (a diferencia de desktop, donde el streamer sí puede
+// tener las dos ventanas abiertas), así que se resuelve deslizando hacia
+// abajo del panel de King/Zub/Elim. Reusa el mismo Overlay.jsx que corre en
+// OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
+// forzado al modo que se esté mirando, porque la idea es confirmar qué ve
+// la audiencia ahora mismo, no simular un modo que no está activo.
+function MobileOverlayPreview({ state, zubState, elimState, activeApp, prizes, theme }) {
+  return (
+    <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
+      <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 680 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
+        <div style={{ width: 400, height: 680, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
+          <Overlay embedded state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={theme} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const overlayMode = isOverlayMode();
   const [session, setSession] = useState(() => loadSession());
@@ -48,10 +75,21 @@ export default function App() {
   // con la misma key, el backend nos desconecta y avisa por este evento.
   const [kickedOutMessage, setKickedOutMessage] = useState('');
 
+  // Ads periódicos para licencia trial: se muestra un interstitial cada
+  // TRIAL_AD_INTERVAL_MS (3 cada 2 horas) mientras haya sesión trial activa
+  // en el panel — es un beneficio de la prueba gratis vs. el invitado sin
+  // cuenta, que ve ads con más frecuencia dentro de Color Says (ver ese
+  // componente). Nunca corre en el overlay de OBS.
+  const [trialAdOpen, setTrialAdOpen] = useState(false);
+
   const [state, setState]         = useState({ isActive: false, mode: 'idle', timeLeft: 0 });
   const [zubState, setZubState]   = useState({ isActive: false, mode: 'idle', timeLeft: 0, top3: [], winner: null });
   const [elimState, setElimState] = useState({ isActive: false, mode: 'idle', timeLeft: 0, participants: [], lastEliminated: null, winner: null });
-  const [sidebarMode, setSidebarMode] = useState('king');
+  // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
+  // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
+  // recarga la página cae directo donde se muestran los anuncios, sin
+  // tener que navegar hasta ahí primero.
+  const [sidebarMode, setSidebarMode] = useState('color');
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
@@ -162,6 +200,16 @@ export default function App() {
     socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
   }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
 
+  // Cadencia de ads de la licencia trial (ver TRIAL_AD_INTERVAL_MS). Si deja
+  // de ser trial a mitad de un anuncio ya abierto (logout, upgrade a paga),
+  // ese anuncio no se corta solo — el usuario lo cierra con su propio botón
+  // "Continuar", que igual no vuelve a abrirse porque el interval ya se limpió.
+  useEffect(() => {
+    if (overlayMode || session?.licenseType !== 'trial') return;
+    const id = setInterval(() => setTrialAdOpen(true), TRIAL_AD_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [overlayMode, session?.licenseType]);
+
   // Conectar al LIVE y cargar regalos son operaciones independientes. La
   // lista de regalos puede fallar o venir vacía aunque el usuario sí esté en
   // vivo, por lo que nunca debe bloquear la conexión (TTS tampoco la necesita).
@@ -223,7 +271,7 @@ export default function App() {
     socket?.disconnect();
     clearSession();
     setSession(null);
-    setSidebarMode('king');
+    setSidebarMode('color');
   };
 
   // El username queda bloqueado mientras cualquier módulo que dependa de la
@@ -256,7 +304,7 @@ export default function App() {
           Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
         </div>
       )}
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <TikTokLoginBar
         username={username} setUsername={setUsername}
         connectionStatus={connectionStatus}
@@ -264,7 +312,9 @@ export default function App() {
         disabled={usernameLocked}
       />
 
-      <aside className="theme-sidebar flex flex-col items-center gap-2 w-[72px] min-h-screen py-4 flex-shrink-0 z-50">
+      {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
+          Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
+      <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -275,7 +325,7 @@ export default function App() {
               if (socket && OVERLAY_APPS.includes(m.id)) socket.emit('set_active_app', m.id);
             }}
             className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
               sidebarMode === m.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
@@ -286,12 +336,12 @@ export default function App() {
           </button>
         ))}
 
-        <div className="w-8 h-px my-1" style={{ background: 'var(--surface-border-color)' }} />
+        <div className="w-px h-8 md:w-8 md:h-px mx-1 my-0 md:mx-0 md:my-1 flex-shrink-0" style={{ background: 'var(--surface-border-color)' }} />
         <button
           onClick={() => setSidebarMode('theme')}
           title="Elegir tema"
           className={[
-            'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+            'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
             sidebarMode === 'theme' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
           ].join(' ')}
         >
@@ -327,7 +377,7 @@ export default function App() {
             onClick={() => setSidebarMode('licenses')}
             title="Administrar licencias"
             className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
+              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
               sidebarMode === 'licenses' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
@@ -338,49 +388,58 @@ export default function App() {
           </button>
         )}
 
-        <div className="flex-1" />
+        <div className="hidden md:block flex-1" />
         {session && (
           <button onClick={logout} title="Cerrar sesión"
-            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200">
+            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0">
             <span className="text-xl leading-none">🚪</span>
             <span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Salir</span>
           </button>
         )}
       </aside>
 
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
         {sidebarMode === 'overlay' && <OverlayLink />}
         {sidebarMode === 'king' && (
           needsAccess('king') ? (
             <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
           ) : (
-            <AdminPanel
-              state={state} socket={socket}
-              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-              prize={prizes.king}
-            />
+            <>
+              <AdminPanel
+                state={state} socket={socket}
+                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                prize={prizes.king}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {sidebarMode === 'zub' && (
           needsAccess('zub') ? (
             <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
           ) : (
-            <Zubastinis
-              state={zubState} socket={socket}
-              username={username} connectionStatus={connectionStatus}
-              prize={prizes.zub}
-            />
+            <>
+              <Zubastinis
+                state={zubState} socket={socket}
+                username={username} connectionStatus={connectionStatus}
+                prize={prizes.zub}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {sidebarMode === 'elim' && (
           needsAccess('elim') ? (
             <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
           ) : (
-            <Elimination
-              state={elimState} socket={socket}
-              username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-              prize={prizes.elim}
-            />
+            <>
+              <Elimination
+                state={elimState} socket={socket}
+                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                prize={prizes.elim}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
           )
         )}
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
@@ -390,8 +449,9 @@ export default function App() {
             Modo Seguro — es un nivel de Color Says independiente de
             session.isAdmin (que sigue siendo exclusivo del panel de
             Licencias, no algo que se compre). Sin sesión, tier es 'regular'
-            (probabilidades limpias). */}
-        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} />}
+            (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
+            los ads dentro del propio componente — ver Colorsays.jsx. */}
+        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} isGuest={!session} />}
         {/* TTS también requiere sesión — se muestra el login embebido en su
             lugar sin desmontar TtsChat (ver comentario de "visible" abajo). */}
         {sidebarMode === 'tts' && needsAccess('tts') && (
@@ -411,6 +471,7 @@ export default function App() {
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
       </main>
     </div>
+    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar TikTok Concurso" />
     </ThemedShell>
   );
 }

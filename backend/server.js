@@ -370,8 +370,8 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
     // puede pedir una preferencia para la licencia de otro.
     const externalReference = `${req.license.id}:${planType || '-'}:${diceTier || '-'}`;
     const titleParts = [];
-    if (planType) titleParts.push({ month: 'Plan Mensual', annual: 'Plan Anual', lifetime: 'Plan Lifetime' }[planType]);
-    if (diceTier) titleParts.push(`Color Says ${diceTier.toUpperCase()}`);
+    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
+    if (diceTier) titleParts.push(diceTier.toUpperCase());
 
     try {
         const preference = new Preference(getMpClient());
@@ -379,7 +379,7 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
             body: {
                 items: [{
                     id: externalReference,
-                    title: `TikTok Concurso — ${titleParts.join(' + ')}`,
+                    title: `TikTokEvents - ${titleParts.join(' + ')}`,
                     quantity: 1,
                     currency_id: 'MXN',
                     unit_price: amountCents / 100,
@@ -423,7 +423,19 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     const manifest = `id:${String(dataId).toLowerCase()};request-id:${xRequestId};ts:${sigParts.ts};`;
     const expectedHash = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
     if (!sigParts.v1 || expectedHash !== sigParts.v1) {
-        console.error('[MP] Webhook con firma inválida — descartado');
+        // Diagnóstico sin exponer el secreto completo: si el largo del
+        // secreto configurado no es el esperado, casi siempre es un
+        // espacio/salto de línea de más al pegarlo en Render. Comparar los
+        // primeros caracteres de ambos hashes ayuda a distinguir "secreto
+        // distinto por completo" de "manifest armado distinto" sin lograr
+        // filtrar nada útil para un atacante (8 caracteres de un HMAC-SHA256
+        // no sirven para reconstruir nada).
+        console.error('[MP] Webhook con firma inválida — descartado', {
+            secretLength: secret.length,
+            manifest,
+            expectedPrefix: expectedHash.slice(0, 8),
+            receivedPrefix: String(sigParts.v1 || '').slice(0, 8),
+        });
         return res.sendStatus(401);
     }
 

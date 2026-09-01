@@ -7,7 +7,7 @@ import { SMARTLINK_URL, REWARD_MIN_WAIT_MS } from './adConfig';
 // recompensa, para evitar el "abrir y cerrar" instantáneo. No es infalible,
 // es una barrera proporcional al beneficio que desbloquea (7 días de prueba,
 // o 1h sin ads en Color Says).
-export default function RewardedAdGate({ open, onClaim, onCancel, title, description }) {
+export default function RewardedAdGate({ open, onClaim, onCancel, title, description, claimLabel = 'Reclamar recompensa' }) {
   const [watching, setWatching] = useState(false);
   const [ready, setReady] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(Math.ceil(REWARD_MIN_WAIT_MS / 1000));
@@ -71,7 +71,7 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
             disabled={!ready}
             className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {ready ? 'Reclamar recompensa' : `Disponible en ${secondsLeft}s`}
+            {ready ? claimLabel : `Disponible en ${secondsLeft}s`}
           </button>
         )}
 

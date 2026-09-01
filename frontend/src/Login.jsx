@@ -221,6 +221,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
         }}
         onCancel={() => { setShowAdGate(false); setAdsWatched(0); }}
         title={`Anuncio ${Math.min(adsWatched + 1, TRIAL_UNLOCK_AD_COUNT)} de ${TRIAL_UNLOCK_AD_COUNT}`}
+        claimLabel={adsWatched + 1 >= TRIAL_UNLOCK_AD_COUNT ? 'Reclamar' : 'Continuar'}
         description="Mira este anuncio corto para avanzar — nos ayuda a mantener el servicio gratis."
       />
     </div>

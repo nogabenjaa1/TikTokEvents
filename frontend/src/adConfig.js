@@ -35,7 +35,7 @@ export const NATIVE_BANNER_CONTAINER_ID = 'container-8a597f34f920548368a4283c01d
 // Tiempo mínimo (ms) que hay que dejar pasar tras abrir el Smartlink antes
 // de poder reclamar la recompensa — evita el "abrir y cerrar" instantáneo.
 // No es infalible, es una barrera proporcional al beneficio que desbloquea.
-export const REWARD_MIN_WAIT_MS = 15_000;
+export const REWARD_MIN_WAIT_MS = 10_000;
 
 // Tiempo mínimo (ms) que el interstitial queda en pantalla antes de poder cerrarlo.
 export const INTERSTITIAL_MIN_WAIT_MS = 12_000;

@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
-const DEFAULTS = { enabled: false, allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1 };
+// voiceURI/pitch/rate: el navegador ya trae varias voces gratis instaladas
+// (del sistema operativo, más las "Google ..." que Chrome/Edge exponen
+// cuando hay internet) — antes ni se elegían, quedaba lo que el navegador
+// decidiera solo. pitch 1 = normal, más alto = voz aguda tipo "ardilla";
+// rate 1 = velocidad normal del habla.
+const DEFAULTS = { enabled: false, allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1, voiceURI: '', pitch: 1, rate: 1 };
+const TEST_TEXT_DEFAULT = 'Así se va a escuchar tu voz del chat.';
 
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'), enabled: false }; }
@@ -25,7 +31,11 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
   const [settings, setSettings] = useState(loadSettings);
   const [lastMessage, setLastMessage] = useState(null);
   const [queueCount, setQueueCount] = useState(0);
+  const [voices, setVoices] = useState([]);
+  const [testText, setTestText] = useState(TEST_TEXT_DEFAULT);
+  const [testing, setTesting] = useState(false);
   const settingsRef = useRef(settings);
+  const voicesRef = useRef(voices);
   const seenIds = useRef(new Set());
 
   const connected = connectionStatus === 'connected';
@@ -35,6 +45,41 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
     settingsRef.current = settings;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
   }, [settings]);
+
+  // getVoices() suele devolver un array vacío en la primera llamada — la
+  // lista real llega después, de forma asíncrona, avisada por
+  // voiceschanged (comportamiento estándar de la Web Speech API, no un bug
+  // nuestro). Español primero (es-*, el uso típico de este panel), el
+  // resto de idiomas después por si el streamer quiere una voz rara a propósito.
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const loadVoices = () => {
+      const list = window.speechSynthesis.getVoices();
+      const sorted = [...list].sort((a, b) => {
+        const aEs = a.lang.toLowerCase().startsWith('es'), bEs = b.lang.toLowerCase().startsWith('es');
+        if (aEs !== bEs) return aEs ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      voicesRef.current = sorted;
+      setVoices(sorted);
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+  }, []);
+
+  const resolveVoice = (voiceURI, list) => list.find(v => v.voiceURI === voiceURI) || null;
+
+  const buildUtterance = (text, voiceURI, pitch, rate) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = resolveVoice(voiceURI, voicesRef.current);
+    utterance.voice = voice;
+    utterance.lang = voice?.lang || 'es-MX';
+    utterance.pitch = pitch;
+    utterance.rate = rate;
+    utterance.volume = 1;
+    return utterance;
+  };
 
   useEffect(() => {
     const updateQueue = () => setQueueCount(window.speechSynthesis?.pending ? 1 : 0);
@@ -58,10 +103,7 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
         || (current.fanMembers && message.fanLevel >= current.minFanLevel);
       if (!authorized) return;
 
-      const utterance = new SpeechSynthesisUtterance(message.comment);
-      utterance.lang = 'es-MX';
-      utterance.rate = 1;
-      utterance.volume = 1;
+      const utterance = buildUtterance(message.comment, current.voiceURI, current.pitch, current.rate);
       utterance.onstart = () => setLastMessage(message);
       utterance.onend = () => setQueueCount(window.speechSynthesis.pending ? 1 : 0);
       window.speechSynthesis.speak(utterance);
@@ -79,6 +121,20 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
 
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
   const stop = () => { window.speechSynthesis?.cancel(); setQueueCount(0); };
+
+  // Prueba la voz/pitch/velocidad actuales con un texto propio, sin
+  // depender de que el TTS esté activo ni de estar conectado al LIVE —
+  // sirve para calibrar el efecto (ej. pitch alto + rate alto = voz de
+  // ardilla) antes de salir en vivo.
+  const testVoice = () => {
+    if (!('speechSynthesis' in window) || !testText.trim()) return;
+    window.speechSynthesis.cancel();
+    const utterance = buildUtterance(testText.trim(), settings.voiceURI, settings.pitch, settings.rate);
+    utterance.onstart = () => setTesting(true);
+    utterance.onend = () => setTesting(false);
+    utterance.onerror = () => setTesting(false);
+    window.speechSynthesis.speak(utterance);
+  };
 
   return (
     <section className={`${visible ? 'flex-1' : 'hidden'} overflow-y-auto px-8 pt-24 pb-10 text-white`}>
@@ -166,6 +222,68 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
             </div>
             <button type="button" onClick={stop} disabled={!queueCount} className="theme-btn-secondary w-full py-3 text-[10px] font-black tracking-widest disabled:opacity-40">DETENER Y VACIAR COLA</button>
           </aside>
+        </div>
+
+        <div className="theme-surface p-6 mt-5">
+          <h2 className="text-sm font-black tracking-widest mb-1">VOZ</h2>
+          <p className="text-xs text-gray-500 mb-5">Elige la voz y ajusta pitch/velocidad — súbele el pitch y la velocidad para un efecto de voz aguda tipo ardilla.</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <label className="block sm:col-span-2">
+              <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Voz ({voices.length} disponibles)</span>
+              <select
+                value={settings.voiceURI}
+                onChange={(event) => update('voiceURI', event.target.value)}
+                className="theme-input w-full p-3 outline-none text-sm font-bold text-white"
+              >
+                <option value="">Predeterminada del navegador</option>
+                {voices.map(v => (
+                  <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                ))}
+              </select>
+              {voices.length === 0 && (
+                <span className="block text-[10px] text-gray-500 mt-1">
+                  Tu navegador todavía no reportó voces — Chrome/Edge suelen tardar un instante, o revisa que tengas conexión.
+                </span>
+              )}
+            </label>
+
+            <label className="block">
+              <div className="flex items-center justify-between mb-2">
+                <span className="theme-label text-[10px] uppercase tracking-widest font-black">Pitch (agudo/grave)</span>
+                <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{settings.pitch.toFixed(1)}</span>
+              </div>
+              <input type="range" min="0" max="2" step="0.1" value={settings.pitch} onChange={(event) => update('pitch', Number(event.target.value))} className="w-full" />
+            </label>
+
+            <label className="block">
+              <div className="flex items-center justify-between mb-2">
+                <span className="theme-label text-[10px] uppercase tracking-widest font-black">Velocidad</span>
+                <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{settings.rate.toFixed(1)}x</span>
+              </div>
+              <input type="range" min="0.5" max="3" step="0.1" value={settings.rate} onChange={(event) => update('rate', Number(event.target.value))} className="w-full" />
+            </label>
+          </div>
+
+          <label className="block mt-5">
+            <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Probar</span>
+            <div className="flex gap-2">
+              <input
+                value={testText}
+                onChange={(event) => setTestText(event.target.value)}
+                placeholder="Escribe un texto para probar la voz"
+                className="theme-input flex-1 p-3 outline-none text-sm font-bold text-white"
+              />
+              <button
+                type="button"
+                onClick={testVoice}
+                disabled={!('speechSynthesis' in window) || !testText.trim()}
+                className="theme-btn-primary px-6 py-3 text-xs font-black tracking-widest disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                {testing ? 'REPRODUCIENDO...' : 'PROBAR VOZ'}
+              </button>
+            </div>
+          </label>
         </div>
       </div>
     </section>

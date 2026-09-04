@@ -404,12 +404,21 @@ class Tenant {
     // DESPACHO ÚNICO DE REGALOS -> CADA MÓDULO DECIDE SI LE INTERESA
     // ==========================================
     handleGiftEvent(data) {
-        if (data.giftType === 1 && !data.repeatEnd) return; // esperar a que termine el combo
+        // Nombres de campo verificados decodificando el protobuf real de
+        // esta versión de la librería (WebcastGiftMessage/Gift): el tipo
+        // combo-able es `type` (no `giftType`) y el nombre del regalo es
+        // `name` (no `giftName`) — quedaron mal desde antes, no es una
+        // regresión de este cambio. El avatar sale de `profilePictureUrl`
+        // (singular, ya resuelto a una sola URL por la librería), no de
+        // `userDetails.profilePictureUrls` (que en esta versión es un
+        // string, no un array — indexarlo con [0] agarraba un carácter
+        // suelto en vez de la URL).
+        if (data.type === 1 && !data.repeatEnd) return; // esperar a que termine el combo
 
         const event = {
             username: data.uniqueId,
-            avatar: data.userDetails?.profilePictureUrls?.[0] || '',
-            giftName: data.giftName,
+            avatar: data.profilePictureUrl || '',
+            giftName: data.name || '',
             diamondCount: data.diamondCount || 0,
             repeatCount: data.repeatCount || 1,
             followRole: data.followRole,
@@ -432,7 +441,7 @@ class Tenant {
         const likeCount = Number(data.likeCount) || 0;
         if (!username || likeCount <= 0) return;
 
-        const avatar = data.userDetails?.profilePictureUrls?.[0] || '';
+        const avatar = data.profilePictureUrl || '';
         this.processLikeTapTap(username, avatar, likeCount);
     }
 
@@ -440,7 +449,11 @@ class Tenant {
     // qué voces pueden entrar al TTS. La síntesis ocurre en el navegador del
     // streamer; el backend nunca reproduce ni almacena los comentarios.
     handleChatEvent(data) {
-        const comment = typeof data.comment === 'string' ? data.comment.trim() : '';
+        // El texto del comentario viene en `data.content`, no `data.comment`
+        // (verificado contra un LIVE real) — con el nombre viejo esto
+        // siempre daba string vacío y el chat completo (TTS y Ruleta modo
+        // chat) quedaba mudo, sin ningún error visible.
+        const comment = typeof data.content === 'string' ? data.content.trim() : '';
         if (!comment) return;
 
         const badges = Array.isArray(data.userBadges) ? data.userBadges : [];
@@ -834,7 +847,7 @@ class Tenant {
         const state = this.rouletteState;
         if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'chat') return;
 
-        const comment = typeof data.comment === 'string' ? data.comment.trim().toLowerCase() : '';
+        const comment = typeof data.content === 'string' ? data.content.trim().toLowerCase() : '';
         const keyword = (state.keyword || '').trim().toLowerCase();
         if (!keyword || !comment.includes(keyword)) return;
         if (state.followersOnly && !(Number(data.followRole) > 0)) return;
@@ -842,7 +855,7 @@ class Tenant {
         const username = data.uniqueId;
         if (!username || state.entries.some(e => e.username === username)) return;
 
-        state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar: data.userDetails?.profilePictureUrls?.[0] || '' });
+        state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar: data.profilePictureUrl || '' });
         this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
     }
 

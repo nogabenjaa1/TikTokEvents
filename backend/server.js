@@ -20,6 +20,20 @@ process.on('unhandledRejection', (reason) => {
     console.error('[UNHANDLED REJECTION]', reason);
 });
 
+// Redundante a propósito con el `postinstall` de package.json: en al menos
+// un deploy de Render el parche de npm install no llegó a tomar efecto
+// (se seguía viendo el crash de getTopViewerAttributes con el server ya
+// arriba, señal de que node_modules venía de una caché de Render restaurada
+// sin volver a correr el postinstall) — así que también se aplica acá,
+// síncrono, ANTES de requerir tiktok-live-connector por primera vez. Es
+// idempotente y no fatal (ver el script), así que correrlo dos veces por
+// deploy no tiene costo real.
+try {
+    require('./scripts/patch-tiktok-live-connector.js');
+} catch (err) {
+    console.error('[patch-tiktok-live-connector] Falló al aplicar el parche en el arranque:', err.message);
+}
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');

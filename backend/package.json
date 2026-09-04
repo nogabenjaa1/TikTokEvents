@@ -17,6 +17,7 @@
     "pg": "^8.23.0",
     "socket.io": "^4.8.3",
     "tiktok-live-connector": "^2.1.1-beta1",
+    "tiktok-live-connector-v1": "npm:tiktok-live-connector@1.2.3",
     "ws": "^8.20.0"
   }
 }

@@ -8,6 +8,14 @@ const crypto = require('crypto');
 // Ver comentario equivalente en tenant.js: WebcastPushConnection vive en el
 // subpath '/legacy' en esta versión de la librería, no en el paquete raíz.
 const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
+// El catálogo de regalos (para el selector del panel) usa a propósito la
+// versión 1.2.3 vieja de la librería, instalada aparte con un alias en
+// package.json (tiktok-live-connector-v1) — su getAvailableGifts() pega un
+// endpoint público de TikTok que NO necesita firma de Euler Stream, a
+// diferencia de fetchAvailableGifts() en la v2, que sí y quedó bloqueada
+// detrás de un plan pago (ver /api/setup/:username más abajo). La conexión
+// LIVE de verdad sigue siendo la v2 de arriba, sin tocar.
+const { WebcastPushConnection: WebcastPushConnectionV1 } = require('tiktok-live-connector-v1');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
@@ -553,12 +561,9 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
     try {
         const username = req.params.username;
-        // El constructor de esta versión de la librería no tolera un
-        // options undefined (revienta sincrónicamente leyendo
-        // options.processInitialData) — hay que pasar el objeto aunque
-        // esté vacío.
-        const tempConn = new WebcastPushConnection(username, {});
-        const gifts = await tempConn.fetchAvailableGifts();
+        // v1 a propósito acá — ver comentario del import de arriba.
+        const tempConn = new WebcastPushConnectionV1(username);
+        const gifts = await tempConn.getAvailableGifts();
         const validGifts = gifts
             .filter(g => g.name && g.image?.url_list?.[0])
             .map(g => ({

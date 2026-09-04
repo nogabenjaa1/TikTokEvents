@@ -1,4 +1,12 @@
-const { WebcastPushConnection } = require('tiktok-live-connector');
+// WebcastPushConnection se movió al subpath '/legacy' en una versión reciente
+// de la librería — importarlo del paquete raíz devuelve `undefined` ahí
+// (el root export ahora es solo el catálogo enorme de tipos protobuf), así
+// que `new WebcastPushConnection(...)` explotaba con un TypeError SÍNCRONO
+// en cada intento de conectar. Como eso pasaba dentro de un método async,
+// se convertía en una promesa rechazada que todo caller atrapaba con
+// `.catch(() => {})` sin loguear nada — por eso el panel se quedaba en
+// "Conectando..." para siempre, sin ni éxito ni error visible.
+const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 const db = require('./db');
 
 // Duración de la animación de "sorteo" (tipo ruleta) en el overlay de
@@ -266,37 +274,60 @@ class Tenant {
 
         this.currentTikTokUsername = username;
         console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
-        // Toda conexión (incluso sin key) pasa por el sign server de Euler
-        // Stream para firmar el WebSocket — SIGN_API_KEY es opcional (hay un
-        // tier gratis sin key), pero sin ella se comparte el pool de límites
-        // "comunidad", que puede estar saturado/lento para IPs de datacenter
-        // como las de Render. Pasarla acá (en vez de solo por env var) es la
-        // forma que la propia librería documenta como más confiable, porque
-        // SignConfig es un singleton que se cachea la primera vez que se usa.
-        this.tiktokConnection = new WebcastPushConnection(username, {
-            enableExtendedGiftInfo: true,
-            signApiKey: process.env.SIGN_API_KEY || undefined,
-        });
-        this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
-        this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
-        this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
-        this.tiktokConnection.on('error', ({ info, exception } = {}) => {
-            const message = exception?.message || info || 'Error interno del conector';
-            console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
-        });
-        this.tiktokConnection.on('disconnected', () => {
-            console.log(`[${this.licenseId}] [TIKTOK] 🔌 Desconectado de @${username}`);
-            this.liveConnected = false;
-            this.broadcast.emit('live_disconnected');
-            this.scheduleReconnect(username);
-        });
 
-        // Sin este timeout propio, un connect() colgado (ver comentario de
-        // TIKTOK_CONNECT_TIMEOUT_MS) deja al panel esperando para siempre.
-        const timedConnect = Promise.race([
-            this.tiktokConnection.connect(),
-            new Promise((_, reject) => setTimeout(() => reject(new TikTokConnectTimeoutError()), TIKTOK_CONNECT_TIMEOUT_MS)),
-        ]);
+        let timedConnect;
+        try {
+            // Toda conexión (incluso sin key) pasa por el sign server de
+            // Euler Stream para firmar el WebSocket — SIGN_API_KEY es
+            // opcional (hay un tier gratis sin key), pero sin ella se
+            // comparte el pool de límites "comunidad", que puede estar
+            // saturado/lento para IPs de datacenter como las de Render.
+            // Pasarla acá (en vez de solo por env var) es la forma que la
+            // propia librería documenta como más confiable, porque
+            // SignConfig es un singleton que se cachea la primera vez que
+            // se usa.
+            this.tiktokConnection = new WebcastPushConnection(username, {
+                enableExtendedGiftInfo: true,
+                signApiKey: process.env.SIGN_API_KEY || undefined,
+            });
+            this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
+            this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
+            this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
+            this.tiktokConnection.on('error', ({ info, exception } = {}) => {
+                const message = exception?.message || info || 'Error interno del conector';
+                console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
+            });
+            this.tiktokConnection.on('disconnected', () => {
+                console.log(`[${this.licenseId}] [TIKTOK] 🔌 Desconectado de @${username}`);
+                this.liveConnected = false;
+                this.broadcast.emit('live_disconnected');
+                this.scheduleReconnect(username);
+            });
+
+            // Sin este timeout propio, un connect() colgado (ver comentario
+            // de TIKTOK_CONNECT_TIMEOUT_MS) deja al panel esperando para
+            // siempre. El try/catch de acá afuera es porque, si algo de lo
+            // de arriba (constructor o el arranque de connect()) revienta
+            // de forma SÍNCRONA, antes se perdía en silencio: una excepción
+            // síncrona dentro de un método async se convierte en promesa
+            // rechazada, y todos los que llaman a ensureTikTokConnection lo
+            // atrapan con `.catch(() => {})` sin loguear nada — por eso no
+            // se veía ni ✅ ni ❌ después de "Intentando conectar...".
+            timedConnect = Promise.race([
+                this.tiktokConnection.connect(),
+                new Promise((_, reject) => setTimeout(() => reject(new TikTokConnectTimeoutError()), TIKTOK_CONNECT_TIMEOUT_MS)),
+            ]);
+        } catch (err) {
+            console.error(`[${this.licenseId}] [TIKTOK] ❌ Error sincrónico al armar la conexión:`, err);
+            this.connectingPromise = null;
+            this.liveConnected = false;
+            this.broadcast.emit('live_connection_error', {
+                code: err?.name || 'ConnectionSetupError',
+                message: this.getTikTokConnectionErrorMessage(err),
+            });
+            this.scheduleReconnect(username);
+            return Promise.reject(err);
+        }
 
         this.connectingPromise = timedConnect.then(() => {
             console.log(`[${this.licenseId}] [TIKTOK] ✅ ¡CONECTADO!`);

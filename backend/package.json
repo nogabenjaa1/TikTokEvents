@@ -4,7 +4,8 @@
   "main": "server.js",
   "scripts": {
     "server": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "postinstall": "node scripts/patch-tiktok-live-connector.js"
   },
   "type": "commonjs",
   "dependencies": {

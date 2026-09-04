@@ -18,8 +18,5 @@
     "socket.io": "^4.8.3",
     "tiktok-live-connector": "^2.1.1-beta1",
     "ws": "^8.20.0"
-  },
-  "devDependencies": {
-    "better-sqlite3": "^12.11.1"
   }
 }

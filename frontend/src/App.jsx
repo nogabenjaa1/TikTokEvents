@@ -4,7 +4,7 @@ import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
 import Roulette from './Roulette';
 import ColorSays from './Colorsays';
-import Overlay from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
@@ -18,23 +18,34 @@ import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 
-const MODES = [
-  { id: 'overlay', label: 'Overlay',       icon: '🖥️' },
-  { id: 'king',  label: 'Rey del\nTrono',  icon: '👑' },
-  { id: 'zub',   label: 'Zubast\ninis',    icon: '🏆' },
-  { id: 'elim',  label: 'Elimina\nción',   icon: '💀' },
-  { id: 'roulette', label: 'Ruleta',       icon: '🎡' },
-  { id: 'color', label: 'Colores',         icon: '🎲' },
-  { id: 'tts',   label: 'TTS\n(BETA)',     icon: '🔊' },
+// Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
+// TikTok (antes eran botones sueltos de primer nivel) detrás de una
+// subsidebar propia — ver EVENT_TABS.
+const SECTIONS = [
+  { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
+  { id: 'events',  label: 'TikTokEvents', icon: '🎉' },
+  { id: 'color',   label: 'ColorDice',    icon: '🎲' },
+  { id: 'theme',   label: 'Tema',         icon: '🎨' },
+  { id: 'membership', label: 'Membresía', icon: '💳' },
 ];
 
-// Únicos módulos de acceso libre, sin licencia (Color Says, y "Tema" que es
+// Pestañas dentro de la sección "TikTokEvents" — cada una es uno de los
+// módulos que ya existían como botón de primer nivel.
+const EVENT_TABS = [
+  { id: 'king',     label: 'Rey del Trono', icon: '👑' },
+  { id: 'zub',      label: 'Zubastinis',    icon: '🏆' },
+  { id: 'elim',     label: 'Eliminación',   icon: '💀' },
+  { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
+  { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
+];
+
+// Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
 // puramente cosmético/local). Todo lo demás requiere sesión — sin ella se
 // muestra el login embebido con la opción de prueba gratis en su lugar.
 const FREE_MODES = ['overlay', 'color', 'theme'];
 
-// Modos que tienen representación en el overlay de OBS (Color Says no la
-// tiene: se transmite directo desde su propia pantalla)
+// Pestañas de TikTokEvents que tienen representación en el overlay de OBS
+// (TTS no la tiene: lee el chat en el navegador del streamer, sin overlay).
 const OVERLAY_APPS = ['king', 'zub', 'elim', 'roulette'];
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
@@ -88,11 +99,17 @@ export default function App() {
   const [zubState, setZubState]   = useState({ isActive: false, mode: 'idle', timeLeft: 0, top3: [], winner: null });
   const [elimState, setElimState] = useState({ isActive: false, mode: 'idle', timeLeft: 0, participants: [], lastEliminated: null, winner: null });
   const [rouletteState, setRouletteState] = useState({ isActive: false, mode: 'idle', entryMode: 'chat', timeLeft: 0, entries: [], lastEliminated: null, winner: null });
+  // Rankings continuos (sin partida/ganador, ver tenant.js) para los
+  // overlays angostos de Top Tap-Tap y Top Gifter.
+  const [tapTapState, setTapTapState] = useState({ leaderboard: [] });
+  const [gifterState, setGifterState] = useState({ leaderboard: [] });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin
   // tener que navegar hasta ahí primero.
   const [sidebarMode, setSidebarMode] = useState('color');
+  // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
+  const [eventsTab, setEventsTab] = useState('king');
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
@@ -164,6 +181,9 @@ export default function App() {
     socket.on('roulette_spin_started',    setRouletteState);
     socket.on('roulette_step',            setRouletteState);
     socket.on('roulette_winner_declared', setRouletteState);
+
+    socket.on('taptap_state_update', setTapTapState);
+    socket.on('gifter_state_update', setGifterState);
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
@@ -269,8 +289,23 @@ export default function App() {
         </div>
       );
     }
-    if (getOverlayScreen() === 'colors') {
+    const screen = getOverlayScreen();
+    if (screen === 'colors') {
       return <DiceOverlay diceState={diceState} theme={overlayTheme} />;
+    }
+    if (screen === 'taptap') {
+      return (
+        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+          <TopTapTapOverlay state={tapTapState} />
+        </div>
+      );
+    }
+    if (screen === 'gifter') {
+      return (
+        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+          <TopGifterOverlay state={gifterState} />
+        </div>
+      );
     }
     return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
   }
@@ -324,62 +359,21 @@ export default function App() {
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
       <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
-        {MODES.map((m) => (
+        {SECTIONS.map((s) => (
           <button
-            key={m.id}
-            onClick={() => {
-              setSidebarMode(m.id);
-              // Avisamos al backend que cambiamos de modo (solo si ese modo
-              // tiene overlay y hay socket — sin sesión no hay nada que avisar)
-              if (socket && OVERLAY_APPS.includes(m.id)) socket.emit('set_active_app', m.id);
-            }}
+            key={s.id}
+            onClick={() => setSidebarMode(s.id)}
             className={[
               'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
-              sidebarMode === m.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+              sidebarMode === s.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
-            <span className="text-xl leading-none">{m.icon}</span>
-            <span className={[ 'text-[8px] font-bold uppercase tracking-wider text-center leading-tight whitespace-pre-line', sidebarMode === m.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
-              {m.label}
+            <span className="text-xl leading-none">{s.icon}</span>
+            <span className={[ 'text-[8px] font-bold uppercase tracking-wider text-center leading-tight', sidebarMode === s.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+              {s.label}
             </span>
           </button>
         ))}
-
-        <div className="w-px h-8 md:w-8 md:h-px mx-1 my-0 md:mx-0 md:my-1 flex-shrink-0" style={{ background: 'var(--surface-border-color)' }} />
-        <button
-          onClick={() => setSidebarMode('theme')}
-          title="Elegir tema"
-          className={[
-            'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
-            sidebarMode === 'theme' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-          ].join(' ')}
-        >
-          <span className="text-xl leading-none">🎨</span>
-          <span className={[ 'text-[8px] font-bold uppercase tracking-wider', sidebarMode === 'theme' ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
-            Tema
-          </span>
-        </button>
-
-        {/* Visible siempre (con o sin sesión): un usuario nuevo sin licencia
-            también tiene que poder llegar a comprar una membresía, no solo
-            quien ya está logueado. Sin sesión, needsAccess('membership')
-            muestra el login embebido con la prueba gratis en su lugar —
-            mismo patrón que king/zub/elim/tts más abajo. */}
-        {(
-          <button
-            onClick={() => setSidebarMode('membership')}
-            title="Membresía"
-            className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200',
-              sidebarMode === 'membership' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-            ].join(' ')}
-          >
-            <span className="text-xl leading-none">💳</span>
-            <span className={[ 'text-[8px] font-bold uppercase tracking-wider', sidebarMode === 'membership' ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
-              Membresía
-            </span>
-          </button>
-        )}
 
         {session?.isAdmin && (
           <button
@@ -408,63 +402,106 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
-        {sidebarMode === 'overlay' && <OverlayLink />}
-        {sidebarMode === 'king' && (
-          needsAccess('king') ? (
-            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
-          ) : (
-            <>
-              <AdminPanel
-                state={state} socket={socket}
-                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                prize={prizes.king}
-              />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
-            </>
-          )
+        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} />}
+
+        {sidebarMode === 'events' && (
+          <>
+            {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
+                entre igual de bien en mobile que el rail principal. */}
+            <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+              {EVENT_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setEventsTab(t.id);
+                    // Avisamos al backend que cambiamos de modo (solo si ese
+                    // modo tiene overlay y hay socket — sin sesión no hay
+                    // nada que avisar)
+                    if (socket && OVERLAY_APPS.includes(t.id)) socket.emit('set_active_app', t.id);
+                  }}
+                  className={[
+                    'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
+                    eventsTab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+                  ].join(' ')}
+                >
+                  <span className="text-base leading-none">{t.icon}</span>
+                  <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+                    {t.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {eventsTab === 'king' && (
+              needsAccess('king') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
+              ) : (
+                <>
+                  <AdminPanel
+                    state={state} socket={socket}
+                    username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                    prize={prizes.king}
+                  />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                </>
+              )
+            )}
+            {eventsTab === 'zub' && (
+              needsAccess('zub') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
+              ) : (
+                <>
+                  <Zubastinis
+                    state={zubState} socket={socket}
+                    username={username} connectionStatus={connectionStatus}
+                    prize={prizes.zub}
+                  />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                </>
+              )
+            )}
+            {eventsTab === 'elim' && (
+              needsAccess('elim') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
+              ) : (
+                <>
+                  <Elimination
+                    state={elimState} socket={socket}
+                    username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                    prize={prizes.elim}
+                  />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                </>
+              )
+            )}
+            {eventsTab === 'roulette' && (
+              needsAccess('roulette') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Ruleta." />
+              ) : (
+                <>
+                  <Roulette
+                    state={rouletteState} socket={socket}
+                    username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                    prize={prizes.roulette}
+                  />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                </>
+              )
+            )}
+            {/* TTS también requiere sesión — se muestra el login embebido en
+                su lugar sin desmontar TtsChat (ver comentario de "visible"
+                más abajo, fuera de esta sección para que no se desmonte al
+                cambiar de pestaña). */}
+            {eventsTab === 'tts' && needsAccess('tts') && (
+              <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
+            )}
+          </>
         )}
-        {sidebarMode === 'zub' && (
-          needsAccess('zub') ? (
-            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
-          ) : (
-            <>
-              <Zubastinis
-                state={zubState} socket={socket}
-                username={username} connectionStatus={connectionStatus}
-                prize={prizes.zub}
-              />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
-            </>
-          )
-        )}
-        {sidebarMode === 'elim' && (
-          needsAccess('elim') ? (
-            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
-          ) : (
-            <>
-              <Elimination
-                state={elimState} socket={socket}
-                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                prize={prizes.elim}
-              />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
-            </>
-          )
-        )}
-        {sidebarMode === 'roulette' && (
-          needsAccess('roulette') ? (
-            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Ruleta." />
-          ) : (
-            <>
-              <Roulette
-                state={rouletteState} socket={socket}
-                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                prize={prizes.roulette}
-              />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
-            </>
-          )
-        )}
+        {/* Permanece montado siempre (no solo dentro de "events") para que la
+            lectura activa no se interrumpa si el streamer se va a otra
+            sección mientras TTS sigue leyendo el chat en voz alta. */}
+        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} />
+
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el
             estado con el overlay especial de Colores. `tier` (regular/pro/
@@ -475,14 +512,6 @@ export default function App() {
             (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
             los ads dentro del propio componente — ver Colorsays.jsx. */}
         {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} isGuest={!session} />}
-        {/* TTS también requiere sesión — se muestra el login embebido en su
-            lugar sin desmontar TtsChat (ver comentario de "visible" abajo). */}
-        {sidebarMode === 'tts' && needsAccess('tts') && (
-          <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
-        )}
-        {/* Permanece montado al cambiar de módulo para que la lectura activa no
-            se interrumpa mientras el streamer controla uno de los juegos. */}
-        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'tts' && !needsAccess('tts')} />
         {sidebarMode === 'theme' && <ThemeSwitcher />}
         {/* A diferencia de king/zub/elim/tts, Membership NO pide sesión para
             verse: los planes y precios son públicos, y recién pide un alias

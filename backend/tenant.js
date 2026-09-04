@@ -13,6 +13,21 @@ const ELIM_REVEAL_MS = 4000;
 const ROULETTE_REVEAL_DELAY_MS = { 0: 5000, 1: 4000, 2: 3000, 3: 2000 };
 const ROULETTE_REVEAL_DELAY_DEFAULT_MS = 1100;
 
+// TOP TAP-TAP: el evento `like` de tiktok-live-connector NO trae un flag de
+// combo terminado (a diferencia de los regalos con `repeatEnd`) — llega como
+// conteos periódicos mientras alguien mantiene el dedo en la pantalla. Por
+// eso el "no sumar hasta que termine la ráfaga" se arma acá con un
+// temporizador propio: cada nuevo tick de likes de un usuario reinicia su
+// cuenta regresiva de "asentamiento"; recién cuando pasan TAPTAP_SETTLE_MS
+// sin un tick nuevo de esa persona, lo acumulado se suma de una sola vez al
+// ranking (ver processLikeTapTap/settleTapTap).
+const TAPTAP_SETTLE_MS = 1500;
+
+// Cuántos puestos exponen los rankings continuos (Top Gifter / Top Tap-Tap)
+// — no son partidas con inicio/fin, así que no hace falta acotarlos a un
+// top 3 como Zubastinis.
+const CONTINUOUS_LEADERBOARD_SIZE = 8;
+
 // Fisher-Yates — azar genuino en cada giro, no una animación sobre un
 // resultado fijo: la ganadora sale de barajar la lista entera, no de
 // elegirla antes y simular el resto (ver beginRouletteSpin).
@@ -101,6 +116,21 @@ class Tenant {
         this.rouletteSlotCounter = 0;
         this.rouletteRevealTimeout = null;
 
+        // ── TOP GIFTER (ranking continuo de regalos) ──
+        // A diferencia de Zubastinis (partida con inicio/fin y ganador), este
+        // es un contador corrido: suma mientras dure la conexión al LIVE y
+        // solo se reinicia a mano (reset_gifter_leaderboard) — vive en su
+        // propio overlay (?screen=gifter), no en el selector de activeApp.
+        this.gifterState = { leaderboard: {} }; // { [username]: { username, avatar, coins } }
+
+        // ── TOP TAP-TAP (ranking continuo de likes, con detección de ráfaga) ──
+        // `leaderboard` es lo ya "asentado" (lo que se muestra en el
+        // overlay); `pendingByUser` es la ráfaga en curso de cada usuario,
+        // estado puramente interno que nunca se manda por socket (ver
+        // processLikeTapTap/settleTapTap).
+        this.tapTapState = { leaderboard: {} }; // { [username]: { username, avatar, likes } }
+        this.tapTapPending = {}; // { [username]: { avatar, likes, timer } }
+
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
         // participa de este selector: tiene su propio overlay aparte
@@ -163,6 +193,12 @@ class Tenant {
         this.currentTikTokUsername = null;
         this.liveConnected = false;
         this.connectingPromise = null;
+
+        // Ráfagas de tap-tap en curso quedan huérfanas si la conexión se cae
+        // a mitad de una: sin esto, sus timers seguirían vivos apuntando a
+        // un tenant que ya no está escuchando likes.
+        Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
+        this.tapTapPending = {};
     }
 
     maybeDisconnectTikTok() {
@@ -215,6 +251,7 @@ class Tenant {
         this.tiktokConnection = new WebcastPushConnection(username, { enableExtendedGiftInfo: true });
         this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
         this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
+        this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
         this.tiktokConnection.on('error', ({ info, exception } = {}) => {
             const message = exception?.message || info || 'Error interno del conector';
             console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
@@ -286,6 +323,20 @@ class Tenant {
         this.processGiftZub(event);
         this.processGiftElim(event);
         this.processGiftRoulette(event);
+        this.processGiftGifterBoard(event);
+    }
+
+    // Igual que el chat/gift: campos leídos por analogía con cómo esos dos
+    // handlers ya normalizan `data` (uniqueId/userDetails), no confirmado
+    // todavía contra un LIVE real para el evento `like` puntualmente — ver
+    // aviso en el plan antes de confiar en Top Tap-Tap para un directo real.
+    handleLikeEvent(data) {
+        const username = data.uniqueId;
+        const likeCount = Number(data.likeCount) || 0;
+        if (!username || likeCount <= 0) return;
+
+        const avatar = data.userDetails?.profilePictureUrls?.[0] || '';
+        this.processLikeTapTap(username, avatar, likeCount);
     }
 
     // Reenviamos únicamente los datos necesarios para que el panel decida
@@ -715,6 +766,62 @@ class Tenant {
     }
 
     // ==========================================
+    // LÓGICA: TOP GIFTER (ranking continuo de regalos)
+    // ==========================================
+    getGifterPublicState() {
+        const top = Object.values(this.gifterState.leaderboard).sort((a, b) => b.coins - a.coins).slice(0, CONTINUOUS_LEADERBOARD_SIZE);
+        return { leaderboard: top };
+    }
+
+    // Suma siempre que haya conexión, sin importar qué juego esté activo (o
+    // si no hay ninguno) — es un contador de fondo del directo, no de una
+    // partida puntual.
+    processGiftGifterBoard({ username, avatar, totalCoins }) {
+        if (!username || !totalCoins) return;
+        if (!this.gifterState.leaderboard[username]) this.gifterState.leaderboard[username] = { username, avatar, coins: 0 };
+        this.gifterState.leaderboard[username].avatar = avatar;
+        this.gifterState.leaderboard[username].coins += totalCoins;
+        this.broadcast.emit('gifter_state_update', this.getGifterPublicState());
+    }
+
+    // ==========================================
+    // LÓGICA: TOP TAP-TAP (ranking continuo de likes, con detección de ráfaga)
+    // ==========================================
+    getTapTapPublicState() {
+        const top = Object.values(this.tapTapState.leaderboard).sort((a, b) => b.likes - a.likes).slice(0, CONTINUOUS_LEADERBOARD_SIZE);
+        return { leaderboard: top };
+    }
+
+    // Acumula en `pendingByUser` sin tocar el ranking público todavía, y
+    // reinicia el temporizador de asentamiento de ESE usuario — así una
+    // ráfaga de 12k taps seguidos no mueve el número del overlay hasta que
+    // la persona para de tocar (ver TAPTAP_SETTLE_MS).
+    processLikeTapTap(username, avatar, likeCount) {
+        const pending = this.tapTapPending[username];
+        if (pending) {
+            pending.likes += likeCount;
+            pending.avatar = avatar || pending.avatar;
+            clearTimeout(pending.timer);
+        } else {
+            this.tapTapPending[username] = { avatar, likes: likeCount, timer: null };
+        }
+        this.tapTapPending[username].timer = setTimeout(() => this.settleTapTap(username), TAPTAP_SETTLE_MS);
+    }
+
+    // La ráfaga terminó (silencio de TAPTAP_SETTLE_MS): recién acá se suma
+    // de una sola vez al ranking que ve la audiencia.
+    settleTapTap(username) {
+        const pending = this.tapTapPending[username];
+        if (!pending) return;
+        delete this.tapTapPending[username];
+
+        if (!this.tapTapState.leaderboard[username]) this.tapTapState.leaderboard[username] = { username, avatar: pending.avatar, likes: 0 };
+        this.tapTapState.leaderboard[username].avatar = pending.avatar || this.tapTapState.leaderboard[username].avatar;
+        this.tapTapState.leaderboard[username].likes += pending.likes;
+        this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
+    }
+
+    // ==========================================
     // SOCKET.IO: conecta un socket individual de este tenant.
     // El aislamiento entre licencias ya está resuelto por el room de
     // Socket.io (el caller hace socket.join(this.licenseId) antes de
@@ -727,6 +834,8 @@ class Tenant {
         socket.emit('zub_state_update', this.getZubPublicState());
         socket.emit('elim_state_update', this.getElimPublicState());
         socket.emit('roulette_state_update', this.getRoulettePublicState());
+        socket.emit('gifter_state_update', this.getGifterPublicState());
+        socket.emit('taptap_state_update', this.getTapTapPublicState());
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
@@ -1056,6 +1165,22 @@ class Tenant {
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             this.maybeDisconnectTikTok();
+        });
+
+        // ── TOP GIFTER / TOP TAP-TAP (rankings continuos) ──
+        // Sin start/stop: solo un botón de "reiniciar" a mano desde la
+        // pestaña Overlays, para cuando el streamer quiere arrancar de cero
+        // (ej. un directo nuevo).
+        socket.on('reset_gifter_leaderboard', () => {
+            this.gifterState.leaderboard = {};
+            this.broadcast.emit('gifter_state_update', this.getGifterPublicState());
+        });
+
+        socket.on('reset_taptap_leaderboard', () => {
+            Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
+            this.tapTapPending = {};
+            this.tapTapState.leaderboard = {};
+            this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
         });
 
         // ─────────────────────────────────────────────

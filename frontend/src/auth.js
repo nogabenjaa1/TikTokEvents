@@ -31,9 +31,11 @@ export function getOverlayKeyFromUrl() {
 }
 
 // Qué pantalla mostrar dentro del overlay: 'games' (Rey del Trono/
-// Zubastinis/Eliminación, el overlay de siempre) o 'colors' (el overlay
-// horizontal de Color Says, ver DiceOverlay.jsx). Se agrega como
-// ?screen=colors a la URL normal de overlay, nunca reemplaza a `key`.
+// Zubastinis/Eliminación/Ruleta, el overlay de siempre), 'colors' (el
+// overlay horizontal de Color Says, ver DiceOverlay.jsx), 'taptap' (ranking
+// de likes) o 'gifter' (ranking de regalos) — estos dos últimos son widgets
+// angostos aparte, ver TopTapTapOverlay/TopGifterOverlay en Overlay.jsx. Se
+// agrega como ?screen=... a la URL normal de overlay, nunca reemplaza a `key`.
 export function getOverlayScreen() {
   return new URLSearchParams(window.location.search).get('screen') || 'games';
 }
@@ -43,13 +45,13 @@ export function getOverlayScreen() {
 // mismo frontend, nunca del backend) + la license key cruda guardada en la
 // sesión al loguearse. Devuelve null si la sesión no la tiene guardada
 // (p. ej. quedó de un login anterior a que existiera este campo).
-// `screen`: 'games' (por defecto, Rey del Trono/Zubastinis/Eliminación) o
-// 'colors' (overlay horizontal de dados, ver DiceOverlay.jsx).
+// `screen`: 'games' (por defecto), 'colors', 'taptap' o 'gifter' — ver
+// getOverlayScreen más arriba.
 export function buildOverlayUrl(screen = 'games') {
   const session = loadSession();
   if (!session?.licenseKey) return null;
   const base = `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
-  return screen === 'colors' ? `${base}&screen=colors` : base;
+  return screen === 'games' ? base : `${base}&screen=${screen}`;
 }
 
 // Si el frontend y el backend viven en orígenes distintos (p. ej. frontend

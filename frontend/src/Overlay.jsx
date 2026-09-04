@@ -577,6 +577,51 @@ function RouletteOverlay({ state, prize }) {
   );
 }
 
+// Widget angosto compartido por Top Tap-Tap y Top Gifter: a diferencia de
+// King/Zub/Elim/Ruleta no es una partida (sin timer, sin "finished", sin
+// ganador) — solo un ranking corrido que crece mientras dure el directo,
+// pensado como fuente de navegador chica aparte (ver ?screen=taptap /
+// ?screen=gifter), no como parte del selector activeApp.
+function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, emptyLabel }) {
+  return (
+    <div className="theme-die-frame w-[380px] p-5 flex flex-col gap-3 font-sans">
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center">{icon} {title}</p>
+      {entries.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {entries.map((e, i) => (
+            <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
+              <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>
+              <img src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
+              <span className="flex-1 text-sm font-bold text-white truncate">@{e.username}</span>
+              <span className="text-yellow-400 text-sm font-black bg-yellow-400/10 border border-yellow-400/20 px-2 py-1 rounded-lg flex-shrink-0">{e[valueKey]}{valueSuffix}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-gray-600 text-xs italic text-center py-4">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
+export function TopTapTapOverlay({ state }) {
+  return (
+    <ContinuousLeaderboardWidget
+      title="Top Tap-Tap" icon="❤️" entries={(state && state.leaderboard) || []}
+      valueKey="likes" valueSuffix="" emptyLabel="Esperando likes..."
+    />
+  );
+}
+
+export function TopGifterOverlay({ state }) {
+  return (
+    <ContinuousLeaderboardWidget
+      title="Top Gifter" icon="💎" entries={(state && state.leaderboard) || []}
+      valueKey="coins" valueSuffix=" 🪙" emptyLabel="Esperando regalos..."
+    />
+  );
+}
+
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { buildOverlayUrl } from './auth';
 
-function OverlayUrlCard({ title, description, url }) {
+function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetConfirm }) {
   const [copied, setCopied] = useState(false);
 
   const copyUrl = () => {
@@ -9,6 +9,12 @@ function OverlayUrlCard({ title, description, url }) {
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleReset = () => {
+    if (!onReset) return;
+    if (resetConfirm && !window.confirm(resetConfirm)) return;
+    onReset();
   };
 
   return (
@@ -37,6 +43,11 @@ function OverlayUrlCard({ title, description, url }) {
               👁️ Preview
             </a>
           </div>
+          {onReset && (
+            <button onClick={handleReset} className="mt-3 w-full px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-red-400 border border-red-900/50 hover:bg-red-950/30 transition-colors">
+              {resetLabel || 'Reiniciar ranking'}
+            </button>
+          )}
         </>
       )}
     </div>
@@ -46,20 +57,28 @@ function OverlayUrlCard({ title, description, url }) {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-// Hay dos overlays distintos: el normal (Rey del Trono/Zubastinis/
-// Eliminación, vertical) y el especial de Colores (dados, horizontal, ver
-// DiceOverlay.jsx) — cada juego usa el que corresponde, nunca el otro.
-export default function OverlayLink() {
+// Hay cuatro overlays distintos, cada uno con su URL propia: el de juegos
+// (Rey del Trono/Zubastinis/Eliminación/Ruleta, vertical), el de Colores
+// (dados, horizontal, ver DiceOverlay.jsx) y dos widgets angostos aparte,
+// Top Tap-Tap y Top Gifter (rankings continuos, ver TopTapTapOverlay/
+// TopGifterOverlay en Overlay.jsx) — cada uno se agrega como fuente de
+// navegador independiente, nunca reemplaza a los otros.
+export default function OverlayLink({ socket, tapTapState, gifterState }) {
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
+  const tapTapUrl = buildOverlayUrl('taptap');
+  const gifterUrl = buildOverlayUrl('gifter');
+
+  const tapTapCount = (tapTapState?.leaderboard || []).length;
+  const gifterCount = (gifterState?.leaderboard || []).length;
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🖥️ Overlay</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🖥️ Overlays</p>
 
       <OverlayUrlCard
-        title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación)"
-        description="Úsalo para estos tres modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
+        title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
+        description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
         url={gamesUrl}
       />
 
@@ -69,13 +88,31 @@ export default function OverlayLink() {
         url={colorsUrl}
       />
 
+      <OverlayUrlCard
+        title="Top Tap-Tap (ranking de likes)"
+        description={`Widget angosto aparte con quién más likes mandó en el directo${tapTapCount ? ` — ${tapTapCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+        url={tapTapUrl}
+        onReset={() => socket?.emit('reset_taptap_leaderboard')}
+        resetLabel="🗑️ Reiniciar ranking de likes"
+        resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
+      />
+
+      <OverlayUrlCard
+        title="Top Gifter (ranking de regalos)"
+        description={`Widget angosto aparte con quién más regaló en el directo${gifterCount ? ` — ${gifterCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+        url={gifterUrl}
+        onReset={() => socket?.emit('reset_gifter_leaderboard')}
+        resetLabel="🗑️ Reiniciar ranking de regalos"
+        resetConfirm="¿Reiniciar el ranking de Top Gifter? Se borra todo lo acumulado hasta ahora."
+      />
+
       <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-5">
         <div>
           <h3 className="theme-heading text-sm font-bold mb-2">En OBS Studio</h3>
           <ol className="list-decimal list-inside space-y-1">
             <li>En la escena que quieras, haz clic en <strong className="text-gray-300">+</strong> dentro de "Fuentes" → <strong className="text-gray-300">Navegador</strong>.</li>
-            <li>Pega la URL correspondiente en el campo "URL" — la de "juegos" para Rey del Trono/Zubastinis/Eliminación, la de "Colores" solo para Color Says.</li>
-            <li>Configura el ancho y el alto: 1920×1080 para el overlay de juegos (vertical); para el de Colores, ancho de al menos 960px, con menos alto (es horizontal).</li>
+            <li>Pega la URL correspondiente en el campo "URL" — la de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, la de "Colores" solo para Color Says, y las de Top Tap-Tap/Top Gifter como widgets aparte.</li>
+            <li>Configura el ancho y el alto: 1920×1080 para el overlay de juegos (vertical); para el de Colores, ancho de al menos 960px, con menos alto (es horizontal); para Top Tap-Tap/Top Gifter, un ancho de ~400px alcanza (son widgets angostos).</li>
             <li>Acepta — cada overlay se sincroniza solo con lo que hagas en su panel correspondiente.</li>
           </ol>
         </div>
@@ -83,8 +120,8 @@ export default function OverlayLink() {
           <h3 className="theme-heading text-sm font-bold mb-2">En TikTok LIVE Studio</h3>
           <ol className="list-decimal list-inside space-y-1">
             <li>Agrega una fuente de tipo <strong className="text-gray-300">Web/Navegador</strong> a tu escena.</li>
-            <li>Pega la URL correspondiente (juegos o Colores, según el modo).</li>
-            <li>Ajusta el tamaño de la fuente al modo elegido, igual que en OBS.</li>
+            <li>Pega la URL correspondiente (juegos, Colores, Top Tap-Tap o Top Gifter, según lo que quieras mostrar).</li>
+            <li>Ajusta el tamaño de la fuente al overlay elegido, igual que en OBS.</li>
           </ol>
         </div>
       </div>

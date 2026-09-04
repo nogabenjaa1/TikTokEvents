@@ -40,6 +40,19 @@ const REPLACEMENTS = [
         from: 'function getTopViewerAttributes(topViewers) {\n\treturn topViewers.map((viewer) => {',
         to: 'function getTopViewerAttributes(topViewers) {\n\treturn (topViewers || []).map((viewer) => {',
     },
+    {
+        // El campo real del regalo decodificado del protobuf es
+        // `webcastObject.gift` (confirmado leyendo el encode() real de
+        // WebcastGiftMessage) — pero este bloque busca
+        // `webcastObject.giftDetails`, que NUNCA existe. Como resultado,
+        // sobreescribe `webcastObject.gift` (que sí traía el nombre/tipo/
+        // diamantes reales) con un resumen chico sin esos datos, ANTES de
+        // que nuestro código los vea — por eso ningún regalo se detectaba
+        // nunca, en ningún modo de juego, silenciosamente.
+        label: 'WebcastGiftMessage.giftDetails (campo real es "gift")',
+        from: 'webcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: webcastObject.giftDetails?.giftType\n\t\t\t\t};\n\t\t\t\tif (webcastObject.giftDetails?.giftImage?.url?.length) webcastObject.giftPictureUrl = webcastObject.giftDetails.giftImage.url[0];\n\t\t\t\tif (webcastObject.giftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, webcastObject.giftDetails);\n\t\t\t\t\tdelete webcastObject.giftDetails;\n\t\t\t\t}',
+        to: 'const realGiftDetails = webcastObject.gift;\n\t\t\t\twebcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: realGiftDetails?.type\n\t\t\t\t};\n\t\t\t\tif (realGiftDetails?.image?.urlList?.length) webcastObject.giftPictureUrl = realGiftDetails.image.urlList[0];\n\t\t\t\tif (realGiftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, realGiftDetails);\n\t\t\t\t}',
+    },
 ];
 
 function main() {

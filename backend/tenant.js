@@ -274,6 +274,11 @@ class Tenant {
 
         this.currentTikTokUsername = username;
         console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
+        // Diagnóstico sin exponer el valor: si esto imprime "false" con la
+        // variable YA puesta en Render, el problema es que no está llegando
+        // al proceso (nombre mal escrito, falta redeploy, etc.) — no un
+        // límite del plan de Euler Stream.
+        console.log(`[${this.licenseId}] [TIKTOK] SIGN_API_KEY presente: ${Boolean(process.env.SIGN_API_KEY)}`);
 
         let timedConnect;
         try {

@@ -13,6 +13,24 @@ const ELIM_REVEAL_MS = 4000;
 const ROULETTE_REVEAL_DELAY_MS = { 0: 5000, 1: 4000, 2: 3000, 3: 2000 };
 const ROULETTE_REVEAL_DELAY_DEFAULT_MS = 1100;
 
+// tiktok-live-connector arma la conexión en dos pasos: primero pide datos
+// por HTTP (con timeout propio, ~10s, ver TIKTOK_CLIENT_TIMEOUT), y recién
+// después abre el WebSocket real a TikTok — ese segundo paso, con la
+// versión instalada, no tiene ningún timeout interno. Si TikTok (o el sign
+// server de Euler Stream) nunca responde el handshake, `connect()` se
+// queda colgado para siempre: nunca resuelve ni rechaza, así que el panel
+// se queda en "Conectando..." sin fin y el reintento automático de
+// scheduleReconnect nunca llega a dispararse (solo corre tras un catch).
+// Este timeout propio convierte ese cuelgue en un error real y visible.
+const TIKTOK_CONNECT_TIMEOUT_MS = 20000;
+
+class TikTokConnectTimeoutError extends Error {
+    constructor() {
+        super(`La conexión no respondió en ${TIKTOK_CONNECT_TIMEOUT_MS / 1000}s`);
+        this.name = 'TikTokConnectTimeoutError';
+    }
+}
+
 // TOP TAP-TAP: el evento `like` de tiktok-live-connector NO trae un flag de
 // combo terminado (a diferencia de los regalos con `repeatEnd`) — llega como
 // conteos periódicos mientras alguien mantiene el dedo en la pantalla. Por
@@ -263,7 +281,14 @@ class Tenant {
             this.scheduleReconnect(username);
         });
 
-        this.connectingPromise = this.tiktokConnection.connect().then(() => {
+        // Sin este timeout propio, un connect() colgado (ver comentario de
+        // TIKTOK_CONNECT_TIMEOUT_MS) deja al panel esperando para siempre.
+        const timedConnect = Promise.race([
+            this.tiktokConnection.connect(),
+            new Promise((_, reject) => setTimeout(() => reject(new TikTokConnectTimeoutError()), TIKTOK_CONNECT_TIMEOUT_MS)),
+        ]);
+
+        this.connectingPromise = timedConnect.then(() => {
             console.log(`[${this.licenseId}] [TIKTOK] ✅ ¡CONECTADO!`);
             this.liveConnected = true;
             this.connectingPromise = null;
@@ -272,6 +297,14 @@ class Tenant {
             console.error(`[${this.licenseId}] [TIKTOK] ❌ Error: ${err.message}`);
             this.connectingPromise = null;
             this.liveConnected = false;
+            // El WebSocket que se quedó colgado sigue ahí atrás: lo tiramos
+            // para que el próximo intento arranque de cero, no arriba de la
+            // conexión zombie anterior.
+            if (err instanceof TikTokConnectTimeoutError && this.tiktokConnection) {
+                this.tiktokConnection.removeAllListeners();
+                this.tiktokConnection.disconnect();
+                this.tiktokConnection = null;
+            }
             this.broadcast.emit('live_connection_error', {
                 code: err?.name || 'ConnectionError',
                 message: this.getTikTokConnectionErrorMessage(err),
@@ -285,6 +318,9 @@ class Tenant {
 
     getTikTokConnectionErrorMessage(error) {
         const raw = String(error?.message || '').toLowerCase();
+        if (error instanceof TikTokConnectTimeoutError) {
+            return `La conexión no respondió a tiempo (¿estás en vivo ahora mismo?). Si esto se repite seguido aunque sí estés en vivo, puede deberse a que TikTok está bloqueando las conexiones directas desde este servidor — configurar una API key de Euler Stream (variable de entorno SIGN_API_KEY, gratis en eulerstream.com) suele evitarlo.`;
+        }
         if (error?.name === 'UserOfflineError' || raw.includes("isn't online") || raw.includes('offline')) {
             return 'TikTok indica que esta cuenta no está transmitiendo en vivo.';
         }

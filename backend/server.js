@@ -1,5 +1,25 @@
 require('dotenv').config({ quiet: true });
 
+// Bug conocido de tiktok-live-connector (legacy.js, getTopViewerAttributes):
+// al normalizar CUALQUIER WebcastRoomUserSeqMessage (estadísticas de
+// viewers, las manda TikTok solo cada tanto mientras alguien está en vivo)
+// hace `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
+// chicas/nuevas llega undefined y explota. Pasa DENTRO de un emit síncrono
+// disparado por el propio WebSocket interno de la librería, así que no hay
+// forma de envolverlo en un try/catch desde nuestro código (no es un
+// listener nuestro el que revienta). Sin este handler, esa excepción no
+// atrapada tira abajo TODO el proceso — afecta a todas las licencias
+// conectadas en ese momento, no solo a la que recibió el mensaje. Nunca
+// escuchamos el evento 'roomUser' ni usamos esos datos, así que perder ese
+// mensaje puntual no afecta ningún juego — es estrictamente mejor que un
+// reinicio completo del backend.
+process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT EXCEPTION] El proceso siguió vivo — no se reinició. Detalle:', err);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED REJECTION]', reason);
+});
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');

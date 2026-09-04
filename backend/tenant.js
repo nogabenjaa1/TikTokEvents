@@ -266,7 +266,17 @@ class Tenant {
 
         this.currentTikTokUsername = username;
         console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
-        this.tiktokConnection = new WebcastPushConnection(username, { enableExtendedGiftInfo: true });
+        // Toda conexión (incluso sin key) pasa por el sign server de Euler
+        // Stream para firmar el WebSocket — SIGN_API_KEY es opcional (hay un
+        // tier gratis sin key), pero sin ella se comparte el pool de límites
+        // "comunidad", que puede estar saturado/lento para IPs de datacenter
+        // como las de Render. Pasarla acá (en vez de solo por env var) es la
+        // forma que la propia librería documenta como más confiable, porque
+        // SignConfig es un singleton que se cachea la primera vez que se usa.
+        this.tiktokConnection = new WebcastPushConnection(username, {
+            enableExtendedGiftInfo: true,
+            signApiKey: process.env.SIGN_API_KEY || undefined,
+        });
         this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
         this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
         this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));

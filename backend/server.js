@@ -5,7 +5,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
-const { WebcastPushConnection } = require('tiktok-live-connector');
+// Ver comentario equivalente en tenant.js: WebcastPushConnection vive en el
+// subpath '/legacy' en esta versión de la librería, no en el paquete raíz.
+const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
@@ -551,7 +553,11 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
     try {
         const username = req.params.username;
-        const tempConn = new WebcastPushConnection(username);
+        // El constructor de esta versión de la librería no tolera un
+        // options undefined (revienta sincrónicamente leyendo
+        // options.processInitialData) — hay que pasar el objeto aunque
+        // esté vacío.
+        const tempConn = new WebcastPushConnection(username, {});
         const gifts = await tempConn.fetchAvailableGifts();
         const validGifts = gifts
             .filter(g => g.name && g.image?.url_list?.[0])

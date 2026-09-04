@@ -292,7 +292,22 @@ class Tenant {
             // SignConfig es un singleton que se cachea la primera vez que
             // se usa.
             this.tiktokConnection = new WebcastPushConnection(username, {
-                enableExtendedGiftInfo: true,
+                // El free tier de Euler Stream no cubre la ruta de firma
+                // cuando se pide info extendida de regalos (probado: con
+                // esto en `true` el connect() rechaza siempre con
+                // "This endpoint requires a Business plan"). Nuestro
+                // handleGiftEvent nunca lee `extendedGiftInfo` — solo usa
+                // los campos base del regalo (giftName, diamondCount,
+                // repeatCount), que llegan igual sin esto.
+                enableExtendedGiftInfo: false,
+                // Bug de esta versión de la librería: con el valor por
+                // defecto (true), procesar el lote inicial de datos del
+                // connect() revienta con un TypeError propio de la capa de
+                // compatibilidad (getTopViewerAttributes lee `.map` de un
+                // campo undefined). No perdemos nada relevante: ese lote es
+                // solo historial reciente de chat al momento de conectar,
+                // no eventos en vivo hacia adelante.
+                processInitialData: false,
                 signApiKey: process.env.SIGN_API_KEY || undefined,
             });
             this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));

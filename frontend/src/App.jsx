@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import AdminPanel from './AdminPanel';
 import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
+import Roulette from './Roulette';
 import ColorSays from './Colorsays';
 import Overlay from './Overlay';
 import DiceOverlay from './DiceOverlay';
@@ -22,6 +23,7 @@ const MODES = [
   { id: 'king',  label: 'Rey del\nTrono',  icon: '👑' },
   { id: 'zub',   label: 'Zubast\ninis',    icon: '🏆' },
   { id: 'elim',  label: 'Elimina\nción',   icon: '💀' },
+  { id: 'roulette', label: 'Ruleta',       icon: '🎡' },
   { id: 'color', label: 'Colores',         icon: '🎲' },
   { id: 'tts',   label: 'TTS\n(BETA)',     icon: '🔊' },
 ];
@@ -33,7 +35,7 @@ const FREE_MODES = ['overlay', 'color', 'theme'];
 
 // Modos que tienen representación en el overlay de OBS (Color Says no la
 // tiene: se transmite directo desde su propia pantalla)
-const OVERLAY_APPS = ['king', 'zub', 'elim'];
+const OVERLAY_APPS = ['king', 'zub', 'elim', 'roulette'];
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -54,13 +56,13 @@ const OVERLAY_PREVIEW_SCALE = 0.75;
 // OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
 // forzado al modo que se esté mirando, porque la idea es confirmar qué ve
 // la audiencia ahora mismo, no simular un modo que no está activo.
-function MobileOverlayPreview({ state, zubState, elimState, activeApp, prizes, theme }) {
+function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prizes, theme }) {
   return (
     <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
       <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
       <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 680 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
         <div style={{ width: 400, height: 680, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-          <Overlay embedded state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={theme} />
+          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} />
         </div>
       </div>
     </div>
@@ -85,6 +87,7 @@ export default function App() {
   const [state, setState]         = useState({ isActive: false, mode: 'idle', timeLeft: 0 });
   const [zubState, setZubState]   = useState({ isActive: false, mode: 'idle', timeLeft: 0, top3: [], winner: null });
   const [elimState, setElimState] = useState({ isActive: false, mode: 'idle', timeLeft: 0, participants: [], lastEliminated: null, winner: null });
+  const [rouletteState, setRouletteState] = useState({ isActive: false, mode: 'idle', entryMode: 'chat', timeLeft: 0, entries: [], lastEliminated: null, winner: null });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin
@@ -105,7 +108,7 @@ export default function App() {
 
   // Premios por modo (título + imagen opcional), seteados desde los paneles
   // y mostrados en el overlay. El backend es la fuente de verdad.
-  const [prizes, setPrizes] = useState({ king: null, zub: null, elim: null });
+  const [prizes, setPrizes] = useState({ king: null, zub: null, elim: null, roulette: null });
 
   // Estado de Color Says (dados), sincronizado hacia/desde el overlay
   // especial de Colores (?screen=colors) — ver Colorsays.jsx/tenant.js.
@@ -155,6 +158,12 @@ export default function App() {
     socket.on('elim_timer_updated',   setElimState);
     socket.on('elim_eliminated',      setElimState);
     socket.on('elim_winner_declared', setElimState);
+
+    socket.on('roulette_state_update',    setRouletteState);
+    socket.on('roulette_timer_updated',   setRouletteState);
+    socket.on('roulette_spin_started',    setRouletteState);
+    socket.on('roulette_step',            setRouletteState);
+    socket.on('roulette_winner_declared', setRouletteState);
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
@@ -263,7 +272,7 @@ export default function App() {
     if (getOverlayScreen() === 'colors') {
       return <DiceOverlay diceState={diceState} theme={overlayTheme} />;
     }
-    return <Overlay state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
+    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
   }
 
   const logout = () => {
@@ -276,7 +285,7 @@ export default function App() {
 
   // El username queda bloqueado mientras cualquier módulo que dependa de la
   // conexión live esté activo (todos comparten la misma conexión).
-  const usernameLocked = state.isActive || zubState.isActive || elimState.isActive;
+  const usernameLocked = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive;
 
   // Recordatorio de vencimiento in-app: licencias lifetime no tienen expiresAt.
   // Sin sesión (visitante anónimo, solo Color Says) no hay nada que recordar.
@@ -410,7 +419,7 @@ export default function App() {
                 username={username} connectionStatus={connectionStatus} giftsList={giftsList}
                 prize={prizes.king}
               />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
             </>
           )
         )}
@@ -424,7 +433,7 @@ export default function App() {
                 username={username} connectionStatus={connectionStatus}
                 prize={prizes.zub}
               />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
             </>
           )
         )}
@@ -438,7 +447,21 @@ export default function App() {
                 username={username} connectionStatus={connectionStatus} giftsList={giftsList}
                 prize={prizes.elim}
               />
-              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+            </>
+          )
+        )}
+        {sidebarMode === 'roulette' && (
+          needsAccess('roulette') ? (
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Ruleta." />
+          ) : (
+            <>
+              <Roulette
+                state={rouletteState} socket={socket}
+                username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+                prize={prizes.roulette}
+              />
+              <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
             </>
           )
         )}

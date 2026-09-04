@@ -267,6 +267,7 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asyn
         kingStarts: row.king_starts,
         zubStarts: row.zub_starts,
         elimStarts: row.elim_starts,
+        rouletteStarts: row.roulette_starts,
         lastActiveAt: row.last_active_at,
         multiDevice: !!row.multi_device,
         trialAlias: row.trial_alias,

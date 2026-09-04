@@ -57,6 +57,7 @@ const ready = pool.query(`
     king_starts INTEGER NOT NULL DEFAULT 0,
     zub_starts INTEGER NOT NULL DEFAULT 0,
     elim_starts INTEGER NOT NULL DEFAULT 0,
+    roulette_starts INTEGER NOT NULL DEFAULT 0,
     last_active_at BIGINT,
     session_id TEXT,
     multi_device BOOLEAN NOT NULL DEFAULT FALSE
@@ -68,6 +69,7 @@ const ready = pool.query(`
   // necesitar el chequeo manual que hacía la versión vieja en SQLite.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_alias TEXT`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_connected_username TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS roulette_starts INTEGER NOT NULL DEFAULT 0`))
   // dice_tier: nivel de Color Says (regular/pro/vip/admin) — a propósito
   // SEPARADO de is_admin. is_admin sigue siendo exclusivamente "administra
   // la plataforma" (panel de Licencias, endpoints /api/licenses); dice_tier
@@ -174,7 +176,7 @@ async function setMultiDevice(id, enabled) {
     return findById(id);
 }
 
-const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts'];
+const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
 
 async function incrementUsage(id, field) {
     if (!USAGE_FIELDS.includes(field)) throw new Error('Campo de uso inválido: ' + field);

@@ -5,6 +5,26 @@ const db = require('./db');
 // Eliminación antes de revelar a quién le tocó.
 const ELIM_REVEAL_MS = 4000;
 
+// RULETA: delay (ms) antes de revelar el siguiente lugar, según cuántos
+// pasos faltan para llegar al ganador — 0 = el próximo paso ES el ganador
+// (la pausa más larga, el momento de más suspenso), 1-3 = los últimos
+// lugares antes de esa revelación, ya notablemente más lentos que el resto.
+// Cualquier distancia mayor usa el ritmo normal.
+const ROULETTE_REVEAL_DELAY_MS = { 0: 5000, 1: 4000, 2: 3000, 3: 2000 };
+const ROULETTE_REVEAL_DELAY_DEFAULT_MS = 1100;
+
+// Fisher-Yates — azar genuino en cada giro, no una animación sobre un
+// resultado fijo: la ganadora sale de barajar la lista entera, no de
+// elegirla antes y simular el resto (ver beginRouletteSpin).
+function shuffleArray(list) {
+    const copy = [...list];
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+}
+
 // Espejo del catálogo de frontend/src/ThemeContext.jsx: valida lo que manda
 // el cliente antes de guardarlo/emitirlo, para que un socket manipulado a
 // mano no pueda meter un valor arbitrario en --theme-style/--accent.
@@ -59,10 +79,33 @@ class Tenant {
         this.elimSlotCounter = 0;
         this.elimRevealTimeout = null;
 
+        // ── RULETA (sorteo por comentario o por regalo) ──
+        // entryMode 'chat': comenta la keyword (opcionalmente solo
+        // seguidores) = una vida, una por username. entryMode 'gift': manda
+        // el regalo configurado = una vida por cada unidad (slots, igual que
+        // Eliminación). El giro es azar genuino sobre TODA la lista barajada
+        // — ver shuffleArray/beginRouletteSpin — la "posición ganadora" solo
+        // dice EN QUÉ LUGAR del sorteo aparece la ganadora, no la elige de
+        // antemano.
+        this.rouletteState = {
+            isActive: false, mode: 'idle', // idle | joining | spinning | finished
+            entryMode: 'chat', keyword: '', followersOnly: false, entryWindowSec: 300,
+            targetGiftName: '', targetGiftIcon: '', targetGiftCoins: 0,
+            winnerRule: 'first', winnerPosition: 1, // 'first' | 'last' | 'position'
+            timeLeft: 0,
+            entries: [], // [{ id, username, avatar }]
+            revealOrder: [], winnerIndex: -1, revealCursor: 0, // solo durante 'spinning'
+            lastEliminated: null, winner: null,
+        };
+        this.rouletteTimerInterval = null;
+        this.rouletteSlotCounter = 0;
+        this.rouletteRevealTimeout = null;
+
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
-        // Eliminación, elegidos con set_active_app). Color Says no participa
-        // de este selector: tiene su propio overlay aparte (?screen=colors,
-        // ver DiceOverlay.jsx) que se sincroniza con diceState más abajo.
+        // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
+        // participa de este selector: tiene su propio overlay aparte
+        // (?screen=colors, ver DiceOverlay.jsx) que se sincroniza con
+        // diceState más abajo.
         this.activeApp = 'king';
 
         // ── TEMA (material + acento) ──
@@ -87,7 +130,7 @@ class Tenant {
         // lado, redimensionado en el cliente) o null. Se muestran en el
         // overlay para que la gente sepa qué se está jugando. Viven fuera de
         // los estados de juego a propósito: sobreviven a start/stop.
-        this.prizes = { king: null, zub: null, elim: null };
+        this.prizes = { king: null, zub: null, elim: null, roulette: null };
 
         // ── CONEXIÓN TIKTOK (una por tenant) ──
         this.tiktokConnection = null;
@@ -107,7 +150,7 @@ class Tenant {
     // CONEXIÓN TIKTOK
     // ==========================================
     anyContestNeedsConnection() {
-        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || !!this.desiredUsername;
+        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || !!this.desiredUsername;
     }
 
     disconnectTikTok() {
@@ -235,12 +278,14 @@ class Tenant {
             giftName: data.giftName,
             diamondCount: data.diamondCount || 0,
             repeatCount: data.repeatCount || 1,
+            followRole: data.followRole,
         };
         event.totalCoins = event.diamondCount * event.repeatCount;
 
         this.processGiftKing(event);
         this.processGiftZub(event);
         this.processGiftElim(event);
+        this.processGiftRoulette(event);
     }
 
     // Reenviamos únicamente los datos necesarios para que el panel decida
@@ -263,6 +308,8 @@ class Tenant {
             isSubscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
             fanLevel: Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0),
         });
+
+        this.processRouletteComment(data);
     }
 
     // ==========================================
@@ -538,6 +585,136 @@ class Tenant {
     }
 
     // ==========================================
+    // LÓGICA: RULETA (sorteo por comentario o por regalo)
+    // ==========================================
+    getRoulettePublicState() {
+        return {
+            isActive: this.rouletteState.isActive, mode: this.rouletteState.mode,
+            entryMode: this.rouletteState.entryMode,
+            keyword: this.rouletteState.keyword, followersOnly: this.rouletteState.followersOnly,
+            entryWindowSec: this.rouletteState.entryWindowSec,
+            targetGiftName: this.rouletteState.targetGiftName, targetGiftIcon: this.rouletteState.targetGiftIcon, targetGiftCoins: this.rouletteState.targetGiftCoins,
+            winnerRule: this.rouletteState.winnerRule, winnerPosition: this.rouletteState.winnerPosition,
+            timeLeft: this.rouletteState.timeLeft,
+            entries: this.rouletteState.entries,
+            lastEliminated: this.rouletteState.lastEliminated, winner: this.rouletteState.winner,
+        };
+    }
+
+    startRouletteTimer() {
+        if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
+
+        this.rouletteTimerInterval = setInterval(() => {
+            if (!this.rouletteState.isActive || this.rouletteState.mode !== 'joining') return;
+            this.rouletteState.timeLeft--;
+
+            if (this.rouletteState.timeLeft <= 0) {
+                clearInterval(this.rouletteTimerInterval);
+                console.log(`[${this.licenseId}] [RULETA] ⏰ SE CERRARON LAS ENTRADAS — arranca el giro solo`);
+                this.beginRouletteSpin();
+                return;
+            }
+            this.broadcast.emit('roulette_timer_updated', this.getRoulettePublicState());
+        }, 1000);
+    }
+
+    // Azar genuino: se baraja la lista COMPLETA de entradas (shuffleArray,
+    // Fisher-Yates) y se calcula en qué posición de ESE shuffle debe salir
+    // la ganadora — nada se elige de antemano, la posición configurada solo
+    // dice EN QUÉ LUGAR del sorteo (que ya es al azar) tiene que aparecer.
+    beginRouletteSpin() {
+        const entries = this.rouletteState.entries;
+        if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+
+        if (entries.length === 0) {
+            this.rouletteState.mode = 'finished';
+            this.rouletteState.winner = null;
+            console.log(`[${this.licenseId}] [RULETA] 🛑 FINALIZADA — nadie participó`);
+            this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
+            this.maybeDisconnectTikTok();
+            return;
+        }
+
+        const total = entries.length;
+        const rule = this.rouletteState.winnerRule;
+        const winnerPos = rule === 'first' ? 1
+            : rule === 'last' ? total
+            : Math.min(Math.max(1, this.rouletteState.winnerPosition || 1), total);
+
+        this.rouletteState.mode = 'spinning';
+        this.rouletteState.revealOrder = shuffleArray(entries);
+        this.rouletteState.winnerIndex = winnerPos - 1;
+        this.rouletteState.revealCursor = 0;
+        this.rouletteState.lastEliminated = null;
+        console.log(`[${this.licenseId}] [RULETA] 🎡 GIRANDO — ${total} entradas, ganadora en la posición ${winnerPos}`);
+        this.broadcast.emit('roulette_spin_started', this.getRoulettePublicState());
+        this.stepRouletteReveal();
+    }
+
+    // Revela un lugar a la vez del shuffle ya armado. Al llegar al índice
+    // ganador, para ahí — no hace falta seguir revelando el resto de la
+    // lista. El delay antes de cada paso se achica cerca del final (ver
+    // ROULETTE_REVEAL_DELAY_MS) para el efecto de suspenso pedido.
+    stepRouletteReveal() {
+        const { revealOrder, winnerIndex, revealCursor } = this.rouletteState;
+        const entry = revealOrder[revealCursor];
+
+        if (revealCursor === winnerIndex) {
+            this.rouletteState.mode = 'finished';
+            this.rouletteState.winner = { username: entry.username, avatar: entry.avatar };
+            this.rouletteState.lastEliminated = null;
+            console.log(`[${this.licenseId}] [RULETA] 👑 GANADORA: @${entry.username}`);
+            this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
+            this.maybeDisconnectTikTok();
+            return;
+        }
+
+        this.rouletteState.lastEliminated = { username: entry.username, avatar: entry.avatar };
+        this.broadcast.emit('roulette_step', this.getRoulettePublicState());
+
+        this.rouletteState.revealCursor += 1;
+        const distanceToWinner = this.rouletteState.winnerIndex - this.rouletteState.revealCursor;
+        const delay = ROULETTE_REVEAL_DELAY_MS[distanceToWinner] ?? ROULETTE_REVEAL_DELAY_DEFAULT_MS;
+        this.rouletteRevealTimeout = setTimeout(() => this.stepRouletteReveal(), delay);
+    }
+
+    // Modo Chat: comentar la keyword configurada (opcionalmente solo
+    // seguidores, ver data.followRole — normalizado por tiktok-live-connector
+    // desde followInfo.followStatus) da UNA vida, sin importar cuántas veces
+    // vuelva a comentar la misma persona.
+    processRouletteComment(data) {
+        const state = this.rouletteState;
+        if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'chat') return;
+
+        const comment = typeof data.comment === 'string' ? data.comment.trim().toLowerCase() : '';
+        const keyword = (state.keyword || '').trim().toLowerCase();
+        if (!keyword || !comment.includes(keyword)) return;
+        if (state.followersOnly && !(Number(data.followRole) > 0)) return;
+
+        const username = data.uniqueId;
+        if (!username || state.entries.some(e => e.username === username)) return;
+
+        state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar: data.userDetails?.profilePictureUrls?.[0] || '' });
+        this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+    }
+
+    // Modo Gift: mandar el regalo configurado suma una entrada POR CADA
+    // unidad del combo — mismo mecanismo de slots que ya usa Eliminación
+    // (más regalos, más chances, a propósito).
+    processGiftRoulette({ username, avatar, giftName, repeatCount, followRole }) {
+        const state = this.rouletteState;
+        if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'gift') return;
+        if (!state.targetGiftName || giftName.toLowerCase() !== state.targetGiftName.toLowerCase()) return;
+        if (state.followersOnly && !(Number(followRole) > 0)) return;
+
+        const slotsToAdd = Math.max(1, repeatCount || 1);
+        for (let i = 0; i < slotsToAdd; i++) {
+            state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar });
+        }
+        this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+    }
+
+    // ==========================================
     // SOCKET.IO: conecta un socket individual de este tenant.
     // El aislamiento entre licencias ya está resuelto por el room de
     // Socket.io (el caller hace socket.join(this.licenseId) antes de
@@ -549,6 +726,7 @@ class Tenant {
         socket.emit('state_update', this.contestState);
         socket.emit('zub_state_update', this.getZubPublicState());
         socket.emit('elim_state_update', this.getElimPublicState());
+        socket.emit('roulette_state_update', this.getRoulettePublicState());
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
@@ -573,7 +751,7 @@ class Tenant {
         // como data URL; igual se valida acá tamaño y formato para que un
         // cliente malicioso no infle la memoria del tenant ni meta HTML.
         socket.on('update_prize', ({ app, title, image } = {}) => {
-            if (!['king', 'zub', 'elim'].includes(app)) return;
+            if (!['king', 'zub', 'elim', 'roulette'].includes(app)) return;
             const cleanTitle = typeof title === 'string' ? title.slice(0, 60).trim() : '';
             const cleanImage = (typeof image === 'string' && image.startsWith('data:image/') && image.length <= 500000)
                 ? image : null;
@@ -823,6 +1001,60 @@ class Tenant {
             if (this.elimTimerInterval) clearInterval(this.elimTimerInterval);
             if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
+            this.maybeDisconnectTikTok();
+        });
+
+        // ── RULETA ──────────────────────────────────
+        // No hay evento de "girar" manual: el giro arranca solo al vencer
+        // entryWindowSec (ver startRouletteTimer) — pedido explícito.
+        socket.on('start_roulette', (config) => {
+            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO RULETA (${config.entryMode === 'gift' ? 'modo regalo' : 'modo chat'})...`);
+            db.incrementUsage(this.licenseId, 'roulette_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(roulette_starts):`, err.message));
+
+            if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+            this.rouletteState = {
+                isActive: true, mode: 'joining',
+                entryMode: config.entryMode === 'gift' ? 'gift' : 'chat',
+                keyword: config.keyword || '', followersOnly: !!config.followersOnly,
+                entryWindowSec: config.entryWindowSec,
+                targetGiftName: config.targetGiftName || '', targetGiftIcon: config.targetGiftIcon || '', targetGiftCoins: config.targetGiftCoins || 0,
+                winnerRule: config.winnerRule || 'first', winnerPosition: config.winnerPosition || 1,
+                timeLeft: config.entryWindowSec,
+                entries: [], revealOrder: [], winnerIndex: -1, revealCursor: 0,
+                lastEliminated: null, winner: null,
+            };
+            this.rouletteSlotCounter = 0;
+            this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            this.startRouletteTimer();
+
+            if (config.tiktokUsername) {
+                this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
+            }
+        });
+
+        socket.on('restart_roulette', () => {
+            if (!this.rouletteState.isActive) return;
+            console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO RULETA...`);
+            if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+            this.rouletteState.mode = 'joining';
+            this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
+            this.rouletteState.entries = [];
+            this.rouletteState.revealOrder = [];
+            this.rouletteState.winnerIndex = -1;
+            this.rouletteState.revealCursor = 0;
+            this.rouletteState.lastEliminated = null;
+            this.rouletteState.winner = null;
+            this.rouletteSlotCounter = 0;
+            this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            this.startRouletteTimer();
+        });
+
+        socket.on('stop_roulette', () => {
+            this.rouletteState.isActive = false;
+            this.rouletteState.mode = 'idle';
+            if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
+            if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+            this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             this.maybeDisconnectTikTok();
         });
 

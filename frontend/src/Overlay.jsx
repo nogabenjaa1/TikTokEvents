@@ -448,6 +448,135 @@ function EliminationOverlay({ state, prize }) {
   );
 }
 
+// El giro de la Ruleta lo pacea el BACKEND (ver stepRouletteReveal en
+// tenant.js — cada eliminación llega ya con el delay de suspenso aplicado
+// del lado del servidor), así que a diferencia de EliminationOverlay este
+// componente no necesita simular ningún recorrido falso: solo refleja el
+// estado tal cual llega, reaccionando a cada roulette_step con una
+// transición corta.
+function RouletteOverlay({ state, prize }) {
+  const gridRef = useRef(null);
+  const [boxSize, setBoxSize] = useState(64);
+  const [gridGap, setGridGap] = useState(6);
+
+  const prevRef = useRef({ mounted: false, mode: null });
+  useEffect(() => {
+    if (!state) return;
+    const prev = prevRef.current;
+    if (prev.mounted) {
+      if (state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
+      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
+    }
+    prevRef.current = { mounted: true, mode: state.mode };
+  }, [state?.mode, state?.winner]);
+
+  // Un "eliminate" por cada paso del giro — cada roulette_step trae un
+  // objeto lastEliminated nuevo (broadcast fresco del backend), así que
+  // comparar por referencia alcanza para saber que es un paso distinto.
+  useEffect(() => {
+    if (state?.mode === 'spinning' && state?.lastEliminated) playEliminate();
+  }, [state?.lastEliminated]);
+
+  const entries = (state && state.entries) || [];
+
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const { size, gap } = computeElimBoxSize(el.clientWidth, el.clientHeight, entries.length);
+      setBoxSize(size);
+      setGridGap(gap);
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [entries.length, prize, state && state.lastEliminated, state && state.mode]);
+
+  if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
+
+  const showLabel = boxSize >= 18;
+  const entryRuleLabel = state.entryMode === 'gift'
+    ? `Manda ${state.targetGiftName || '...'}`
+    : `Comenta "${state.keyword || '...'}"`;
+
+  return (
+    <div className="theme-die-frame w-[400px] h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+      {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
+
+      <div className="mt-6 w-full">
+        <TimeWarningBadge label="Cierra en" seconds={state.mode === 'joining' ? state.timeLeft : undefined} />
+      </div>
+
+      <div className="mt-3 flex flex-col items-center text-center w-full">
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">🎡 RULETA{state.followersOnly ? ' — SOLO SEGUIDORES' : ''}</p>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+          <div className="flex items-center gap-2">
+            {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
+            <span className="text-lg font-black text-white">{entryRuleLabel}</span>
+          </div>
+        </div>
+
+        <PrizeStrip prize={prize} />
+      </div>
+
+      {state.lastEliminated && state.mode === 'spinning' && (
+        <div className="mt-4 flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 w-full">
+          <img src={state.lastEliminated.avatar} className="w-8 h-8 rounded-full border-2 border-red-500 object-cover grayscale" />
+          <span className="text-xs font-bold text-red-300">💀 @{state.lastEliminated.username} quedó fuera</span>
+        </div>
+      )}
+
+      <div ref={gridRef} style={{ gap: gridGap }} className="w-full flex-1 flex flex-wrap justify-center items-center content-center my-2 overflow-hidden">
+        {state.mode === 'finished' ? (
+          state.winner && (
+            <div className="flex flex-col items-center animate-pop">
+              <div className="relative">
+                <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
+                <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
+                <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
+              </div>
+            </div>
+          )
+        ) : entries.length > 0 ? (
+          entries.map((e) => (
+            <div key={e.id} title={e.username} style={{ width: boxSize }} className="flex flex-col items-center gap-0.5 transition-all duration-150">
+              <img src={e.avatar} style={{ width: boxSize, height: boxSize, borderColor: 'var(--accent)' }} className="rounded-full border-2 object-cover flex-shrink-0" />
+              {showLabel && <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)) }} className="max-w-full truncate text-gray-300">@{e.username}</span>}
+            </div>
+          ))
+        ) : (
+          <p className="text-gray-600 text-sm italic text-center">Esperando participantes...</p>
+        )}
+      </div>
+
+      <div className="w-full text-center mt-auto">
+        {state.mode === 'finished' ? (
+          <div className="flex flex-col items-center gap-2 py-2">
+            {state.winner ? (
+              <>
+                <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
+                <p className="text-lg font-black text-yellow-200">@{state.winner.username}</p>
+              </>
+            ) : (
+              <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
+            )}
+          </div>
+        ) : state.mode === 'spinning' ? (
+          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+            <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
+          </div>
+        ) : (
+          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+            <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">TIEMPO PARA ENTRAR</p>
+            <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{state.timeLeft}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente
@@ -458,7 +587,7 @@ function EliminationOverlay({ state, prize }) {
 // del panel en mobile — ver App.jsx, donde no hay forma de tener OBS y el
 // panel abiertos a la vez en un solo teléfono. En ese caso no debe reservar
 // el viewport entero, solo el tamaño real de la tarjeta (400x680).
-export default function Overlay({ state, zubState, elimState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false }) {
+export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false }) {
   return (
     <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} data-theme-style={theme.style} data-accent={theme.accent}>
       <div className="relative grid">
@@ -475,6 +604,11 @@ export default function Overlay({ state, zubState, elimState, activeApp, prizes 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'elim' ? 1 : 0, visibility: activeApp === 'elim' ? 'visible' : 'hidden', transform: activeApp === 'elim' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
           <EliminationOverlay state={elimState} prize={prizes.elim} />
+        </div>
+
+        <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
+          style={{ opacity: activeApp === 'roulette' ? 1 : 0, visibility: activeApp === 'roulette' ? 'visible' : 'hidden', transform: activeApp === 'roulette' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
+          <RouletteOverlay state={rouletteState} prize={prizes.roulette} />
         </div>
       </div>
     </div>

@@ -9,7 +9,12 @@
 // Por qué no Render: el filesystem del backend se borra en cada redeploy
 // (y Render Free ni siquiera tiene disco persistente) — cualquier archivo
 // subido ahí desaparecería en el próximo deploy.
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+// Tolerante a un error común: la pantalla "Data API" del dashboard de
+// Supabase muestra la URL con /rest/v1/ al final (la que sirve para
+// PostgREST) — pero Storage vive bajo /storage/v1/ del dominio PELADO del
+// proyecto, así que si alguien pega esa URL completa acá, se la recortamos
+// en vez de armar rutas rotas tipo ".co/rest/v1/storage/v1/...".
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKET = 'alert-media';
 
@@ -17,6 +22,19 @@ function assertConfigured() {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
         throw new Error('Falta configurar SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY en las variables de entorno');
     }
+}
+
+// El gateway de Supabase (Kong) exige EL HEADER `apikey` además de
+// `Authorization: Bearer ...` — mandar solo uno de los dos responde 401
+// "No apikey request header or url param was found" aunque el token sea
+// válido (confirmado en producción: este era el bug real). Ambos headers
+// llevan el MISMO valor (la service_role key).
+function authHeaders(extra = {}) {
+    return {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        ...extra,
+    };
 }
 
 // Idempotente — se llama una vez al arrancar el server (ver server.js). Si
@@ -31,10 +49,7 @@ async function ensureBucket() {
     assertConfigured();
     const res = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true }),
     });
     if (res.ok) {
@@ -58,11 +73,7 @@ async function uploadFile(path, buffer, contentType) {
     assertConfigured();
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            'Content-Type': contentType || 'application/octet-stream',
-            'x-upsert': 'true',
-        },
+        headers: authHeaders({ 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'true' }),
         body: buffer,
     });
     if (!res.ok) {
@@ -82,7 +93,7 @@ async function deleteFile(path) {
     try {
         await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
             method: 'DELETE',
-            headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+            headers: authHeaders(),
         });
     } catch (err) {
         console.error('[Storage] No se pudo borrar el archivo (no bloqueante):', err.message);

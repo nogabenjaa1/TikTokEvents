@@ -448,23 +448,95 @@ function EliminationOverlay({ state, prize }) {
   );
 }
 
+// Convierte un ángulo (grados, 0 = arriba, sentido horario) + radio en un
+// punto x/y sobre el círculo de centro (cx, cy) — la base trigonométrica
+// para armar cada sección de la ruleta como un <path> de SVG.
+function polarPoint(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * (Math.PI / 180);
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+const WHEEL_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#f97316', '#14b8a6'];
+
+// La ruleta de verdad: un círculo dividido en tantas secciones iguales
+// como entradas queden, cada una con el username adentro (nunca la foto —
+// eso pedido explícito: la foto de perfil solo se muestra al final, con
+// el ganador). `flashUsername` resalta en rojo la sección que el backend
+// acaba de resolver, justo antes de que desaparezca de la lista.
+function RouletteWheel({ entries, flashUsername, size }) {
+  const n = entries.length;
+  const cx = size / 2, cy = size / 2, r = size / 2 - 4;
+  if (n === 0) return null;
+
+  if (n === 1) {
+    const only = entries[0];
+    return (
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
+        <circle cx={cx} cy={cy} r={r} fill={WHEEL_COLORS[0]} stroke="white" strokeWidth="2" />
+        <text x={cx} y={cy} fontSize="13" fill="white" fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+          @{only.username.length > 14 ? only.username.slice(0, 13) + '…' : only.username}
+        </text>
+      </svg>
+    );
+  }
+
+  const anglePer = 360 / n;
+  // Con muchas secciones no entra texto legible — a partir de cierta
+  // densidad se muestran solo los colores, sin nombres encimados.
+  const fontSize = n > 40 ? 0 : n > 24 ? 6 : n > 14 ? 8 : n > 8 ? 10 : 12;
+  const maxChars = n > 24 ? 6 : n > 14 ? 8 : 12;
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
+      {entries.map((e, i) => {
+        const startAngle = i * anglePer;
+        const endAngle = startAngle + anglePer;
+        const start = polarPoint(cx, cy, r, startAngle);
+        const end = polarPoint(cx, cy, r, endAngle);
+        const largeArc = anglePer > 180 ? 1 : 0;
+        const path = `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
+        const midAngle = startAngle + anglePer / 2;
+        const labelPos = polarPoint(cx, cy, r * 0.62, midAngle);
+        const isFlashing = e.username === flashUsername;
+        // El texto sigue el radio de su sección, pero nunca queda "cabeza
+        // abajo": en la mitad inferior del círculo se le suman 180°.
+        const textRotate = midAngle > 90 && midAngle < 270 ? midAngle + 180 : midAngle;
+        return (
+          <g key={e.id}>
+            <path d={path} fill={isFlashing ? '#ef4444' : WHEEL_COLORS[i % WHEEL_COLORS.length]}
+              stroke="white" strokeWidth="1.5" opacity={isFlashing ? 1 : 0.92}
+              style={{ transition: 'fill 200ms ease, opacity 200ms ease' }} />
+            {fontSize > 0 && (
+              <text x={labelPos.x} y={labelPos.y} fontSize={fontSize} fill="white" fontWeight="700"
+                textAnchor="middle" dominantBaseline="middle" transform={`rotate(${textRotate}, ${labelPos.x}, ${labelPos.y})`}>
+                @{e.username.length > maxChars ? e.username.slice(0, maxChars - 1) + '…' : e.username}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      <circle cx={cx} cy={cy} r={r * 0.13} fill="white" stroke="var(--accent)" strokeWidth="3" />
+    </svg>
+  );
+}
+
 // El giro de la Ruleta lo pacea el BACKEND (ver stepRouletteReveal en
 // tenant.js — cada paso llega ya con el delay de suspenso aplicado del
 // lado del servidor, cada vez más lento cerca del final). Este componente
-// no simula un recorrido falso como EliminationOverlay, pero sí necesita
-// ACUMULAR visualmente cada paso a medida que llega: sin esto, la grilla se
-// veía siempre igual (todos presentes) hasta que de golpe aparecía el
-// ganador, sin transmitir que algo estaba girando entre medio.
+// dibuja una ruleta tipo pastel de verdad (RouletteWheel de arriba): una
+// sección por cada entrada restante, que se va achicando en cantidad a
+// medida que llegan los roulette_step, girando sola de fondo todo el
+// tiempo para que se lea como una ruleta real y no una lista estática.
 function RouletteOverlay({ state, prize }) {
-  const gridRef = useRef(null);
-  const [boxSize, setBoxSize] = useState(64);
-  const [gridGap, setGridGap] = useState(6);
+  const wheelBoxRef = useRef(null);
+  const [wheelSize, setWheelSize] = useState(240);
   // Usernames ya revelados como "fuera" en esta ronda (se van acumulando a
   // medida que llegan los roulette_step) y cuál está resaltado ahora mismo
-  // (el paso más reciente, con un brillo breve). Nota: si el modo regalo
-  // repite el mismo username en varios slots, se apagan todos sus bloques
-  // juntos al salir el primero — aceptable para el efecto visual, ya que el
-  // sorteo real sigue siendo por slot en el backend.
+  // (el paso más reciente, con un brillo breve antes de desaparecer del
+  // todo). Nota: si el modo regalo repite el mismo username en varios
+  // slots, se apaga esa sección entera al salir el primero — aceptable
+  // para el efecto visual, ya que el sorteo real sigue siendo por slot en
+  // el backend.
   const [eliminatedUsernames, setEliminatedUsernames] = useState(() => new Set());
   const [flashUsername, setFlashUsername] = useState(null);
 
@@ -489,37 +561,38 @@ function RouletteOverlay({ state, prize }) {
 
   // Un "eliminate" por cada paso del giro — cada roulette_step trae un
   // objeto lastEliminated nuevo (broadcast fresco del backend), así que
-  // comparar por referencia alcanza para saber que es un paso distinto. De
-  // paso, ese mismo paso se suma al rastro visual y se resalta un instante.
+  // comparar por referencia alcanza para saber que es un paso distinto. La
+  // sección resaltada se saca de la ruleta recién después del brillo, para
+  // que se alcance a ver a quién le tocó antes de que desaparezca.
   useEffect(() => {
     if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
     playEliminate();
     const username = state.lastEliminated.username;
-    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
     setFlashUsername(username);
-    const timeout = setTimeout(() => setFlashUsername(null), 900);
+    const timeout = setTimeout(() => {
+      setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
+      setFlashUsername(null);
+    }, 700);
     return () => clearTimeout(timeout);
   }, [state?.lastEliminated, state?.mode]);
 
   const entries = (state && state.entries) || [];
+  // Lo que se dibuja en la ruleta: todavía no se sacó nadie (o está en el
+  // instante de brillo antes de salir).
+  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username));
 
   useLayoutEffect(() => {
-    const el = gridRef.current;
+    const el = wheelBoxRef.current;
     if (!el) return;
-    const recompute = () => {
-      const { size, gap } = computeElimBoxSize(el.clientWidth, el.clientHeight, entries.length);
-      setBoxSize(size);
-      setGridGap(gap);
-    };
+    const recompute = () => setWheelSize(Math.max(120, Math.min(el.clientWidth, el.clientHeight)));
     recompute();
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [entries.length, prize, state && state.lastEliminated, state && state.mode]);
+  }, [prize, state && state.mode]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 
-  const showLabel = boxSize >= 18;
   const entryRuleLabel = state.entryMode === 'gift'
     ? `Manda ${state.targetGiftName || '...'}`
     : `Comenta "${state.keyword || '...'}"`;
@@ -546,35 +619,32 @@ function RouletteOverlay({ state, prize }) {
 
       {state.lastEliminated && state.mode === 'spinning' && (
         <div className="mt-4 flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 w-full">
-          <img src={state.lastEliminated.avatar} className="w-8 h-8 rounded-full border-2 border-red-500 object-cover grayscale" />
           <span className="text-xs font-bold text-red-300">💀 @{state.lastEliminated.username} quedó fuera</span>
         </div>
       )}
 
-      <div ref={gridRef} style={{ gap: gridGap }} className="w-full flex-1 flex flex-wrap justify-center items-center content-center my-2 overflow-hidden">
+      <div ref={wheelBoxRef} className="w-full flex-1 flex items-center justify-center my-2 overflow-hidden relative">
         {state.mode === 'finished' ? (
           state.winner && (
             <div className="flex flex-col items-center animate-pop">
               <div className="relative">
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
+                {/* La foto de perfil recién se muestra acá, con el ganador
+                    ya definido — durante el giro la ruleta solo muestra
+                    usernames, nunca avatares. */}
                 <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
               </div>
             </div>
           )
-        ) : entries.length > 0 ? (
-          entries.map((e) => {
-            const isFlashing = state.mode === 'spinning' && flashUsername === e.username;
-            const isOut = eliminatedUsernames.has(e.username) && !isFlashing;
-            return (
-            <div key={e.id} title={e.username} style={{ width: boxSize }}
-              className={`flex flex-col items-center gap-0.5 transition-all duration-500 ${isFlashing ? 'scale-125 z-10' : isOut ? 'opacity-25 scale-90 grayscale' : ''}`}>
-              <img src={e.avatar} style={{ width: boxSize, height: boxSize, borderColor: isFlashing ? undefined : 'var(--accent)' }}
-                className={`rounded-full border-2 object-cover flex-shrink-0 ${isFlashing ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.7)]' : ''}`} />
-              {showLabel && <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)) }} className={`max-w-full truncate ${isFlashing ? 'text-red-300 font-bold' : 'text-gray-300'}`}>@{e.username}</span>}
+        ) : wheelEntries.length > 0 ? (
+          <>
+            <div className="animate-roulette-spin" style={{ width: wheelSize, height: wheelSize }}>
+              <RouletteWheel entries={wheelEntries} flashUsername={flashUsername} size={wheelSize} />
             </div>
-            );
-          })
+            {/* Puntero fijo (no gira con la ruleta) marcando la sección de arriba. */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-0 text-3xl drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>🔻</div>
+          </>
         ) : (
           <p className="text-gray-600 text-sm italic text-center">Esperando participantes...</p>
         )}

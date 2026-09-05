@@ -663,6 +663,17 @@ input[type=range]::-moz-range-thumb {
 }
 
 /* ==========================================
+   ANIMACIÓN RULETA (giro continuo de fondo)
+   ========================================== */
+@keyframes rouletteSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-roulette-spin {
+  animation: rouletteSpin 14s linear infinite;
+}
+
+/* ==========================================
    ADS: banco de horas del invitado (Color Says)
    ========================================== */
 /* Google Auto ads no tiene una API para "apagarse" — una vez que insertó

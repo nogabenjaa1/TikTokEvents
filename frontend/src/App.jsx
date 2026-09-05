@@ -287,6 +287,21 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [username, socket, overlayMode]);
 
+  // Top Tap-Tap/Top Gifter/Extensible se componen sobre la escena real de
+  // OBS — a diferencia del overlay de juegos/Colores, acá NO debe quedar
+  // ningún fondo sólido detrás del recuadro (pedido explícito: "solo debe
+  // verse el contenido, sin fondos adicionales"). `body` tiene un color de
+  // fondo fijo (ver index.css) que de otra forma se colaría por fuera del
+  // recuadro angosto — se anula solo mientras el overlay activo es uno de
+  // estos tres, nunca para el resto (ahí el fondo temático sigue siendo
+  // parte del diseño de siempre).
+  useEffect(() => {
+    if (!overlayMode) return;
+    const transparent = ['taptap', 'gifter', 'extensible'].includes(getOverlayScreen());
+    document.body.classList.toggle('tkc-overlay-transparent', transparent);
+    return () => document.body.classList.remove('tkc-overlay-transparent');
+  }, [overlayMode]);
+
   // ✅ ADIÓS React.lazy y Suspense. Ahora el Overlay no se destruye con cada update.
   if (overlayMode) {
     if (!socket) {
@@ -300,16 +315,24 @@ export default function App() {
     if (screen === 'colors') {
       return <DiceOverlay diceState={diceState} theme={overlayTheme} />;
     }
+    // Sin `grid place-items-center` a propósito (a diferencia de Colores/
+    // Extensible, de tamaño fijo): centrar un recuadro de alto variable
+    // (crece de ~117px a ~557px según cuántas entradas hay) lo hacía
+    // reubicarse en la pantalla cada vez que sumaba o perdía una fila —
+    // pedido explícito de que el recuadro quede estático. `h-screen flex`
+    // deja que el recuadro (h-full adentro, ver Overlay.jsx) ocupe
+    // siempre el 100% de lo que mida la fuente de OBS, anclado desde
+    // arriba, sin importar cuántas entradas tenga ahora mismo.
     if (screen === 'taptap') {
       return (
-        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
           <TopTapTapOverlay state={tapTapState} />
         </div>
       );
     }
     if (screen === 'gifter') {
       return (
-        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
           <TopGifterOverlay state={gifterState} />
         </div>
       );

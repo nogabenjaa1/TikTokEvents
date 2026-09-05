@@ -791,12 +791,20 @@ function RouletteOverlay({ state, prize }) {
 // (rojo+corazón para likes, amarillo+moneda para regalos) sin duplicar todo
 // el layout — pedido explícito para que cada widget se vea más llamativo y
 // distinguible del otro a simple vista.
+// `h-full` (no alto automático): a propósito, el recuadro SIEMPRE ocupa el
+// 100% de lo que mida la fuente de OBS (ver el wrapper h-screen en App.jsx),
+// nunca crece/encoge según cuántas entradas tenga ahora mismo — eso es lo
+// que evita que se reubique en la pantalla al sumar o perder una fila
+// (pedido explícito: "posición estática"). La lista interna es la única
+// parte que crece/scrollea (flex-1 + overflow-y-auto); como el backend ya
+// limita a un top 8 (ver CONTINUOUS_LEADERBOARD_SIZE en tenant.js), en la
+// práctica nunca hace falta scrollear de verdad.
 function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, valueColorClass, nameIcon = '', emptyLabel }) {
   return (
-    <div className="theme-die-frame w-[380px] p-5 flex flex-col gap-3 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center">{icon} {title}</p>
+    <div className="theme-die-frame w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">{icon} {title}</p>
       {entries.length > 0 ? (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {entries.map((e, i) => (
             <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
               <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>

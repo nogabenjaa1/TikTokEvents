@@ -89,6 +89,19 @@ input[type=range]::-moz-range-thumb {
 }
 /* El contenido real siempre por encima de cualquier capa decorativa ::before que use algún material a futuro. */
 .themed-app > * { position: relative; z-index: 1; }
+
+/* Overlays angostos que se componen sobre la escena real de OBS (Top
+   Tap-Tap, Top Gifter, Modo Extensible) — a diferencia del overlay de
+   juegos/Colores (pensados para llenar casi todo el recorte con su propia
+   tarjeta), acá SOLO debe verse el recuadro, con todo lo demás
+   transparente. `body` tiene un `background-color` sólido fijo más abajo
+   y `.themed-app` el suyo propio (`--page-bg`, temático) — ambos se anulan
+   con esta clase, que App.jsx prende/apaga en el <body> solo mientras el
+   overlay activo es uno de estos tres (ver el useEffect de overlayMode).
+   Sin esto se veía un rectángulo sólido del color del tema tapando media
+   escena en vez de dejar pasar la cámara/juego de fondo. */
+body.tkc-overlay-transparent { background-color: transparent; }
+body.tkc-overlay-transparent .themed-app { background: transparent; }
 /* Transiciones suaves al cambiar de tema: las superficies, sidebar, inputs
    y botones interpolan color/sombra/borde sin cortes abruptos. */
 .theme-surface,

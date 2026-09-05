@@ -883,6 +883,36 @@ export function ExtensibleOverlay({ state }) {
   );
 }
 
+// SPOTIFY: cola de canciones pedidas por chat (!play) — mismo criterio que
+// Top Tap-Tap/Top Gifter (sin panel/fondo propio, h-full anclado arriba en
+// vez de centrado, para no reubicarse en la pantalla al sumar una canción).
+// El backend ya limita a las últimas 8 (ver SPOTIFY_QUEUE_DISPLAY_SIZE).
+export function SpotifyQueueOverlay({ state }) {
+  const queue = (state && state.queue) || [];
+  return (
+    <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Sonando pronto</p>
+      {queue.length > 0 ? (
+        <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
+          {queue.map((song) => (
+            <div key={song.id} className="flex items-center gap-3 rounded-xl px-3 py-2 border" style={{ borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
+              {song.albumArt
+                ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
+                : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)' }}>🎵</span>}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white truncate">{song.title}</p>
+                <p className="text-[10px] text-gray-400 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-gray-600 text-xs italic text-center py-4">Pide una canción con !play...</p>
+      )}
+    </div>
+  );
+}
+
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente

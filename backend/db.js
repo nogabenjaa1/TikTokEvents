@@ -125,6 +125,23 @@ const ready = pool.query(`
       status TEXT NOT NULL,
       created_at BIGINT NOT NULL
     )
+  `))
+  // Una cuenta de Spotify por licencia (multi-tenant, como TikTok): cada
+  // streamer conecta LA SUYA por OAuth (ver /api/spotify/connect en
+  // server.js) para que el comando !play del chat agregue canciones a SU
+  // cola. access_token se refresca solo (ver spotify.getValidAccessToken)
+  // y se persiste acá junto con el nuevo expires_at; refresh_token no
+  // vence salvo que el streamer revoque el acceso desde Spotify.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS spotify_accounts (
+      license_id TEXT PRIMARY KEY REFERENCES licenses(id),
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      spotify_user_id TEXT,
+      display_name TEXT,
+      connected_at BIGINT NOT NULL
+    )
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
@@ -231,6 +248,46 @@ async function deleteLicense(id) {
     await pool.query('DELETE FROM licenses WHERE id = $1', [id]);
 }
 
+// ==========================================
+// SPOTIFY (una cuenta por licencia — ver la tabla spotify_accounts arriba)
+// ==========================================
+async function getSpotifyAccount(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+    return rows[0];
+}
+
+// Se usa tanto para la primera conexión (con spotifyUserId/displayName)
+// como para reconectar después de desconectar — siempre reemplaza la fila
+// entera, a diferencia de updateSpotifyTokens (que solo toca los tokens).
+async function upsertSpotifyAccount(licenseId, { accessToken, refreshToken, expiresAt, spotifyUserId, displayName }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO spotify_accounts (license_id, access_token, refresh_token, expires_at, spotify_user_id, display_name, connected_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (license_id) DO UPDATE SET
+            access_token = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            expires_at = EXCLUDED.expires_at,
+            spotify_user_id = EXCLUDED.spotify_user_id,
+            display_name = EXCLUDED.display_name,
+            connected_at = EXCLUDED.connected_at
+    `, [licenseId, accessToken, refreshToken, expiresAt, spotifyUserId || null, displayName || null, Date.now()]);
+}
+
+// Refresh silencioso de un access_token vencido (ver spotify.getValidAccessToken)
+// — a propósito NO toca refresh_token: Spotify no manda uno nuevo en cada
+// refresh, y pisarlo con undefined invalidaría la cuenta conectada.
+async function updateSpotifyTokens(licenseId, { accessToken, expiresAt }) {
+    await ready;
+    await pool.query('UPDATE spotify_accounts SET access_token = $1, expires_at = $2 WHERE license_id = $3', [accessToken, expiresAt, licenseId]);
+}
+
+async function deleteSpotifyAccount(licenseId) {
+    await ready;
+    await pool.query('DELETE FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+}
+
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
     await ready;
     await pool.query('UPDATE licenses SET license_type = $1, expires_at = $2, revoked = FALSE, dice_tier = $3 WHERE id = $4', [licenseType, expiresAt, diceTier, id]);
@@ -300,4 +357,5 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
 };

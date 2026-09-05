@@ -8,6 +8,7 @@
 // "Conectando..." para siempre, sin ni éxito ni error visible.
 const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 const db = require('./db');
+const spotify = require('./spotify');
 
 // Duración de la animación de "sorteo" (tipo ruleta) en el overlay de
 // Eliminación antes de revelar a quién le tocó.
@@ -53,6 +54,11 @@ const TAPTAP_SETTLE_MS = 1500;
 // — no son partidas con inicio/fin, así que no hace falta acotarlos a un
 // top 3 como Zubastinis.
 const CONTINUOUS_LEADERBOARD_SIZE = 8;
+
+// Cuántas canciones pedidas por !play se muestran en el overlay de la cola
+// — mismo criterio que los rankings continuos de arriba, no hace falta
+// mostrar el historial entero.
+const SPOTIFY_QUEUE_DISPLAY_SIZE = 8;
 
 // MODO EXTENSIBLE: cuenta regresiva que arranca en `baseTime` y SUMA
 // segundos con cada follow/regalo — al revés de los demás modos, acá el
@@ -176,6 +182,15 @@ class Tenant {
             timeLeft: 0,
         };
         this.extensibleTimerInterval = null;
+
+        // ── SPOTIFY (cola de canciones vía !play en el chat) ──
+        // Estado puramente informativo para el overlay/panel — la cola REAL
+        // vive del lado de Spotify (su propia app, en el dispositivo del
+        // streamer); esto es solo "lo que se pidió por chat", no se lee de
+        // vuelta desde la API de Spotify. `queueCounter` arma ids únicos
+        // para el key de React del overlay, igual que rouletteSlotCounter.
+        this.spotifyQueueState = { queue: [] };
+        this.spotifyQueueCounter = 0;
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
@@ -333,7 +348,7 @@ class Tenant {
             this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
             this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
-            this.tiktokConnection.on('follow', (data) => this.handleFollowEvent(data));
+            this.tiktokConnection.on('social', (data) => this.handleSocialEvent(data));
             this.tiktokConnection.on('error', ({ info, exception } = {}) => {
                 const message = exception?.message || info || 'Error interno del conector';
                 console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
@@ -471,13 +486,20 @@ class Tenant {
         this.processLikeTapTap(username, avatar, likeCount);
     }
 
-    // El evento `follow` ya viene derivado y filtrado por la propia librería
-    // (WebcastSocialMessage con displayType incluyendo "follow" — confirmado
-    // leyendo legacy.js directamente), así que no hace falta escuchar
-    // 'social' y filtrar a mano acá. `uniqueId` es el mismo campo que ya usan
-    // chat/gift/like para identificar al usuario en esta versión.
-    handleFollowEvent(data) {
+    // Bug real de la librería (mismo patrón que gift/like/badges, confirmado
+    // en vivo contra @samujuega_): el evento derivado `follow` NUNCA se
+    // emite porque legacy.js filtra por `simplifiedObj.displayType?.includes
+    // ("follow")`, y `displayType` no existe en absoluto en el protobuf real
+    // de WebcastSocialMessage (verificado decodificándolo — sus campos reales
+    // son shareType/action/shareTarget/followCount/followType/etc, ninguno
+    // llamado displayType). Con dos follows reales capturados en vivo, el
+    // campo que sí distingue un follow es `action === "1"` (ambos casos
+    // reales tenían action:"1"; TikTok también usa este mensaje para
+    // "share", que debería traer un action distinto). Por eso escuchamos
+    // 'social' directo en vez de confiar en el 'follow' derivado.
+    handleSocialEvent(data) {
         if (!data?.uniqueId) return;
+        if (String(data.action) !== '1') return; // no es un follow (ej. share)
         this.processFollowExtensible();
     }
 
@@ -496,17 +518,98 @@ class Tenant {
         const badgeText = badges.map((badge) => [badge.type, badge.name, badge.url].filter(Boolean).join(' ')).join(' ').toLowerCase();
         const identity = data.userIdentity || {};
 
-        this.broadcast.emit('tts_chat_message', {
-            id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
-            username: data.nickname || data.uniqueId || 'Usuario',
-            comment: comment.slice(0, 300),
-            isModerator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
-            isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
-            isSubscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
-            fanLevel: Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0),
-        });
+        // Comandos (!play, etc.) nunca van al TTS — pedido explícito. Se
+        // filtran ACÁ (no en el panel) para que ni siquiera crucen el
+        // socket como candidato a leerse en voz alta.
+        if (!comment.startsWith('!')) {
+            this.broadcast.emit('tts_chat_message', {
+                id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
+                username: data.nickname || data.uniqueId || 'Usuario',
+                comment: comment.slice(0, 300),
+                isModerator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
+                isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
+                isSubscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
+                fanLevel: Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0),
+            });
+        }
 
+        this.processPlayCommand(comment, data, identity);
         this.processRouletteComment(data);
+    }
+
+    // ==========================================
+    // LÓGICA: SPOTIFY (cola de canciones vía !play)
+    // ==========================================
+    getSpotifyQueuePublicState() {
+        return { queue: this.spotifyQueueState.queue };
+    }
+
+    // Pedido explícito: solo moderadores o suscriptores pueden pedir
+    // canciones (nada de allUsers/superFans/fanLevel configurable como en
+    // TTS — acá es una regla fija, no un panel de ajustes).
+    processPlayCommand(comment, data, identity) {
+        const match = /^!play\s+(.+)/i.exec(comment);
+        if (!match) return;
+        const query = match[1].trim();
+        if (!query) return;
+
+        const isModerator = Boolean(data.isModerator || identity.isModeratorOfAnchor);
+        const isSubscriber = Boolean(data.isSubscriber || identity.isSubscriberOfAnchor);
+        if (!isModerator && !isSubscriber) return;
+
+        const username = data.uniqueId;
+        if (!username) return;
+
+        this.requestSpotifySong(username, query).catch((err) => {
+            console.error(`[${this.licenseId}] [SPOTIFY] Error inesperado en !play de @${username}:`, err.message);
+        });
+    }
+
+    // Busca la canción en Spotify y la agrega a la cola DEL STREAMER (su
+    // cuenta conectada, ver /api/spotify/connect). Los errores esperables
+    // (sin cuenta conectada, sin dispositivo activo, sin Premium) se
+    // reportan al panel vía `spotify_error` — nunca al chat, el streamer es
+    // quien decide si lo comenta en vivo o no.
+    async requestSpotifySong(username, query) {
+        const account = await db.getSpotifyAccount(this.licenseId);
+        if (!account) return; // streamer no conectó Spotify — !play no hace nada, en silencio
+
+        let accessToken;
+        try {
+            accessToken = await spotify.getValidAccessToken(account);
+        } catch (err) {
+            console.error(`[${this.licenseId}] [SPOTIFY] No se pudo renovar el token:`, err.message);
+            this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció — reconéctala desde el panel.' });
+            return;
+        }
+
+        const track = await spotify.searchTrack(accessToken, query);
+        if (!track) {
+            this.broadcast.emit('spotify_error', { message: `@${username} pidió "${query}" — no se encontró ninguna canción.` });
+            return;
+        }
+
+        try {
+            await spotify.addToQueue(accessToken, track.uri);
+        } catch (err) {
+            const message = err instanceof spotify.SpotifyPlaybackError && err.code === 'NO_ACTIVE_DEVICE'
+                ? 'Abre Spotify y dale play en algún dispositivo para poder agregar canciones.'
+                : err instanceof spotify.SpotifyPlaybackError && err.code === 'PREMIUM_REQUIRED'
+                ? 'Se necesita Spotify Premium para agregar canciones a la cola.'
+                : 'No se pudo agregar la canción a la cola de Spotify.';
+            this.broadcast.emit('spotify_error', { message });
+            return;
+        }
+
+        this.spotifyQueueState.queue.push({
+            id: ++this.spotifyQueueCounter,
+            title: track.name,
+            artist: (track.artists || []).map((a) => a.name).join(', '),
+            albumArt: track.album?.images?.[track.album.images.length - 1]?.url || '',
+            requestedBy: username,
+        });
+        if (this.spotifyQueueState.queue.length > SPOTIFY_QUEUE_DISPLAY_SIZE) this.spotifyQueueState.queue.shift();
+        this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
     }
 
     // ==========================================
@@ -1032,6 +1135,7 @@ class Tenant {
         socket.emit('gifter_state_update', this.getGifterPublicState());
         socket.emit('taptap_state_update', this.getTapTapPublicState());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
+        socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
@@ -1506,6 +1610,12 @@ class Tenant {
             this.tapTapPending = {};
             this.tapTapState.leaderboard = {};
             this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
+        });
+
+        // ── SPOTIFY ──────────────────────────────────
+        socket.on('clear_spotify_queue', () => {
+            this.spotifyQueueState.queue = [];
+            this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         });
 
         // ─────────────────────────────────────────────

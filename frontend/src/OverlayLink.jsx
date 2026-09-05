@@ -57,23 +57,26 @@ function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetCon
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-// Hay cinco overlays distintos, cada uno con su URL propia: el de juegos
+// Hay seis overlays distintos, cada uno con su URL propia: el de juegos
 // (Rey del Trono/Zubastinis/Eliminación/Ruleta, vertical), el de Colores
-// (dados, horizontal, ver DiceOverlay.jsx), dos widgets angostos aparte, Top
-// Tap-Tap y Top Gifter (rankings continuos, ver TopTapTapOverlay/
-// TopGifterOverlay en Overlay.jsx), y el de Modo Extensible (contador
+// (dados, horizontal, ver DiceOverlay.jsx), tres widgets angostos aparte —
+// Top Tap-Tap y Top Gifter (rankings continuos, ver TopTapTapOverlay/
+// TopGifterOverlay en Overlay.jsx) y la cola de Spotify (canciones pedidas
+// por !play, ver SpotifyQueueOverlay) — y el de Modo Extensible (contador
 // horizontal que crece con follows/regalos, ver ExtensibleOverlay) — cada
 // uno se agrega como fuente de navegador independiente, nunca reemplaza a
 // los otros.
-export default function OverlayLink({ socket, tapTapState, gifterState }) {
+export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState }) {
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
   const tapTapUrl = buildOverlayUrl('taptap');
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
+  const musicQueueUrl = buildOverlayUrl('musicqueue');
 
   const tapTapCount = (tapTapState?.leaderboard || []).length;
   const gifterCount = (gifterState?.leaderboard || []).length;
+  const musicQueueCount = (spotifyQueueState?.queue || []).length;
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
@@ -115,13 +118,22 @@ export default function OverlayLink({ socket, tapTapState, gifterState }) {
         url={extensibleUrl}
       />
 
+      <OverlayUrlCard
+        title="Cola de Spotify (canciones pedidas con !play)"
+        description={`Widget angosto aparte con las próximas canciones pedidas por chat${musicQueueCount ? ` — ${musicQueueCount} en la cola ahora` : ''}. Conecta tu cuenta de Spotify desde la pestaña Spotify en TikTokEvents para que funcione.`}
+        url={musicQueueUrl}
+        onReset={() => socket?.emit('clear_spotify_queue')}
+        resetLabel="🗑️ Vaciar cola de canciones"
+        resetConfirm="¿Vaciar la cola de Spotify pedida por chat? Esto no afecta la reproducción real en Spotify, solo lo que se muestra acá."
+      />
+
       <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-5">
         <div>
           <h3 className="theme-heading text-sm font-bold mb-2">En OBS Studio</h3>
           <ol className="list-decimal list-inside space-y-1">
             <li>En la escena que quieras, haz clic en <strong className="text-gray-300">+</strong> dentro de "Fuentes" → <strong className="text-gray-300">Navegador</strong>.</li>
-            <li>Pega la URL correspondiente en el campo "URL" — la de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, la de "Colores" solo para Color Says, y las de Top Tap-Tap/Top Gifter/Modo Extensible como widgets aparte.</li>
-            <li>Configura el ancho y el alto: 1920×1080 para el overlay de juegos (vertical); para el de Colores y Modo Extensible, ancho de al menos 960px, con menos alto (son horizontales); para Top Tap-Tap/Top Gifter, un ancho de ~400px alcanza (son widgets angostos).</li>
+            <li>Pega la URL correspondiente en el campo "URL" — la de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, la de "Colores" solo para Color Says, y las de Top Tap-Tap/Top Gifter/Cola de Spotify/Modo Extensible como widgets aparte.</li>
+            <li>Configura el ancho y el alto: 1920×1080 para el overlay de juegos (vertical); para el de Colores y Modo Extensible, ancho de al menos 960px, con menos alto (son horizontales); para Top Tap-Tap/Top Gifter/Cola de Spotify, un ancho de ~400px alcanza (son widgets angostos, de alto libre).</li>
             <li>Acepta — cada overlay se sincroniza solo con lo que hagas en su panel correspondiente.</li>
           </ol>
         </div>
@@ -129,7 +141,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState }) {
           <h3 className="theme-heading text-sm font-bold mb-2">En TikTok LIVE Studio</h3>
           <ol className="list-decimal list-inside space-y-1">
             <li>Agrega una fuente de tipo <strong className="text-gray-300">Web/Navegador</strong> a tu escena.</li>
-            <li>Pega la URL correspondiente (juegos, Colores, Top Tap-Tap, Top Gifter o Modo Extensible, según lo que quieras mostrar).</li>
+            <li>Pega la URL correspondiente (juegos, Colores, Top Tap-Tap, Top Gifter, Cola de Spotify o Modo Extensible, según lo que quieras mostrar).</li>
             <li>Ajusta el tamaño de la fuente al overlay elegido, igual que en OBS.</li>
           </ol>
         </div>

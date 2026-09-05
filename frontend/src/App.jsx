@@ -4,8 +4,9 @@ import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
 import Roulette from './Roulette';
 import Extensible from './Extensible';
+import Spotify from './Spotify';
 import ColorSays from './Colorsays';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
@@ -38,6 +39,7 @@ const EVENT_TABS = [
   { id: 'elim',     label: 'Eliminación',   icon: '💀' },
   { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
   { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
+  { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
   { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
 ];
 
@@ -109,6 +111,10 @@ export default function App() {
   // propio overlay horizontal (?screen=extensible) — no participa del
   // selector activeApp.
   const [extensibleState, setExtensibleState] = useState({ isActive: false, finished: false, baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3, timeLeft: 0 });
+  // Cola de canciones pedidas por chat con !play (ver Spotify.jsx) — mismo
+  // patrón que tapTapState/gifterState: un solo estado centralizado que
+  // sirve tanto al panel como al overlay propio (?screen=musicqueue).
+  const [spotifyQueueState, setSpotifyQueueState] = useState({ queue: [] });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin
@@ -191,6 +197,7 @@ export default function App() {
     socket.on('taptap_state_update', setTapTapState);
     socket.on('gifter_state_update', setGifterState);
     socket.on('extensible_state_update', setExtensibleState);
+    socket.on('spotify_queue_update', setSpotifyQueueState);
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
@@ -297,7 +304,7 @@ export default function App() {
   // parte del diseño de siempre).
   useEffect(() => {
     if (!overlayMode) return;
-    const transparent = ['taptap', 'gifter', 'extensible'].includes(getOverlayScreen());
+    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue'].includes(getOverlayScreen());
     document.body.classList.toggle('tkc-overlay-transparent', transparent);
     return () => document.body.classList.remove('tkc-overlay-transparent');
   }, [overlayMode]);
@@ -334,6 +341,13 @@ export default function App() {
       return (
         <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
           <TopGifterOverlay state={gifterState} />
+        </div>
+      );
+    }
+    if (screen === 'musicqueue') {
+      return (
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+          <SpotifyQueueOverlay state={spotifyQueueState} />
         </div>
       );
     }
@@ -439,7 +453,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
-        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} />}
+        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} />}
 
         {sidebarMode === 'events' && (
           <>
@@ -533,6 +547,13 @@ export default function App() {
                   state={extensibleState} socket={socket}
                   username={username} connectionStatus={connectionStatus}
                 />
+              )
+            )}
+            {eventsTab === 'spotify' && (
+              needsAccess('spotify') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Spotify." />
+              ) : (
+                <Spotify socket={socket} queueState={spotifyQueueState} />
               )
             )}
             {/* TTS también requiere sesión — se muestra el login embebido en

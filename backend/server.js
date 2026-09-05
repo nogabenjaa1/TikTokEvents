@@ -59,6 +59,7 @@ const { MercadoPagoConfig, Preference, Payment, CardToken } = require('mercadopa
 const db = require('./db');
 const auth = require('./auth');
 const pricing = require('./pricing');
+const spotify = require('./spotify');
 const Tenant = require('./tenant');
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
@@ -422,6 +423,68 @@ app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimite
         return res.status(400).json({ success: false, error: 'Revoca la licencia antes de eliminarla' });
     }
     await db.deleteLicense(row.id);
+    res.json({ success: true });
+});
+
+// ==========================================
+// SPOTIFY: cada licencia conecta SU PROPIA cuenta por OAuth (Authorization
+// Code Flow) para que !play en el chat le agregue canciones a SU cola —
+// ver spotify.js para las restricciones reales (Premium + dispositivo
+// activo) y tenant.js (processPlayCommand/requestSpotifySong) para el
+// comando en sí.
+// ==========================================
+
+// Devuelve la URL de Spotify a la que el panel redirige (window.location.href
+// del lado del cliente) — el `state` lleva la licencia firmada porque el
+// callback de más abajo no tiene el header Authorization disponible (es
+// Spotify quien redirige al navegador, no un fetch nuestro).
+app.get('/api/spotify/connect', auth.requireAuth, generalLimiter, (req, res) => {
+    try {
+        const state = auth.signSpotifyState(req.license.id);
+        res.json({ success: true, authUrl: spotify.getAuthUrl(state) });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Spotify redirige ACÁ (no al frontend) después de que el streamer autoriza
+// o rechaza — de un solo uso, sin sesión propia: todo lo que necesitamos
+// (a qué licencia pertenece) viene firmado en `state`.
+app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
+    const { code, state, error } = req.query;
+    if (error || !code || !state) {
+        return res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+    let licenseId;
+    try {
+        licenseId = auth.verifySpotifyState(state);
+    } catch {
+        return res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+    try {
+        const tokens = await spotify.exchangeCodeForTokens(code);
+        const me = await spotify.getMe(tokens.access_token);
+        await db.upsertSpotifyAccount(licenseId, {
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            expiresAt: Date.now() + tokens.expires_in * 1000,
+            spotifyUserId: me.id,
+            displayName: me.display_name || me.id,
+        });
+        res.redirect(`${FRONTEND_URL}/?spotify=connected`);
+    } catch (err) {
+        console.error('[Spotify] Error en el callback de OAuth:', err.message);
+        res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+});
+
+app.get('/api/spotify/status', auth.requireAuth, generalLimiter, async (req, res) => {
+    const account = await db.getSpotifyAccount(req.license.id);
+    res.json({ success: true, connected: !!account, displayName: account?.display_name || null });
+});
+
+app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req, res) => {
+    await db.deleteSpotifyAccount(req.license.id);
     res.json({ success: true });
 });
 

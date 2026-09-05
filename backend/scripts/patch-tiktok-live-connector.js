@@ -53,6 +53,18 @@ const REPLACEMENTS = [
         from: 'webcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: webcastObject.giftDetails?.giftType\n\t\t\t\t};\n\t\t\t\tif (webcastObject.giftDetails?.giftImage?.url?.length) webcastObject.giftPictureUrl = webcastObject.giftDetails.giftImage.url[0];\n\t\t\t\tif (webcastObject.giftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, webcastObject.giftDetails);\n\t\t\t\t\tdelete webcastObject.giftDetails;\n\t\t\t\t}',
         to: 'const realGiftDetails = webcastObject.gift;\n\t\t\t\twebcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: realGiftDetails?.type\n\t\t\t\t};\n\t\t\t\tif (realGiftDetails?.image?.urlList?.length) webcastObject.giftPictureUrl = realGiftDetails.image.urlList[0];\n\t\t\t\tif (realGiftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, realGiftDetails);\n\t\t\t\t}',
     },
+    {
+        // getPreferredPictureFormat espera un ARRAY de URLs, pero se lo
+        // llama pasándole `webcastUser.avatarLarge` completo — que es el
+        // objeto ImageModel entero ({ urlList, uri, height, width }), no el
+        // array. Como `Array.isArray(objeto)` es false, la función
+        // siempre devuelve null — por eso profilePictureUrl (y con eso el
+        // avatar en todos los juegos) venía SIEMPRE vacío. El array real
+        // está en `avatarLarge.urlList`.
+        label: 'getUserAttributes.profilePictureUrl (le faltaba .urlList)',
+        from: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge),',
+        to: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge?.urlList),',
+    },
 ];
 
 function main() {

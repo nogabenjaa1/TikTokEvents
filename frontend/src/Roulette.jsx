@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 
 // Los bloques de entradas se van achicando a medida que hay más gente, para
@@ -48,25 +48,47 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     setSelectedGift(giftsList.find(g => g.coins > 0) || null);
   }, [giftsList]);
 
+  // Compartido por Iniciar/Reiniciar/la actualización en vivo — así los
+  // tres mandan siempre exactamente los mismos campos, en el mismo formato.
+  const buildConfig = () => ({
+    tiktokUsername: username,
+    entryMode,
+    keyword: keyword.trim(),
+    entryWindowSec: Math.max(30, Math.round(entryWindowMin * 60)),
+    targetGiftName: entryMode === 'gift' ? selectedGift?.name || '' : '',
+    targetGiftIcon: entryMode === 'gift' ? selectedGift?.icon || '' : '',
+    targetGiftCoins: entryMode === 'gift' ? selectedGift?.coins || 0 : 0,
+    winnerRule,
+    winnerPosition: Math.max(1, Math.round(winnerPosition)),
+  });
+
   const startRoulette = () => {
     if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     if (entryMode === 'chat' && !keyword.trim()) return alert('¡Escribe la palabra clave para participar!');
     if (entryMode === 'gift' && !selectedGift) return alert('¡Elige el regalo para participar!');
-    socket.emit('start_roulette', {
-      tiktokUsername: username,
-      entryMode,
-      keyword: keyword.trim(),
-      entryWindowSec: Math.max(30, Math.round(entryWindowMin * 60)),
-      targetGiftName: entryMode === 'gift' ? selectedGift.name : '',
-      targetGiftIcon: entryMode === 'gift' ? selectedGift.icon : '',
-      targetGiftCoins: entryMode === 'gift' ? selectedGift.coins : 0,
-      winnerRule,
-      winnerPosition: Math.max(1, Math.round(winnerPosition)),
-    });
+    socket.emit('start_roulette', buildConfig());
   };
 
   const stopRoulette    = () => socket.emit('stop_roulette');
-  const restartRoulette = () => socket.emit('restart_roulette');
+  // Manda los ajustes actuales — así, si cambiaste la palabra clave, el
+  // tiempo de entrada o la posición ganadora antes de reiniciar, la ronda
+  // nueva arranca YA con esos valores, sin tener que pasar por Stop +
+  // Iniciar de cero para que se reflejen.
+  const restartRoulette = () => socket.emit('restart_roulette', buildConfig());
+
+  // Mientras se están uniendo participantes (antes de que el giro arranque
+  // y quede comprometido con el shuffle), cualquier cambio en los ajustes
+  // se manda en vivo — mismo patrón que ya usan Rey del Trono/Zubastinis/
+  // Eliminación. El guard de "recién activado" evita mandarlo doble
+  // pisando al start_roulette que ya se emitió con los mismos datos.
+  const justActivated = useRef(state.isActive);
+  useEffect(() => {
+    const activeJustChanged = justActivated.current !== state.isActive;
+    justActivated.current = state.isActive;
+    if (activeJustChanged) return;
+    if (state.isActive && state.mode === 'joining') socket.emit('update_roulette_settings', buildConfig());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryMode, keyword, entryWindowMin, selectedGift, winnerRule, winnerPosition, state.isActive, state.mode]);
 
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
   const entries = state.entries || [];

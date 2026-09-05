@@ -464,8 +464,13 @@ const WHEEL_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#e
 // manda el backend (1100ms, ver ROULETTE_REVEAL_DELAY_DEFAULT_MS en
 // tenant.js) para que la rueda siempre alcance a aterrizar del todo antes
 // de que llegue el siguiente paso.
-const ROULETTE_SPIN_MS = 900;
+const ROULETTE_SPIN_MS = 800;
 const ROULETTE_EXTRA_TURNS = 2;
+// Pausa después de que una sección desaparece y la rueda se reordena con
+// una menos, ANTES de arrancar a girar hacia el próximo objetivo — pedido
+// explícito: que el giro se note como un paso aparte, sobre la rueda ya
+// reestructurada, no mezclado con el instante en que alguien recién sale.
+const ROULETTE_SETTLE_MS = 350;
 
 // Calcula la rotación ABSOLUTA (nunca hacia atrás, siempre sumando vueltas
 // para adelante) que deja a `targetUsername` justo debajo del puntero fijo
@@ -522,9 +527,15 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
         const midAngle = startAngle + anglePer / 2;
         const labelPos = polarPoint(cx, cy, r * 0.62, midAngle);
         const isHighlighted = e.username === highlightUsername;
-        // El texto sigue el radio de su sección, pero nunca queda "cabeza
-        // abajo": en la mitad inferior del círculo se le suman 180°.
-        const textRotate = midAngle > 90 && midAngle < 270 ? midAngle + 180 : midAngle;
+        // Texto RADIAL: del centro hacia el borde de su sección, no
+        // tangencial (girando alrededor del círculo). La rotación base es
+        // midAngle - 90 (el texto nace apuntando "a la derecha", hay que
+        // girarlo hasta apuntar en la dirección radial real); en la mitad
+        // izquierda del círculo eso lo dejaría cabeza abajo, así que ahí se
+        // le suman 180° más — se sigue leyendo desde el centro hacia
+        // afuera, solo que reflejado para que nunca quede invertido.
+        const pointsLeft = midAngle > 90 && midAngle < 270;
+        const textRotate = pointsLeft ? midAngle + 90 : midAngle - 90;
         return (
           <g key={e.id}>
             <path d={path} fill={isHighlighted ? (highlightColor || '#ef4444') : WHEEL_COLORS[i % WHEEL_COLORS.length]}
@@ -609,50 +620,61 @@ function RouletteOverlay({ state, prize }) {
 
   const entries = (state && state.entries) || [];
 
-  // Cada roulette_step: la rueda gira hasta dejar a esa persona bajo el
-  // puntero, se resalta en rojo, y recién ahí se confirma como afuera.
+  // Cada roulette_step, en dos fases bien separadas (pedido explícito):
+  // 1) se confirma YA a quien haya quedado pendiente del paso anterior — la
+  //    rueda se redibuja más chica y se deja asentar un instante, quieta.
+  // 2) recién ahí arranca a girar hacia el nuevo objetivo, aterriza, se
+  //    resalta en rojo, y tras un instante se confirma como afuera.
   useEffect(() => {
     if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
-    // Vista sincrónica de la rueda AHORA (sin esperar a que el setState de
-    // finalizePending se aplique en el próximo render) — evita calcular el
-    // ángulo sobre una rueda con una entrada de más.
-    const stillPending = pendingRef.current?.username;
+    // Capturado por valor: aunque el setState de finalizePending recién se
+    // aplique en el próximo render, acá ya sabemos con certeza qué username
+    // hay que excluir al calcular la rueda "ya reestructurada".
+    const justFinalized = pendingRef.current?.username;
     finalizePending();
-    const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== stillPending);
     const username = state.lastEliminated.username;
-    const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
-    rotationRef.current = next;
-    setRotation(next);
-    pendingRef.current = { username };
-    const timeout = setTimeout(() => {
-      playEliminate();
-      setHighlightUsername(username);
-      setHighlightKind('eliminate');
-      const holdTimeout = setTimeout(() => {
-        finalizePending();
-        setHighlightUsername(null);
-      }, 500);
-      return () => clearTimeout(holdTimeout);
-    }, ROULETTE_SPIN_MS);
-    return () => clearTimeout(timeout);
+    const timeouts = [];
+    timeouts.push(setTimeout(() => {
+      const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== justFinalized);
+      const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
+      rotationRef.current = next;
+      setRotation(next);
+      pendingRef.current = { username };
+      timeouts.push(setTimeout(() => {
+        playEliminate();
+        setHighlightUsername(username);
+        setHighlightKind('eliminate');
+        timeouts.push(setTimeout(() => {
+          finalizePending();
+          setHighlightUsername(null);
+        }, 500));
+      }, ROULETTE_SPIN_MS));
+    }, ROULETTE_SETTLE_MS));
+    return () => timeouts.forEach(clearTimeout);
   }, [state?.lastEliminated, state?.mode]);
 
-  // Termina con ganador: la rueda gira hasta marcarlo en dorado antes de
-  // dar paso a la tarjeta grande con la foto (nunca antes: la foto de
-  // perfil solo se muestra con el ganador ya confirmado).
+  // Termina con ganador: primero se confirma/reestructura lo que haya
+  // quedado pendiente del último paso, se deja asentar un instante, y
+  // recién ahí la rueda gira hasta marcarlo en dorado — antes de dar paso
+  // a la tarjeta grande con la foto (nunca antes: la foto de perfil solo
+  // se muestra con el ganador ya confirmado).
   useEffect(() => {
     if (state?.mode !== 'finished') return;
+    const justFinalized = pendingRef.current?.username;
     finalizePending();
     if (!state.winner) { setShowWinnerCard(true); return; }
     const username = state.winner.username;
-    const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username));
-    const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
-    rotationRef.current = next;
-    setRotation(next);
-    setHighlightUsername(username);
-    setHighlightKind('winner');
-    const timeout = setTimeout(() => { playWinner(); setShowWinnerCard(true); }, ROULETTE_SPIN_MS);
-    return () => clearTimeout(timeout);
+    const timeouts = [];
+    timeouts.push(setTimeout(() => {
+      const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== justFinalized);
+      const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
+      rotationRef.current = next;
+      setRotation(next);
+      setHighlightUsername(username);
+      setHighlightKind('winner');
+      timeouts.push(setTimeout(() => { playWinner(); setShowWinnerCard(true); }, ROULETTE_SPIN_MS));
+    }, ROULETTE_SETTLE_MS));
+    return () => timeouts.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.winner]);
 

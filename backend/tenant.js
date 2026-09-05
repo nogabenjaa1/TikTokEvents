@@ -1247,10 +1247,25 @@ class Tenant {
             }
         });
 
-        socket.on('restart_roulette', () => {
+        // `config` es opcional a propósito (compatibilidad hacia atrás):
+        // si el panel manda los ajustes actuales, la ronda nueva arranca
+        // con ESOS valores (pedido explícito — antes había que Stop,
+        // cambiar los datos, e Iniciar de cero para que se reflejaran). Sin
+        // config, reutiliza lo que ya tenía, igual que antes.
+        socket.on('restart_roulette', (config) => {
             if (!this.rouletteState.isActive) return;
             console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO RULETA...`);
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+            if (config) {
+                this.rouletteState.entryMode = config.entryMode === 'gift' ? 'gift' : 'chat';
+                this.rouletteState.keyword = config.keyword || '';
+                this.rouletteState.entryWindowSec = config.entryWindowSec || this.rouletteState.entryWindowSec;
+                this.rouletteState.targetGiftName = config.targetGiftName || '';
+                this.rouletteState.targetGiftIcon = config.targetGiftIcon || '';
+                this.rouletteState.targetGiftCoins = config.targetGiftCoins || 0;
+                this.rouletteState.winnerRule = config.winnerRule || 'first';
+                this.rouletteState.winnerPosition = config.winnerPosition || 1;
+            }
             this.rouletteState.mode = 'joining';
             this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
             this.rouletteState.entries = [];
@@ -1262,6 +1277,27 @@ class Tenant {
             this.rouletteSlotCounter = 0;
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             this.startRouletteTimer();
+        });
+
+        // Cambios en vivo MIENTRAS se está uniendo gente (antes de que
+        // arranque el giro, que ya queda comprometido con el shuffle) — el
+        // mismo patrón que update_elim_settings/update_settings en los
+        // otros modos. A propósito NO se toca timeLeft: cambiar la ventana
+        // de entrada no debe recortar/alargar la cuenta regresiva que ya
+        // está corriendo, el valor nuevo se aplica recién la próxima vez
+        // que se inicia o reinicia la ronda.
+        socket.on('update_roulette_settings', (newConfig) => {
+            if (this.rouletteState.isActive && this.rouletteState.mode === 'joining') {
+                this.rouletteState.entryMode = newConfig.entryMode === 'gift' ? 'gift' : 'chat';
+                this.rouletteState.keyword = newConfig.keyword || '';
+                this.rouletteState.entryWindowSec = newConfig.entryWindowSec || this.rouletteState.entryWindowSec;
+                this.rouletteState.targetGiftName = newConfig.targetGiftName || '';
+                this.rouletteState.targetGiftIcon = newConfig.targetGiftIcon || '';
+                this.rouletteState.targetGiftCoins = newConfig.targetGiftCoins || 0;
+                this.rouletteState.winnerRule = newConfig.winnerRule || 'first';
+                this.rouletteState.winnerPosition = newConfig.winnerPosition || 1;
+                this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            }
         });
 
         socket.on('stop_roulette', () => {

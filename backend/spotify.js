@@ -68,7 +68,7 @@ async function refreshAccessToken(refreshToken) {
 
 async function getMe(accessToken) {
     const res = await fetch('https://api.spotify.com/v1/me', { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) throw new Error(`Spotify /me falló (${res.status})`);
+    if (!res.ok) throw new Error(`Spotify /me falló (${res.status}): ${await res.text()}`);
     return res.json();
 }
 
@@ -91,7 +91,7 @@ async function searchTrack(accessToken, query) {
     const res = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) throw new Error(`Spotify search falló (${res.status})`);
+    if (!res.ok) throw new Error(`Spotify search falló (${res.status}): ${await res.text()}`);
     const data = await res.json();
     return data.tracks?.items?.[0] || null;
 }

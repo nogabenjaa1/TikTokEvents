@@ -21,8 +21,13 @@ function assertConfigured() {
 
 // Idempotente — se llama una vez al arrancar el server (ver server.js). Si
 // el bucket ya existe, Supabase responde 400 con "already exists"; eso NO
-// es un error real acá, así que se ignora en vez de tirar.
+// es un error real acá, así que se ignora en vez de tirar. `file_size_limit`
+// a propósito NO se manda acá — Supabase espera bytes numéricos, no un
+// string tipo "15MB" (mandar el formato equivocado hace fallar la creación
+// del bucket entero) — el límite de 15MB ya lo aplica multer del lado de
+// Express (ver server.js), así que este campo es redundante.
 async function ensureBucket() {
+    console.log('[Storage] SUPABASE_URL configurada:', !!SUPABASE_URL, '| SUPABASE_SERVICE_ROLE_KEY configurada:', !!SUPABASE_SERVICE_ROLE_KEY);
     assertConfigured();
     const res = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
         method: 'POST',
@@ -30,12 +35,18 @@ async function ensureBucket() {
             Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true, file_size_limit: '15MB' }),
+        body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true }),
     });
-    if (res.ok) return;
+    if (res.ok) {
+        console.log(`[Storage] Bucket "${BUCKET}" listo.`);
+        return;
+    }
     const text = await res.text();
-    if (res.status === 400 && /already exists/i.test(text)) return;
-    console.error(`[Storage] No se pudo crear/verificar el bucket "${BUCKET}":`, text);
+    if (res.status === 400 && /already exists/i.test(text)) {
+        console.log(`[Storage] Bucket "${BUCKET}" ya existía — todo bien.`);
+        return;
+    }
+    console.error(`[Storage] No se pudo crear/verificar el bucket "${BUCKET}" — status ${res.status}:`, text);
 }
 
 // `path` incluye la licencia como prefijo (ver server.js) para que dos
@@ -54,7 +65,12 @@ async function uploadFile(path, buffer, contentType) {
         },
         body: buffer,
     });
-    if (!res.ok) throw new Error(`Supabase Storage upload falló (${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+        const text = await res.text();
+        console.error(`[Storage] Upload a "${path}" falló — status ${res.status}:`, text);
+        throw new Error(`Supabase Storage upload falló (${res.status}): ${text}`);
+    }
+    console.log(`[Storage] Subido OK: ${path}`);
     return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 

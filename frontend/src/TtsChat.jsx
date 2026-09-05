@@ -70,8 +70,18 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
 
   const resolveVoice = (voiceURI, list) => list.find(v => v.voiceURI === voiceURI) || null;
 
+  // Muchos motores de voz "leen" los emojis en vez de ignorarlos (dicen el
+  // nombre del ícono, o directamente un sonido raro) — se sacan del texto
+  // ANTES de armar la utterance. El monitor de voz sigue mostrando el
+  // comentario original tal cual lo escribió la persona, esto solo afecta
+  // lo que se dice en voz alta.
+  const stripEmojis = (text) => text
+    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   const buildUtterance = (text, voiceURI, pitch, rate, volume) => {
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(stripEmojis(text));
     const voice = resolveVoice(voiceURI, voicesRef.current);
     utterance.voice = voice;
     utterance.lang = voice?.lang || 'es-MX';

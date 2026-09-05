@@ -458,12 +458,36 @@ function polarPoint(cx, cy, r, angleDeg) {
 
 const WHEEL_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#f97316', '#14b8a6'];
 
+// Cuánto dura la animación de "girar hasta detenerse" en cada paso, y
+// cuántas vueltas completas de más da antes de aterrizar (puro efecto
+// visual). Se mantiene bien por debajo del delay mínimo entre pasos que
+// manda el backend (1100ms, ver ROULETTE_REVEAL_DELAY_DEFAULT_MS en
+// tenant.js) para que la rueda siempre alcance a aterrizar del todo antes
+// de que llegue el siguiente paso.
+const ROULETTE_SPIN_MS = 900;
+const ROULETTE_EXTRA_TURNS = 2;
+
+// Calcula la rotación ABSOLUTA (nunca hacia atrás, siempre sumando vueltas
+// para adelante) que deja a `targetUsername` justo debajo del puntero fijo
+// (arriba del todo) — recalculada sobre `entriesNow`, la lista tal como
+// está la rueda EN ESTE MOMENTO (antes de sacar a nadie más).
+function computeRouletteRotation(prevRotation, entriesNow, targetUsername) {
+  const idx = entriesNow.findIndex(e => e.username === targetUsername);
+  if (idx === -1) return prevRotation;
+  const anglePer = 360 / entriesNow.length;
+  const midAngle = idx * anglePer + anglePer / 2;
+  const delta = (((-midAngle - prevRotation) % 360) + 360) % 360;
+  return prevRotation + delta + ROULETTE_EXTRA_TURNS * 360;
+}
+
 // La ruleta de verdad: un círculo dividido en tantas secciones iguales
 // como entradas queden, cada una con el username adentro (nunca la foto —
 // eso pedido explícito: la foto de perfil solo se muestra al final, con
-// el ganador). `flashUsername` resalta en rojo la sección que el backend
-// acaba de resolver, justo antes de que desaparezca de la lista.
-function RouletteWheel({ entries, flashUsername, size }) {
+// el ganador). `highlightUsername` resalta la sección que el backend acaba
+// de resolver (roja si sale eliminada, dorada si es la ganadora) — quien
+// gira la rueda hasta dejarla bajo el puntero es RouletteOverlay, este
+// componente solo dibuja el estado actual, nunca gira por su cuenta.
+function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
   const n = entries.length;
   const cx = size / 2, cy = size / 2, r = size / 2 - 4;
   if (n === 0) return null;
@@ -497,17 +521,17 @@ function RouletteWheel({ entries, flashUsername, size }) {
         const path = `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
         const midAngle = startAngle + anglePer / 2;
         const labelPos = polarPoint(cx, cy, r * 0.62, midAngle);
-        const isFlashing = e.username === flashUsername;
+        const isHighlighted = e.username === highlightUsername;
         // El texto sigue el radio de su sección, pero nunca queda "cabeza
         // abajo": en la mitad inferior del círculo se le suman 180°.
         const textRotate = midAngle > 90 && midAngle < 270 ? midAngle + 180 : midAngle;
         return (
           <g key={e.id}>
-            <path d={path} fill={isFlashing ? '#ef4444' : WHEEL_COLORS[i % WHEEL_COLORS.length]}
-              stroke="white" strokeWidth="1.5" opacity={isFlashing ? 1 : 0.92}
+            <path d={path} fill={isHighlighted ? (highlightColor || '#ef4444') : WHEEL_COLORS[i % WHEEL_COLORS.length]}
+              stroke="white" strokeWidth={isHighlighted ? 3 : 1.5} opacity={isHighlighted ? 1 : 0.92}
               style={{ transition: 'fill 200ms ease, opacity 200ms ease' }} />
             {fontSize > 0 && (
-              <text x={labelPos.x} y={labelPos.y} fontSize={fontSize} fill="white" fontWeight="700"
+              <text x={labelPos.x} y={labelPos.y} fontSize={isHighlighted ? fontSize + 2 : fontSize} fill="white" fontWeight="700"
                 textAnchor="middle" dominantBaseline="middle" transform={`rotate(${textRotate}, ${labelPos.x}, ${labelPos.y})`}>
                 @{e.username.length > maxChars ? e.username.slice(0, maxChars - 1) + '…' : e.username}
               </text>
@@ -520,71 +544,125 @@ function RouletteWheel({ entries, flashUsername, size }) {
   );
 }
 
-// El giro de la Ruleta lo pacea el BACKEND (ver stepRouletteReveal en
+// El orden de los pasos lo pacea el BACKEND (ver stepRouletteReveal en
 // tenant.js — cada paso llega ya con el delay de suspenso aplicado del
 // lado del servidor, cada vez más lento cerca del final). Este componente
-// dibuja una ruleta tipo pastel de verdad (RouletteWheel de arriba): una
-// sección por cada entrada restante, que se va achicando en cantidad a
-// medida que llegan los roulette_step, girando sola de fondo todo el
-// tiempo para que se lea como una ruleta real y no una lista estática.
+// dibuja una ruleta tipo pastel de verdad (RouletteWheel de arriba) que
+// GIRA hasta detenerse exactamente en quien corresponda cada paso —
+// eliminado (rojo) o ganador (dorado) — se queda ahí un instante bien
+// visible, y recién entonces esa sección desaparece (o, si es la
+// ganadora, la ruleta da paso a la tarjeta grande con la foto).
 function RouletteOverlay({ state, prize }) {
   const wheelBoxRef = useRef(null);
   const [wheelSize, setWheelSize] = useState(240);
-  // Usernames ya revelados como "fuera" en esta ronda (se van acumulando a
-  // medida que llegan los roulette_step) y cuál está resaltado ahora mismo
-  // (el paso más reciente, con un brillo breve antes de desaparecer del
-  // todo). Nota: si el modo regalo repite el mismo username en varios
-  // slots, se apaga esa sección entera al salir el primero — aceptable
-  // para el efecto visual, ya que el sorteo real sigue siendo por slot en
-  // el backend.
+  // Usernames ya confirmados "fuera" en esta ronda, y quién está resaltado
+  // ahora mismo bajo el puntero (el paso más reciente, todavía visible
+  // aunque ya esté en `eliminatedUsernames`, para que se vea el momento
+  // antes de desaparecer). Nota: si el modo regalo repite el mismo
+  // username en varios slots, se apaga esa sección entera al salir el
+  // primero — aceptable para el efecto visual, ya que el sorteo real sigue
+  // siendo por slot en el backend.
   const [eliminatedUsernames, setEliminatedUsernames] = useState(() => new Set());
-  const [flashUsername, setFlashUsername] = useState(null);
+  const [highlightUsername, setHighlightUsername] = useState(null);
+  const [highlightKind, setHighlightKind] = useState(null); // 'eliminate' | 'winner'
+  const [rotation, setRotation] = useState(0);
+  // Si hay ganador, la tarjeta grande con la foto recién se muestra
+  // después de que la rueda termina de girar hasta marcarlo — antes de eso
+  // se sigue viendo la rueda, ya aterrizando en dorado sobre esa sección.
+  const [showWinnerCard, setShowWinnerCard] = useState(false);
+  const rotationRef = useRef(0);
+  // La entrada que está "en el aire" (ya se mandó a girar hacia ella, pero
+  // todavía no se confirmó del todo como afuera) — se resuelve de una
+  // apenas llega el paso siguiente, sin depender de que su propio timer
+  // haya disparado. Así, aunque un navegador en 2do plano frene los
+  // timers, nunca queda nadie pegado: como mucho, se pierde el instante de
+  // brillo de ESE paso puntual, pero jamás la persona se queda para siempre.
+  const pendingRef = useRef(null);
+
+  const finalizePending = () => {
+    if (!pendingRef.current) return;
+    const { username } = pendingRef.current;
+    pendingRef.current = null;
+    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
+  };
 
   const prevRef = useRef({ mounted: false, mode: null });
   useEffect(() => {
     if (!state) return;
     const prev = prevRef.current;
-    if (prev.mounted) {
-      if (state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
-      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
-    }
+    if (prev.mounted && state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
     prevRef.current = { mounted: true, mode: state.mode };
-  }, [state?.mode, state?.winner]);
+  }, [state?.mode]);
 
   // Arranca una ronda nueva -> se borra el rastro de la ronda anterior.
   useEffect(() => {
     if (state?.mode === 'joining') {
       setEliminatedUsernames(new Set());
-      setFlashUsername(null);
+      setHighlightUsername(null);
+      setHighlightKind(null);
+      setShowWinnerCard(false);
+      setRotation(0);
+      rotationRef.current = 0;
+      pendingRef.current = null;
     }
   }, [state?.mode]);
 
-  // Un "eliminate" por cada paso del giro — cada roulette_step trae un
-  // objeto lastEliminated nuevo (broadcast fresco del backend), así que
-  // comparar por referencia alcanza para saber que es un paso distinto.
-  // OJO: agregar al Set de eliminados es SÍNCRONO, no atado a un setTimeout
-  // — un navegador de OBS en segundo plano puede frenar los timers, y si el
-  // siguiente paso llega antes de que el timeout anterior dispare, el
-  // cleanup de este efecto lo cancela y esa persona quedaba para siempre en
-  // la ruleta (bug real, reportado en vivo). El único timer que queda es
-  // puramente cosmético (cuánto dura el brillo rojo antes de que la sección
-  // se vaya) — si ESE se atrasa, lo peor que pasa es que el brillo dura un
-  // poco más, nunca que alguien se quede pegado.
+  const entries = (state && state.entries) || [];
+
+  // Cada roulette_step: la rueda gira hasta dejar a esa persona bajo el
+  // puntero, se resalta en rojo, y recién ahí se confirma como afuera.
   useEffect(() => {
     if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
-    playEliminate();
+    // Vista sincrónica de la rueda AHORA (sin esperar a que el setState de
+    // finalizePending se aplique en el próximo render) — evita calcular el
+    // ángulo sobre una rueda con una entrada de más.
+    const stillPending = pendingRef.current?.username;
+    finalizePending();
+    const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== stillPending);
     const username = state.lastEliminated.username;
-    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
-    setFlashUsername(username);
-    const timeout = setTimeout(() => setFlashUsername(null), 700);
+    const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
+    rotationRef.current = next;
+    setRotation(next);
+    pendingRef.current = { username };
+    const timeout = setTimeout(() => {
+      playEliminate();
+      setHighlightUsername(username);
+      setHighlightKind('eliminate');
+      const holdTimeout = setTimeout(() => {
+        finalizePending();
+        setHighlightUsername(null);
+      }, 500);
+      return () => clearTimeout(holdTimeout);
+    }, ROULETTE_SPIN_MS);
     return () => clearTimeout(timeout);
   }, [state?.lastEliminated, state?.mode]);
 
-  const entries = (state && state.entries) || [];
+  // Termina con ganador: la rueda gira hasta marcarlo en dorado antes de
+  // dar paso a la tarjeta grande con la foto (nunca antes: la foto de
+  // perfil solo se muestra con el ganador ya confirmado).
+  useEffect(() => {
+    if (state?.mode !== 'finished') return;
+    finalizePending();
+    if (!state.winner) { setShowWinnerCard(true); return; }
+    const username = state.winner.username;
+    const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username));
+    const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
+    rotationRef.current = next;
+    setRotation(next);
+    setHighlightUsername(username);
+    setHighlightKind('winner');
+    const timeout = setTimeout(() => { playWinner(); setShowWinnerCard(true); }, ROULETTE_SPIN_MS);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.mode, state?.winner]);
+
   // Lo que se dibuja en la ruleta: todavía no se sacó nadie, o se acaba de
-  // sacar pero sigue un instante más solo para que se vea el brillo rojo
-  // antes de desaparecer del todo.
-  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username) || e.username === flashUsername);
+  // sacar/ganar pero sigue un instante más resaltado antes de desaparecer
+  // (o de dar paso a la tarjeta del ganador).
+  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username) || e.username === highlightUsername);
+  // Todavía girando hacia el ganador (mode ya es 'finished' pero la rueda
+  // no terminó de aterrizar) -> se sigue viendo la rueda, no la tarjeta.
+  const showingWheel = state?.mode !== 'finished' || !showWinnerCard;
 
   useLayoutEffect(() => {
     const el = wheelBoxRef.current;
@@ -604,7 +682,7 @@ function RouletteOverlay({ state, prize }) {
 
   return (
     <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
-      {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
+      {(state.mode === 'spinning' || (state.mode === 'finished' && showingWheel)) && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
         <TimeWarningBadge label="Cierra en" seconds={state.mode === 'joining' ? state.timeLeft : undefined} />
@@ -629,23 +707,23 @@ function RouletteOverlay({ state, prize }) {
       )}
 
       <div ref={wheelBoxRef} className="w-full flex-1 flex items-center justify-center my-2 overflow-hidden relative">
-        {state.mode === 'finished' ? (
+        {!showingWheel ? (
           state.winner && (
             <div className="flex flex-col items-center animate-pop">
               <div className="relative">
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
                 {/* La foto de perfil recién se muestra acá, con el ganador
-                    ya definido — durante el giro la ruleta solo muestra
-                    usernames, nunca avatares. */}
+                    ya definido y la rueda ya detenida — durante el giro la
+                    ruleta solo muestra usernames, nunca avatares. */}
                 <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
               </div>
             </div>
           )
         ) : wheelEntries.length > 0 ? (
           <>
-            <div className="animate-roulette-spin" style={{ width: wheelSize, height: wheelSize }}>
-              <RouletteWheel entries={wheelEntries} flashUsername={flashUsername} size={wheelSize} />
+            <div style={{ width: wheelSize, height: wheelSize, transform: `rotate(${rotation}deg)`, transition: `transform ${ROULETTE_SPIN_MS}ms cubic-bezier(0.15, 0.7, 0.2, 1)` }}>
+              <RouletteWheel entries={wheelEntries} highlightUsername={highlightUsername} highlightColor={highlightKind === 'winner' ? '#facc15' : '#ef4444'} size={wheelSize} />
             </div>
             {/* Puntero fijo (no gira con la ruleta) marcando la sección de arriba. */}
             <div className="absolute left-1/2 -translate-x-1/2 top-0 text-3xl drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>🔻</div>
@@ -656,7 +734,7 @@ function RouletteOverlay({ state, prize }) {
       </div>
 
       <div className="w-full text-center mt-auto">
-        {state.mode === 'finished' ? (
+        {state.mode === 'finished' && !showingWheel ? (
           <div className="flex flex-col items-center gap-2 py-2">
             {state.winner ? (
               <>
@@ -667,7 +745,7 @@ function RouletteOverlay({ state, prize }) {
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
             )}
           </div>
-        ) : state.mode === 'spinning' ? (
+        ) : state.mode === 'spinning' || (state.mode === 'finished' && showingWheel) ? (
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
           </div>

@@ -93,6 +93,14 @@ const ready = pool.query(`
   // la devuelve y la borra la primera vez que el frontend vuelve a
   // preguntar — de ahí "reveal" en el nombre, es de un solo uso.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS pending_key_reveal TEXT`))
+  // El WIN BONUS de Color Says dejó de ser algo que un dice_tier pago
+  // otorga automáticamente (pedido explícito: la dinámica debe ser
+  // transparente por default para streamers y espectadores). Ahora es una
+  // excepción manual: un admin la prende para UNA licencia puntual desde el
+  // panel de Licencias (ver /api/licenses/:id/win-bonus), sin importar su
+  // dice_tier. Admin (dice_tier='admin') sigue teniendo el bonus siempre,
+  // resuelto en el frontend, no acá.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS dice_win_bonus_unlocked BOOLEAN NOT NULL DEFAULT FALSE`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -173,6 +181,14 @@ async function setSession(id, sessionId) {
 async function setMultiDevice(id, enabled) {
     await ready;
     await pool.query('UPDATE licenses SET multi_device = $1 WHERE id = $2', [!!enabled, id]);
+    return findById(id);
+}
+
+// Excepción manual del WIN BONUS de Color Says para una licencia puntual —
+// ver comentario de la migración de dice_win_bonus_unlocked más arriba.
+async function setWinBonusUnlocked(id, enabled) {
+    await ready;
+    await pool.query('UPDATE licenses SET dice_win_bonus_unlocked = $1 WHERE id = $2', [!!enabled, id]);
     return findById(id);
 }
 
@@ -283,5 +299,5 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
 
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
-    claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
 };

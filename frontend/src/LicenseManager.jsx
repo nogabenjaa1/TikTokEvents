@@ -188,6 +188,26 @@ export default function LicenseManager() {
     }
   };
 
+  // Excepción manual al WIN BONUS de Color Says (dejó de venderse por
+  // dice_tier, ver Colorsays.jsx/db.js) — se prende/apaga por licencia
+  // puntual, independiente de qué dice_tier tenga.
+  const toggleWinBonus = async (lic) => {
+    const turningOn = !lic.diceWinBonusUnlocked;
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/win-bonus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ enabled: turningOn }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
+      pushToast(turningOn ? 'Win Bonus activado para esta licencia' : 'Win Bonus desactivado para esta licencia');
+      fetchLicenses();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
   const copyKey = () => {
     navigator.clipboard.writeText(newKey.key);
     setCopied(true);
@@ -307,6 +327,7 @@ export default function LicenseManager() {
                 <span className="font-bold text-gray-100">
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
                   {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">🔓 MULTI-DISPOSITIVO</span>}
+                  {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">🎲 WIN BONUS</span>}
                 </span>
                 <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${status.className}`}>{status.label}</span>
               </div>
@@ -332,6 +353,11 @@ export default function LicenseManager() {
                 {!lic.revoked && (
                   <button onClick={() => toggleMultiDevice(lic)} className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 underline">
                     {lic.multiDevice ? 'Quitar multi-dispositivo' : 'Hacer multi-dispositivo'}
+                  </button>
+                )}
+                {!lic.revoked && (
+                  <button onClick={() => toggleWinBonus(lic)} className="text-[10px] font-bold text-pink-400 hover:text-pink-300 underline">
+                    {lic.diceWinBonusUnlocked ? 'Quitar Win Bonus' : 'Dar Win Bonus'}
                   </button>
                 )}
                 {!lic.isAdmin && (

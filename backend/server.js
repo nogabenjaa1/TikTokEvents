@@ -186,6 +186,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
     });
 });
@@ -257,6 +258,7 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
             isAdmin: false,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
     });
 });
@@ -286,6 +288,7 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) =
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
         newKey: row.pending_key_reveal || undefined,
     });
@@ -317,6 +320,7 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asyn
         trialAlias: row.trial_alias,
         trialConnectedUsername: row.trial_connected_username,
         diceTier: row.dice_tier,
+        diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
     }));
     res.json({ success: true, licenses });
 });
@@ -373,6 +377,19 @@ app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, 
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
     await db.setMultiDevice(row.id, !!enabled);
+    res.json({ success: true });
+});
+
+// Excepción manual al WIN BONUS de Color Says (pedido explícito: dejó de
+// venderse/otorgarse automático por dice_tier — por default TODA licencia
+// paga tira limpio, sin importar el nivel que compró). Un admin la prende
+// acá para UNA licencia puntual; dice_tier='admin' sigue teniendo el bonus
+// siempre, sin depender de este flag (ver Colorsays.jsx).
+app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const { enabled } = req.body || {};
+    await db.setWinBonusUnlocked(row.id, !!enabled);
     res.json({ success: true });
 });
 

@@ -136,7 +136,7 @@ class Tenant {
         // dice EN QUÉ LUGAR del sorteo aparece la ganadora, no la elige de
         // antemano.
         this.rouletteState = {
-            isActive: false, mode: 'idle', // idle | joining | spinning | finished
+            isActive: false, mode: 'idle', paused: false, // idle | joining | spinning | finished
             entryMode: 'chat', keyword: '', entryWindowSec: 300,
             targetGiftName: '', targetGiftIcon: '', targetGiftCoins: 0,
             winnerRule: 'first', winnerPosition: 1, // 'first' | 'last' | 'position'
@@ -171,7 +171,7 @@ class Tenant {
         // modo regalo. Tiene su propio overlay horizontal (?screen=extensible),
         // no participa del selector de activeApp.
         this.extensibleState = {
-            isActive: false, finished: false,
+            isActive: false, finished: false, paused: false,
             baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3,
             timeLeft: 0,
         };
@@ -454,13 +454,17 @@ class Tenant {
         this.processGiftExtensible(event);
     }
 
-    // Igual que el chat/gift: campos leídos por analogía con cómo esos dos
-    // handlers ya normalizan `data` (uniqueId/userDetails), no confirmado
-    // todavía contra un LIVE real para el evento `like` puntualmente — ver
-    // aviso en el plan antes de confiar en Top Tap-Tap para un directo real.
+    // Bug real de nombre de campo (mismo patrón que gift/badge, confirmado
+    // decodificando el protobuf real de WebcastLikeMessage): el conteo de
+    // ESTE tick es `count`, no `likeCount` — ese campo no existe en el
+    // mensaje, así que Number(undefined) siempre daba 0 y CADA like se
+    // descartaba antes de llegar al acumulador (por eso Top Tap-Tap nunca
+    // sumaba ni un solo like). `total` también existe pero es el acumulado
+    // de todo el directo que ya mantiene TikTok — no sirve para nuestro
+    // propio acumulador por ráfaga (ver processLikeTapTap/settleTapTap).
     handleLikeEvent(data) {
         const username = data.uniqueId;
-        const likeCount = Number(data.likeCount) || 0;
+        const likeCount = Number(data.count) || 0;
         if (!username || likeCount <= 0) return;
 
         const avatar = data.profilePictureUrl || '';
@@ -798,7 +802,7 @@ class Tenant {
         if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
 
         this.rouletteTimerInterval = setInterval(() => {
-            if (!this.rouletteState.isActive || this.rouletteState.mode !== 'joining') return;
+            if (!this.rouletteState.isActive || this.rouletteState.mode !== 'joining' || this.rouletteState.paused) return;
             this.rouletteState.timeLeft--;
 
             if (this.rouletteState.timeLeft <= 0) {
@@ -875,7 +879,7 @@ class Tenant {
     // cuántas veces vuelva a comentar la misma persona.
     processRouletteComment(data) {
         const state = this.rouletteState;
-        if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'chat') return;
+        if (!state.isActive || state.mode !== 'joining' || state.paused || state.entryMode !== 'chat') return;
 
         const comment = typeof data.content === 'string' ? data.content.trim().toLowerCase() : '';
         const keyword = (state.keyword || '').trim().toLowerCase();
@@ -893,7 +897,7 @@ class Tenant {
     // (más regalos, más chances, a propósito).
     processGiftRoulette({ username, avatar, giftName, repeatCount }) {
         const state = this.rouletteState;
-        if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'gift') return;
+        if (!state.isActive || state.mode !== 'joining' || state.paused || state.entryMode !== 'gift') return;
         if (!state.targetGiftName || giftName.toLowerCase() !== state.targetGiftName.toLowerCase()) return;
 
         const slotsToAdd = Math.max(1, repeatCount || 1);
@@ -966,6 +970,7 @@ class Tenant {
         return {
             isActive: this.extensibleState.isActive,
             finished: this.extensibleState.finished,
+            paused: this.extensibleState.paused,
             baseTime: this.extensibleState.baseTime,
             secondsPerFollow: this.extensibleState.secondsPerFollow,
             secondsPerGift: this.extensibleState.secondsPerGift,
@@ -976,7 +981,7 @@ class Tenant {
     startExtensibleTimer() {
         if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
         this.extensibleTimerInterval = setInterval(() => {
-            if (!this.extensibleState.isActive || this.extensibleState.finished) return;
+            if (!this.extensibleState.isActive || this.extensibleState.finished || this.extensibleState.paused) return;
             this.extensibleState.timeLeft -= 1;
             if (this.extensibleState.timeLeft <= 0) {
                 this.extensibleState.timeLeft = 0;
@@ -989,10 +994,13 @@ class Tenant {
 
     // Un follow detectado suma `secondsPerFollow` al tiempo restante. No hace
     // falta deduplicar por usuario: es TikTok quien decide cuándo emitir el
-    // evento, y cada aparición es información nueva de la plataforma.
+    // evento, y cada aparición es información nueva de la plataforma. En
+    // pausa tampoco suma — pausar congela el contador por completo, no solo
+    // la cuenta regresiva (mismo criterio que Rey del Trono/Zubastinis/
+    // Eliminación con sus gifts mientras están pausados).
     processFollowExtensible() {
         const state = this.extensibleState;
-        if (!state.isActive || state.finished) return;
+        if (!state.isActive || state.finished || state.paused) return;
         state.timeLeft += state.secondsPerFollow;
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
     }
@@ -1002,7 +1010,7 @@ class Tenant {
     // propósito no está atado a un regalo específico como Eliminación/Ruleta.
     processGiftExtensible({ repeatCount }) {
         const state = this.extensibleState;
-        if (!state.isActive || state.finished) return;
+        if (!state.isActive || state.finished || state.paused) return;
         const units = Math.max(1, repeatCount || 1);
         state.timeLeft += state.secondsPerGift * units;
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
@@ -1310,7 +1318,7 @@ class Tenant {
 
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             this.rouletteState = {
-                isActive: true, mode: 'joining',
+                isActive: true, mode: 'joining', paused: false,
                 entryMode: config.entryMode === 'gift' ? 'gift' : 'chat',
                 keyword: config.keyword || '',
                 entryWindowSec: config.entryWindowSec,
@@ -1349,6 +1357,7 @@ class Tenant {
                 this.rouletteState.winnerPosition = config.winnerPosition || 1;
             }
             this.rouletteState.mode = 'joining';
+            this.rouletteState.paused = false;
             this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
             this.rouletteState.entries = [];
             this.rouletteState.revealOrder = [];
@@ -1382,9 +1391,28 @@ class Tenant {
             }
         });
 
+        // Pausa/reanuda SOLO la cuenta de "tiempo para entrar" (mientras
+        // mode === 'joining') — el giro en sí no se pausa, una vez que
+        // arranca ya queda comprometido con el shuffle (mismo criterio que
+        // "no hay evento de girar manual", ver start_roulette).
+        socket.on('pause_roulette', () => {
+            if (this.rouletteState.isActive && this.rouletteState.mode === 'joining') {
+                this.rouletteState.paused = true;
+                this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            }
+        });
+
+        socket.on('resume_roulette', () => {
+            if (this.rouletteState.isActive && this.rouletteState.mode === 'joining') {
+                this.rouletteState.paused = false;
+                this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            }
+        });
+
         socket.on('stop_roulette', () => {
             this.rouletteState.isActive = false;
             this.rouletteState.mode = 'idle';
+            this.rouletteState.paused = false;
             if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
@@ -1392,11 +1420,17 @@ class Tenant {
         });
 
         // ── MODO EXTENSIBLE ──────────────────────────
+        // 120 minutos (7200s) de tope para el tiempo base — mismo límite que
+        // el slider del panel (ver Extensible.jsx), reforzado acá por si
+        // algún día algo más allá del panel manda el config.
+        const MAX_EXTENSIBLE_BASE_SECONDS = 120 * 60;
+        const clampBaseTime = (value, fallback) => Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.max(1, Number(value) || fallback));
+
         socket.on('start_extensible', (config) => {
             console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO MODO EXTENSIBLE...`);
-            const baseTime = Math.max(1, Number(config?.baseTime) || 60);
+            const baseTime = clampBaseTime(config?.baseTime, 60);
             this.extensibleState = {
-                isActive: true, finished: false,
+                isActive: true, finished: false, paused: false,
                 baseTime,
                 secondsPerFollow: Math.max(0, Number(config?.secondsPerFollow) || 0),
                 secondsPerGift: Math.max(0, Number(config?.secondsPerGift) || 0),
@@ -1415,7 +1449,7 @@ class Tenant {
         // poder cambiarse en vivo SIN reiniciar el contador que ya corre.
         socket.on('update_extensible_settings', (config) => {
             if (!this.extensibleState.isActive) return;
-            if (config?.baseTime !== undefined) this.extensibleState.baseTime = Math.max(1, Number(config.baseTime) || this.extensibleState.baseTime);
+            if (config?.baseTime !== undefined) this.extensibleState.baseTime = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
@@ -1424,17 +1458,35 @@ class Tenant {
         socket.on('restart_extensible', (config) => {
             if (!this.extensibleState.isActive) return;
             console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO MODO EXTENSIBLE...`);
-            if (config?.baseTime !== undefined) this.extensibleState.baseTime = Math.max(1, Number(config.baseTime) || this.extensibleState.baseTime);
+            if (config?.baseTime !== undefined) this.extensibleState.baseTime = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
             this.extensibleState.timeLeft = this.extensibleState.baseTime;
             this.extensibleState.finished = false;
+            this.extensibleState.paused = false;
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
             this.startExtensibleTimer();
         });
 
+        // Congela el contador entero (ni baja solo, ni suma por follow/gift)
+        // — mismo criterio que Rey del Trono/Zubastinis/Eliminación.
+        socket.on('pause_extensible', () => {
+            if (this.extensibleState.isActive && !this.extensibleState.finished) {
+                this.extensibleState.paused = true;
+                this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+            }
+        });
+
+        socket.on('resume_extensible', () => {
+            if (this.extensibleState.isActive && !this.extensibleState.finished) {
+                this.extensibleState.paused = false;
+                this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+            }
+        });
+
         socket.on('stop_extensible', () => {
             this.extensibleState.isActive = false;
+            this.extensibleState.paused = false;
             if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
             this.maybeDisconnectTikTok();

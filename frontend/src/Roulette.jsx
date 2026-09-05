@@ -70,6 +70,9 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   };
 
   const stopRoulette    = () => socket.emit('stop_roulette');
+  // Solo pausa la cuenta de "tiempo para entrar" — el giro en sí no se
+  // pausa (el botón queda deshabilitado mientras mode === 'spinning', ver JSX).
+  const togglePause     = () => socket.emit(state.paused ? 'resume_roulette' : 'pause_roulette');
   // Manda los ajustes actuales — así, si cambiaste la palabra clave, el
   // tiempo de entrada o la posición ganadora antes de reiniciar, la ronda
   // nueva arranca YA con esos valores, sin tener que pasar por Stop +
@@ -79,12 +82,22 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   // Mientras se están uniendo participantes (antes de que el giro arranque
   // y quede comprometido con el shuffle), cualquier cambio en los ajustes
   // se manda en vivo — mismo patrón que ya usan Rey del Trono/Zubastinis/
-  // Eliminación. El guard de "recién activado" evita mandarlo doble
-  // pisando al start_roulette que ya se emitió con los mismos datos.
+  // Eliminación. OJO: además del guard de "recién activado" (evita mandar
+  // doble pisando al start_roulette que ya emitió los mismos datos), hace
+  // falta el de "recién montado" (isMounted) — sin él, cada vez que el
+  // streamer cambia de pestaña y vuelve a Ruleta, este efecto corre de
+  // nuevo con los valores LOCALES por defecto (keyword 'participo',
+  // entryWindowMin 5, etc.) y los manda de una, pisando en vivo la
+  // configuración real de una ronda que ya estaba activa — esto es lo que
+  // rompía correr Ruleta en simultáneo con otro modo (Extensible, por
+  // ejemplo): con solo pasar por su pestaña sin tocar nada, la ronda de
+  // Ruleta quedaba reseteada a los valores por defecto del panel.
+  const isMounted = useRef(false);
   const justActivated = useRef(state.isActive);
   useEffect(() => {
     const activeJustChanged = justActivated.current !== state.isActive;
     justActivated.current = state.isActive;
+    if (!isMounted.current) { isMounted.current = true; return; }
     if (activeJustChanged) return;
     if (state.isActive && state.mode === 'joining') socket.emit('update_roulette_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,7 +106,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
   const entries = state.entries || [];
   const size = sizeFor(entries.length);
-  const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
+  const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
@@ -257,13 +270,22 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
               ) : (
-                <button
-                  onClick={restartRoulette}
-                  disabled={state.mode === 'spinning'}
-                  className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  REINICIAR ⟲
-                </button>
+                <>
+                  <button
+                    onClick={togglePause}
+                    disabled={state.mode !== 'joining'}
+                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                  </button>
+                  <button
+                    onClick={restartRoulette}
+                    disabled={state.mode === 'spinning'}
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    REINICIAR ⟲
+                  </button>
+                </>
               )}
               <button
                 onClick={stopRoulette}

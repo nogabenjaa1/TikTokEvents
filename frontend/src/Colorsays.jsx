@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
-import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
+import { rollFair, rollWithPairBias } from './diceBias';
 import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
@@ -97,8 +97,6 @@ function WinBonusToggle({ checked, onChange }) {
   );
 }
 
-// PRO paga por una ventaja fija y simple (PRO_WIN_BONUS, en ./diceBias);
-// VIP y Admin además pueden elegir la intensidad con el slider.
 const DEFAULT_WIN_BONUS_PCT = 50;
 
 // De acceso libre: funciona sin sesión ni conexión al backend, la lógica de
@@ -109,31 +107,32 @@ const DEFAULT_WIN_BONUS_PCT = 50;
 // overlay escuchando del otro lado.
 //
 // `tier` (regular/pro/vip/admin — ver dice_tier en la licencia, backend)
-// define la ventaja en el juego: Trial y Regular siempre tiran limpio
-// (rollFair, en igualdad de condiciones entre ellos); PRO puede activar un
-// WIN BONUS fijo y bajo; VIP tiene el mismo interruptor pero además elige
-// la intensidad (0-100%) con un slider; Admin tiene TODOS los beneficios —
-// el mismo WIN BONUS con slider que VIP (arranca activado al máximo, para
-// no cambiarle el comportamiento de siempre a quien ya lo tenía) MÁS el
-// panel de Modo Seguro (asegurar/bloquear un color puntual), exclusivo
-// suyo. Ojo, `tier === 'admin'` es un nivel de Color Says que se le puede
-// vender a cualquier licencia paga, NO es lo mismo que session.isAdmin
-// (que sigue siendo exclusivo del panel de administración de licencias).
-// El selector de cantidad de dados es una función disponible para todos.
-export default function ColorSays({ tier = 'regular', socket = null, isGuest = false }) {
+// solo define el panel de Modo Seguro (exclusivo de Admin). El WIN BONUS
+// dejó de venderse/otorgarse automático por dice_tier (pedido explícito:
+// la dinámica debe ser transparente para streamers y espectadores) —
+// ahora es una excepción manual por licencia (`winBonusUnlocked`, ver
+// dice_win_bonus_unlocked en la licencia/backend), que un admin prende
+// desde el panel de Licencias para UN streamer puntual. Admin (dice_tier
+// 'admin') sigue teniendo el bonus SIEMPRE, sin depender de ese flag — es
+// quien "conserva todas las opciones". Ojo, `tier === 'admin'` es un nivel
+// de Color Says que se le puede vender a cualquier licencia paga, NO es lo
+// mismo que session.isAdmin (que sigue siendo exclusivo del panel de
+// administración de licencias). El selector de cantidad de dados es una
+// función disponible para todos.
+export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, socket = null, isGuest = false }) {
   const isAdmin = tier === 'admin';
-  const hasWinBonus = tier === 'pro' || tier === 'vip' || isAdmin;
-  const winBonusHasSlider = tier === 'vip' || isAdmin; // PRO: solo on/off, intensidad fija
+  const hasWinBonus = isAdmin || winBonusUnlocked;
   const [diceCount, setDiceCount]   = useState(DEFAULT_DICE);
   const [diceResult, setDiceResult] = useState(() => Array(DEFAULT_DICE).fill(null));
   const [rolling, setRolling]       = useState(false);
   const [history, setHistory]       = useState([]);
   const tickIntervalRef             = useRef(null);
 
-  // WIN BONUS: PRO solo lo prende/apaga (intensidad fija, ver
-  // PRO_WIN_BONUS); VIP y Admin además eligen el % con el slider. Admin
-  // arranca con el bonus activado al máximo (100%) para preservar el
-  // comportamiento de siempre; el resto arranca apagado.
+  // WIN BONUS: quien lo tiene (isAdmin, siempre; o winBonusUnlocked, la
+  // excepción manual de un admin para un streamer puntual) elige el % con
+  // el slider — ya no hay distinción PRO/VIP de intensidad fija, es todo o
+  // nada. Admin arranca con el bonus activado al máximo (100%) para
+  // preservar el comportamiento de siempre; una excepción manual arranca apagada.
   const [winBonusEnabled, setWinBonusEnabled] = useState(() => isAdmin);
   const [winBonusPct, setWinBonusPct]         = useState(() => isAdmin ? 100 : DEFAULT_WIN_BONUS_PCT);
   const [winBonusHidden, setWinBonusHidden]   = useState(false);
@@ -223,10 +222,9 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
     if (isAdmin && safeModeAction !== 'none' && safeModeColor !== null) {
       results = rollForSafeMode(diceCount, safeModeColor, safeModeAction);
     } else if (hasWinBonus && winBonusEnabled) {
-      const chance = winBonusHasSlider ? winBonusPct / 100 : PRO_WIN_BONUS;
-      results = rollWithPairBias(diceCount, chance);
+      results = rollWithPairBias(diceCount, winBonusPct / 100);
     } else {
-      results = rollFair(diceCount); // Trial/Regular, o PRO/VIP/Admin con el WIN BONUS apagado
+      results = rollFair(diceCount); // sin el bono (default) o con el bono apagado
     }
 
     const allSame = diceCount > 1 && results.every(r => r === results[0]);
@@ -242,7 +240,7 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
-  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusHasSlider, winBonusEnabled, winBonusPct]);
+  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
 
   const doRollInternal = useCallback(() => {
     setRolling(true);
@@ -378,19 +376,17 @@ export default function ColorSays({ tier = 'regular', socket = null, isGuest = f
         />
       )}
 
-      {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro —
-          va arriba de ese panel. PRO solo prende/apaga un sesgo fijo y
-          bajo; VIP y Admin además eligen la intensidad con el slider. */}
+      {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro — va
+          arriba de ese panel. Solo visible para Admin o para una excepción
+          manual habilitada por un admin (ver winBonusUnlocked). */}
       {hasWinBonus && !winBonusHidden && (
         <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-52 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
           </div>
-          <p className="text-[9px] text-gray-500 leading-snug">
-            {winBonusHasSlider ? 'Sesgo ajustable a favor de sacar pares.' : 'Sesgo leve a favor de sacar pares.'}
-          </p>
-          {winBonusHasSlider && winBonusEnabled && (
+          <p className="text-[9px] text-gray-500 leading-snug">Sesgo ajustable a favor de sacar pares.</p>
+          {winBonusEnabled && (
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
                 <label className="theme-label text-[9px] uppercase tracking-widest font-semibold">Intensidad</label>

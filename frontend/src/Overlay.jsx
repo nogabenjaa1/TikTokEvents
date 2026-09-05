@@ -838,16 +838,21 @@ export function ExtensibleOverlay({ state }) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   const finished = !!s.finished;
+  const paused = !finished && !!s.paused;
   return (
     <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`}>
       <div className="flex flex-col gap-3">
         <p className="theme-accent-text text-sm uppercase tracking-[0.3em] font-black">⏱️ Modo Extensible</p>
-        <p className="text-gray-400 text-sm font-semibold">
-          +{s.secondsPerFollow ?? 0}s por follow · +{s.secondsPerGift ?? 0}s por regalo
+        {/* Pedido explícito: que el público vea claramente cuánto suma cada
+            acción — texto grande, no una nota chica al pie. */}
+        <p className="text-gray-300 text-3xl font-black leading-tight">
+          +{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
+          +{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
         </p>
         {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
+        {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}
       </div>
-      <p className={`text-8xl font-black tabular-nums leading-none ${finished ? 'text-yellow-300' : 'text-white'}`}>
+      <p className={`text-8xl font-black tabular-nums leading-none ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : 'text-white'}`}>
         {mins}:{String(secs).padStart(2, '0')}
       </p>
     </div>

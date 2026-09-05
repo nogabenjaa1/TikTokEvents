@@ -38,15 +38,24 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
   const stopExtensible = () => socket.emit('stop_extensible');
   const restartExtensible = () => socket.emit('restart_extensible', buildConfig());
+  const togglePause = () => socket.emit(state.paused ? 'resume_extensible' : 'pause_extensible');
 
   // Segundos por follow/regalo (y la base, para el próximo reinicio) se
   // reflejan en vivo sin cortar el contador que ya está corriendo — mismo
   // patrón que Ruleta/Eliminación, pero acá SIEMPRE que está activo (no hay
-  // una fase "de espera" propia: el contador corre todo el tiempo).
+  // una fase "de espera" propia: el contador corre todo el tiempo). El
+  // guard de "recién montado" (isMounted) es crítico acá: sin él, cada vez
+  // que el streamer cambia de pestaña y vuelve, este efecto corre de nuevo
+  // con los valores LOCALES por defecto (baseTimeMin 1, secondsPerFollow 5,
+  // etc.) y los manda de una, pisando en vivo un contador que ya estaba
+  // corriendo con otros valores — esto rompía tener Extensible corriendo en
+  // simultáneo con otro modo, con solo pasar por esta pestaña sin tocar nada.
+  const isMounted = useRef(false);
   const justActivated = useRef(state.isActive);
   useEffect(() => {
     const activeJustChanged = justActivated.current !== state.isActive;
     justActivated.current = state.isActive;
+    if (!isMounted.current) { isMounted.current = true; return; }
     if (activeJustChanged) return;
     if (state.isActive) socket.emit('update_extensible_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,11 +74,14 @@ export default function Extensible({ state, socket, username, connectionStatus }
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">⏱️ MODO EXTENSIBLE</p>
         </div>
 
-        <p className={`relative z-10 text-center text-6xl font-black tabular-nums ${state.finished ? 'text-yellow-300' : 'text-white'}`}>
+        <p className={`relative z-10 text-center text-6xl font-black tabular-nums ${state.finished ? 'text-yellow-300' : state.paused ? 'text-gray-500' : 'text-white'}`}>
           {formatTime(state.timeLeft)}
         </p>
         {state.finished && (
           <p className="relative z-10 text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">TIEMPO AGOTADO</p>
+        )}
+        {state.isActive && state.paused && !state.finished && (
+          <p className="relative z-10 text-center text-xs font-black text-gray-400 mt-2 uppercase tracking-widest">PAUSADO</p>
         )}
         {!state.isActive && !state.finished && (
           <p className="text-gray-600 text-sm italic font-medium relative z-10 text-center mt-2">Todavía no arrancó...</p>
@@ -92,7 +104,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">TIEMPO BASE (AL INICIAR/REINICIAR)</label>
                 <span className="theme-chip font-bold px-2 rounded text-xs">{baseTimeMin} min</span>
               </div>
-              <input type="range" min="1" max="60" step="1" value={baseTimeMin} onChange={e => setBaseTimeMin(Number(e.target.value))} />
+              <input type="range" min="1" max="120" step="1" value={baseTimeMin} onChange={e => setBaseTimeMin(Number(e.target.value))} />
               <p className="text-[10px] text-gray-500 mt-1">Con cuánto tiempo arranca el contador — solo se aplica al Iniciar o Reiniciar.</p>
             </div>
 
@@ -131,12 +143,21 @@ export default function Extensible({ state, socket, username, connectionStatus }
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
               ) : (
-                <button
-                  onClick={restartExtensible}
-                  className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
-                >
-                  REINICIAR ⟲
-                </button>
+                <>
+                  <button
+                    onClick={togglePause}
+                    disabled={state.finished}
+                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                  </button>
+                  <button
+                    onClick={restartExtensible}
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
+                  >
+                    REINICIAR ⟲
+                  </button>
+                </>
               )}
               <button
                 onClick={stopExtensible}

@@ -529,13 +529,18 @@ export default function App() {
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el
             estado con el overlay especial de Colores. `tier` (regular/pro/
-            vip/admin, ver dice_tier en la licencia) gatea el WIN BONUS y el
-            Modo Seguro — es un nivel de Color Says independiente de
-            session.isAdmin (que sigue siendo exclusivo del panel de
-            Licencias, no algo que se compre). Sin sesión, tier es 'regular'
+            vip/admin, ver dice_tier en la licencia) solo gatea el Modo
+            Seguro (exclusivo de Admin) — es un nivel de Color Says
+            independiente de session.isAdmin (que sigue siendo exclusivo del
+            panel de Licencias, no algo que se compre). El WIN BONUS ya NO
+            lo otorga el tier: depende de `winBonusUnlocked`
+            (session.diceWinBonusUnlocked), una excepción manual que un
+            admin prende por licencia puntual desde el panel de Licencias —
+            Admin lo tiene siempre, sin depender de este flag (ver
+            Colorsays.jsx). Sin sesión, tier es 'regular' y sin bono
             (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
             los ads dentro del propio componente — ver Colorsays.jsx. */}
-        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} socket={socket} isGuest={!session} />}
+        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} winBonusUnlocked={!!session?.diceWinBonusUnlocked} socket={socket} isGuest={!session} />}
         {sidebarMode === 'theme' && <ThemeSwitcher />}
         {/* A diferencia de king/zub/elim/tts, Membership NO pide sesión para
             verse: los planes y precios son públicos, y recién pide un alias
@@ -547,6 +552,31 @@ export default function App() {
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
       </main>
     </div>
+
+    {/* Acceso directo a TikTokEvents desde CUALQUIER sección (pedido
+        explícito) — a diferencia del botón de la sidebar, este queda fijo
+        en pantalla y no se pierde de vista al hacer scroll dentro de una
+        sección larga (Membresía, Licencias) en mobile. Se oculta solo
+        mientras ya estás en "events", para no apuntar a donde ya estás.
+        OJO: el botón NO puede ser hijo DIRECTO de .themed-app — esa clase
+        fuerza `position: relative` a todos sus hijos directos (ver
+        index.css, ".themed-app > *"), lo que pisaba el `fixed` de Tailwind
+        y dejaba el botón mal ubicado dentro del flujo normal en vez de
+        flotando sobre la pantalla. Este div envoltorio absorbe esa regla;
+        el `fixed` de adentro sí queda intacto (un padre `position:
+        relative` no crea un containing block para un hijo `fixed`). */}
+    {sidebarMode !== 'events' && (
+      <div>
+        <button
+          onClick={() => setSidebarMode('events')}
+          title="Ir a TikTokEvents"
+          className="theme-btn-primary fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
+        >
+          🎉
+        </button>
+      </div>
+    )}
+
     <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar TikTok Concurso" />
     </ThemedShell>
   );

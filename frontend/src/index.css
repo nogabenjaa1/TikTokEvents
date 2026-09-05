@@ -670,7 +670,7 @@ input[type=range]::-moz-range-thumb {
   to   { transform: rotate(360deg); }
 }
 .animate-roulette-spin {
-  animation: rouletteSpin 14s linear infinite;
+  animation: rouletteSpin 5s linear infinite;
 }
 
 /* ==========================================

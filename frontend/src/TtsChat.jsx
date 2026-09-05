@@ -6,7 +6,7 @@ const STORAGE_KEY = 'tiktok-concurso-tts-settings';
 // cuando hay internet) — antes ni se elegían, quedaba lo que el navegador
 // decidiera solo. pitch 1 = normal, más alto = voz aguda tipo "ardilla";
 // rate 1 = velocidad normal del habla.
-const DEFAULTS = { enabled: false, allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1, voiceURI: '', pitch: 1, rate: 1 };
+const DEFAULTS = { enabled: false, allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1, voiceURI: '', pitch: 1, rate: 1, volume: 1 };
 const TEST_TEXT_DEFAULT = 'Así se va a escuchar tu voz del chat.';
 
 function loadSettings() {
@@ -70,14 +70,14 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
 
   const resolveVoice = (voiceURI, list) => list.find(v => v.voiceURI === voiceURI) || null;
 
-  const buildUtterance = (text, voiceURI, pitch, rate) => {
+  const buildUtterance = (text, voiceURI, pitch, rate, volume) => {
     const utterance = new SpeechSynthesisUtterance(text);
     const voice = resolveVoice(voiceURI, voicesRef.current);
     utterance.voice = voice;
     utterance.lang = voice?.lang || 'es-MX';
     utterance.pitch = pitch;
     utterance.rate = rate;
-    utterance.volume = 1;
+    utterance.volume = volume;
     return utterance;
   };
 
@@ -103,7 +103,7 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
         || (current.fanMembers && message.fanLevel >= current.minFanLevel);
       if (!authorized) return;
 
-      const utterance = buildUtterance(message.comment, current.voiceURI, current.pitch, current.rate);
+      const utterance = buildUtterance(message.comment, current.voiceURI, current.pitch, current.rate, current.volume);
       utterance.onstart = () => setLastMessage(message);
       utterance.onend = () => setQueueCount(window.speechSynthesis.pending ? 1 : 0);
       window.speechSynthesis.speak(utterance);
@@ -129,7 +129,7 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
   const testVoice = () => {
     if (!('speechSynthesis' in window) || !testText.trim()) return;
     window.speechSynthesis.cancel();
-    const utterance = buildUtterance(testText.trim(), settings.voiceURI, settings.pitch, settings.rate);
+    const utterance = buildUtterance(testText.trim(), settings.voiceURI, settings.pitch, settings.rate, settings.volume);
     utterance.onstart = () => setTesting(true);
     utterance.onend = () => setTesting(false);
     utterance.onerror = () => setTesting(false);
@@ -262,6 +262,14 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
                 <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{settings.rate.toFixed(1)}x</span>
               </div>
               <input type="range" min="0.5" max="3" step="0.1" value={settings.rate} onChange={(event) => update('rate', Number(event.target.value))} className="w-full" />
+            </label>
+
+            <label className="block">
+              <div className="flex items-center justify-between mb-2">
+                <span className="theme-label text-[10px] uppercase tracking-widest font-black">Volumen</span>
+                <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{Math.round(settings.volume * 100)}%</span>
+              </div>
+              <input type="range" min="0" max="1" step="0.05" value={settings.volume} onChange={(event) => update('volume', Number(event.target.value))} className="w-full" />
             </label>
           </div>
 

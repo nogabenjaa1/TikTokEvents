@@ -561,25 +561,30 @@ function RouletteOverlay({ state, prize }) {
 
   // Un "eliminate" por cada paso del giro — cada roulette_step trae un
   // objeto lastEliminated nuevo (broadcast fresco del backend), así que
-  // comparar por referencia alcanza para saber que es un paso distinto. La
-  // sección resaltada se saca de la ruleta recién después del brillo, para
-  // que se alcance a ver a quién le tocó antes de que desaparezca.
+  // comparar por referencia alcanza para saber que es un paso distinto.
+  // OJO: agregar al Set de eliminados es SÍNCRONO, no atado a un setTimeout
+  // — un navegador de OBS en segundo plano puede frenar los timers, y si el
+  // siguiente paso llega antes de que el timeout anterior dispare, el
+  // cleanup de este efecto lo cancela y esa persona quedaba para siempre en
+  // la ruleta (bug real, reportado en vivo). El único timer que queda es
+  // puramente cosmético (cuánto dura el brillo rojo antes de que la sección
+  // se vaya) — si ESE se atrasa, lo peor que pasa es que el brillo dura un
+  // poco más, nunca que alguien se quede pegado.
   useEffect(() => {
     if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
     playEliminate();
     const username = state.lastEliminated.username;
+    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
     setFlashUsername(username);
-    const timeout = setTimeout(() => {
-      setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
-      setFlashUsername(null);
-    }, 700);
+    const timeout = setTimeout(() => setFlashUsername(null), 700);
     return () => clearTimeout(timeout);
   }, [state?.lastEliminated, state?.mode]);
 
   const entries = (state && state.entries) || [];
-  // Lo que se dibuja en la ruleta: todavía no se sacó nadie (o está en el
-  // instante de brillo antes de salir).
-  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username));
+  // Lo que se dibuja en la ruleta: todavía no se sacó nadie, o se acaba de
+  // sacar pero sigue un instante más solo para que se vea el brillo rojo
+  // antes de desaparecer del todo.
+  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username) || e.username === flashUsername);
 
   useLayoutEffect(() => {
     const el = wheelBoxRef.current;

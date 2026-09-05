@@ -16,9 +16,13 @@
 // el parche se vuelva a aplicar en cada `npm install` — local o en cada
 // deploy de Render, que siempre instala desde cero.
 //
-// Reemplazos idempotentes (si ya están aplicados, no hace nada) y no
-// fatales (si el texto original no aparece —cambió la librería—, solo
-// avisa por consola y sigue: nunca debe romper un `npm install`).
+// Cada reemplazo acepta uno o más `froms` candidatos (útil cuando el
+// mismo destino final se alcanzó en más de una etapa a lo largo de esta
+// conversación — así ninguno queda marcado como "no encontrado" solo por
+// no ser el candidato que de casualidad coincidió). Idempotente (si `to`
+// ya está presente, no hace nada) y no fatal (si ningún `from` aparece —
+// cambió la librería—, solo avisa por consola y sigue: nunca debe romper
+// un `npm install`).
 const fs = require('fs');
 const path = require('path');
 
@@ -27,17 +31,17 @@ const TARGET = path.join(__dirname, '..', 'node_modules', 'tiktok-live-connector
 const REPLACEMENTS = [
     {
         label: 'WebcastChatMessage.emotes',
-        from: 'webcastObject.emotes = webcastObject.emotes.map((emote) => ({',
+        froms: ['webcastObject.emotes = webcastObject.emotes.map((emote) => ({'],
         to: 'webcastObject.emotes = (webcastObject.emotes || []).map((emote) => ({',
     },
     {
         label: 'WebcastEmoteChatMessage.emoteList',
-        from: 'webcastObject.emotes = webcastObject.emoteList.map((emote) => ({',
+        froms: ['webcastObject.emotes = webcastObject.emoteList.map((emote) => ({'],
         to: 'webcastObject.emotes = (webcastObject.emoteList || []).map((emote) => ({',
     },
     {
         label: 'getTopViewerAttributes',
-        from: 'function getTopViewerAttributes(topViewers) {\n\treturn topViewers.map((viewer) => {',
+        froms: ['function getTopViewerAttributes(topViewers) {\n\treturn topViewers.map((viewer) => {'],
         to: 'function getTopViewerAttributes(topViewers) {\n\treturn (topViewers || []).map((viewer) => {',
     },
     {
@@ -50,20 +54,26 @@ const REPLACEMENTS = [
         // que nuestro código los vea — por eso ningún regalo se detectaba
         // nunca, en ningún modo de juego, silenciosamente.
         label: 'WebcastGiftMessage.giftDetails (campo real es "gift")',
-        from: 'webcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: webcastObject.giftDetails?.giftType\n\t\t\t\t};\n\t\t\t\tif (webcastObject.giftDetails?.giftImage?.url?.length) webcastObject.giftPictureUrl = webcastObject.giftDetails.giftImage.url[0];\n\t\t\t\tif (webcastObject.giftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, webcastObject.giftDetails);\n\t\t\t\t\tdelete webcastObject.giftDetails;\n\t\t\t\t}',
+        froms: ['webcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: webcastObject.giftDetails?.giftType\n\t\t\t\t};\n\t\t\t\tif (webcastObject.giftDetails?.giftImage?.url?.length) webcastObject.giftPictureUrl = webcastObject.giftDetails.giftImage.url[0];\n\t\t\t\tif (webcastObject.giftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, webcastObject.giftDetails);\n\t\t\t\t\tdelete webcastObject.giftDetails;\n\t\t\t\t}'],
         to: 'const realGiftDetails = webcastObject.gift;\n\t\t\t\twebcastObject.gift = {\n\t\t\t\t\tgift_id: webcastObject.giftId,\n\t\t\t\t\trepeat_count: webcastObject.repeatCount,\n\t\t\t\t\trepeat_end: webcastObject.repeatEnd ? 1 : 0,\n\t\t\t\t\tgift_type: realGiftDetails?.type\n\t\t\t\t};\n\t\t\t\tif (realGiftDetails?.image?.urlList?.length) webcastObject.giftPictureUrl = realGiftDetails.image.urlList[0];\n\t\t\t\tif (realGiftDetails) {\n\t\t\t\t\tObject.assign(webcastObject, realGiftDetails);\n\t\t\t\t}',
     },
     {
         // getPreferredPictureFormat espera un ARRAY de URLs, pero se lo
-        // llama pasándole `webcastUser.avatarLarge` completo — que es el
-        // objeto ImageModel entero ({ urlList, uri, height, width }), no el
-        // array. Como `Array.isArray(objeto)` es false, la función
-        // siempre devuelve null — por eso profilePictureUrl (y con eso el
-        // avatar en todos los juegos) venía SIEMPRE vacío. El array real
-        // está en `avatarLarge.urlList`.
-        label: 'getUserAttributes.profilePictureUrl (le faltaba .urlList)',
-        from: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge),',
-        to: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge?.urlList),',
+        // llama pasándole `webcastUser.avatarLarge` completo — el objeto
+        // ImageModel entero, no el array — así que siempre devolvía null.
+        // Además, confirmado contra un LIVE real (@notbenjaa1): en los
+        // mensajes de chat TikTok casi nunca manda `avatarLarge` — solo
+        // `avatarThumb` (72x72) — así que hace falta la cadena de fallback
+        // avatarLarge -> avatarMedium -> avatarThumb, no alcanza con
+        // corregir solo el primero. Dos `froms`: el texto original de la
+        // librería (instalación nueva) y el estado intermedio que ya haya
+        // quedado de un deploy anterior con solo la primera mitad del fix.
+        label: 'getUserAttributes.profilePictureUrl (array + fallback avatarMedium/avatarThumb)',
+        froms: [
+            'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge),',
+            'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge?.urlList),',
+        ],
+        to: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge?.urlList || webcastUser.avatarMedium?.urlList || webcastUser.avatarThumb?.urlList),',
     },
 ];
 
@@ -78,13 +88,14 @@ function main() {
     let alreadyApplied = 0;
     let notFound = [];
 
-    for (const { label, from, to } of REPLACEMENTS) {
+    for (const { label, froms, to } of REPLACEMENTS) {
         if (content.includes(to)) {
             alreadyApplied++;
             continue;
         }
-        if (content.includes(from)) {
-            content = content.replace(from, to);
+        const matchedFrom = froms.find((from) => content.includes(from));
+        if (matchedFrom) {
+            content = content.replace(matchedFrom, to);
             changed++;
         } else {
             notFound.push(label);

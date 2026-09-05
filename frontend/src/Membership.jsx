@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Die } from './colorsData';
 import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
-import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession } from './auth';
+import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 
 const PLANS = [
   { id: 'month', label: 'Mensual', usd: '6.99', mxn: 126, period: '/ mes' },
@@ -111,6 +111,32 @@ export default function Membership({ session, onSessionUpdate }) {
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
+
+  // Ingresar con una clave que ya tienes (admin, prueba gratis guardada de
+  // antes, etc.) sin tener que entrar a un panel de juego bloqueado primero
+  // — antes esta era la única forma de loguearse: el Login embebido que
+  // aparece dentro de Rey del Trono/Zubastinis/etc. cuando no hay sesión.
+  const [loginKey, setLoginKey] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const submitLogin = async (e) => {
+    e.preventDefault();
+    if (!loginKey.trim() || loginLoading) return;
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const trimmedKey = loginKey.trim();
+      const { token, license } = await loginWithKey(trimmedKey);
+      saveSession({ token, licenseKey: trimmedKey, ...license });
+      onSessionUpdate?.({ token, licenseKey: trimmedKey, ...license });
+      setLoginKey('');
+    } catch (err) {
+      setLoginError(err.message || 'Licencia inválida, revocada o expirada');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!banner) return;
@@ -232,8 +258,23 @@ export default function Membership({ session, onSessionUpdate }) {
       )}
 
       {!session && (
+        <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="theme-label block text-[10px] mb-2">¿Ya tienes una clave? Ingrésala aquí</label>
+            <input value={loginKey} onChange={e => setLoginKey(e.target.value)} placeholder="Pega tu clave de licencia"
+              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          </div>
+          <button type="submit" disabled={loginLoading || !loginKey.trim()}
+            className="theme-btn-primary px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+            {loginLoading ? 'Verificando...' : 'Entrar'}
+          </button>
+          {loginError && <p className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
+        </form>
+      )}
+
+      {!session && (
         <div className="w-full max-w-2xl">
-          <label className="theme-label block text-[10px] mb-2">Alias para tu licencia (obligatorio)</label>
+          <label className="theme-label block text-[10px] mb-2">¿Nueva? Elige un alias para tu licencia (obligatorio para comprar o probar gratis)</label>
           <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Elige un alias"
             className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           <p className="text-[9px] text-gray-500 mt-1">Se usa para crear tu cuenta y va incluido en tu clave (alias-plan-hash).</p>

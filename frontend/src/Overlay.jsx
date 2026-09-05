@@ -827,6 +827,33 @@ export function TopGifterOverlay({ state }) {
   );
 }
 
+// MODO EXTENSIBLE: a diferencia de los widgets angostos de arriba, este
+// overlay va horizontal a propósito (pedido explícito) — pensado como franja
+// ancha tipo "barra de subathon" en la parte de abajo/arriba del stream, no
+// como recuadro vertical. Mismo marco (`theme-die-frame`) y tamaño que ya
+// usa Color Says (960x260) para que el streamer recorte igual en OBS.
+export function ExtensibleOverlay({ state }) {
+  const s = state || {};
+  const seconds = Math.max(0, Math.round(s.timeLeft || 0));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const finished = !!s.finished;
+  return (
+    <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`}>
+      <div className="flex flex-col gap-3">
+        <p className="theme-accent-text text-sm uppercase tracking-[0.3em] font-black">⏱️ Modo Extensible</p>
+        <p className="text-gray-400 text-sm font-semibold">
+          +{s.secondsPerFollow ?? 0}s por follow · +{s.secondsPerGift ?? 0}s por regalo
+        </p>
+        {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
+      </div>
+      <p className={`text-8xl font-black tabular-nums leading-none ${finished ? 'text-yellow-300' : 'text-white'}`}>
+        {mins}:{String(secs).padStart(2, '0')}
+      </p>
+    </div>
+  );
+}
+
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente

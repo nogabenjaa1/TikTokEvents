@@ -54,6 +54,13 @@ const TAPTAP_SETTLE_MS = 1500;
 // top 3 como Zubastinis.
 const CONTINUOUS_LEADERBOARD_SIZE = 8;
 
+// MODO EXTENSIBLE: cuenta regresiva que arranca en `baseTime` y SUMA
+// segundos con cada follow/regalo — al revés de los demás modos, acá el
+// tiempo restante puede crecer en vivo. El tick es independiente de la
+// conexión a TikTok (sigue corriendo aunque se caiga el LIVE); solo los
+// follows/regalos que la alargan dependen de esa conexión.
+const EXTENSIBLE_TICK_MS = 1000;
+
 // Fisher-Yates — azar genuino en cada giro, no una animación sobre un
 // resultado fijo: la ganadora sale de barajar la lista entera, no de
 // elegirla antes y simular el resto (ver beginRouletteSpin).
@@ -157,6 +164,19 @@ class Tenant {
         this.tapTapState = { leaderboard: {} }; // { [username]: { username, avatar, likes } }
         this.tapTapPending = {}; // { [username]: { avatar, likes, timer } }
 
+        // ── MODO EXTENSIBLE (cuenta regresiva que crece con follows y regalos) ──
+        // Arranca en `baseTime` y cada follow/regalo detectado le suma
+        // segundos — pensado para dinámicas tipo "subathon". `secondsPerGift`
+        // se aplica POR UNIDAD del combo (repeatCount), igual que Ruleta en
+        // modo regalo. Tiene su propio overlay horizontal (?screen=extensible),
+        // no participa del selector de activeApp.
+        this.extensibleState = {
+            isActive: false, finished: false,
+            baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3,
+            timeLeft: 0,
+        };
+        this.extensibleTimerInterval = null;
+
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
         // participa de este selector: tiene su propio overlay aparte
@@ -206,7 +226,7 @@ class Tenant {
     // CONEXIÓN TIKTOK
     // ==========================================
     anyContestNeedsConnection() {
-        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || !!this.desiredUsername;
+        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || !!this.desiredUsername;
     }
 
     disconnectTikTok() {
@@ -313,6 +333,7 @@ class Tenant {
             this.tiktokConnection.on('gift', (data) => this.handleGiftEvent(data));
             this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
+            this.tiktokConnection.on('follow', (data) => this.handleFollowEvent(data));
             this.tiktokConnection.on('error', ({ info, exception } = {}) => {
                 const message = exception?.message || info || 'Error interno del conector';
                 console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
@@ -430,6 +451,7 @@ class Tenant {
         this.processGiftElim(event);
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
+        this.processGiftExtensible(event);
     }
 
     // Igual que el chat/gift: campos leídos por analogía con cómo esos dos
@@ -443,6 +465,16 @@ class Tenant {
 
         const avatar = data.profilePictureUrl || '';
         this.processLikeTapTap(username, avatar, likeCount);
+    }
+
+    // El evento `follow` ya viene derivado y filtrado por la propia librería
+    // (WebcastSocialMessage con displayType incluyendo "follow" — confirmado
+    // leyendo legacy.js directamente), así que no hace falta escuchar
+    // 'social' y filtrar a mano acá. `uniqueId` es el mismo campo que ya usan
+    // chat/gift/like para identificar al usuario en esta versión.
+    handleFollowEvent(data) {
+        if (!data?.uniqueId) return;
+        this.processFollowExtensible();
     }
 
     // Reenviamos únicamente los datos necesarios para que el panel decida
@@ -928,6 +960,55 @@ class Tenant {
     }
 
     // ==========================================
+    // LÓGICA: MODO EXTENSIBLE (cuenta regresiva que crece con follows/regalos)
+    // ==========================================
+    getExtensiblePublicState() {
+        return {
+            isActive: this.extensibleState.isActive,
+            finished: this.extensibleState.finished,
+            baseTime: this.extensibleState.baseTime,
+            secondsPerFollow: this.extensibleState.secondsPerFollow,
+            secondsPerGift: this.extensibleState.secondsPerGift,
+            timeLeft: this.extensibleState.timeLeft,
+        };
+    }
+
+    startExtensibleTimer() {
+        if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+        this.extensibleTimerInterval = setInterval(() => {
+            if (!this.extensibleState.isActive || this.extensibleState.finished) return;
+            this.extensibleState.timeLeft -= 1;
+            if (this.extensibleState.timeLeft <= 0) {
+                this.extensibleState.timeLeft = 0;
+                this.extensibleState.finished = true;
+                clearInterval(this.extensibleTimerInterval);
+            }
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+        }, EXTENSIBLE_TICK_MS);
+    }
+
+    // Un follow detectado suma `secondsPerFollow` al tiempo restante. No hace
+    // falta deduplicar por usuario: es TikTok quien decide cuándo emitir el
+    // evento, y cada aparición es información nueva de la plataforma.
+    processFollowExtensible() {
+        const state = this.extensibleState;
+        if (!state.isActive || state.finished) return;
+        state.timeLeft += state.secondsPerFollow;
+        this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+    }
+
+    // Suma `secondsPerGift` POR UNIDAD del combo (repeatCount) — mismo
+    // criterio que Ruleta en modo regalo: cualquier regalo cuenta, a
+    // propósito no está atado a un regalo específico como Eliminación/Ruleta.
+    processGiftExtensible({ repeatCount }) {
+        const state = this.extensibleState;
+        if (!state.isActive || state.finished) return;
+        const units = Math.max(1, repeatCount || 1);
+        state.timeLeft += state.secondsPerGift * units;
+        this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+    }
+
+    // ==========================================
     // SOCKET.IO: conecta un socket individual de este tenant.
     // El aislamiento entre licencias ya está resuelto por el room de
     // Socket.io (el caller hace socket.join(this.licenseId) antes de
@@ -942,6 +1023,7 @@ class Tenant {
         socket.emit('roulette_state_update', this.getRoulettePublicState());
         socket.emit('gifter_state_update', this.getGifterPublicState());
         socket.emit('taptap_state_update', this.getTapTapPublicState());
+        socket.emit('extensible_state_update', this.getExtensiblePublicState());
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
@@ -1306,6 +1388,55 @@ class Tenant {
             if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+            this.maybeDisconnectTikTok();
+        });
+
+        // ── MODO EXTENSIBLE ──────────────────────────
+        socket.on('start_extensible', (config) => {
+            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO MODO EXTENSIBLE...`);
+            const baseTime = Math.max(1, Number(config?.baseTime) || 60);
+            this.extensibleState = {
+                isActive: true, finished: false,
+                baseTime,
+                secondsPerFollow: Math.max(0, Number(config?.secondsPerFollow) || 0),
+                secondsPerGift: Math.max(0, Number(config?.secondsPerGift) || 0),
+                timeLeft: baseTime,
+            };
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+            this.startExtensibleTimer();
+
+            if (config?.tiktokUsername) {
+                this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
+            }
+        });
+
+        // A propósito NUNCA toca `timeLeft` — pedido explícito: los segundos
+        // por follow/regalo (y la base, para el próximo reinicio) deben
+        // poder cambiarse en vivo SIN reiniciar el contador que ya corre.
+        socket.on('update_extensible_settings', (config) => {
+            if (!this.extensibleState.isActive) return;
+            if (config?.baseTime !== undefined) this.extensibleState.baseTime = Math.max(1, Number(config.baseTime) || this.extensibleState.baseTime);
+            if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
+            if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+        });
+
+        socket.on('restart_extensible', (config) => {
+            if (!this.extensibleState.isActive) return;
+            console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO MODO EXTENSIBLE...`);
+            if (config?.baseTime !== undefined) this.extensibleState.baseTime = Math.max(1, Number(config.baseTime) || this.extensibleState.baseTime);
+            if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
+            if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
+            this.extensibleState.timeLeft = this.extensibleState.baseTime;
+            this.extensibleState.finished = false;
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+            this.startExtensibleTimer();
+        });
+
+        socket.on('stop_extensible', () => {
+            this.extensibleState.isActive = false;
+            if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
             this.maybeDisconnectTikTok();
         });
 

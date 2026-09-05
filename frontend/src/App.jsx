@@ -3,8 +3,9 @@ import AdminPanel from './AdminPanel';
 import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
 import Roulette from './Roulette';
+import Extensible from './Extensible';
 import ColorSays from './Colorsays';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
@@ -36,6 +37,7 @@ const EVENT_TABS = [
   { id: 'zub',      label: 'Zubastinis',    icon: '🏆' },
   { id: 'elim',     label: 'Eliminación',   icon: '💀' },
   { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
+  { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
   { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
 ];
 
@@ -103,6 +105,10 @@ export default function App() {
   // overlays angostos de Top Tap-Tap y Top Gifter.
   const [tapTapState, setTapTapState] = useState({ leaderboard: [] });
   const [gifterState, setGifterState] = useState({ leaderboard: [] });
+  // Modo Extensible: cuenta regresiva que crece con follows/regalos, con su
+  // propio overlay horizontal (?screen=extensible) — no participa del
+  // selector activeApp.
+  const [extensibleState, setExtensibleState] = useState({ isActive: false, finished: false, baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3, timeLeft: 0 });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin
@@ -184,6 +190,7 @@ export default function App() {
 
     socket.on('taptap_state_update', setTapTapState);
     socket.on('gifter_state_update', setGifterState);
+    socket.on('extensible_state_update', setExtensibleState);
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
@@ -307,6 +314,13 @@ export default function App() {
         </div>
       );
     }
+    if (screen === 'extensible') {
+      return (
+        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+          <ExtensibleOverlay state={extensibleState} />
+        </div>
+      );
+    }
     return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
   }
 
@@ -320,7 +334,7 @@ export default function App() {
 
   // El username queda bloqueado mientras cualquier módulo que dependa de la
   // conexión live esté activo (todos comparten la misma conexión).
-  const usernameLocked = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive;
+  const usernameLocked = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive;
 
   // Recordatorio de vencimiento in-app: licencias lifetime no tienen expiresAt.
   // Sin sesión (visitante anónimo, solo Color Says) no hay nada que recordar.
@@ -486,6 +500,16 @@ export default function App() {
                   />
                   <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
                 </>
+              )
+            )}
+            {eventsTab === 'extensible' && (
+              needsAccess('extensible') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Modo Extensible." />
+              ) : (
+                <Extensible
+                  state={extensibleState} socket={socket}
+                  username={username} connectionStatus={connectionStatus}
+                />
               )
             )}
             {/* TTS también requiere sesión — se muestra el login embebido en

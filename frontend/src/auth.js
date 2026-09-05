@@ -33,9 +33,10 @@ export function getOverlayKeyFromUrl() {
 // Qué pantalla mostrar dentro del overlay: 'games' (Rey del Trono/
 // Zubastinis/Eliminación/Ruleta, el overlay de siempre), 'colors' (el
 // overlay horizontal de Color Says, ver DiceOverlay.jsx), 'taptap' (ranking
-// de likes) o 'gifter' (ranking de regalos) — estos dos últimos son widgets
-// angostos aparte, ver TopTapTapOverlay/TopGifterOverlay en Overlay.jsx. Se
-// agrega como ?screen=... a la URL normal de overlay, nunca reemplaza a `key`.
+// de likes), 'gifter' (ranking de regalos) o 'extensible' (contador
+// horizontal que crece con follows/regalos, ver ExtensibleOverlay en
+// Overlay.jsx) — se agrega como ?screen=... a la URL normal de overlay,
+// nunca reemplaza a `key`.
 export function getOverlayScreen() {
   return new URLSearchParams(window.location.search).get('screen') || 'games';
 }

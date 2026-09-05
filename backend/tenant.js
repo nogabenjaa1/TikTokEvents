@@ -191,6 +191,11 @@ class Tenant {
         // para el key de React del overlay, igual que rouletteSlotCounter.
         this.spotifyQueueState = { queue: [] };
         this.spotifyQueueCounter = 0;
+        // Quién puede usar !play/!skip — mismo criterio visual que TTS
+        // (allUsers anula todo lo demás; moderators y fanMembers+minFanLevel
+        // se combinan con OR). `enabled` es el apagado general del comando:
+        // en false, !play no hace nada ni para el streamer mismo.
+        this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 };
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
@@ -538,31 +543,110 @@ class Tenant {
     }
 
     // ==========================================
-    // LÓGICA: SPOTIFY (cola de canciones vía !play)
+    // LÓGICA: SPOTIFY (!play/!skip/!revoke)
     // ==========================================
     getSpotifyQueuePublicState() {
         return { queue: this.spotifyQueueState.queue };
     }
 
-    // Pedido explícito: solo moderadores o suscriptores pueden pedir
-    // canciones (nada de allUsers/superFans/fanLevel configurable como en
-    // TTS — acá es una regla fija, no un panel de ajustes).
+    getSpotifySettingsPublicState() {
+        return { ...this.spotifySettings };
+    }
+
+    // Mismo criterio que TTS (allUsers anula todo lo demás; moderators y
+    // fanMembers+minFanLevel se combinan con OR) — ahora configurable desde
+    // el panel (ver update_spotify_settings) en vez de una regla fija.
+    isAuthorizedForSpotifyCommands(data, identity) {
+        const s = this.spotifySettings;
+        if (s.allUsers) return true;
+        if (s.moderators && Boolean(data.isModerator || identity.isModeratorOfAnchor)) return true;
+        if (s.fanMembers) {
+            const fanLevel = Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0);
+            if (fanLevel >= s.minFanLevel) return true;
+        }
+        return false;
+    }
+
+    // Único punto de entrada para los comandos de Spotify del chat — el
+    // interruptor general (`enabled`) los apaga a todos de una, incluido
+    // !revoke (si el comando está apagado, ni siquiera vale la pena dejar
+    // que alguien "limpie" su propio pedido de una cola que ya no crece).
     processPlayCommand(comment, data, identity) {
+        if (!this.spotifySettings.enabled) return;
+        const username = data.uniqueId;
+        if (!username) return;
+
+        if (/^!skip\s*$/i.test(comment)) {
+            if (!this.isAuthorizedForSpotifyCommands(data, identity)) return;
+            this.skipSpotifyTrack().catch((err) => {
+                console.error(`[${this.licenseId}] [SPOTIFY] Error inesperado en !skip de @${username}:`, err.message);
+            });
+            return;
+        }
+
+        if (/^!revoke\s*$/i.test(comment)) {
+            this.revokeSpotifyRequest(username);
+            return;
+        }
+
         const match = /^!play\s+(.+)/i.exec(comment);
         if (!match) return;
         const query = match[1].trim();
         if (!query) return;
-
-        const isModerator = Boolean(data.isModerator || identity.isModeratorOfAnchor);
-        const isSubscriber = Boolean(data.isSubscriber || identity.isSubscriberOfAnchor);
-        if (!isModerator && !isSubscriber) return;
-
-        const username = data.uniqueId;
-        if (!username) return;
+        if (!this.isAuthorizedForSpotifyCommands(data, identity)) return;
 
         this.requestSpotifySong(username, query).catch((err) => {
             console.error(`[${this.licenseId}] [SPOTIFY] Error inesperado en !play de @${username}:`, err.message);
         });
+    }
+
+    // Salta a la siguiente canción en la reproducción REAL de Spotify
+    // (POST /me/player/next) — a diferencia de !revoke, esto sí actúa sobre
+    // la cola de verdad, no solo sobre nuestra lista de "lo pedido".
+    async skipSpotifyTrack() {
+        const account = await db.getSpotifyAccount(this.licenseId);
+        if (!account) return;
+        let accessToken;
+        try {
+            accessToken = await spotify.getValidAccessToken(account);
+        } catch (err) {
+            console.error(`[${this.licenseId}] [SPOTIFY] No se pudo renovar el token:`, err.message);
+            this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció — reconéctala desde el panel.' });
+            return;
+        }
+        try {
+            await spotify.skipToNext(accessToken);
+        } catch (err) {
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+        }
+    }
+
+    // OJO — limitación real de la API de Spotify, no una decisión nuestra:
+    // no existe ningún endpoint público para sacar una canción puntual de
+    // la cola de reproducción. Esto SOLO borra la entrada de nuestra propia
+    // lista (la que alimenta el panel/overlay de "pedidas por chat") — la
+    // canción puede seguir sonando en su turno igual. Filtra por
+    // `requestedBy` a propósito: un usuario nunca puede tocar pedidos de
+    // otro (pedido explícito), y de paso queda sin necesidad de permisos
+    // extra — si nunca pudo pedir nada, esto no encuentra nada suyo que borrar.
+    revokeSpotifyRequest(username) {
+        const before = this.spotifyQueueState.queue.length;
+        this.spotifyQueueState.queue = this.spotifyQueueState.queue.filter((song) => song.requestedBy !== username);
+        if (this.spotifyQueueState.queue.length !== before) {
+            this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        }
+    }
+
+    // Traduce los errores esperables de la API de Spotify (ver spotify.js)
+    // a un mensaje que el streamer entienda — reusado por skip/volumen.
+    describeSpotifyError(err) {
+        if (err instanceof spotify.SpotifyPlaybackError && err.code === 'NO_ACTIVE_DEVICE') {
+            return 'Abre Spotify y dale play en algún dispositivo para poder controlarlo.';
+        }
+        if (err instanceof spotify.SpotifyPlaybackError && err.code === 'PREMIUM_REQUIRED') {
+            return 'Se necesita Spotify Premium para esta acción.';
+        }
+        return 'No se pudo completar la acción en Spotify.';
     }
 
     // Busca la canción en Spotify y la agrega a la cola DEL STREAMER (su
@@ -592,12 +676,7 @@ class Tenant {
         try {
             await spotify.addToQueue(accessToken, track.uri);
         } catch (err) {
-            const message = err instanceof spotify.SpotifyPlaybackError && err.code === 'NO_ACTIVE_DEVICE'
-                ? 'Abre Spotify y dale play en algún dispositivo para poder agregar canciones.'
-                : err instanceof spotify.SpotifyPlaybackError && err.code === 'PREMIUM_REQUIRED'
-                ? 'Se necesita Spotify Premium para agregar canciones a la cola.'
-                : 'No se pudo agregar la canción a la cola de Spotify.';
-            this.broadcast.emit('spotify_error', { message });
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
             return;
         }
 
@@ -1136,6 +1215,7 @@ class Tenant {
         socket.emit('taptap_state_update', this.getTapTapPublicState());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
         socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
         socket.emit('active_app_changed', this.activeApp);
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
@@ -1616,6 +1696,34 @@ class Tenant {
         socket.on('clear_spotify_queue', () => {
             this.spotifyQueueState.queue = [];
             this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        });
+
+        // Quién puede usar !play/!skip (ver isAuthorizedForSpotifyCommands)
+        // y el apagado general del comando — mismo patrón que el resto de
+        // los ajustes en vivo (set_theme, update_extensible_settings, etc.).
+        socket.on('update_spotify_settings', (newSettings) => {
+            this.spotifySettings = {
+                enabled: Boolean(newSettings?.enabled),
+                allUsers: Boolean(newSettings?.allUsers),
+                moderators: Boolean(newSettings?.moderators),
+                fanMembers: Boolean(newSettings?.fanMembers),
+                minFanLevel: Math.max(1, Math.min(50, Number(newSettings?.minFanLevel) || 1)),
+            };
+            this.broadcast.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
+        });
+
+        // Control de volumen desde el panel — actúa sobre la reproducción
+        // REAL de Spotify (mismos requisitos que !play/!skip: Premium +
+        // dispositivo activo), no sobre nada propio de la plataforma.
+        socket.on('set_spotify_volume', async (volumePercent) => {
+            const account = await db.getSpotifyAccount(this.licenseId);
+            if (!account) return;
+            try {
+                const accessToken = await spotify.getValidAccessToken(account);
+                await spotify.setVolume(accessToken, Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0))));
+            } catch (err) {
+                this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+            }
         });
 
         // ─────────────────────────────────────────────

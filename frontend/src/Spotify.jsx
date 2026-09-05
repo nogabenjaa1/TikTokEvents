@@ -1,26 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
+// Mismo interruptor visual que TTS/Colorsays (WinBonusToggle) — se duplica
+// en vez de compartirse porque acá no lleva label/descripción propios, se
+// componen aparte (mismo criterio ya usado en el resto del proyecto).
+function Toggle({ checked, onChange, label, description }) {
+  return (
+    <label className="theme-input flex items-center gap-3 px-4 py-3 cursor-pointer transition-opacity hover:opacity-90">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only peer" />
+      <span aria-hidden="true" className="w-10 h-6 rounded-full bg-gray-700 peer-checked:theme-accent-bg relative flex-shrink-0 transition-colors after:absolute after:w-4 after:h-4 after:rounded-full after:bg-white after:left-1 after:top-1 after:transition-transform peer-checked:after:translate-x-4" />
+      <span>
+        <span className="block text-sm font-black text-white">{label}</span>
+        <span className="block text-[11px] text-gray-500 mt-0.5">{description}</span>
+      </span>
+    </label>
+  );
+}
+
 // ─────────────────────────────────────────────
-// SPOTIFY — cola de canciones vía !play en el chat
+// SPOTIFY — !play/!skip/!revoke en el chat
 // Cada licencia conecta SU PROPIA cuenta de Spotify por OAuth (como con
 // TikTok) — el backend nunca ve la contraseña, solo un access/refresh
 // token que Spotify emite. Requisitos reales e ineludibles del lado de
 // Spotify (no algo que este panel pueda evitar): cuenta Premium, y Spotify
-// abierto y sonando en algún dispositivo en el momento de pedir una
-// canción — si falta alguno, el pedido falla y se avisa acá (`spotify_error`
-// por socket), nunca en el chat.
-// `queueState` llega centralizado desde App.jsx (mismo patrón que
-// tapTapState/gifterState) — así el mismo estado sirve para este panel Y
-// para el overlay de OBS sin duplicar la suscripción al socket.
+// abierto y sonando en algún dispositivo en el momento de pedir/saltar una
+// canción o cambiar el volumen — si falta alguno, la acción falla y se
+// avisa acá (`spotify_error` por socket), nunca en el chat.
+// `queueState`/`settingsState` llegan centralizados desde App.jsx (mismo
+// patrón que tapTapState/gifterState) — el permiso de !play/!skip lo
+// aplica el SERVIDOR (tenant.js), no el navegador de cada espectador como
+// en TTS, porque acá la acción real (llamar a la API de Spotify) pasa por
+// el backend.
 // ─────────────────────────────────────────────
-export default function Spotify({ socket, queueState }) {
+export default function Spotify({ socket, queueState, settingsState }) {
   const [connected, setConnected] = useState(false);
   const [displayName, setDisplayName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('spotify'));
   const [errorToast, setErrorToast] = useState(null);
+  const [volume, setVolume] = useState(50);
 
   const fetchStatus = async () => {
     try {
@@ -38,7 +57,8 @@ export default function Spotify({ socket, queueState }) {
   useEffect(() => { fetchStatus(); }, []);
 
   // Igual que Membership.jsx con ?payment=...: Spotify redirige de vuelta
-  // acá después del OAuth con ?spotify=connected|error en la URL.
+  // acá después del OAuth con ?spotify=connected|error en la URL — App.jsx
+  // ya se encarga de que esta pestaña quede activa apenas se vuelve.
   useEffect(() => {
     if (!banner) return;
     window.history.replaceState({}, '', window.location.pathname);
@@ -48,7 +68,7 @@ export default function Spotify({ socket, queueState }) {
   useEffect(() => {
     if (!socket) return;
     const onError = ({ message } = {}) => {
-      setErrorToast(message || 'No se pudo agregar la canción.');
+      setErrorToast(message || 'No se pudo completar la acción en Spotify.');
       setTimeout(() => setErrorToast(null), 6000);
     };
     socket.on('spotify_error', onError);
@@ -69,7 +89,7 @@ export default function Spotify({ socket, queueState }) {
   };
 
   const disconnect = async () => {
-    if (!window.confirm('¿Desconectar tu cuenta de Spotify? !play deja de funcionar hasta que la vuelvas a conectar.')) return;
+    if (!window.confirm('¿Desconectar tu cuenta de Spotify? !play/!skip dejan de funcionar hasta que la vuelvas a conectar.')) return;
     await fetch(`${backendUrl()}/api/spotify/disconnect`, { method: 'POST', headers: authHeaders() });
     setConnected(false);
     setDisplayName(null);
@@ -77,6 +97,14 @@ export default function Spotify({ socket, queueState }) {
 
   const clearQueue = () => socket?.emit('clear_spotify_queue');
   const queue = queueState?.queue || [];
+
+  const settings = settingsState || { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 };
+  const update = (key, value) => socket?.emit('update_spotify_settings', { ...settings, [key]: value });
+
+  const changeVolume = (value) => {
+    setVolume(value);
+    socket?.emit('set_spotify_volume', value);
+  };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
@@ -116,7 +144,7 @@ export default function Spotify({ socket, queueState }) {
         ) : (
           <>
             <p className="text-[11px] text-gray-500 mb-4 leading-snug">
-              Conecta tu cuenta de Spotify (necesitas Premium) para que moderadores y suscriptores puedan pedir canciones en el chat con <code className="theme-chip px-1.5 py-0.5 rounded text-[10px]">!play nombre de la canción</code>. Necesitas tener Spotify abierto y sonando en algún dispositivo para que un pedido pueda agregarse.
+              Conecta tu cuenta de Spotify (necesitas Premium) para que el chat pueda pedir canciones. Necesitas tener Spotify abierto y sonando en algún dispositivo para que una acción pueda aplicarse.
             </p>
             <button
               onClick={connect}
@@ -128,6 +156,60 @@ export default function Spotify({ socket, queueState }) {
           </>
         )}
       </div>
+
+      {connected && (
+        <div className="theme-surface w-full max-w-md p-6">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div>
+              <h2 className="theme-heading text-lg font-semibold">Comandos del chat</h2>
+              <p className="text-[11px] text-gray-500 mt-1">
+                <code className="theme-chip px-1.5 py-0.5 rounded text-[10px]">!play nombre de la canción</code>,{' '}
+                <code className="theme-chip px-1.5 py-0.5 rounded text-[10px]">!skip</code> (salta a la siguiente) y{' '}
+                <code className="theme-chip px-1.5 py-0.5 rounded text-[10px]">!revoke</code> (cada uno saca SU PROPIO último pedido de esta lista — no cancela la canción si ya quedó en la cola real de Spotify).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => update('enabled', !settings.enabled)}
+              className={`px-4 py-3 text-xs font-black tracking-widest transition-opacity flex-shrink-0 ${settings.enabled ? 'bg-red-950/70 border border-red-700/60 text-red-300 rounded-xl' : 'theme-btn-primary'}`}
+            >
+              {settings.enabled ? 'DESACTIVAR' : 'ACTIVAR'}
+            </button>
+          </div>
+
+          <div className={`space-y-3 transition-opacity ${settings.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+            <Toggle checked={settings.allUsers} onChange={(v) => update('allUsers', v)} label="Todos los usuarios" description="Cualquiera del chat puede pedir canciones; anula los filtros de abajo." />
+            <Toggle checked={settings.moderators} onChange={(v) => update('moderators', v)} label="Moderadores" description="Permite a los moderadores del creador." />
+            <Toggle checked={settings.fanMembers} onChange={(v) => update('fanMembers', v)} label="Nivel específico" description="Aplica el nivel mínimo seleccionado abajo." />
+          </div>
+
+          <label className={`block mt-4 ${settings.enabled && settings.fanMembers && !settings.allUsers ? '' : 'opacity-45 pointer-events-none'}`}>
+            <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Nivel mínimo</span>
+            <div className="flex items-center gap-4">
+              <input
+                type="range" min="1" max="50"
+                value={settings.minFanLevel}
+                onChange={(event) => update('minFanLevel', Number(event.target.value))}
+                className="flex-1"
+              />
+              <span className="theme-chip w-14 text-center font-bold px-2 py-1.5 rounded text-xs flex-shrink-0">{settings.minFanLevel}</span>
+            </div>
+          </label>
+        </div>
+      )}
+
+      {connected && (
+        <div className="theme-surface w-full max-w-md p-6">
+          <h2 className="theme-heading text-lg font-semibold mb-4">Volumen</h2>
+          <div className="flex items-center gap-4">
+            <span className="text-lg flex-shrink-0">🔈</span>
+            <input type="range" min="0" max="100" value={volume} onChange={(event) => changeVolume(Number(event.target.value))} className="flex-1" />
+            <span className="text-lg flex-shrink-0">🔊</span>
+            <span className="theme-chip w-14 text-center font-bold px-2 py-1.5 rounded text-xs flex-shrink-0">{volume}%</span>
+          </div>
+          <p className="text-[10px] text-gray-500 mt-2">Controla el volumen del dispositivo activo de Spotify — necesita estar sonando en algún dispositivo.</p>
+        </div>
+      )}
 
       {connected && (
         <div className="theme-surface w-full max-w-md p-6">

@@ -115,13 +115,24 @@ export default function App() {
   // patrón que tapTapState/gifterState: un solo estado centralizado que
   // sirve tanto al panel como al overlay propio (?screen=musicqueue).
   const [spotifyQueueState, setSpotifyQueueState] = useState({ queue: [] });
+  // Quién puede usar !play/!skip — vive en el backend (no en localStorage
+  // como TTS) porque acá el permiso lo tiene que aplicar el SERVIDOR antes
+  // de llamar a la API real de Spotify, no el navegador de cada espectador.
+  const [spotifySettingsState, setSpotifySettingsState] = useState({ enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin
-  // tener que navegar hasta ahí primero.
-  const [sidebarMode, setSidebarMode] = useState('color');
+  // tener que navegar hasta ahí primero. EXCEPCIÓN: si venimos de la vuelta
+  // del OAuth de Spotify (?spotify=connected|error), Spotify.jsx redirige
+  // acá con un GET normal del navegador — no hay forma de "recordar" en qué
+  // pestaña estaba el streamer antes de irse a autorizar, así que en vez de
+  // caer en Color Says (donde el aviso de éxito/error no se ve para nada)
+  // arrancamos directo en TikTokEvents -> Spotify, que es donde ese aviso
+  // se muestra (ver el banner en Spotify.jsx).
+  const cameFromSpotifyOAuth = new URLSearchParams(window.location.search).has('spotify');
+  const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : 'color'));
   // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
-  const [eventsTab, setEventsTab] = useState('king');
+  const [eventsTab, setEventsTab] = useState(() => (cameFromSpotifyOAuth ? 'spotify' : 'king'));
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
@@ -198,6 +209,7 @@ export default function App() {
     socket.on('gifter_state_update', setGifterState);
     socket.on('extensible_state_update', setExtensibleState);
     socket.on('spotify_queue_update', setSpotifyQueueState);
+    socket.on('spotify_settings_update', setSpotifySettingsState);
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
@@ -553,7 +565,7 @@ export default function App() {
               needsAccess('spotify') ? (
                 <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Spotify." />
               ) : (
-                <Spotify socket={socket} queueState={spotifyQueueState} />
+                <Spotify socket={socket} queueState={spotifyQueueState} settingsState={spotifySettingsState} />
               )
             )}
             {/* TTS también requiere sesión — se muestra el login embebido en

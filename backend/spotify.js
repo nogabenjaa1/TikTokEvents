@@ -119,4 +119,33 @@ async function addToQueue(accessToken, trackUri) {
     throw new SpotifyPlaybackError('UNKNOWN', `Spotify queue falló (${res.status}): ${await res.text()}`);
 }
 
-module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, SpotifyPlaybackError };
+// POST /me/player/next — salta a la siguiente canción de la reproducción
+// REAL (a diferencia de "revocar" un pedido puntual, que la API no permite
+// hacer — ver el comentario de revokeSpotifyRequest en tenant.js). Mismos
+// requisitos que addToQueue (Premium + dispositivo activo).
+async function skipToNext(accessToken) {
+    const res = await fetch('https://api.spotify.com/v1/me/player/next', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 204 || res.ok) return;
+    if (res.status === 404) throw new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
+    if (res.status === 403) throw new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
+    throw new SpotifyPlaybackError('UNKNOWN', `Spotify skip falló (${res.status}): ${await res.text()}`);
+}
+
+// PUT /me/player/volume — mismos requisitos que el resto de los endpoints
+// de reproducción. `volumePercent` ya viene acotado a 0-100 por el caller.
+async function setVolume(accessToken, volumePercent) {
+    const params = new URLSearchParams({ volume_percent: String(volumePercent) });
+    const res = await fetch(`https://api.spotify.com/v1/me/player/volume?${params.toString()}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 204 || res.ok) return;
+    if (res.status === 404) throw new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
+    if (res.status === 403) throw new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
+    throw new SpotifyPlaybackError('UNKNOWN', `Spotify volume falló (${res.status}): ${await res.text()}`);
+}
+
+module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, skipToNext, setVolume, SpotifyPlaybackError };

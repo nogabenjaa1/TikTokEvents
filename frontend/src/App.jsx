@@ -55,7 +55,7 @@ const NO_INSTA_WIN = {
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
 
-// La tarjeta del overlay mide 400x680 fijo (pensada para el recorte de OBS)
+// La tarjeta del overlay mide 400x700 fijo (pensada para el recorte de OBS)
 // — se achica a este factor para que entre en un celular sin desbordar.
 const OVERLAY_PREVIEW_SCALE = 0.75;
 
@@ -71,8 +71,8 @@ function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activ
   return (
     <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
       <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
-      <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 680 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
-        <div style={{ width: 400, height: 680, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
+      <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
+        <div style={{ width: 400, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
           <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} />
         </div>
       </div>

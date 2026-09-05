@@ -88,7 +88,7 @@ function PrizeStrip({ prize }) {
 
 function OfflineCard() {
   return (
-    <div className="theme-die-frame w-[400px] min-h-[680px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans">
       <div className="w-32 h-32 rounded-full border-4 border-dashed flex items-center justify-center mb-8 animate-pulse" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}>
         <span className="text-5xl opacity-40">💤</span>
       </div>
@@ -123,7 +123,7 @@ function KingOverlay({ state, prize }) {
   if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
@@ -165,7 +165,7 @@ function KingOverlay({ state, prize }) {
               <div className={`absolute inset-0 rounded-full blur-xl opacity-60 ${state.mode === 'finished' ? 'bg-yellow-500' : ''}`} style={state.mode === 'finished' ? undefined : { background: 'var(--accent)' }} />
               <img src={state.lastParticipant.avatar} className={`w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl ${state.mode === 'finished' ? 'border-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { borderColor: 'var(--accent)' }} />
             </div>
-            <p className={`text-2xl font-black mt-6 tracking-wide drop-shadow-md ${state.mode === 'finished' ? 'text-yellow-200' : ''}`} style={state.mode === 'finished' ? undefined : { color: 'var(--accent-soft)' }}>@{state.lastParticipant.username}</p>
+            <p className={`text-2xl font-black mt-6 tracking-wide drop-shadow-md ${state.mode === 'finished' ? 'text-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { color: 'var(--accent-soft)' }}>@{state.lastParticipant.username}</p>
           </div>
         ) : <div className="w-32 h-32 rounded-full border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}><span className="text-4xl opacity-30">👤</span></div>}
       </div>
@@ -204,7 +204,7 @@ function ZubastinisOverlay({ state, prize }) {
     : null;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.mode === 'tiebreak' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-amber-500 to-amber-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🤝 DESEMPATE 🤝</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -245,7 +245,7 @@ function ZubastinisOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-200">@{state.winner.username} · {state.winner.coins} 🪙</p>
+                <p className="text-lg font-black text-yellow-400">@{state.winner.username} · {state.winner.coins} 🪙</p>
               </>
             ) : (
               <>
@@ -342,7 +342,7 @@ function EliminationOverlay({ state, prize }) {
     // Altura FIJA (no min-h): con muchos participantes las burbujas se
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
-    <div className="theme-die-frame w-[400px] h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -425,7 +425,7 @@ function EliminationOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-200">@{state.winner.username}</p>
+                <p className="text-lg font-black text-yellow-400">@{state.winner.username}</p>
               </>
             ) : (
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
@@ -449,15 +449,24 @@ function EliminationOverlay({ state, prize }) {
 }
 
 // El giro de la Ruleta lo pacea el BACKEND (ver stepRouletteReveal en
-// tenant.js — cada eliminación llega ya con el delay de suspenso aplicado
-// del lado del servidor), así que a diferencia de EliminationOverlay este
-// componente no necesita simular ningún recorrido falso: solo refleja el
-// estado tal cual llega, reaccionando a cada roulette_step con una
-// transición corta.
+// tenant.js — cada paso llega ya con el delay de suspenso aplicado del
+// lado del servidor, cada vez más lento cerca del final). Este componente
+// no simula un recorrido falso como EliminationOverlay, pero sí necesita
+// ACUMULAR visualmente cada paso a medida que llega: sin esto, la grilla se
+// veía siempre igual (todos presentes) hasta que de golpe aparecía el
+// ganador, sin transmitir que algo estaba girando entre medio.
 function RouletteOverlay({ state, prize }) {
   const gridRef = useRef(null);
   const [boxSize, setBoxSize] = useState(64);
   const [gridGap, setGridGap] = useState(6);
+  // Usernames ya revelados como "fuera" en esta ronda (se van acumulando a
+  // medida que llegan los roulette_step) y cuál está resaltado ahora mismo
+  // (el paso más reciente, con un brillo breve). Nota: si el modo regalo
+  // repite el mismo username en varios slots, se apagan todos sus bloques
+  // juntos al salir el primero — aceptable para el efecto visual, ya que el
+  // sorteo real sigue siendo por slot en el backend.
+  const [eliminatedUsernames, setEliminatedUsernames] = useState(() => new Set());
+  const [flashUsername, setFlashUsername] = useState(null);
 
   const prevRef = useRef({ mounted: false, mode: null });
   useEffect(() => {
@@ -470,12 +479,27 @@ function RouletteOverlay({ state, prize }) {
     prevRef.current = { mounted: true, mode: state.mode };
   }, [state?.mode, state?.winner]);
 
+  // Arranca una ronda nueva -> se borra el rastro de la ronda anterior.
+  useEffect(() => {
+    if (state?.mode === 'joining') {
+      setEliminatedUsernames(new Set());
+      setFlashUsername(null);
+    }
+  }, [state?.mode]);
+
   // Un "eliminate" por cada paso del giro — cada roulette_step trae un
   // objeto lastEliminated nuevo (broadcast fresco del backend), así que
-  // comparar por referencia alcanza para saber que es un paso distinto.
+  // comparar por referencia alcanza para saber que es un paso distinto. De
+  // paso, ese mismo paso se suma al rastro visual y se resalta un instante.
   useEffect(() => {
-    if (state?.mode === 'spinning' && state?.lastEliminated) playEliminate();
-  }, [state?.lastEliminated]);
+    if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
+    playEliminate();
+    const username = state.lastEliminated.username;
+    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
+    setFlashUsername(username);
+    const timeout = setTimeout(() => setFlashUsername(null), 900);
+    return () => clearTimeout(timeout);
+  }, [state?.lastEliminated, state?.mode]);
 
   const entries = (state && state.entries) || [];
 
@@ -501,7 +525,7 @@ function RouletteOverlay({ state, prize }) {
     : `Comenta "${state.keyword || '...'}"`;
 
   return (
-    <div className="theme-die-frame w-[400px] h-[680px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
       {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
@@ -539,12 +563,18 @@ function RouletteOverlay({ state, prize }) {
             </div>
           )
         ) : entries.length > 0 ? (
-          entries.map((e) => (
-            <div key={e.id} title={e.username} style={{ width: boxSize }} className="flex flex-col items-center gap-0.5 transition-all duration-150">
-              <img src={e.avatar} style={{ width: boxSize, height: boxSize, borderColor: 'var(--accent)' }} className="rounded-full border-2 object-cover flex-shrink-0" />
-              {showLabel && <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)) }} className="max-w-full truncate text-gray-300">@{e.username}</span>}
+          entries.map((e) => {
+            const isFlashing = state.mode === 'spinning' && flashUsername === e.username;
+            const isOut = eliminatedUsernames.has(e.username) && !isFlashing;
+            return (
+            <div key={e.id} title={e.username} style={{ width: boxSize }}
+              className={`flex flex-col items-center gap-0.5 transition-all duration-500 ${isFlashing ? 'scale-125 z-10' : isOut ? 'opacity-25 scale-90 grayscale' : ''}`}>
+              <img src={e.avatar} style={{ width: boxSize, height: boxSize, borderColor: isFlashing ? undefined : 'var(--accent)' }}
+                className={`rounded-full border-2 object-cover flex-shrink-0 ${isFlashing ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.7)]' : ''}`} />
+              {showLabel && <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)) }} className={`max-w-full truncate ${isFlashing ? 'text-red-300 font-bold' : 'text-gray-300'}`}>@{e.username}</span>}
             </div>
-          ))
+            );
+          })
         ) : (
           <p className="text-gray-600 text-sm italic text-center">Esperando participantes...</p>
         )}
@@ -556,7 +586,7 @@ function RouletteOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-200">@{state.winner.username}</p>
+                <p className="text-lg font-black text-yellow-400">@{state.winner.username}</p>
               </>
             ) : (
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
@@ -631,7 +661,7 @@ export function TopGifterOverlay({ state }) {
 // (min-h-screen), este mismo componente se reusa como vista previa dentro
 // del panel en mobile — ver App.jsx, donde no hay forma de tener OBS y el
 // panel abiertos a la vez en un solo teléfono. En ese caso no debe reservar
-// el viewport entero, solo el tamaño real de la tarjeta (400x680).
+// el viewport entero, solo el tamaño real de la tarjeta (400x700).
 export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false }) {
   return (
     <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} data-theme-style={theme.style} data-accent={theme.accent}>

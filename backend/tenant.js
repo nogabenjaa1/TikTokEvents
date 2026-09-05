@@ -197,6 +197,18 @@ class Tenant {
         // en false, !play no hace nada ni para el streamer mismo.
         this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 };
 
+        // ── ALERTAS DE REGALOS ──
+        // Config guardada en DB (ver db.js/server.js — se edita subiendo un
+        // archivo por HTTP, no por socket), cacheada acá en memoria para no
+        // pegarle a la base en cada regalo que llega. `alertConfigs` mapea
+        // nombre de regalo (en minúscula) -> { id, mediaUrl, mediaType,
+        // durationMs, position }. server.js llama a setAlertConfig/
+        // removeAlertConfig justo después de guardar/borrar en la DB, así
+        // el cache nunca queda desactualizado sin tener que releer todo.
+        this.alertConfigs = {};
+        this.alertConfigsLoaded = false;
+        this.alertTriggerCounter = 0;
+
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
         // participa de este selector: tiene su propio overlay aparte
@@ -472,6 +484,58 @@ class Tenant {
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
         this.processGiftExtensible(event);
+        this.processGiftAlert(event);
+    }
+
+    // ==========================================
+    // LÓGICA: ALERTAS DE REGALOS
+    // ==========================================
+    // Se llama una sola vez (ver attachSocket) — sin await ahí a propósito,
+    // no tiene sentido bloquear la sincronización del resto del panel por
+    // esto. Ventana mínima real: un regalo que llegue en los primeros
+    // milisegundos de la primera conexión podría no disparar su alerta
+    // todavía si la consulta a la DB no terminó — aceptable, mismo criterio
+    // que otras esperas cortas ya existentes en este archivo.
+    async loadAlertConfigs() {
+        if (this.alertConfigsLoaded) return;
+        this.alertConfigsLoaded = true;
+        try {
+            const rows = await db.listAlertConfigs(this.licenseId);
+            rows.forEach((row) => {
+                this.alertConfigs[row.gift_name.toLowerCase()] = {
+                    id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
+                    mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+                };
+            });
+        } catch (err) {
+            console.error(`[${this.licenseId}] [ALERTAS] No se pudieron cargar las alertas guardadas:`, err.message);
+        }
+    }
+
+    // Llamados desde server.js justo después de guardar/borrar en la DB —
+    // mantienen este cache en memoria al día sin tener que releer todo.
+    setAlertConfig(giftName, alertData) {
+        this.alertConfigs[giftName.toLowerCase()] = alertData;
+    }
+
+    removeAlertConfig(giftName) {
+        delete this.alertConfigs[giftName.toLowerCase()];
+    }
+
+    // Un regalo puede combo-ear (repeatCount > 1) sin que eso deba disparar
+    // la alerta varias veces seguidas — dispara UNA vez por evento ya
+    // consolidado (handleGiftEvent ya esperó a que termine el combo).
+    processGiftAlert({ giftName }) {
+        if (!giftName) return;
+        const alert = this.alertConfigs[giftName.toLowerCase()];
+        if (!alert) return;
+        this.broadcast.emit('alert_triggered', {
+            triggerId: ++this.alertTriggerCounter,
+            mediaUrl: alert.mediaUrl,
+            mediaType: alert.mediaType,
+            durationMs: alert.durationMs,
+            position: alert.position,
+        });
     }
 
     // Bug real de nombre de campo (mismo patrón que gift/badge, confirmado
@@ -1206,6 +1270,9 @@ class Tenant {
     // de siempre, delegando a los métodos de instancia.
     // ==========================================
     attachSocket(socket) {
+        // Fire-and-forget: ver el comentario de loadAlertConfigs.
+        this.loadAlertConfigs();
+
         // Sincronizar al nuevo cliente al instante
         socket.emit('state_update', this.contestState);
         socket.emit('zub_state_update', this.getZubPublicState());

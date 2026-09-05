@@ -913,6 +913,63 @@ export function SpotifyQueueOverlay({ state }) {
   );
 }
 
+// Dónde se planta la alerta dentro de la pantalla completa del overlay —
+// mapea la `position` guardada en cada alerta (ver AlertsAdmin.jsx) a las
+// clases de alineación de un contenedor `fixed inset-0`.
+const ALERT_POSITION_CLASSES = {
+  center: 'items-center justify-center',
+  top: 'items-start justify-center pt-10',
+  bottom: 'items-end justify-center pb-10',
+  left: 'items-center justify-start pl-10',
+  right: 'items-center justify-end pr-10',
+};
+
+// ALERTAS DE REGALOS: reproduce el recurso (imagen/gif/video/audio)
+// asignado al regalo que acaba de llegar (ver processGiftAlert en
+// tenant.js). Cola propia — si llegan varios regalos con alerta casi
+// juntos, se muestran una atrás de la otra en vez de superponerse; cada
+// una dura exactamente `durationMs` sin importar el tipo de recurso (el
+// audio/video sigue sonando de fondo si es más largo que eso, pero la
+// alerta visual/el turno de la cola avanza igual).
+export function AlertOverlay({ socket }) {
+  const [queue, setQueue] = useState([]);
+  const [current, setCurrent] = useState(null);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onTrigger = (alert) => setQueue((q) => [...q, alert]);
+    socket.on('alert_triggered', onTrigger);
+    return () => socket.off('alert_triggered', onTrigger);
+  }, [socket]);
+
+  useEffect(() => {
+    if (current || queue.length === 0) return;
+    const [next, ...rest] = queue;
+    setCurrent(next);
+    setQueue(rest);
+    const timer = setTimeout(() => setCurrent(null), Math.max(500, next.durationMs || 5000));
+    return () => clearTimeout(timer);
+  }, [queue, current]);
+
+  if (!current) return null;
+
+  const positionClass = ALERT_POSITION_CLASSES[current.position] || ALERT_POSITION_CLASSES.center;
+
+  return (
+    <div className={`fixed inset-0 flex pointer-events-none ${positionClass}`}>
+      {(current.mediaType === 'image' || current.mediaType === 'gif') && (
+        <img src={current.mediaUrl} className="max-w-[600px] max-h-[600px] object-contain" />
+      )}
+      {current.mediaType === 'video' && (
+        <video src={current.mediaUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={false} />
+      )}
+      {current.mediaType === 'audio' && (
+        <audio src={current.mediaUrl} autoPlay />
+      )}
+    </div>
+  );
+}
+
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio
 // localStorage: esta ventana corre aparte, en OBS, y la idea es justamente

@@ -142,6 +142,24 @@ const ready = pool.query(`
       display_name TEXT,
       connected_at BIGINT NOT NULL
     )
+  `))
+  // Alertas de regalos: qué recurso (imagen/gif/video/audio, ver storage.js)
+  // se reproduce en el overlay al llegar un regalo puntual. Un solo alert
+  // por (licencia, regalo) — UNIQUE habilita el upsert desde el panel sin
+  // tener que buscar primero si ya existía uno para ese regalo.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_configs (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      gift_name TEXT NOT NULL,
+      media_url TEXT NOT NULL,
+      media_path TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL DEFAULT 5000,
+      position TEXT NOT NULL DEFAULT 'center',
+      created_at BIGINT NOT NULL,
+      UNIQUE(license_id, gift_name)
+    )
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
@@ -288,6 +306,46 @@ async function deleteSpotifyAccount(licenseId) {
     await pool.query('DELETE FROM spotify_accounts WHERE license_id = $1', [licenseId]);
 }
 
+// ==========================================
+// ALERTAS DE REGALOS (ver la tabla alert_configs arriba)
+// ==========================================
+async function listAlertConfigs(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM alert_configs WHERE license_id = $1 ORDER BY gift_name ASC', [licenseId]);
+    return rows;
+}
+
+async function getAlertConfig(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM alert_configs WHERE id = $1', [id]);
+    return rows[0];
+}
+
+// Un solo alert por (licencia, regalo) — volver a guardar para el mismo
+// regalo reemplaza el anterior (el caller ya se encargó de borrar el
+// archivo viejo del storage antes de llamar acá, ver server.js).
+async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (license_id, gift_name) DO UPDATE SET
+            id = EXCLUDED.id,
+            media_url = EXCLUDED.media_url,
+            media_path = EXCLUDED.media_path,
+            media_type = EXCLUDED.media_type,
+            duration_ms = EXCLUDED.duration_ms,
+            position = EXCLUDED.position,
+            created_at = EXCLUDED.created_at
+    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, Date.now()]);
+    return getAlertConfig(id);
+}
+
+async function deleteAlertConfig(id, licenseId) {
+    await ready;
+    await pool.query('DELETE FROM alert_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
+}
+
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
     await ready;
     await pool.query('UPDATE licenses SET license_type = $1, expires_at = $2, revoked = FALSE, dice_tier = $3 WHERE id = $4', [licenseType, expiresAt, diceTier, id]);
@@ -358,4 +416,5 @@ module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
+    listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
 };

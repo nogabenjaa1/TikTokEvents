@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { buildOverlayUrl } from './auth';
+import AlertsAdmin from './AlertsAdmin';
 
 function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetConfirm }) {
   const [copied, setCopied] = useState(false);
@@ -54,21 +55,58 @@ function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetCon
   );
 }
 
+// Sub-navegación del panel de Overlays — mismo patrón visual que EVENT_TABS
+// de App.jsx (fila horizontal de pestañas), pedido explícito para que la
+// vitrina de enlaces deje de ser una sola página larga y quede agrupada por
+// tipo de overlay.
+const OVERLAY_TABS = [
+  { id: 'events', label: 'Eventos de TikTok', icon: '🎉' },
+  { id: 'alerts', label: 'Alertas', icon: '🔔' },
+  { id: 'tops', label: 'Tops', icon: '🏆' },
+  { id: 'playlist', label: 'Playlist y Extensible', icon: '🎵' },
+];
+
+const OBS_HELP = {
+  events: {
+    title: 'En OBS Studio / TikTok LIVE Studio',
+    steps: [
+      'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
+      'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
+      'Tamaño recomendado: 1920×1080 para el overlay de juegos (vertical); para Colores, ancho de al menos 960px con menos alto (es horizontal).',
+    ],
+  },
+  alerts: {
+    title: 'En OBS Studio / TikTok LIVE Studio',
+    steps: [
+      'Agrega UNA fuente de Navegador con la URL de Alertas — cubre TODA tu escena (1920×1080), ya que cada alerta decide sola en qué parte de la pantalla aparece según la posición que le configuraste.',
+      'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras está sonando/mostrándose.',
+    ],
+  },
+  tops: {
+    title: 'En OBS Studio / TikTok LIVE Studio',
+    steps: [
+      'Agrega una fuente de Navegador por cada widget que quieras mostrar (Top Tap-Tap, Top Gifter, o ambos).',
+      'Ancho de ~400px alcanza — son widgets angostos de alto libre, se acomodan solos a la cantidad de gente en el ranking.',
+    ],
+  },
+  playlist: {
+    title: 'En OBS Studio / TikTok LIVE Studio',
+    steps: [
+      'Modo Extensible: ancho de al menos 960px, con menos alto (es horizontal).',
+      'Cola de Spotify: ancho de ~400px alcanza (widget angosto, de alto libre) — necesita tu cuenta de Spotify conectada desde la pestaña Spotify en TikTokEvents.',
+    ],
+  },
+};
+
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-// Hay seis overlays distintos, cada uno con su URL propia: el de juegos
-// (Rey del Trono/Zubastinis/Eliminación/Ruleta, vertical), el de Colores
-// (dados, horizontal, ver DiceOverlay.jsx), tres widgets angostos aparte —
-// Top Tap-Tap y Top Gifter (rankings continuos, ver TopTapTapOverlay/
-// TopGifterOverlay en Overlay.jsx) y la cola de Spotify (canciones pedidas
-// por !play, ver SpotifyQueueOverlay) — y el de Modo Extensible (contador
-// horizontal que crece con follows/regalos, ver ExtensibleOverlay) — cada
-// uno se agrega como fuente de navegador independiente, nunca reemplaza a
-// los otros.
-export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState }) {
+export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList }) {
+  const [tab, setTab] = useState('events');
+
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
+  const alertsUrl = buildOverlayUrl('alerts');
   const tapTapUrl = buildOverlayUrl('taptap');
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
@@ -78,73 +116,105 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
   const gifterCount = (gifterState?.leaderboard || []).length;
   const musicQueueCount = (spotifyQueueState?.queue || []).length;
 
+  const help = OBS_HELP[tab];
+
   return (
-    <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🖥️ Overlays</p>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx. */}
+      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+        {OVERLAY_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={[
+              'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
+              tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+            ].join(' ')}
+          >
+            <span className="text-base leading-none">{t.icon}</span>
+            <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
+              {t.label}
+            </span>
+          </button>
+        ))}
+      </div>
 
-      <OverlayUrlCard
-        title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
-        description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
-        url={gamesUrl}
-      />
+      <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
+        {tab === 'events' && (
+          <>
+            <OverlayUrlCard
+              title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
+              description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
+              url={gamesUrl}
+            />
+            <OverlayUrlCard
+              title="Overlay de Colores (dados)"
+              description="Overlay horizontal aparte, exclusivo para Color Says — no sirve para los otros modos."
+              url={colorsUrl}
+            />
+          </>
+        )}
 
-      <OverlayUrlCard
-        title="Overlay de Colores (dados)"
-        description="Overlay horizontal aparte, exclusivo para Color Says — no sirve para los otros modos."
-        url={colorsUrl}
-      />
+        {tab === 'alerts' && (
+          <>
+            <OverlayUrlCard
+              title="Overlay de Alertas"
+              description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures abajo. Pégala como una fuente que cubra toda tu escena."
+              url={alertsUrl}
+            />
+            <div className="w-full max-w-xl">
+              <AlertsAdmin giftsList={giftsList} />
+            </div>
+          </>
+        )}
 
-      <OverlayUrlCard
-        title="Top Tap-Tap (ranking de likes)"
-        description={`Widget angosto aparte con quién más likes mandó en el directo${tapTapCount ? ` — ${tapTapCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
-        url={tapTapUrl}
-        onReset={() => socket?.emit('reset_taptap_leaderboard')}
-        resetLabel="🗑️ Reiniciar ranking de likes"
-        resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
-      />
+        {tab === 'tops' && (
+          <>
+            <OverlayUrlCard
+              title="Top Tap-Tap (ranking de likes)"
+              description={`Widget angosto aparte con quién más likes mandó en el directo${tapTapCount ? ` — ${tapTapCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+              url={tapTapUrl}
+              onReset={() => socket?.emit('reset_taptap_leaderboard')}
+              resetLabel="🗑️ Reiniciar ranking de likes"
+              resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
+            />
+            <OverlayUrlCard
+              title="Top Gifter (ranking de regalos)"
+              description={`Widget angosto aparte con quién más regaló en el directo${gifterCount ? ` — ${gifterCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+              url={gifterUrl}
+              onReset={() => socket?.emit('reset_gifter_leaderboard')}
+              resetLabel="🗑️ Reiniciar ranking de regalos"
+              resetConfirm="¿Reiniciar el ranking de Top Gifter? Se borra todo lo acumulado hasta ahora."
+            />
+          </>
+        )}
 
-      <OverlayUrlCard
-        title="Top Gifter (ranking de regalos)"
-        description={`Widget angosto aparte con quién más regaló en el directo${gifterCount ? ` — ${gifterCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
-        url={gifterUrl}
-        onReset={() => socket?.emit('reset_gifter_leaderboard')}
-        resetLabel="🗑️ Reiniciar ranking de regalos"
-        resetConfirm="¿Reiniciar el ranking de Top Gifter? Se borra todo lo acumulado hasta ahora."
-      />
+        {tab === 'playlist' && (
+          <>
+            <OverlayUrlCard
+              title="Modo Extensible (contador que crece con follows/regalos)"
+              description="Overlay horizontal aparte, pensado como franja tipo subathon — inícialo y ajústalo desde su propia pestaña en TikTokEvents."
+              url={extensibleUrl}
+            />
+            <OverlayUrlCard
+              title="Cola de Spotify (canciones pedidas con !play)"
+              description={`Widget angosto aparte con las próximas canciones pedidas por chat${musicQueueCount ? ` — ${musicQueueCount} en la cola ahora` : ''}. Conecta tu cuenta de Spotify desde la pestaña Spotify en TikTokEvents para que funcione.`}
+              url={musicQueueUrl}
+              onReset={() => socket?.emit('clear_spotify_queue')}
+              resetLabel="🗑️ Vaciar cola de canciones"
+              resetConfirm="¿Vaciar la cola de Spotify pedida por chat? Esto no afecta la reproducción real en Spotify, solo lo que se muestra acá."
+            />
+          </>
+        )}
 
-      <OverlayUrlCard
-        title="Modo Extensible (contador que crece con follows/regalos)"
-        description="Overlay horizontal aparte, pensado como franja tipo subathon — inícialo y ajústalo desde su propia pestaña en TikTokEvents."
-        url={extensibleUrl}
-      />
-
-      <OverlayUrlCard
-        title="Cola de Spotify (canciones pedidas con !play)"
-        description={`Widget angosto aparte con las próximas canciones pedidas por chat${musicQueueCount ? ` — ${musicQueueCount} en la cola ahora` : ''}. Conecta tu cuenta de Spotify desde la pestaña Spotify en TikTokEvents para que funcione.`}
-        url={musicQueueUrl}
-        onReset={() => socket?.emit('clear_spotify_queue')}
-        resetLabel="🗑️ Vaciar cola de canciones"
-        resetConfirm="¿Vaciar la cola de Spotify pedida por chat? Esto no afecta la reproducción real en Spotify, solo lo que se muestra acá."
-      />
-
-      <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-5">
-        <div>
-          <h3 className="theme-heading text-sm font-bold mb-2">En OBS Studio</h3>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>En la escena que quieras, haz clic en <strong className="text-gray-300">+</strong> dentro de "Fuentes" → <strong className="text-gray-300">Navegador</strong>.</li>
-            <li>Pega la URL correspondiente en el campo "URL" — la de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, la de "Colores" solo para Color Says, y las de Top Tap-Tap/Top Gifter/Cola de Spotify/Modo Extensible como widgets aparte.</li>
-            <li>Configura el ancho y el alto: 1920×1080 para el overlay de juegos (vertical); para el de Colores y Modo Extensible, ancho de al menos 960px, con menos alto (son horizontales); para Top Tap-Tap/Top Gifter/Cola de Spotify, un ancho de ~400px alcanza (son widgets angostos, de alto libre).</li>
-            <li>Acepta — cada overlay se sincroniza solo con lo que hagas en su panel correspondiente.</li>
-          </ol>
-        </div>
-        <div>
-          <h3 className="theme-heading text-sm font-bold mb-2">En TikTok LIVE Studio</h3>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>Agrega una fuente de tipo <strong className="text-gray-300">Web/Navegador</strong> a tu escena.</li>
-            <li>Pega la URL correspondiente (juegos, Colores, Top Tap-Tap, Top Gifter, Cola de Spotify o Modo Extensible, según lo que quieras mostrar).</li>
-            <li>Ajusta el tamaño de la fuente al overlay elegido, igual que en OBS.</li>
-          </ol>
-        </div>
+        {help && (
+          <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-2">
+            <h3 className="theme-heading text-sm font-bold mb-2">{help.title}</h3>
+            <ol className="list-decimal list-inside space-y-1">
+              {help.steps.map((step, i) => <li key={i}>{step}</li>)}
+            </ol>
+          </div>
+        )}
       </div>
     </div>
   );

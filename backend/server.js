@@ -56,11 +56,26 @@ const rateLimit = require('express-rate-limit');
 
 const { MercadoPagoConfig, Preference, Payment, CardToken } = require('mercadopago');
 
+const multer = require('multer');
+
 const db = require('./db');
 const auth = require('./auth');
 const pricing = require('./pricing');
 const spotify = require('./spotify');
+const storage = require('./storage');
 const Tenant = require('./tenant');
+
+// Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
+// nunca tocan disco: van directo de la request a Supabase Storage (ver
+// storage.js). 15MB alcanza de sobra para un clip corto de alerta; frenar
+// acá evita cargar archivos gigantes enteros en RAM antes de subirlos.
+const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const ALERT_MEDIA_TYPES = {
+    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
+    'image/gif': 'gif',
+    'video/mp4': 'video', 'video/webm': 'video',
+    'audio/mpeg': 'audio', 'audio/wav': 'audio', 'audio/mp3': 'audio', 'audio/ogg': 'audio',
+};
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
 // un dominio propio). Con un solo valor, cors/socket.io lo tratan igual
@@ -96,6 +111,11 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // Etiqueta que va en el medio de la key legible (alias-etiqueta-hash, ver
 // auth.generateLabeledKey) cuando se compra ese plan.
 const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
+
+// No bloqueante a propósito (igual que MP_ACCESS_TOKEN): si todavía no se
+// configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
+// plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
+storage.ensureBucket().catch((err) => console.error('[Storage] No se pudo verificar el bucket de alertas al arrancar:', err.message));
 
 const app = express();
 // Render (y cualquier host detrás de un proxy/balanceador) manda el IP real
@@ -485,6 +505,79 @@ app.get('/api/spotify/status', auth.requireAuth, generalLimiter, async (req, res
 
 app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req, res) => {
     await db.deleteSpotifyAccount(req.license.id);
+    res.json({ success: true });
+});
+
+// ==========================================
+// ALERTAS DE REGALOS: qué recurso (imagen/gif/video/audio) se reproduce en
+// el overlay al llegar un regalo puntual — ver tenant.js (processGiftAlert)
+// para el disparo en vivo y storage.js para dónde vive el archivo.
+// ==========================================
+function serializeAlert(row) {
+    return {
+        id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
+        mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+    };
+}
+
+app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
+    const alerts = await db.listAlertConfigs(req.license.id);
+    res.json({ success: true, alerts: alerts.map(serializeAlert) });
+});
+
+// multipart/form-data: `media` es el archivo, `giftName`/`durationMs`/
+// `position` van como campos de texto normales del mismo form.
+app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.single('media'), async (req, res) => {
+    const { giftName, durationMs, position } = req.body || {};
+    if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
+        return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
+    }
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Falta el archivo de la alerta' });
+    }
+    const mediaType = ALERT_MEDIA_TYPES[req.file.mimetype];
+    if (!mediaType) {
+        return res.status(400).json({ success: false, error: `Formato no soportado: ${req.file.mimetype}` });
+    }
+    const finalPosition = ['center', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'center';
+    const finalDuration = Math.max(1000, Math.min(30000, Number(durationMs) || 5000));
+
+    try {
+        // Si ya había una alerta para este regalo, borra su archivo viejo del
+        // storage antes de subir el nuevo — sin esto quedarían archivos
+        // huérfanos en el bucket cada vez que el streamer cambia una alerta.
+        const existing = (await db.listAlertConfigs(req.license.id))
+            .find((row) => row.gift_name.toLowerCase() === giftName.trim().toLowerCase());
+        if (existing) await storage.deleteFile(existing.media_path);
+
+        const id = crypto.randomUUID();
+        const ext = (req.file.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+        const mediaPath = `${req.license.id}/${id}${ext}`;
+        const mediaUrl = await storage.uploadFile(mediaPath, req.file.buffer, req.file.mimetype);
+
+        const row = await db.upsertAlertConfig({
+            id, licenseId: req.license.id, giftName: giftName.trim(),
+            mediaUrl, mediaPath, mediaType, durationMs: finalDuration, position: finalPosition,
+        });
+        // Mantiene al día el cache en memoria que usa processGiftAlert —
+        // sin esto, la alerta recién guardada no dispararía hasta el
+        // próximo reinicio del server (o de este Tenant en memoria).
+        getOrCreateTenant(req.license.id, req.license.license_type).setAlertConfig(row.gift_name, serializeAlert(row));
+        res.json({ success: true, alert: serializeAlert(row) });
+    } catch (err) {
+        console.error('[Alertas] Error subiendo la alerta:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudo guardar la alerta — revisa que Supabase Storage esté configurado.' });
+    }
+});
+
+app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res) => {
+    const row = await db.getAlertConfig(req.params.id);
+    if (!row || row.license_id !== req.license.id) {
+        return res.status(404).json({ success: false, error: 'Alerta no encontrada' });
+    }
+    await storage.deleteFile(row.media_path);
+    await db.deleteAlertConfig(row.id, req.license.id);
+    getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(row.gift_name);
     res.json({ success: true });
 });
 

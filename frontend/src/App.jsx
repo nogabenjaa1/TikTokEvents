@@ -6,7 +6,7 @@ import Roulette from './Roulette';
 import Extensible from './Extensible';
 import Spotify from './Spotify';
 import ColorSays from './Colorsays';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
@@ -316,7 +316,7 @@ export default function App() {
   // parte del diseño de siempre).
   useEffect(() => {
     if (!overlayMode) return;
-    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue'].includes(getOverlayScreen());
+    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'].includes(getOverlayScreen());
     document.body.classList.toggle('tkc-overlay-transparent', transparent);
     return () => document.body.classList.remove('tkc-overlay-transparent');
   }, [overlayMode]);
@@ -360,6 +360,13 @@ export default function App() {
       return (
         <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
           <SpotifyQueueOverlay state={spotifyQueueState} />
+        </div>
+      );
+    }
+    if (screen === 'alerts') {
+      return (
+        <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+          <AlertOverlay socket={socket} />
         </div>
       );
     }
@@ -465,7 +472,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
-        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} />}
+        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList} />}
 
         {sidebarMode === 'events' && (
           <>

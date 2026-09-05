@@ -787,7 +787,11 @@ function RouletteOverlay({ state, prize }) {
 // ganador) — solo un ranking corrido que crece mientras dure el directo,
 // pensado como fuente de navegador chica aparte (ver ?screen=taptap /
 // ?screen=gifter), no como parte del selector activeApp.
-function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, emptyLabel }) {
+// `valueColorClass`/`nameIcon` dejan que cada ranking tenga su propio look
+// (rojo+corazón para likes, amarillo+moneda para regalos) sin duplicar todo
+// el layout — pedido explícito para que cada widget se vea más llamativo y
+// distinguible del otro a simple vista.
+function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, valueColorClass, nameIcon = '', emptyLabel }) {
   return (
     <div className="theme-die-frame w-[380px] p-5 flex flex-col gap-3 font-sans">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center">{icon} {title}</p>
@@ -797,8 +801,8 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
             <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
               <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>
               <img src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
-              <span className="flex-1 text-sm font-bold text-white truncate">@{e.username}</span>
-              <span className="text-yellow-400 text-sm font-black bg-yellow-400/10 border border-yellow-400/20 px-2 py-1 rounded-lg flex-shrink-0">{e[valueKey]}{valueSuffix}</span>
+              <span className="flex-1 text-sm font-bold text-white truncate">{nameIcon ? `${nameIcon} ` : ''}@{e.username}</span>
+              <span className={`${valueColorClass} text-sm font-black px-2 py-1 rounded-lg flex-shrink-0`}>{e[valueKey]}{valueSuffix}</span>
             </div>
           ))}
         </div>
@@ -813,7 +817,8 @@ export function TopTapTapOverlay({ state }) {
   return (
     <ContinuousLeaderboardWidget
       title="Top Tap-Tap" icon="❤️" entries={(state && state.leaderboard) || []}
-      valueKey="likes" valueSuffix="" emptyLabel="Esperando likes..."
+      valueKey="likes" valueSuffix=" ❤️" valueColorClass="text-red-400 bg-red-400/10 border border-red-400/20"
+      emptyLabel="Esperando likes..."
     />
   );
 }
@@ -822,7 +827,8 @@ export function TopGifterOverlay({ state }) {
   return (
     <ContinuousLeaderboardWidget
       title="Top Gifter" icon="💎" entries={(state && state.leaderboard) || []}
-      valueKey="coins" valueSuffix=" 🪙" emptyLabel="Esperando regalos..."
+      valueKey="coins" valueSuffix=" 🪙" valueColorClass="text-yellow-400 bg-yellow-400/10 border border-yellow-400/20"
+      nameIcon="🪙" emptyLabel="Esperando regalos..."
     />
   );
 }
@@ -841,18 +847,23 @@ export function ExtensibleOverlay({ state }) {
   const paused = !finished && !!s.paused;
   return (
     <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`}>
-      <div className="flex flex-col gap-3">
+      {/* flex-shrink-0 en los DOS lados a propósito: sin esto, el bloque de
+          texto de la izquierda se comprimía apenas el contador arrancaba
+          (el número de la derecha ocupa más ancho corriendo que en 00:00),
+          y el texto se veía más chico de lo que en verdad estaba — pedido
+          explícito de que el tamaño quede fijo en reposo y en marcha. */}
+      <div className="flex flex-col gap-3 flex-shrink-0">
         <p className="theme-accent-text text-sm uppercase tracking-[0.3em] font-black">⏱️ Modo Extensible</p>
         {/* Pedido explícito: que el público vea claramente cuánto suma cada
             acción — texto grande, no una nota chica al pie. */}
         <p className="text-gray-300 text-3xl font-black leading-tight">
-          +{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
-          +{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
+          👤 +{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
+          🪙 +{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
         </p>
         {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
         {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}
       </div>
-      <p className={`text-8xl font-black tabular-nums leading-none ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : 'text-white'}`}>
+      <p className={`text-8xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : 'text-white'}`}>
         {mins}:{String(secs).padStart(2, '0')}
       </p>
     </div>

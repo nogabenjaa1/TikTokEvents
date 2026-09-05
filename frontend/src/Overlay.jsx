@@ -509,7 +509,7 @@ function RouletteOverlay({ state, prize }) {
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">🎡 RULETA{state.followersOnly ? ' — SOLO SEGUIDORES' : ''}</p>
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">🎡 RULETA</p>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}

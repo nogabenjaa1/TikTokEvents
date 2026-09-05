@@ -25,8 +25,8 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...' };
 
 // ─────────────────────────────────────────────
 // RULETA
-// Sorteo por comentario (Modo Chat: comentar una palabra clave, opcional
-// solo seguidores) o por regalo (Modo Gift: mandar un regalo específico,
+// Sorteo por comentario (Modo Chat: comentar una palabra clave) o por
+// regalo (Modo Gift: mandar un regalo específico,
 // cada uno suma una entrada — mismo mecanismo de slots que Eliminación).
 // Se abre una ventana de tiempo para entrar; al vencer, el giro arranca
 // SOLO (no hay botón manual): baraja todas las entradas al azar y revela
@@ -38,7 +38,6 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...' };
 export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
   const [entryMode, setEntryMode]         = useState('chat');
   const [keyword, setKeyword]             = useState('participo');
-  const [followersOnly, setFollowersOnly] = useState(false);
   const [entryWindowMin, setEntryWindowMin] = useState(5);
   const [selectedGift, setSelectedGift]   = useState(null);
   const [isDropOpen, setIsDropOpen]       = useState(false);
@@ -57,7 +56,6 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
       tiktokUsername: username,
       entryMode,
       keyword: keyword.trim(),
-      followersOnly,
       entryWindowSec: Math.max(30, Math.round(entryWindowMin * 60)),
       targetGiftName: entryMode === 'gift' ? selectedGift.name : '',
       targetGiftIcon: entryMode === 'gift' ? selectedGift.icon : '',
@@ -192,13 +190,6 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 <p className="text-[10px] text-gray-500 mt-1">Cada regalo enviado suma una entrada más — más regalos, más chances.</p>
               </div>
             )}
-
-            {/* Solo seguidores */}
-            <label className="theme-input flex items-center gap-3 px-4 py-3 cursor-pointer mb-4">
-              <input type="checkbox" checked={followersOnly} onChange={e => setFollowersOnly(e.target.checked)} className="sr-only peer" />
-              <span aria-hidden="true" className="w-10 h-6 rounded-full bg-gray-700 peer-checked:theme-accent-bg relative flex-shrink-0 transition-colors after:absolute after:w-4 after:h-4 after:rounded-full after:bg-white after:left-1 after:top-1 after:transition-transform peer-checked:after:translate-x-4" />
-              <span className="text-sm font-black text-white">Solo seguidores</span>
-            </label>
 
             {/* Ventana de entrada */}
             <div className="mb-4">

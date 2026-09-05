@@ -130,7 +130,7 @@ class Tenant {
         // antemano.
         this.rouletteState = {
             isActive: false, mode: 'idle', // idle | joining | spinning | finished
-            entryMode: 'chat', keyword: '', followersOnly: false, entryWindowSec: 300,
+            entryMode: 'chat', keyword: '', entryWindowSec: 300,
             targetGiftName: '', targetGiftIcon: '', targetGiftCoins: 0,
             winnerRule: 'first', winnerPosition: 1, // 'first' | 'last' | 'position'
             timeLeft: 0,
@@ -752,7 +752,7 @@ class Tenant {
         return {
             isActive: this.rouletteState.isActive, mode: this.rouletteState.mode,
             entryMode: this.rouletteState.entryMode,
-            keyword: this.rouletteState.keyword, followersOnly: this.rouletteState.followersOnly,
+            keyword: this.rouletteState.keyword,
             entryWindowSec: this.rouletteState.entryWindowSec,
             targetGiftName: this.rouletteState.targetGiftName, targetGiftIcon: this.rouletteState.targetGiftIcon, targetGiftCoins: this.rouletteState.targetGiftCoins,
             winnerRule: this.rouletteState.winnerRule, winnerPosition: this.rouletteState.winnerPosition,
@@ -839,10 +839,8 @@ class Tenant {
         this.rouletteRevealTimeout = setTimeout(() => this.stepRouletteReveal(), delay);
     }
 
-    // Modo Chat: comentar la keyword configurada (opcionalmente solo
-    // seguidores, ver data.followRole — normalizado por tiktok-live-connector
-    // desde followInfo.followStatus) da UNA vida, sin importar cuántas veces
-    // vuelva a comentar la misma persona.
+    // Modo Chat: comentar la keyword configurada da UNA vida, sin importar
+    // cuántas veces vuelva a comentar la misma persona.
     processRouletteComment(data) {
         const state = this.rouletteState;
         if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'chat') return;
@@ -850,7 +848,6 @@ class Tenant {
         const comment = typeof data.content === 'string' ? data.content.trim().toLowerCase() : '';
         const keyword = (state.keyword || '').trim().toLowerCase();
         if (!keyword || !comment.includes(keyword)) return;
-        if (state.followersOnly && !(Number(data.followRole) > 0)) return;
 
         const username = data.uniqueId;
         if (!username || state.entries.some(e => e.username === username)) return;
@@ -862,11 +859,10 @@ class Tenant {
     // Modo Gift: mandar el regalo configurado suma una entrada POR CADA
     // unidad del combo — mismo mecanismo de slots que ya usa Eliminación
     // (más regalos, más chances, a propósito).
-    processGiftRoulette({ username, avatar, giftName, repeatCount, followRole }) {
+    processGiftRoulette({ username, avatar, giftName, repeatCount }) {
         const state = this.rouletteState;
         if (!state.isActive || state.mode !== 'joining' || state.entryMode !== 'gift') return;
         if (!state.targetGiftName || giftName.toLowerCase() !== state.targetGiftName.toLowerCase()) return;
-        if (state.followersOnly && !(Number(followRole) > 0)) return;
 
         const slotsToAdd = Math.max(1, repeatCount || 1);
         for (let i = 0; i < slotsToAdd; i++) {
@@ -1234,7 +1230,7 @@ class Tenant {
             this.rouletteState = {
                 isActive: true, mode: 'joining',
                 entryMode: config.entryMode === 'gift' ? 'gift' : 'chat',
-                keyword: config.keyword || '', followersOnly: !!config.followersOnly,
+                keyword: config.keyword || '',
                 entryWindowSec: config.entryWindowSec,
                 targetGiftName: config.targetGiftName || '', targetGiftIcon: config.targetGiftIcon || '', targetGiftCoins: config.targetGiftCoins || 0,
                 winnerRule: config.winnerRule || 'first', winnerPosition: config.winnerPosition || 1,

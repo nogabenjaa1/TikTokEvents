@@ -75,6 +75,24 @@ const REPLACEMENTS = [
         ],
         to: 'profilePictureUrl: getPreferredPictureFormat(webcastUser.avatarLarge?.urlList || webcastUser.avatarMedium?.urlList || webcastUser.avatarThumb?.urlList),',
     },
+    {
+        // mapBadges() lee `innerBadges.badgeSceneType`, pero el campo real
+        // del protobuf (confirmado con BadgeStruct.encode) se llama
+        // `sceneType` — sin el prefijo "badge". badgeSceneType da siempre
+        // undefined, así que TODO lo que depende de él en getUserAttributes
+        // queda roto en silencio: teamMemberLevel (nivel de fan — el que no
+        // funcionaba pese a estar bien configurado), gifterLevel, y el
+        // chequeo de sceneType===1 de isModerator (ese último sigue
+        // "funcionando" solo porque handleChatEvent en tenant.js tiene un
+        // fallback aparte a userIdentity.isModeratorOfAnchor, que no pasa
+        // por acá — por eso moderadores sí andaba y nivel de fan no).
+        // Confirmado contra un LIVE real (@notbenjaa1): usuarios con badge
+        // sceneType 10 y level real (ej. 18, 25) siempre daban
+        // teamMemberLevel:0 antes de este parche.
+        label: 'mapBadges (campo real es "sceneType", no "badgeSceneType")',
+        froms: ['let badgeSceneType = innerBadges.badgeSceneType;\n\t\tif (Array.isArray(innerBadges.badges)) innerBadges.badges.forEach((badge) => {\n\t\t\tsimplifiedBadges.push(Object.assign({ badgeSceneType }, badge));\n\t\t});\n\t\tif (Array.isArray(innerBadges.imageBadges)) innerBadges.imageBadges.forEach((badge) => {\n\t\t\tif (badge && badge.image && badge.image.url) simplifiedBadges.push({\n\t\t\t\ttype: "image",\n\t\t\t\tbadgeSceneType,\n\t\t\t\tdisplayType: badge.displayType,\n\t\t\t\turl: badge.image.url\n\t\t\t});\n\t\t});\n\t\tif (innerBadges.privilegeLogExtra?.level && innerBadges.privilegeLogExtra?.level !== "0") simplifiedBadges.push({\n\t\t\ttype: "privilege",\n\t\t\tprivilegeId: innerBadges.privilegeLogExtra.privilegeId,\n\t\t\tlevel: parseInt(innerBadges.privilegeLogExtra.level),\n\t\t\tbadgeSceneType: innerBadges.badgeSceneType\n\t\t});'],
+        to: 'let badgeSceneType = innerBadges.sceneType;\n\t\tif (Array.isArray(innerBadges.badges)) innerBadges.badges.forEach((badge) => {\n\t\t\tsimplifiedBadges.push(Object.assign({ badgeSceneType }, badge));\n\t\t});\n\t\tif (Array.isArray(innerBadges.imageBadges)) innerBadges.imageBadges.forEach((badge) => {\n\t\t\tif (badge && badge.image && badge.image.url) simplifiedBadges.push({\n\t\t\t\ttype: "image",\n\t\t\t\tbadgeSceneType,\n\t\t\t\tdisplayType: badge.displayType,\n\t\t\t\turl: badge.image.url\n\t\t\t});\n\t\t});\n\t\tif (innerBadges.privilegeLogExtra?.level && innerBadges.privilegeLogExtra?.level !== "0") simplifiedBadges.push({\n\t\t\ttype: "privilege",\n\t\t\tprivilegeId: innerBadges.privilegeLogExtra.privilegeId,\n\t\t\tlevel: parseInt(innerBadges.privilegeLogExtra.level),\n\t\t\tbadgeSceneType\n\t\t});',
+    },
 ];
 
 function main() {

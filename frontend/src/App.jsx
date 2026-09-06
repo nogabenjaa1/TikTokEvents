@@ -19,6 +19,7 @@ import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
+import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
 
 // Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
 // TikTok (antes eran botones sueltos de primer nivel) detrás de una
@@ -71,13 +72,13 @@ const OVERLAY_PREVIEW_SCALE = 0.75;
 // OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
 // forzado al modo que se esté mirando, porque la idea es confirmar qué ve
 // la audiencia ahora mismo, no simular un modo que no está activo.
-function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prizes, theme }) {
+function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prizes, theme, customization }) {
   return (
     <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
       <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
       <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
         <div style={{ width: 400, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} />
+          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} customization={customization} />
         </div>
       </div>
     </div>
@@ -145,6 +146,17 @@ export default function App() {
   // dispositivo); lo usamos acá solo para emitirlo al backend cada vez que
   // cambia, para que el overlay lo replique.
   const { style: panelThemeStyle, accent: panelThemeAccent } = useTheme();
+
+  // Personalización de fondo + color de usuario por overlay (ver
+  // overlayCustomization.js) — MISMO patrón de dos estados que el tema de
+  // arriba: `overlayCustomization` es lo que llega del backend y es lo que
+  // de verdad se usa para pintar cada overlay (panel y OBS por igual);
+  // `panelOverlayDraft` es la copia local, persistida en este dispositivo,
+  // que edita el modal "Personalizar" de OverlayLink.jsx — cada cambio ahí
+  // se re-emite al backend, que lo reenvía a todo el room (overlay de OBS
+  // incluido) como `overlay_customization_update`.
+  const [overlayCustomization, setOverlayCustomizationState] = useState(defaultOverlayCustomizationMap());
+  const [panelOverlayDraft, setPanelOverlayDraft] = useState(() => loadOverlayCustomization());
 
   // Premios por modo (título + imagen opcional), seteados desde los paneles
   // y mostrados en el overlay. El backend es la fuente de verdad.
@@ -218,6 +230,7 @@ export default function App() {
     // El overlay se pinta con el skin que le llega acá — nunca con su
     // propio localStorage (ver comment de overlayTheme más arriba).
     socket.on('theme_updated', setOverlayTheme);
+    socket.on('overlay_customization_update', setOverlayCustomizationState);
 
     // Un solo dispositivo activo por licencia: si nos desconectan por esto,
     // volvemos a la pantalla de login con un mensaje claro (el overlay,
@@ -254,6 +267,19 @@ export default function App() {
     if (overlayMode || !socket) return;
     socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
   }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
+
+  // Mismo criterio que el efecto de arriba, para la personalización de
+  // overlays: se persiste en este dispositivo y se re-emite cada vez que
+  // cambia (y una vez al conectar) — nunca en modo overlay, que solo debe
+  // RECIBIRLA (ver overlayCustomization arriba).
+  useEffect(() => {
+    saveOverlayCustomization(panelOverlayDraft);
+  }, [panelOverlayDraft]);
+
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    socket.emit('set_overlay_customization', panelOverlayDraft);
+  }, [socket, overlayMode, panelOverlayDraft]);
 
   // Cadencia de ads de la licencia trial (ver TRIAL_AD_INTERVAL_MS). Si deja
   // de ser trial a mitad de un anuncio ya abierto (logout, upgrade a paga),
@@ -332,7 +358,7 @@ export default function App() {
     }
     const screen = getOverlayScreen();
     if (screen === 'colors') {
-      return <DiceOverlay diceState={diceState} theme={overlayTheme} />;
+      return <DiceOverlay diceState={diceState} theme={overlayTheme} customize={overlayCustomization.colors} />;
     }
     // Sin `grid place-items-center` a propósito (a diferencia de Colores/
     // Extensible, de tamaño fijo): centrar un recuadro de alto variable
@@ -345,21 +371,21 @@ export default function App() {
     if (screen === 'taptap') {
       return (
         <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
-          <TopTapTapOverlay state={tapTapState} />
+          <TopTapTapOverlay state={tapTapState} customize={overlayCustomization.taptap} />
         </div>
       );
     }
     if (screen === 'gifter') {
       return (
         <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
-          <TopGifterOverlay state={gifterState} />
+          <TopGifterOverlay state={gifterState} customize={overlayCustomization.gifter} />
         </div>
       );
     }
     if (screen === 'musicqueue') {
       return (
         <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
-          <SpotifyQueueOverlay state={spotifyQueueState} />
+          <SpotifyQueueOverlay state={spotifyQueueState} customize={overlayCustomization.musicqueue} />
         </div>
       );
     }
@@ -373,11 +399,11 @@ export default function App() {
     if (screen === 'extensible') {
       return (
         <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
-          <ExtensibleOverlay state={extensibleState} />
+          <ExtensibleOverlay state={extensibleState} customize={overlayCustomization.extensible} />
         </div>
       );
     }
-    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />;
+    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />;
   }
 
   const logout = () => {
@@ -405,6 +431,20 @@ export default function App() {
   const needsAccess = (modeId) => !session && !FREE_MODES.includes(modeId);
 
   const onLoggedIn = () => { setKickedOutMessage(''); setSession(loadSession()); };
+
+  // Handlers del modal "Personalizar" (ver OverlayCustomizePanel.jsx,
+  // abierto desde OverlayLink.jsx) — actualizan el DRAFT local, nunca
+  // `overlayCustomization` directo (ese solo lo escribe el socket, ver
+  // comentario en su declaración más arriba).
+  const updateOverlayCustomization = (id, entry) => {
+    setPanelOverlayDraft((prev) => ({ ...prev, [id]: entry }));
+  };
+  const applyOverlayCustomizationToAll = (id) => {
+    setPanelOverlayDraft((prev) => {
+      const entry = prev[id];
+      return Object.fromEntries(OVERLAY_CUSTOMIZE_IDS.map((oid) => [oid, entry]));
+    });
+  };
 
   return (
     <ThemedShell className="flex flex-col">
@@ -472,7 +512,12 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
-        {sidebarMode === 'overlay' && <OverlayLink socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList} />}
+        {sidebarMode === 'overlay' && (
+          <OverlayLink
+            socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList}
+            overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
+          />
+        )}
 
         {sidebarMode === 'events' && (
           <>
@@ -512,7 +557,7 @@ export default function App() {
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
                     prize={prizes.king}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -526,7 +571,7 @@ export default function App() {
                     username={username} connectionStatus={connectionStatus}
                     prize={prizes.zub}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -540,7 +585,7 @@ export default function App() {
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
                     prize={prizes.elim}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -554,7 +599,7 @@ export default function App() {
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
                     prize={prizes.roulette}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}

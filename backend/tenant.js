@@ -98,6 +98,45 @@ function shuffleArray(list) {
 const VALID_THEME_STYLES = ['default', 'kawaii', 'minimal', 'cute'];
 const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
 
+// Espejo de frontend/src/overlayCustomization.js: qué overlays se pueden
+// personalizar (fondo + color de nombre de usuario) desde la pestaña
+// Overlays, y qué valores son válidos para cada campo — mismo criterio que
+// VALID_THEME_STYLES/VALID_THEME_ACCENTS, para que un socket manipulado a
+// mano no pueda meter un `background` con CSS arbitrario.
+const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue'];
+const VALID_BG_TYPES = ['transparent', 'solid', 'gradient'];
+const VALID_USERNAME_COLOR_TYPES = ['default', 'rainbow', 'custom'];
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function sanitizeHexColor(value, fallback) {
+    return typeof value === 'string' && HEX_COLOR_RE.test(value) ? value : fallback;
+}
+
+// Sanea el mapa completo que manda el panel (ver set_overlay_customization
+// más abajo) — cualquier id/campo inválido o faltante cae al default en vez
+// de rechazar todo el mensaje, para que un solo overlay mal formado no tire
+// abajo la personalización de los demás.
+function sanitizeOverlayCustomization(raw) {
+    const out = {};
+    for (const id of OVERLAY_CUSTOMIZE_IDS) {
+        const entry = raw?.[id] || {};
+        const bg = entry.background || {};
+        const uc = entry.usernameColor || {};
+        out[id] = {
+            background: {
+                type: VALID_BG_TYPES.includes(bg.type) ? bg.type : 'solid',
+                from: sanitizeHexColor(bg.from, '#7C3AED'),
+                to: sanitizeHexColor(bg.to, '#3B82F6'),
+            },
+            usernameColor: {
+                type: VALID_USERNAME_COLOR_TYPES.includes(uc.type) ? uc.type : 'default',
+                color: sanitizeHexColor(uc.color, '#FFFFFF'),
+            },
+        };
+    }
+    return out;
+}
+
 // ==========================================
 // Tenant: encapsula TODO lo que antes era estado global de server.js,
 // una instancia por licencia activa. Cada tenant tiene su propio Rey del
@@ -245,6 +284,14 @@ class Tenant {
         // (mismo criterio que `prizes`): vive mientras el tenant está en
         // memoria, se resetea a `default`/`purple` si el server reinicia.
         this.theme = { style: 'default', accent: 'purple' };
+
+        // Fondo (transparente/sólido del tema/degradado) + color del nombre
+        // de usuario (predeterminado/arcoíris/personalizado) por overlay —
+        // mismo criterio de "vive en memoria, cliente-autoritativo" que
+        // `theme` de arriba: el panel manda el mapa completo cada vez que
+        // cambia algo (ver set_overlay_customization), acá solo se guarda y
+        // reenvía tal cual al overlay de OBS.
+        this.overlayCustomization = sanitizeOverlayCustomization({});
 
         // ── COLOR SAYS (dados) ──
         // Client-autoritativo, igual que `theme`/`prizes`: el panel de
@@ -1410,6 +1457,7 @@ class Tenant {
         socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
         socket.emit('theme_updated', this.theme);
+        socket.emit('overlay_customization_update', this.overlayCustomization);
         socket.emit('dice_state_update', this.diceState);
 
         // ── COLOR SAYS (dados) ───────────────────────
@@ -1941,6 +1989,16 @@ class Tenant {
             if (style === this.theme.style && accent === this.theme.accent) return;
             this.theme = { style, accent };
             this.broadcast.emit('theme_updated', this.theme);
+        });
+
+        // ── PERSONALIZACIÓN DE OVERLAYS (fondo + color de usuario) ──
+        // El panel manda el mapa COMPLETO (los 6 overlays configurables)
+        // cada vez que el streamer toca cualquier control del modal de
+        // "Personalizar" — mismo patrón que set_theme: se sanea y se
+        // reenvía tal cual a todo el room, overlay de OBS incluido.
+        socket.on('set_overlay_customization', (map) => {
+            this.overlayCustomization = sanitizeOverlayCustomization(map);
+            this.broadcast.emit('overlay_customization_update', this.overlayCustomization);
         });
     }
 }

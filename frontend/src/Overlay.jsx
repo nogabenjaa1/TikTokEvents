@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
+import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill } from './overlayCustomization';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -101,7 +102,7 @@ function OfflineCard() {
   );
 }
 
-function KingOverlay({ state, prize }) {
+function KingOverlay({ state, prize, customize }) {
   // Detecta transiciones para disparar sonido: robo de trono (cambia el
   // lastParticipant mientras está en 'main') y ganador. El guard `mounted`
   // evita que sonar apenas se abre/recarga el overlay a mitad de una ronda.
@@ -123,7 +124,7 @@ function KingOverlay({ state, prize }) {
   if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
@@ -165,7 +166,7 @@ function KingOverlay({ state, prize }) {
               <div className={`absolute inset-0 rounded-full blur-xl opacity-60 ${state.mode === 'finished' ? 'bg-yellow-500' : ''}`} style={state.mode === 'finished' ? undefined : { background: 'var(--accent)' }} />
               <img src={state.lastParticipant.avatar} className={`w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl ${state.mode === 'finished' ? 'border-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { borderColor: 'var(--accent)' }} />
             </div>
-            <p className={`text-2xl font-black mt-6 tracking-wide drop-shadow-md ${state.mode === 'finished' ? 'text-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { color: 'var(--accent-soft)' }}>@{state.lastParticipant.username}</p>
+            <p className={`text-2xl font-black mt-6 tracking-wide drop-shadow-md ${state.mode === 'finished' ? 'text-yellow-400' : ''} ${getUsernameOverride(customize).className}`} style={{ ...(state.mode === 'finished' ? undefined : { color: 'var(--accent-soft)' }), ...getUsernameOverride(customize).cssVars }}>@{state.lastParticipant.username}</p>
           </div>
         ) : <div className="w-32 h-32 rounded-full border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}><span className="text-4xl opacity-30">👤</span></div>}
       </div>
@@ -183,7 +184,7 @@ function KingOverlay({ state, prize }) {
   );
 }
 
-function ZubastinisOverlay({ state, prize }) {
+function ZubastinisOverlay({ state, prize, customize }) {
   // Mismo sonido de ganador que King/Eliminación, para que el momento se
   // sienta igual sin importar el modo.
   const prevModeRef = useRef({ mounted: false, mode: null });
@@ -204,7 +205,7 @@ function ZubastinisOverlay({ state, prize }) {
     : null;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.mode === 'tiebreak' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-amber-500 to-amber-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🤝 DESEMPATE 🤝</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -231,7 +232,7 @@ function ZubastinisOverlay({ state, prize }) {
           <div key={g.username} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.35)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
             <span className="text-2xl">{MEDALS[i]}</span>
             <img src={g.avatar} className={`w-12 h-12 rounded-full border-2 object-cover ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
-            <span className="flex-1 font-black text-white truncate">@{g.username}</span>
+            <span className={`flex-1 font-black text-white truncate ${getUsernameOverride(customize).className}`} style={getUsernameOverride(customize).cssVars}>@{g.username}</span>
             <span className="text-yellow-400 font-black bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-xl">{g.coins} 🪙</span>
           </div>
         )) : (
@@ -245,7 +246,7 @@ function ZubastinisOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-400">@{state.winner.username} · {state.winner.coins} 🪙</p>
+                <p className="text-lg font-black text-yellow-400"><span className={getUsernameOverride(customize).className} style={getUsernameOverride(customize).cssVars}>@{state.winner.username}</span> · {state.winner.coins} 🪙</p>
               </>
             ) : (
               <>
@@ -266,7 +267,7 @@ function ZubastinisOverlay({ state, prize }) {
   );
 }
 
-function EliminationOverlay({ state, prize }) {
+function EliminationOverlay({ state, prize, customize }) {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const revealKeyRef = useRef(null);
   const gridRef = useRef(null);
@@ -342,7 +343,7 @@ function EliminationOverlay({ state, prize }) {
     // Altura FIJA (no min-h): con muchos participantes las burbujas se
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
-    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -409,7 +410,7 @@ function EliminationOverlay({ state, prize }) {
                 <img src={p.avatar} style={{ width: boxSize, height: boxSize, borderColor: isHighlighted ? undefined : 'var(--accent)' }}
                   className={`rounded-full border-2 object-cover flex-shrink-0 ${isHighlighted ? 'border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.7)]' : ''}`} />
                 {showLabel && (
-                  <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)) }} className={`max-w-full truncate ${isHighlighted ? 'text-yellow-300 font-bold' : 'text-gray-300'}`}>@{p.username}</span>
+                  <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)), ...getUsernameOverride(customize).cssVars }} className={`max-w-full truncate ${isHighlighted ? 'text-yellow-300 font-bold' : 'text-gray-300'} ${getUsernameOverride(customize).className}`}>@{p.username}</span>
                 )}
               </div>
             );
@@ -425,7 +426,7 @@ function EliminationOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-400">@{state.winner.username}</p>
+                <p className={`text-lg font-black text-yellow-400 ${getUsernameOverride(customize).className}`} style={getUsernameOverride(customize).cssVars}>@{state.winner.username}</p>
               </>
             ) : (
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
@@ -492,17 +493,38 @@ function computeRouletteRotation(prevRotation, entriesNow, targetUsername) {
 // de resolver (roja si sale eliminada, dorada si es la ganadora) — quien
 // gira la rueda hasta dejarla bajo el puntero es RouletteOverlay, este
 // componente solo dibuja el estado actual, nunca gira por su cuenta.
-function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
+// <defs> con el degradado arcoíris que usa getUsernameFill('rainbow') — un
+// solo id compartido por todos los <text> de la rueda, se define una sola
+// vez sin importar si algún username lo termina usando o no (no cuesta nada
+// si no se referencia).
+function RainbowGradientDefs() {
+  return (
+    <defs>
+      <linearGradient id="tkc-rainbow-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#ff3b3b" />
+        <stop offset="20%" stopColor="#ff9f1c" />
+        <stop offset="40%" stopColor="#ffe135" />
+        <stop offset="60%" stopColor="#3ddc84" />
+        <stop offset="80%" stopColor="#3b82f6" />
+        <stop offset="100%" stopColor="#a855f7" />
+      </linearGradient>
+    </defs>
+  );
+}
+
+function RouletteWheel({ entries, highlightUsername, highlightColor, size, customize }) {
   const n = entries.length;
   const cx = size / 2, cy = size / 2, r = size / 2 - 4;
+  const nameFill = getUsernameFill(customize, 'white');
   if (n === 0) return null;
 
   if (n === 1) {
     const only = entries[0];
     return (
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
+        <RainbowGradientDefs />
         <circle cx={cx} cy={cy} r={r} fill={WHEEL_COLORS[0]} stroke="white" strokeWidth="2" />
-        <text x={cx} y={cy} fontSize="13" fill="white" fontWeight="800" textAnchor="middle" dominantBaseline="middle">
+        <text x={cx} y={cy} fontSize="13" fill={nameFill} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
           @{only.username.length > 14 ? only.username.slice(0, 13) + '…' : only.username}
         </text>
       </svg>
@@ -517,6 +539,7 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
+      <RainbowGradientDefs />
       {entries.map((e, i) => {
         const startAngle = i * anglePer;
         const endAngle = startAngle + anglePer;
@@ -542,7 +565,7 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
               stroke="white" strokeWidth={isHighlighted ? 3 : 1.5} opacity={isHighlighted ? 1 : 0.92}
               style={{ transition: 'fill 200ms ease, opacity 200ms ease' }} />
             {fontSize > 0 && (
-              <text x={labelPos.x} y={labelPos.y} fontSize={isHighlighted ? fontSize + 2 : fontSize} fill="white" fontWeight="700"
+              <text x={labelPos.x} y={labelPos.y} fontSize={isHighlighted ? fontSize + 2 : fontSize} fill={nameFill} fontWeight="700"
                 textAnchor="middle" dominantBaseline="middle" transform={`rotate(${textRotate}, ${labelPos.x}, ${labelPos.y})`}>
                 @{e.username.length > maxChars ? e.username.slice(0, maxChars - 1) + '…' : e.username}
               </text>
@@ -563,7 +586,7 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size }) {
 // eliminado (rojo) o ganador (dorado) — se queda ahí un instante bien
 // visible, y recién entonces esa sección desaparece (o, si es la
 // ganadora, la ruleta da paso a la tarjeta grande con la foto).
-function RouletteOverlay({ state, prize }) {
+function RouletteOverlay({ state, prize, customize }) {
   const wheelBoxRef = useRef(null);
   const [wheelSize, setWheelSize] = useState(240);
   // Usernames ya confirmados "fuera" en esta ronda, y quién está resaltado
@@ -703,7 +726,7 @@ function RouletteOverlay({ state, prize }) {
     : `Comenta "${state.keyword || '...'}"`;
 
   return (
-    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {(state.mode === 'spinning' || (state.mode === 'finished' && showingWheel)) && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
@@ -745,7 +768,7 @@ function RouletteOverlay({ state, prize }) {
         ) : wheelEntries.length > 0 ? (
           <>
             <div style={{ width: wheelSize, height: wheelSize, transform: `rotate(${rotation}deg)`, transition: `transform ${ROULETTE_SPIN_MS}ms cubic-bezier(0.15, 0.7, 0.2, 1)` }}>
-              <RouletteWheel entries={wheelEntries} highlightUsername={highlightUsername} highlightColor={highlightKind === 'winner' ? '#facc15' : '#ef4444'} size={wheelSize} />
+              <RouletteWheel entries={wheelEntries} highlightUsername={highlightUsername} highlightColor={highlightKind === 'winner' ? '#facc15' : '#ef4444'} size={wheelSize} customize={customize} />
             </div>
             {/* Puntero fijo (no gira con la ruleta) marcando la sección de arriba. */}
             <div className="absolute left-1/2 -translate-x-1/2 top-0 text-3xl drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>🔻</div>
@@ -761,7 +784,7 @@ function RouletteOverlay({ state, prize }) {
             {state.winner ? (
               <>
                 <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse">¡GANADOR!</div>
-                <p className="text-lg font-black text-yellow-400">@{state.winner.username}</p>
+                <p className={`text-lg font-black text-yellow-400 ${getUsernameOverride(customize).className}`} style={getUsernameOverride(customize).cssVars}>@{state.winner.username}</p>
               </>
             ) : (
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
@@ -800,21 +823,34 @@ function RouletteOverlay({ state, prize }) {
 // limita a un top 8 (ver CONTINUOUS_LEADERBOARD_SIZE en tenant.js), en la
 // práctica nunca hace falta scrollear de verdad.
 // Sin `theme-die-frame` a propósito (pedido explícito) — a diferencia de
-// Extensible/Colores, este widget NO lleva panel/fondo propio: solo el
-// título y las filas (que sí tienen su propio recuadro individual, ver
-// más abajo) quedan visibles, así se puede pegar sobre cualquier fondo de
-// la escena sin que el color del tema choque con nada.
-function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, valueColorClass, nameIcon = '', emptyLabel }) {
+// Extensible/Colores, este widget NO lleva panel/fondo propio: la
+// personalización de fondo (ver overlayCustomization.js) se aplica
+// directamente a CADA fila individual, que es la única superficie visible
+// acá — así se puede pegar sobre cualquier fondo de la escena sin que el
+// color del tema choque con nada.
+//
+// BUG corregido (pedido explícito): antes la fila 0 (top 1) no tenía NINGÚN
+// estilo de fondo propio (quedaba transparente por accidente, sin depender
+// de ninguna configuración) mientras las filas 1 a 7 tenían codeado a mano
+// `var(--surface-bg-alt)` sin importar nada más — dos comportamientos
+// distintos y ninguno de los dos realmente "configurable". Ahora TODAS las
+// filas (0 a 7) usan el mismo `resolveBackgroundStyle(customize, ...)`, así
+// que elegir transparente/sólido/degradado en el modal de personalización
+// se nota igual en el top 1 que en el resto — el borde dorado del top 1
+// sigue siendo su propio detalle (rango), independiente del fondo.
+function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuffix, valueColorClass, nameIcon = '', emptyLabel, customize }) {
+  const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
+  const nameOverride = getUsernameOverride(customize);
   return (
     <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">{icon} {title}</p>
       {entries.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {entries.map((e, i) => (
-            <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
+            <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? rowBg : { borderColor: 'var(--surface-border-color)', ...rowBg }}>
               <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>
               <img src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
-              <span className="flex-1 text-sm font-bold text-white truncate">{nameIcon ? `${nameIcon} ` : ''}@{e.username}</span>
+              <span className={`flex-1 text-sm font-bold text-white truncate ${nameOverride.className}`} style={nameOverride.cssVars}>{nameIcon ? `${nameIcon} ` : ''}@{e.username}</span>
               <span className={`${valueColorClass} text-sm font-black px-2 py-1 rounded-lg flex-shrink-0`}>{e[valueKey]}{valueSuffix}</span>
             </div>
           ))}
@@ -826,22 +862,22 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
   );
 }
 
-export function TopTapTapOverlay({ state }) {
+export function TopTapTapOverlay({ state, customize }) {
   return (
     <ContinuousLeaderboardWidget
       title="Top Tap-Tap" icon="❤️" entries={(state && state.leaderboard) || []}
       valueKey="likes" valueSuffix=" ❤️" valueColorClass="text-red-400 bg-red-400/10 border border-red-400/20"
-      emptyLabel="Esperando likes..."
+      emptyLabel="Esperando likes..." customize={customize}
     />
   );
 }
 
-export function TopGifterOverlay({ state }) {
+export function TopGifterOverlay({ state, customize }) {
   return (
     <ContinuousLeaderboardWidget
       title="Top Gifter" icon="💎" entries={(state && state.leaderboard) || []}
       valueKey="coins" valueSuffix=" 🪙" valueColorClass="text-yellow-400 bg-yellow-400/10 border border-yellow-400/20"
-      nameIcon="🪙" emptyLabel="Esperando regalos..."
+      nameIcon="🪙" emptyLabel="Esperando regalos..." customize={customize}
     />
   );
 }
@@ -851,7 +887,7 @@ export function TopGifterOverlay({ state }) {
 // ancha tipo "barra de subathon" en la parte de abajo/arriba del stream, no
 // como recuadro vertical. Mismo marco (`theme-die-frame`) y tamaño que ya
 // usa Color Says (960x260) para que el streamer recorte igual en OBS.
-export function ExtensibleOverlay({ state }) {
+export function ExtensibleOverlay({ state, customize }) {
   const s = state || {};
   const seconds = Math.max(0, Math.round(s.timeLeft || 0));
   const mins = Math.floor(seconds / 60);
@@ -859,7 +895,7 @@ export function ExtensibleOverlay({ state }) {
   const finished = !!s.finished;
   const paused = !finished && !!s.paused;
   return (
-    <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`}>
+    <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} style={resolveBackgroundStyle(customize)}>
       {/* flex-shrink-0 en los DOS lados a propósito: sin esto, el bloque de
           texto de la izquierda se comprimía apenas el contador arrancaba
           (el número de la derecha ocupa más ancho corriendo que en 00:00),
@@ -893,8 +929,14 @@ export function ExtensibleOverlay({ state }) {
 // detecta que Spotify avanzó (canción terminada o saltada con !skip): esa
 // entrada desaparece de acá sin que el overlay tenga que hacer nada además
 // de escuchar el socket, ya viene filtrada desde tenant.js.
-export function SpotifyQueueOverlay({ state }) {
+export function SpotifyQueueOverlay({ state, customize }) {
   const queue = (state && state.queue) || [];
+  // Mismo fix que Top Tap-Tap/Top Gifter: la fila (única superficie visible
+  // acá, sin marco propio) usa la personalización de fondo elegida en vez
+  // de un `var(--surface-bg-alt)` fijo — la canción "Sonando" solo se
+  // distingue por el borde/glow verde, no por un fondo distinto.
+  const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
+  const nameOverride = getUsernameOverride(customize);
   return (
     <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Cola de canciones</p>
@@ -904,16 +946,14 @@ export function SpotifyQueueOverlay({ state }) {
             <div
               key={song.id}
               className={`flex items-center gap-3 rounded-xl px-3 py-2 border ${song.playing ? 'shadow-[0_0_15px_rgba(34,197,94,0.35)]' : ''}`}
-              style={song.playing
-                ? { borderColor: '#22c55e', background: 'var(--surface-bg-alt)' }
-                : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}
+              style={song.playing ? { borderColor: '#22c55e', ...rowBg } : { borderColor: 'var(--surface-border-color)', ...rowBg }}
             >
               {song.albumArt
                 ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
                 : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)' }}>🎵</span>}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white truncate">{song.title}</p>
-                <p className="text-[10px] text-gray-400 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
+                <p className="text-[10px] text-gray-400 truncate">{song.artist} · pedido por <span className={nameOverride.className} style={nameOverride.cssVars}>@{song.requestedBy}</span></p>
               </div>
               {song.playing && (
                 <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex items-center gap-1 flex-shrink-0">
@@ -997,28 +1037,33 @@ export function AlertOverlay({ socket }) {
 // del panel en mobile — ver App.jsx, donde no hay forma de tener OBS y el
 // panel abiertos a la vez en un solo teléfono. En ese caso no debe reservar
 // el viewport entero, solo el tamaño real de la tarjeta (400x700).
-export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false }) {
+export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false, customization }) {
+  // Rey del Trono/Zubastinis/Eliminación/Ruleta comparten UNA sola URL/
+  // fuente de OBS (?screen=games) — así que también comparten una sola
+  // personalización de fondo/nombre de usuario, la de id "games" (ver
+  // OVERLAY_CUSTOMIZE_LABELS en overlayCustomization.js).
+  const gamesCustomize = customization?.games;
   return (
     <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} data-theme-style={theme.style} data-accent={theme.accent}>
       <div className="relative grid">
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'king' ? 1 : 0, visibility: activeApp === 'king' ? 'visible' : 'hidden', transform: activeApp === 'king' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>
-          <KingOverlay state={state} prize={prizes.king} />
+          <KingOverlay state={state} prize={prizes.king} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'zub' ? 1 : 0, visibility: activeApp === 'zub' ? 'visible' : 'hidden', transform: activeApp === 'zub' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>
-          <ZubastinisOverlay state={zubState} prize={prizes.zub} />
+          <ZubastinisOverlay state={zubState} prize={prizes.zub} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'elim' ? 1 : 0, visibility: activeApp === 'elim' ? 'visible' : 'hidden', transform: activeApp === 'elim' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
-          <EliminationOverlay state={elimState} prize={prizes.elim} />
+          <EliminationOverlay state={elimState} prize={prizes.elim} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'roulette' ? 1 : 0, visibility: activeApp === 'roulette' ? 'visible' : 'hidden', transform: activeApp === 'roulette' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
-          <RouletteOverlay state={rouletteState} prize={prizes.roulette} />
+          <RouletteOverlay state={rouletteState} prize={prizes.roulette} customize={gamesCustomize} />
         </div>
       </div>
     </div>

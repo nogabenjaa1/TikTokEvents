@@ -676,6 +676,39 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 }
 
 /* ==========================================
+   PERSONALIZACIÓN DE OVERLAYS: color de usuario "arcoíris"
+   (ver getUsernameOverride en overlayCustomization.js) — el degradado se
+   mueve por debajo de un texto con color transparente + background-clip,
+   así el propio texto queda "pintado" con el arcoíris en movimiento.
+   ========================================== */
+@keyframes tkc-rainbow-move {
+  from { background-position: 0% 0; }
+  to   { background-position: 400% 0; }
+}
+
+/* Personalización de overlays: color de nombre de usuario "personalizado" o
+   "arcoíris" (ver getUsernameOverride en overlayCustomization.js). Tienen
+   que ir como CLASE con !important, no como `style` inline — las reglas de
+   arriba (".themed-app[data-theme-style=...] .text-white" etc, buscar
+   "!important") fuerzan el color de esas clases de Tailwind según el skin, y
+   le ganan a cualquier `color` inline sin !important sin importar la
+   especificidad. MISMA especificidad que esas reglas: `.themed-app` +
+   `[data-theme-style]` + una clase (0,3,0) — ojo, no alcanza con
+   `[data-theme-style] .clase` solo (0,2,0), pierde el empate de todos
+   modos — declaradas AL FINAL del archivo para ganar el desempate. */
+.themed-app[data-theme-style] .tkc-username-custom {
+  color: var(--tkc-username-color, inherit) !important;
+}
+.themed-app[data-theme-style] .tkc-username-rainbow {
+  background: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
+  background-size: 400% 100%;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+  animation: tkc-rainbow-move 3s linear infinite;
+}
+
+/* ==========================================
    ADS: banco de horas del invitado (Color Says)
    ========================================== */
 /* Google Auto ads no tiene una API para "apagarse" — una vez que insertó

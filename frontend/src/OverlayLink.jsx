@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { buildOverlayUrl } from './auth';
 import AlertsAdmin from './AlertsAdmin';
+import OverlayCustomizePanel from './OverlayCustomizePanel';
+import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
-function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetConfirm }) {
+function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetConfirm, onCustomize }) {
   const [copied, setCopied] = useState(false);
 
   const copyUrl = () => {
@@ -20,7 +22,14 @@ function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetCon
 
   return (
     <div className="theme-surface w-full max-w-xl p-6">
-      <h2 className="theme-heading text-lg font-bold mb-1">{title}</h2>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <h2 className="theme-heading text-lg font-bold">{title}</h2>
+        {onCustomize && (
+          <button onClick={onCustomize} className="theme-btn-secondary px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0 whitespace-nowrap">
+            🎨 Personalizar
+          </button>
+        )}
+      </div>
       <p className="text-gray-500 text-xs mb-5">{description}</p>
 
       {!url ? (
@@ -101,8 +110,11 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList }) {
+export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
+  // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
+  // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
+  const [customizingId, setCustomizingId] = useState(null);
 
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
@@ -146,11 +158,13 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
               description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
               url={gamesUrl}
+              onCustomize={() => setCustomizingId('games')}
             />
             <OverlayUrlCard
               title="Overlay de Colores (dados)"
               description="Overlay horizontal aparte, exclusivo para Color Says — no sirve para los otros modos."
               url={colorsUrl}
+              onCustomize={() => setCustomizingId('colors')}
             />
           </>
         )}
@@ -177,6 +191,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               onReset={() => socket?.emit('reset_taptap_leaderboard')}
               resetLabel="🗑️ Reiniciar ranking de likes"
               resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
+              onCustomize={() => setCustomizingId('taptap')}
             />
             <OverlayUrlCard
               title="Top Gifter (ranking de regalos)"
@@ -185,6 +200,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               onReset={() => socket?.emit('reset_gifter_leaderboard')}
               resetLabel="🗑️ Reiniciar ranking de regalos"
               resetConfirm="¿Reiniciar el ranking de Top Gifter? Se borra todo lo acumulado hasta ahora."
+              onCustomize={() => setCustomizingId('gifter')}
             />
           </>
         )}
@@ -195,6 +211,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               title="Modo Extensible (contador que crece con follows/regalos)"
               description="Overlay horizontal aparte, pensado como franja tipo subathon — inícialo y ajústalo desde su propia pestaña en TikTokEvents."
               url={extensibleUrl}
+              onCustomize={() => setCustomizingId('extensible')}
             />
             <OverlayUrlCard
               title="Cola de Spotify (canciones pedidas con !play)"
@@ -203,6 +220,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               onReset={() => socket?.emit('clear_spotify_queue')}
               resetLabel="🗑️ Vaciar cola de canciones"
               resetConfirm="¿Vaciar la cola de Spotify pedida por chat? Esto no afecta la reproducción real en Spotify, solo lo que se muestra acá."
+              onCustomize={() => setCustomizingId('musicqueue')}
             />
           </>
         )}
@@ -216,6 +234,16 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
           </div>
         )}
       </div>
+
+      {customizingId && (
+        <OverlayCustomizePanel
+          title={OVERLAY_CUSTOMIZE_LABELS[customizingId]}
+          entry={overlayCustomization?.[customizingId]}
+          onChange={(entry) => onCustomizeChange?.(customizingId, entry)}
+          onApplyToAll={() => onApplyToAll?.(customizingId)}
+          onClose={() => setCustomizingId(null)}
+        />
+      )}
     </div>
   );
 }

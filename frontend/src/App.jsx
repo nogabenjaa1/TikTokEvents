@@ -281,6 +281,33 @@ export default function App() {
     socket.emit('set_overlay_customization', panelOverlayDraft);
   }, [socket, overlayMode, panelOverlayDraft]);
 
+  // Re-sincroniza tema + personalización de overlays cada vez que el socket
+  // (re)conecta — no solo la primera vez. Sin esto, si el backend se
+  // reinicia (p. ej. un redeploy) el tenant vuelve a arrancar con
+  // theme/overlayCustomization en sus defaults en memoria (nunca se
+  // persisten en disco, ver comentario de `this.theme` en tenant.js) y el
+  // overlay de OBS se queda mostrando esos defaults hasta que el panel
+  // vuelva a tocar CUALQUIER control — el socket.io-client reconecta solo
+  // (comportamiento por defecto) pero, al ser el MISMO objeto socket, los
+  // efectos de arriba (dependientes de panelThemeStyle/panelOverlayDraft)
+  // no se vuelven a disparar si el streamer no cambió nada. Usamos refs
+  // para mandar siempre el valor más reciente, sin importar cuándo llegue
+  // el evento 'connect'.
+  const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent });
+  useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent }; }, [panelThemeStyle, panelThemeAccent]);
+  const panelOverlayDraftRef = useRef(panelOverlayDraft);
+  useEffect(() => { panelOverlayDraftRef.current = panelOverlayDraft; }, [panelOverlayDraft]);
+
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    const resync = () => {
+      socket.emit('set_theme', panelThemeRef.current);
+      socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
+    };
+    socket.on('connect', resync);
+    return () => socket.off('connect', resync);
+  }, [socket, overlayMode]);
+
   // Cadencia de ads de la licencia trial (ver TRIAL_AD_INTERVAL_MS). Si deja
   // de ser trial a mitad de un anuncio ya abierto (logout, upgrade a paga),
   // ese anuncio no se corta solo — el usuario lo cierra con su propio botón

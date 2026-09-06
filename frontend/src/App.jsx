@@ -359,17 +359,24 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [username, socket, overlayMode]);
 
-  // Top Tap-Tap/Top Gifter/Extensible se componen sobre la escena real de
-  // OBS — a diferencia del overlay de juegos/Colores, acá NO debe quedar
-  // ningún fondo sólido detrás del recuadro (pedido explícito: "solo debe
-  // verse el contenido, sin fondos adicionales"). `body` tiene un color de
-  // fondo fijo (ver index.css) que de otra forma se colaría por fuera del
-  // recuadro angosto — se anula solo mientras el overlay activo es uno de
-  // estos tres, nunca para el resto (ahí el fondo temático sigue siendo
-  // parte del diseño de siempre).
+  // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
+  // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
+  // debe quedar ningún fondo sólido detrás del recuadro además del que
+  // elija la personalización de cada uno (ver overlayCustomization.js).
+  // `body` tiene un color de fondo fijo (ver index.css) que de otra forma
+  // se colaría por fuera del recuadro/fila — se anula solo mientras el
+  // overlay activo es uno de estos, nunca en "juegos" (ahí el fondo
+  // temático de página SÍ es parte del diseño de siempre).
+  // BUG corregido (pedido explícito): "colors" faltaba en esta lista —
+  // Extensible ya lo tenía pero Colores, aunque comparte exactamente el
+  // mismo patrón de tarjeta única (`theme-die-frame` de 960x260), se había
+  // quedado afuera. Sin esto, el `.themed-app` que envuelve a DiceOverlay
+  // seguía pintando su fondo de página sólido por detrás/alrededor del
+  // marco, así que "transparente" en la personalización nunca se veía
+  // realmente transparente en OBS.
   useEffect(() => {
     if (!overlayMode) return;
-    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'].includes(getOverlayScreen());
+    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors'].includes(getOverlayScreen());
     document.body.classList.toggle('tkc-overlay-transparent', transparent);
     return () => document.body.classList.remove('tkc-overlay-transparent');
   }, [overlayMode]);

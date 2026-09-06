@@ -699,9 +699,15 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style] .tkc-username-custom {
   color: var(--tkc-username-color, inherit) !important;
 }
+/* OJO: `background-image` (NO el shorthand `background`) — `background: X
+   !important` resetea TODOS los sub-valores del shorthand (background-size
+   incluido) a su valor inicial con el MISMO !important, lo que le ganaba a
+   la línea de abajo y dejaba el degradado en su tamaño natural (sin margen
+   para desplazarse) — por eso la animación corría pero no se veía ningún
+   movimiento, solo colores estáticos. */
 .themed-app[data-theme-style] .tkc-username-rainbow {
-  background: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
-  background-size: 400% 100%;
+  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
+  background-size: 400% 100% !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;

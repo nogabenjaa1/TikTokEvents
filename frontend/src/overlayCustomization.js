@@ -33,7 +33,7 @@ export function defaultOverlayCustomizationMap() {
 }
 
 function isValidEntry(e) {
-  return !!e && !!e.background && ['transparent', 'solid', 'gradient'].includes(e.background.type)
+  return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
     && !!e.usernameColor && ['default', 'rainbow', 'custom'].includes(e.usernameColor.type);
 }
 
@@ -73,11 +73,30 @@ export const RAINBOW_GRADIENT = 'linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#
 // `--surface-bg-alt` para filas) — con `type: 'solid'` (el default) el
 // resultado es IDÉNTICO al de antes, cero regresión visual hasta que el
 // streamer entra al modal y cambia algo.
+// `type: 'rainbow'`: degradado arcoíris EN MOVIMIENTO (no un color fijo) —
+// mismo truco que getUsernameOverride (background-size ampliado +
+// animación de background-position), pero acá SÍ se puede usar `background`
+// como objeto de estilo inline normal (sin necesitar una clase con
+// !important): a diferencia del color de texto, nada más le pisa el fondo
+// de estos overlays, así que no hay ningún !important de tema con el que
+// competir. `backgroundImage` (no el shorthand `background`) para no
+// arrastrar el mismo error que tenía `.tkc-username-rainbow` (ver
+// comentario en index.css) si en algún momento se agrega otro campo de
+// `background-*` acá al lado.
+function rainbowBackgroundStyle() {
+  return {
+    backgroundImage: RAINBOW_GRADIENT,
+    backgroundSize: '400% 100%',
+    animation: 'tkc-rainbow-move 8s linear infinite',
+  };
+}
+
 export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)') {
   const bg = entry?.background;
   if (!bg || bg.type === 'solid') return { background: fallbackVar };
   if (bg.type === 'transparent') return { background: 'transparent' };
   if (bg.type === 'gradient') return { background: `linear-gradient(135deg, ${bg.from || '#7C3AED'}, ${bg.to || '#3B82F6'})` };
+  if (bg.type === 'rainbow') return rainbowBackgroundStyle();
   return { background: fallbackVar };
 }
 

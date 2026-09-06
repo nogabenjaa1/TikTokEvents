@@ -5,6 +5,7 @@ const BG_OPTIONS = [
   { id: 'transparent', label: 'Transparente', hint: 'Sin color de fondo' },
   { id: 'solid', label: 'Color sólido del tema', hint: 'El color principal del tema/skin que ya elegiste' },
   { id: 'gradient', label: 'Degradado personalizado', hint: 'Define tus propios dos colores' },
+  { id: 'rainbow', label: 'Arcoíris', hint: 'Degradado en movimiento, sin colores para elegir' },
 ];
 
 const NAME_OPTIONS = [
@@ -54,7 +55,11 @@ export default function OverlayCustomizePanel({ title, entry, onChange, onApplyT
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Fondo del overlay</p>
         <div className="flex flex-col gap-2">
           {BG_OPTIONS.map((opt) => (
-            <OptionRow key={opt.id} active={bg.type === opt.id} onSelect={() => setBg({ type: opt.id })} label={opt.label} hint={opt.hint} />
+            <OptionRow key={opt.id} active={bg.type === opt.id} onSelect={() => setBg({ type: opt.id })} label={opt.label} hint={opt.hint}>
+              {opt.id === 'rainbow' && (
+                <span className="w-8 h-5 rounded flex-shrink-0" style={{ backgroundImage: RAINBOW_GRADIENT, backgroundSize: '400% 100%', animation: 'tkc-rainbow-move 3s linear infinite' }} />
+              )}
+            </OptionRow>
           ))}
         </div>
 

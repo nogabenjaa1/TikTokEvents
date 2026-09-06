@@ -104,7 +104,7 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
 // VALID_THEME_STYLES/VALID_THEME_ACCENTS, para que un socket manipulado a
 // mano no pueda meter un `background` con CSS arbitrario.
 const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue'];
-const VALID_BG_TYPES = ['transparent', 'solid', 'gradient'];
+const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
 const VALID_USERNAME_COLOR_TYPES = ['default', 'rainbow', 'custom'];
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 

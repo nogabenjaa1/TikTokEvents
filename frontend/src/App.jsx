@@ -118,7 +118,7 @@ export default function App() {
   // Quién puede usar !play/!skip — vive en el backend (no en localStorage
   // como TTS) porque acá el permiso lo tiene que aplicar el SERVIDOR antes
   // de llamar a la API real de Spotify, no el navegador de cada espectador.
-  const [spotifySettingsState, setSpotifySettingsState] = useState({ enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 });
+  const [spotifySettingsState, setSpotifySettingsState] = useState({ enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 });
   // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
   // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
   // recarga la página cae directo donde se muestran los anuncios, sin

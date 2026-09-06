@@ -56,9 +56,22 @@ const TAPTAP_SETTLE_MS = 1500;
 const CONTINUOUS_LEADERBOARD_SIZE = 8;
 
 // Cuántas canciones pedidas por !play se muestran en el overlay de la cola
-// — mismo criterio que los rankings continuos de arriba, no hace falta
-// mostrar el historial entero.
-const SPOTIFY_QUEUE_DISPLAY_SIZE = 8;
+// por default — configurable por el streamer (ver spotifySettings.maxQueueSize
+// / update_spotify_settings), esto es solo el valor inicial.
+const SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT = 8;
+// Tope del historial interno de "pedidas todavía no confirmadas como
+// tocadas" — separado del límite de VISUALIZACIÓN de arriba: acá se
+// necesita guardar más de lo que se muestra para que el polling (ver
+// pollSpotifyQueue) pueda seguirles la pista aunque el streamer las haya
+// bajado del límite visible.
+const SPOTIFY_QUEUE_INTERNAL_CAP = 50;
+// Spotify no tiene forma de avisar "esta canción terminó/la saltearon" — no
+// hay push ni webhook para reproducción de terceros. Este es el único modo
+// real de mantener el overlay al día: preguntarle a la API cada tanto qué
+// está sonando y qué sigue (GET /me/player/queue) y comparar contra lo que
+// nosotros mismos agregamos. 4s es un balance entre "se siente en vivo" y
+// no perseguir a la API de Spotify sin necesidad.
+const SPOTIFY_POLL_INTERVAL_MS = 4000;
 
 // MODO EXTENSIBLE: cuenta regresiva que arranca en `baseTime` y SUMA
 // segundos con cada follow/regalo — al revés de los demás modos, acá el
@@ -184,18 +197,25 @@ class Tenant {
         this.extensibleTimerInterval = null;
 
         // ── SPOTIFY (cola de canciones vía !play en el chat) ──
-        // Estado puramente informativo para el overlay/panel — la cola REAL
-        // vive del lado de Spotify (su propia app, en el dispositivo del
-        // streamer); esto es solo "lo que se pidió por chat", no se lee de
-        // vuelta desde la API de Spotify. `queueCounter` arma ids únicos
-        // para el key de React del overlay, igual que rouletteSlotCounter.
+        // `queue` guarda TODO lo pedido por chat que todavía no confirmamos
+        // como tocado (hasta SPOTIFY_QUEUE_INTERNAL_CAP) — cada entrada
+        // lleva `uri` (para cruzarla contra la cola real de Spotify, ver
+        // pollSpotifyQueue) y `playing` (si es la que suena ahora mismo).
+        // `queueCounter` arma ids únicos para el key de React del overlay,
+        // igual que rouletteSlotCounter. `pollInterval` es el timer del
+        // polling — arranca con el primer !play y se apaga solo cuando la
+        // cola queda vacía (ver startSpotifyQueuePolling/pollSpotifyQueue).
         this.spotifyQueueState = { queue: [] };
         this.spotifyQueueCounter = 0;
+        this.spotifyPollInterval = null;
         // Quién puede usar !play/!skip — mismo criterio visual que TTS
         // (allUsers anula todo lo demás; moderators y fanMembers+minFanLevel
         // se combinan con OR). `enabled` es el apagado general del comando:
         // en false, !play no hace nada ni para el streamer mismo.
-        this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 };
+        // `maxQueueSize`: cuántas canciones se muestran en el overlay como
+        // mucho — pedido explícito de que sea configurable, para no dejar
+        // que la lista visible crezca sin límite en pantalla.
+        this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT };
 
         // ── ALERTAS DE REGALOS ──
         // Config guardada en DB (ver db.js/server.js — se edita subiendo un
@@ -609,8 +629,12 @@ class Tenant {
     // ==========================================
     // LÓGICA: SPOTIFY (!play/!skip/!revoke)
     // ==========================================
+    // La que está `playing` va primero (así nunca queda afuera del recorte
+    // aunque el streamer haya pedido muchas más de las que caben en
+    // pantalla) y el resto mantiene el orden en que se pidieron.
     getSpotifyQueuePublicState() {
-        return { queue: this.spotifyQueueState.queue };
+        const sorted = [...this.spotifyQueueState.queue].sort((a, b) => (b.playing ? 1 : 0) - (a.playing ? 1 : 0));
+        return { queue: sorted.slice(0, this.spotifySettings.maxQueueSize || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT) };
     }
 
     getSpotifySettingsPublicState() {
@@ -780,13 +804,78 @@ class Tenant {
 
         this.spotifyQueueState.queue.push({
             id: ++this.spotifyQueueCounter,
+            uri: track.uri,
             title: track.name,
             artist: (track.artists || []).map((a) => a.name).join(', '),
             albumArt: track.album?.images?.[track.album.images.length - 1]?.url || '',
             requestedBy: username,
+            playing: false,
         });
-        if (this.spotifyQueueState.queue.length > SPOTIFY_QUEUE_DISPLAY_SIZE) this.spotifyQueueState.queue.shift();
+        if (this.spotifyQueueState.queue.length > SPOTIFY_QUEUE_INTERNAL_CAP) this.spotifyQueueState.queue.shift();
         this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        this.startSpotifyQueuePolling();
+    }
+
+    // Arranca el polling contra la cola REAL de Spotify (ver comentario de
+    // SPOTIFY_POLL_INTERVAL_MS) — idempotente, no pisa un timer ya
+    // corriendo. Se apaga solo en pollSpotifyQueue cuando ya no queda nada
+    // pedido por seguir.
+    startSpotifyQueuePolling() {
+        if (this.spotifyPollInterval) return;
+        this.spotifyPollInterval = setInterval(() => this.pollSpotifyQueue(), SPOTIFY_POLL_INTERVAL_MS);
+    }
+
+    stopSpotifyQueuePolling() {
+        if (this.spotifyPollInterval) {
+            clearInterval(this.spotifyPollInterval);
+            this.spotifyPollInterval = null;
+        }
+    }
+
+    // Único mecanismo real de "esta canción ya terminó/la saltearon" — sin
+    // esto, nuestra lista de pedidos nunca se entera de que Spotify avanzó.
+    // Compara nuestra lista contra lo que Spotify dice que suena ahora y lo
+    // que sigue: lo que YA NO está en ninguna de las dos partes se dio por
+    // reproducido/saltado y se saca; lo que coincide con currently_playing
+    // se marca `playing`. A propósito NO copia la cola entera de Spotify
+    // (que puede traer canciones que el streamer agregó por su cuenta,
+    // ajenas al chat) — solo actualiza el estado de lo que NOSOTROS ya
+    // habíamos agregado por !play.
+    async pollSpotifyQueue() {
+        if (this.spotifyQueueState.queue.length === 0) { this.stopSpotifyQueuePolling(); return; }
+
+        const account = await db.getSpotifyAccount(this.licenseId);
+        if (!account) { this.stopSpotifyQueuePolling(); return; }
+
+        let accessToken;
+        try {
+            accessToken = await spotify.getValidAccessToken(account);
+        } catch (err) {
+            console.error(`[${this.licenseId}] [SPOTIFY] Polling: no se pudo renovar el token, reintenta en el próximo tick:`, err.message);
+            return;
+        }
+
+        let live;
+        try {
+            live = await spotify.getQueue(accessToken);
+        } catch (err) {
+            console.error(`[${this.licenseId}] [SPOTIFY] Polling: no se pudo leer la cola real, reintenta en el próximo tick:`, err.message);
+            return;
+        }
+
+        const currentUri = live.currently_playing?.uri || null;
+        const upcomingUris = new Set((live.queue || []).map((t) => t.uri));
+
+        const before = JSON.stringify(this.spotifyQueueState.queue.map((s) => [s.uri, s.playing]));
+        this.spotifyQueueState.queue = this.spotifyQueueState.queue
+            .filter((song) => song.uri === currentUri || upcomingUris.has(song.uri))
+            .map((song) => ({ ...song, playing: song.uri === currentUri }));
+        const after = JSON.stringify(this.spotifyQueueState.queue.map((s) => [s.uri, s.playing]));
+
+        if (before !== after) {
+            this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        }
+        if (this.spotifyQueueState.queue.length === 0) this.stopSpotifyQueuePolling();
     }
 
     // ==========================================
@@ -1796,12 +1885,15 @@ class Tenant {
         // ── SPOTIFY ──────────────────────────────────
         socket.on('clear_spotify_queue', () => {
             this.spotifyQueueState.queue = [];
+            this.stopSpotifyQueuePolling();
             this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         });
 
-        // Quién puede usar !play/!skip (ver isAuthorizedForSpotifyCommands)
-        // y el apagado general del comando — mismo patrón que el resto de
-        // los ajustes en vivo (set_theme, update_extensible_settings, etc.).
+        // Quién puede usar !play/!skip (ver isAuthorizedForSpotifyCommands),
+        // el apagado general del comando, y cuántas canciones se muestran
+        // como mucho en el overlay (maxQueueSize, pedido explícito) — mismo
+        // patrón que el resto de los ajustes en vivo (set_theme,
+        // update_extensible_settings, etc.).
         socket.on('update_spotify_settings', (newSettings) => {
             this.spotifySettings = {
                 enabled: Boolean(newSettings?.enabled),
@@ -1809,8 +1901,10 @@ class Tenant {
                 moderators: Boolean(newSettings?.moderators),
                 fanMembers: Boolean(newSettings?.fanMembers),
                 minFanLevel: Math.max(1, Math.min(50, Number(newSettings?.minFanLevel) || 1)),
+                maxQueueSize: Math.max(1, Math.min(20, Number(newSettings?.maxQueueSize) || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT)),
             };
             this.broadcast.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
+            this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         });
 
         // Control de volumen desde el panel — actúa sobre la reproducción

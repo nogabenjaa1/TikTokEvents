@@ -96,6 +96,19 @@ async function searchTrack(accessToken, query) {
     return data.tracks?.items?.[0] || null;
 }
 
+// GET /me/player/queue — el ÚNICO lugar donde Spotify expone qué está
+// sonando de verdad y qué sigue (no hay push/webhook para esto; el overlay
+// se sincroniza vía polling de tenant.js, ver pollSpotifyQueue). Devuelve
+// { currently_playing: track|null, queue: track[] } — si no hay nada
+// sonando, currently_playing viene null y queue puede venir vacío.
+async function getQueue(accessToken) {
+    const res = await fetch('https://api.spotify.com/v1/me/player/queue', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Spotify queue-read falló (${res.status}): ${await res.text()}`);
+    return res.json();
+}
+
 class SpotifyPlaybackError extends Error {
     constructor(code, message) {
         super(message);
@@ -148,4 +161,4 @@ async function setVolume(accessToken, volumePercent) {
     throw new SpotifyPlaybackError('UNKNOWN', `Spotify volume falló (${res.status}): ${await res.text()}`);
 }
 
-module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, skipToNext, setVolume, SpotifyPlaybackError };
+module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, getQueue, skipToNext, setVolume, SpotifyPlaybackError };

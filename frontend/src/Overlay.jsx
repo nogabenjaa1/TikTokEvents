@@ -887,15 +887,27 @@ export function ExtensibleOverlay({ state }) {
 // Top Tap-Tap/Top Gifter (sin panel/fondo propio, h-full anclado arriba en
 // vez de centrado, para no reubicarse en la pantalla al sumar una canción).
 // El backend ya limita a las últimas 8 (ver SPOTIFY_QUEUE_DISPLAY_SIZE).
+// `playing` (marcado por el polling de tenant.js contra la cola REAL de
+// Spotify, ver pollSpotifyQueue) resalta cuál está sonando ahora mismo —
+// las demás son lo que sigue. La lista se actualiza sola cuando el backend
+// detecta que Spotify avanzó (canción terminada o saltada con !skip): esa
+// entrada desaparece de acá sin que el overlay tenga que hacer nada además
+// de escuchar el socket, ya viene filtrada desde tenant.js.
 export function SpotifyQueueOverlay({ state }) {
   const queue = (state && state.queue) || [];
   return (
     <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Sonando pronto</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Cola de canciones</p>
       {queue.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {queue.map((song) => (
-            <div key={song.id} className="flex items-center gap-3 rounded-xl px-3 py-2 border" style={{ borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
+            <div
+              key={song.id}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2 border ${song.playing ? 'shadow-[0_0_15px_rgba(34,197,94,0.35)]' : ''}`}
+              style={song.playing
+                ? { borderColor: '#22c55e', background: 'var(--surface-bg-alt)' }
+                : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}
+            >
               {song.albumArt
                 ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
                 : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)' }}>🎵</span>}
@@ -903,6 +915,11 @@ export function SpotifyQueueOverlay({ state }) {
                 <p className="text-sm font-bold text-white truncate">{song.title}</p>
                 <p className="text-[10px] text-gray-400 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
               </div>
+              {song.playing && (
+                <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex items-center gap-1 flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" /> Sonando
+                </span>
+              )}
             </div>
           ))}
         </div>

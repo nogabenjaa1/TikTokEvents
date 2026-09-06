@@ -98,7 +98,7 @@ export default function Spotify({ socket, queueState, settingsState }) {
   const clearQueue = () => socket?.emit('clear_spotify_queue');
   const queue = queueState?.queue || [];
 
-  const settings = settingsState || { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1 };
+  const settings = settingsState || { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 };
   const update = (key, value) => socket?.emit('update_spotify_settings', { ...settings, [key]: value });
 
   const changeVolume = (value) => {
@@ -195,6 +195,20 @@ export default function Spotify({ socket, queueState, settingsState }) {
               <span className="theme-chip w-14 text-center font-bold px-2 py-1.5 rounded text-xs flex-shrink-0">{settings.minFanLevel}</span>
             </div>
           </label>
+
+          <label className="block mt-4">
+            <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Máximo de canciones en el overlay</span>
+            <div className="flex items-center gap-4">
+              <input
+                type="range" min="1" max="20"
+                value={settings.maxQueueSize}
+                onChange={(event) => update('maxQueueSize', Number(event.target.value))}
+                className="flex-1"
+              />
+              <span className="theme-chip w-14 text-center font-bold px-2 py-1.5 rounded text-xs flex-shrink-0">{settings.maxQueueSize}</span>
+            </div>
+            <p className="text-[10px] text-gray-500 mt-1">No limita cuántas se pueden pedir, solo cuántas se muestran a la vez en el overlay.</p>
+          </label>
         </div>
       )}
 
@@ -224,12 +238,15 @@ export default function Spotify({ socket, queueState, settingsState }) {
           {queue.length > 0 ? (
             <div className="flex flex-col gap-2">
               {queue.map((song) => (
-                <div key={song.id} className="theme-input flex items-center gap-3 px-3 py-2">
+                <div key={song.id} className={`theme-input flex items-center gap-3 px-3 py-2 ${song.playing ? 'border border-green-500/60' : ''}`}>
                   {song.albumArt && <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white truncate">{song.title}</p>
                     <p className="text-[10px] text-gray-500 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
                   </div>
+                  {song.playing && (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
+                  )}
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@ import { loginWithKey, requestFreeTrial, saveSession } from './auth';
 import RewardedAdGate from './RewardedAdGate';
 import CardVerifyForm from './CardVerifyForm';
 import { TRIAL_UNLOCK_AD_COUNT } from './adConfig';
+import logoMark from './assets/logo-mark.png';
 
 // Pantalla de login: pide la license key (no hay username/password
 // separado, la key ES la credencial), o permite pedir una prueba gratis de
@@ -92,7 +93,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
       <div className="w-full max-w-sm flex flex-col gap-4">
         <form onSubmit={submit} className="theme-surface p-8">
           <div className="flex items-center gap-3 mb-8">
-            <div className="theme-accent-bg w-3 h-8 rounded-full" />
+            <img src={logoMark} alt="" className="h-9 w-auto flex-shrink-0" />
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">TikTok Concurso</h1>
           </div>
 

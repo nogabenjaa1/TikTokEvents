@@ -16,6 +16,7 @@ import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
 import InterstitialAd from './InterstitialAd';
+import logoMark from './assets/logo-mark.png';
 import { ThemedShell, useTheme, accentStyleVars } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
@@ -609,6 +610,11 @@ export default function App() {
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
       <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
+        {/* Logo de marca — chico y sin botón/borde a propósito (pedido
+            explícito: "visible pero que no abrume"), primero en la fila/
+            columna para que quede como una cabecera sutil del rail de
+            navegación, no como un botón más. */}
+        <img src={logoMark} alt="" className="h-7 md:h-8 w-auto flex-shrink-0 md:mb-1" />
         {SECTIONS.map((s) => (
           <button
             key={s.id}

@@ -130,25 +130,47 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
 
   const help = OBS_HELP[tab];
 
+  // Le pide a TODAS las ventanas de overlay abiertas (OBS, TikTok LIVE
+  // Studio, o una pestaña de preview) que recarguen — pensado para cuando
+  // hace falta que tomen un cambio nuevo sin sacar y volver a poner la
+  // fuente de navegador a mano. A propósito NO es un "reiniciar" (no borra
+  // ningún ranking/cola/estado, ver processGiftGifterBoard etc en
+  // tenant.js) — solo una recarga de página, por eso el confirm es más
+  // liviano que el de los botones "Reiniciar ranking" de abajo.
+  const refreshOverlays = () => {
+    if (!window.confirm('¿Refrescar todos los overlays abiertos (OBS, TikTok LIVE Studio, previews)? Van a recargar la página por un instante.')) return;
+    socket?.emit('refresh_overlays');
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx. */}
-      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-        {OVERLAY_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={[
-              'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
-              tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-            ].join(' ')}
-          >
-            <span className="text-base leading-none">{t.icon}</span>
-            <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
-              {t.label}
-            </span>
-          </button>
-        ))}
+      {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx, con el
+          botón de refresco fijo a la derecha (no scrollea con las pestañas). */}
+      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+        <div className="flex flex-row items-center gap-2 overflow-x-auto flex-1 min-w-0">
+          {OVERLAY_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={[
+                'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
+                tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+              ].join(' ')}
+            >
+              <span className="text-base leading-none">{t.icon}</span>
+              <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
+                {t.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={refreshOverlays}
+          title="Recarga todas las ventanas de overlay abiertas — no borra ningún ranking ni estado"
+          className="theme-btn-secondary h-9 px-4 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-2 flex-shrink-0 whitespace-nowrap"
+        >
+          🔄 Refrescar overlays
+        </button>
       </div>
 
       <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">

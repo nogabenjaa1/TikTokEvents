@@ -1978,6 +1978,20 @@ class Tenant {
             this.broadcast.emit('active_app_changed', this.activeApp);
         });
 
+        // Botón "Refrescar overlays" del panel (pestaña Overlays) — a
+        // diferencia de los "Reiniciar ranking" (que BORRAN datos), esto no
+        // toca ningún estado: solo le pide a cada ventana de overlay que
+        // recargue la página, para el caso en que hace falta que tomen un
+        // cambio nuevo (p. ej. un deploy de frontend) sin que el streamer
+        // tenga que sacar y volver a poner la fuente de navegador en OBS/
+        // TikTok LIVE Studio a mano. El propio panel también está en este
+        // room pero IGNORA este evento (ver el guard `if (overlayMode)` en
+        // App.jsx) — recargar el panel a mitad de una edición sería peor
+        // que el problema que este botón resuelve.
+        socket.on('refresh_overlays', () => {
+            this.broadcast.emit('force_overlay_refresh');
+        });
+
         // ── TEMA (panel -> overlay) ──────────────────
         // El panel emite esto cada vez que el streamer cambia de skin (y una
         // vez al conectar, para sincronizar el estado inicial). Se reenvía a

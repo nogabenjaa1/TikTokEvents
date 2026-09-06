@@ -232,6 +232,15 @@ export default function App() {
     socket.on('theme_updated', setOverlayTheme);
     socket.on('overlay_customization_update', setOverlayCustomizationState);
 
+    // Botón "Refrescar overlays" del panel (ver OverlayLink.jsx) — solo las
+    // ventanas de overlay (OBS/TikTok LIVE Studio, o una pestaña de preview)
+    // deben recargarse; el panel también recibe este evento (mismo room)
+    // pero lo ignora a propósito, o se recargaría solo a mitad de una
+    // edición cada vez que el streamer use el botón.
+    socket.on('force_overlay_refresh', () => {
+      if (overlayMode) window.location.reload();
+    });
+
     // Un solo dispositivo activo por licencia: si nos desconectan por esto,
     // volvemos a la pantalla de login con un mensaje claro (el overlay,
     // autenticado con la key cruda, nunca recibe este evento).

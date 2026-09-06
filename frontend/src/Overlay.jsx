@@ -135,7 +135,7 @@ function KingOverlay({ state, prize, customize }) {
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">ROBA EL LUGAR CON:</p>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
@@ -176,7 +176,7 @@ function KingOverlay({ state, prize, customize }) {
         {state.mode === 'finished' ? (
           <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse py-4">WINNER!</div>
         ) : (
-          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">{state.paused ? 'PAUSADO' : state.mode === 'waiting' ? 'ESPERANDO...' : 'TIEMPO RESTANTE'}</p>
             <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'waiting' ? 'text-gray-500' : 'text-white'}`}>{state.timeLeft}</p>          </div>
         )}
@@ -217,7 +217,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
 
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mt-3 mb-4">🏆 TOP REGALADORES</p>
 
-      <div className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+      <div className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
         <span className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">Mínimo para ganar:</span>
         <span className={`text-sm font-black ${state.minCoins > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>
           {state.minCoins > 0 ? `${state.minCoins} 🪙` : 'Sin mínimo'}
@@ -230,7 +230,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
 
       <div className="w-full flex-1 flex flex-col gap-3 justify-center">
         {top3.length > 0 ? top3.map((g, i) => (
-          <div key={g.username} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.35)]' : 'border'}`} style={i === 0 ? undefined : { borderColor: 'var(--surface-border-color)', background: 'var(--surface-bg-alt)' }}>
+          <div key={g.username} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.35)]' : 'border'}`} style={i === 0 ? resolveBackgroundStyle(customize, 'var(--surface-bg-alt)') : { borderColor: 'var(--surface-border-color)', ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)') }}>
             <span className="text-2xl">{MEDALS[i]}</span>
             <img src={g.avatar} className={`w-12 h-12 rounded-full border-2 object-cover ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
             <span className={`flex-1 font-black text-white truncate ${getUsernameOverride(customize).className}`} style={getUsernameOverride(customize).cssVars}>@{g.username}</span>
@@ -257,7 +257,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
             )}
           </div>
         ) : (
-          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">
               {state.paused ? 'PAUSADO' : state.mode === 'tiebreak' ? 'DESEMPATE' : 'TIEMPO RESTANTE'}
             </p>
@@ -358,7 +358,7 @@ function EliminationOverlay({ state, prize, customize }) {
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">💀 ELIMINACIÓN — ÚNETE CON:</p>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
@@ -440,7 +440,7 @@ function EliminationOverlay({ state, prize, customize }) {
         ) : (
           // Más chico que en King/Zub a propósito: le deja más espacio a la
           // grilla de participantes, que puede tener muchos más elementos.
-          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">{state.paused ? 'PAUSADO' : timerTitle}</p>
             <p className={`text-[52px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white'}`}>{state.timeLeft}</p>
           </div>
@@ -743,7 +743,7 @@ function RouletteOverlay({ state, prize, customize }) {
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">🎡 RULETA</p>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-lg font-black text-white">{entryRuleLabel}</span>
@@ -803,7 +803,7 @@ function RouletteOverlay({ state, prize, customize }) {
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
           </div>
         ) : (
-          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">TIEMPO PARA ENTRAR</p>
             <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{state.timeLeft}</p>
           </div>
@@ -876,7 +876,7 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
 export function TopTapTapOverlay({ state, customize }) {
   return (
     <ContinuousLeaderboardWidget
-      title="Top Tap-Tap" icon="❤️" entries={(state && state.leaderboard) || []}
+      title="Top Taps" icon="❤️" entries={(state && state.leaderboard) || []}
       valueKey="likes" valueSuffix=" ❤️" valueColorClass="text-red-400 bg-red-400/10 border border-red-400/20"
       emptyLabel="Esperando likes..." customize={customize}
     />
@@ -886,7 +886,7 @@ export function TopTapTapOverlay({ state, customize }) {
 export function TopGifterOverlay({ state, customize }) {
   return (
     <ContinuousLeaderboardWidget
-      title="Top Gifter" icon="💎" entries={(state && state.leaderboard) || []}
+      title="Top Gifts" icon="💎" entries={(state && state.leaderboard) || []}
       valueKey="coins" valueSuffix=" 🪙" valueColorClass="text-yellow-400 bg-yellow-400/10 border border-yellow-400/20"
       nameIcon="🪙" emptyLabel="Esperando regalos..." customize={customize}
     />
@@ -905,6 +905,7 @@ export function ExtensibleOverlay({ state, customize }) {
   const secs = seconds % 60;
   const finished = !!s.finished;
   const paused = !finished && !!s.paused;
+  const titleOverride = getUsernameOverride(customize);
   return (
     <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} style={resolveBackgroundStyle(customize)}>
       {/* flex-shrink-0 en los DOS lados a propósito: sin esto, el bloque de
@@ -913,7 +914,7 @@ export function ExtensibleOverlay({ state, customize }) {
           y el texto se veía más chico de lo que en verdad estaba — pedido
           explícito de que el tamaño quede fijo en reposo y en marcha. */}
       <div className="flex flex-col gap-3 flex-shrink-0">
-        <p className="theme-accent-text text-sm uppercase tracking-[0.3em] font-black">⏱️ Modo Extensible</p>
+        <p className={`theme-accent-text text-sm uppercase tracking-[0.3em] font-black ${titleOverride.className}`} style={titleOverride.cssVars}>⏱️ Extensible</p>
         {/* Pedido explícito: que el público vea claramente cuánto suma cada
             acción — texto grande, no una nota chica al pie. */}
         <p className="text-gray-300 text-3xl font-black leading-tight">
@@ -951,7 +952,7 @@ export function SpotifyQueueOverlay({ state, customize }) {
   const nameOverride = getUsernameOverride(customize);
   return (
     <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Cola de canciones</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Playlist</p>
       {queue.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {queue.map((song) => (

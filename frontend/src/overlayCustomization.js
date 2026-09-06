@@ -33,7 +33,7 @@ export const FONT_SCALES = { normal: 1, large: 1.1, xlarge: 1.2 };
 function defaultEntry() {
   return {
     background: { type: 'solid', from: '#7C3AED', to: '#3B82F6' },
-    usernameColor: { type: 'default', color: '#FFFFFF', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
+    usernameColor: { type: 'default', color: '#000000', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
   };
 }
 
@@ -134,7 +134,7 @@ export function getUsernameOverride(entry) {
   // lados en vez de invadir solo al vecino de la derecha en una fila.
   const scaleStyle = scale !== 1 ? { display: 'inline-block', transform: `scale(${scale})`, transformOrigin: 'center' } : {};
 
-  if (!uc.type || uc.type === 'default') return { className: '', cssVars: scaleStyle };
+  if (!uc.type || uc.type === 'default') return { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': '#000000', ...scaleStyle } };
   if (uc.type === 'theme') return { className: 'tkc-username-theme', cssVars: scaleStyle };
   if (uc.type === 'rainbow') return { className: 'tkc-username-rainbow', cssVars: scaleStyle };
   if (uc.type === 'gradient') {
@@ -158,7 +158,7 @@ export function getUsernameOverride(entry) {
 // dentro de cada porción.
 export function getUsernameFill(entry, fallback) {
   const uc = entry?.usernameColor;
-  if (!uc || uc.type === 'default') return fallback;
+  if (!uc || uc.type === 'default') return '#000000';
   if (uc.type === 'theme') return 'var(--accent-soft)';
   if (uc.type === 'rainbow') return 'url(#tkc-rainbow-grad)';
   if (uc.type === 'gradient') return 'url(#tkc-custom-grad)';

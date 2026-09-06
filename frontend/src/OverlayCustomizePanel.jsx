@@ -10,7 +10,7 @@ const BG_OPTIONS = [
 ];
 
 const NAME_OPTIONS = [
-  { id: 'default', label: 'Predeterminado', hint: 'El color que ya trae este overlay' },
+  { id: 'default', label: 'Predeterminado', hint: 'Negro' },
   { id: 'theme', label: 'Color sólido del tema', hint: 'El mismo acento que ya elegiste para el tema/skin' },
   { id: 'custom', label: 'Personalizado', hint: 'Un solo color a tu elección' },
   { id: 'gradient', label: 'Degradado personalizado', hint: 'Define tus propios dos colores' },
@@ -45,7 +45,7 @@ function OptionRow({ active, onSelect, label, hint, children }) {
 // getUsernameOverride, que sí necesita las clases de index.css porque
 // APLICA sobre el username real dentro del overlay).
 function NamePreview({ type, from, to }) {
-  if (type === 'default') return null;
+  if (type === 'default') return <span className="text-base font-black flex-shrink-0" style={{ color: '#000000' }}>@abc</span>;
   if (type === 'theme') return <span className="text-base font-black flex-shrink-0" style={{ color: 'var(--accent-soft)' }}>@abc</span>;
   if (type === 'rainbow') return <span className="text-base font-black flex-shrink-0" style={{ background: RAINBOW_GRADIENT, backgroundSize: '400% 100%', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;
   if (type === 'gradient') return <span className="text-base font-black flex-shrink-0" style={{ background: `linear-gradient(90deg, ${from || '#7C3AED'}, ${to || '#3B82F6'})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;

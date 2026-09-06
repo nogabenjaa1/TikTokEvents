@@ -57,7 +57,27 @@ function ToastStack({ toasts }) {
 // Panel de administración de licencias — solo visible si la sesión actual
 // tiene isAdmin (hoy, la única es notbenjaa1). No confundir con
 // AdminPanel.jsx, que es el panel de juego de Rey del Trono.
-export default function LicenseManager() {
+//
+// Bug real corregido: el mensaje "Tu sesión ya no es válida" podía aparecer
+// acá mientras el resto del sitio (el socket, ya conectado y autenticado de
+// antes) seguía andando normal — no porque la sesión NO se hubiera
+// invalidado de verdad, sino porque cada acción de este panel es un fetch
+// HTTP nuevo que revalida el token contra la DB en cada llamada (ver
+// requireAuth en backend/auth.js), mientras que un socket YA conectado
+// nunca se re-valida a sí mismo entre eventos — así que un cambio de
+// session_id que ocurre DESPUÉS de conectar el socket (otro login con la
+// misma licencia, incluso en otra pestaña/dispositivo) recién se nota acá,
+// en el próximo fetch, no en el socket. Dos cambios:
+//  1. `onSessionInvalid` (ver App.jsx) engancha esto al MISMO flujo limpio
+//     de "te desconectaron" que ya usa el socket (`session_replaced`) —
+//     antes esto solo dejaba un cartel de error suelto en este panel, con
+//     el resto de la app fingiendo que todo seguía bien.
+//  2. La carga inicial reintenta UNA vez ante un 401 antes de asumir que la
+//     sesión de verdad se invalidó — cubre el caso de un cambio de
+//     session_id que todavía no terminó de propagarse (p. ej. justo después
+//     de loguearse desde otro lado) en vez de mostrar el cartel por un hipo
+//     de un instante.
+export default function LicenseManager({ onSessionInvalid }) {
   const [licenses, setLicenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -82,11 +102,30 @@ export default function LicenseManager() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
 
-  const fetchLicenses = useCallback(async () => {
+  // Único punto que decide qué hacer con un 401: reintentar (posible hipo
+  // transitorio) o reportar "sesión inválida de verdad" hacia arriba — lo
+  // usan tanto la carga inicial como cada acción de mutación de más abajo.
+  const handleUnauthorized = useCallback(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    onSessionInvalid?.(data.error || 'Tu sesión ya no es válida. Inicia sesión de nuevo.');
+  }, [onSessionInvalid]);
+
+  const fetchLicenses = useCallback(async (isRetry = false) => {
     setLoading(true);
     setError('');
     try {
       const res = await fetch(`${backendUrl()}/api/licenses`, { headers: authHeaders() });
+      if (res.status === 401) {
+        if (!isRetry) {
+          // Ver el comentario grande del componente: puede ser un cambio de
+          // session_id que todavía no terminó de propagarse — se reintenta
+          // una vez antes de asumir que de verdad hay que volver a loguearse.
+          await new Promise(r => setTimeout(r, 800));
+          return fetchLicenses(true);
+        }
+        await handleUnauthorized(res);
+        return;
+      }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudieron cargar las licencias');
       setLicenses(data.licenses);
@@ -95,7 +134,7 @@ export default function LicenseManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleUnauthorized]);
 
   useEffect(() => { fetchLicenses(); }, [fetchLicenses]);
 
@@ -110,6 +149,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ username: username.trim(), licenseType, diceTier }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo crear la licencia');
       setNewKey({ key: data.key, username: data.license.username });
@@ -126,6 +166,7 @@ export default function LicenseManager() {
     if (!window.confirm('¿Revocar esta licencia? El usuario perderá el acceso de inmediato.')) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${id}/revoke`, { method: 'POST', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo revocar');
       pushToast('Licencia revocada');
@@ -142,6 +183,7 @@ export default function LicenseManager() {
     if (!window.confirm(`¿Eliminar para siempre la licencia de @${lic.username}? Esto no se puede deshacer.`)) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo eliminar');
       pushToast('Licencia eliminada');
@@ -158,6 +200,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ licenseType: extendType, diceTier: extendDiceTier }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo extender');
       pushToast('Licencia actualizada');
@@ -179,6 +222,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ enabled: turningOn }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
       pushToast(turningOn ? 'Licencia convertida en multi-dispositivo' : 'Multi-dispositivo desactivado');
@@ -199,6 +243,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ enabled: turningOn }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
       pushToast(turningOn ? 'Win Bonus activado para esta licencia' : 'Win Bonus desactivado para esta licencia');

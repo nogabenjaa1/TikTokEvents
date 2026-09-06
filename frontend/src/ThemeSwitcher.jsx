@@ -2,24 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { useTheme, THEME_STYLES, THEME_ACCENTS, ThemedShell, skinName } from './ThemeContext';
 
 // ─────────────────────────────────────────────
-// SELECTOR DE SKIN — rediseño completo (ago. 2026) sobre la estructura
-// validada en wireframes-selector-de-skin.html (Intent /wireframe).
-// Reemplaza el viejo flujo de 2 pasos (elegir "Estilo" y después "Acento"
-// por separado) por un único gesto: cada tile YA es la combinación
-// completa (material + acento) — 16 skins nombrados, agrupados en 4 filas
-// por material para que sigan siendo escaneables.
+// SELECTOR DE SKIN — cada tile ya es la combinación completa (material +
+// acento): 2 materiales (Clásico/Cute) x 4 columnas (Morado/Azul/Rosa +
+// Personalizado), agrupados en filas por material para que sigan siendo
+// escaneables. "Personalizado" no es un color fijo — es un
+// <input type="color"> nativo escondido detrás del tile (el círculo de
+// muestra SÍ usa el color elegido); arrastrar el selector actualiza la
+// vista previa en vivo al toque (evento `input`) y recién confirma el skin
+// al soltar (evento `change`), mismo criterio de "probar antes de
+// comprometerse" que ya usa el hover en los 3 presets.
 //
-// Tres necesidades del streamer en vivo que este diseño ataca directo:
-//  1. Previsualizar ANTES de comprometerse → hover sobre una tile actualiza
-//     la vista previa en vivo (arriba de todo) sin tocar el tema real.
-//  2. Sentir que elige un "skin" de cabina/arcade, no llena un formulario →
-//     un solo clic por combo, con nombre propio ("Clay Rosa").
-//  3. Volver fácil si no le gustó → chip de "últimos usados" + botón
+// Dos necesidades del streamer en vivo que este diseño ataca directo:
+//  1. Previsualizar ANTES de comprometerse → hover (o arrastrar el color
+//     picker) sobre una tile actualiza la vista previa en vivo (arriba de
+//     todo) sin tocar el tema real.
+//  2. Volver fácil si no le gustó → chip de "últimos usados" + botón
 //     "Volver al anterior" que alterna con el skin previo.
 // ─────────────────────────────────────────────
 export default function ThemeSwitcher() {
-  const { style, accent, recents, previous, setSkin, revertToPrevious } = useTheme();
-  const [previewSkin, setPreviewSkin] = useState(null); // { style, accent } | null — solo hover, no se aplica
+  const { style, accent, customColor, recents, previous, setSkin, revertToPrevious } = useTheme();
+  const [previewSkin, setPreviewSkin] = useState(null); // { style, accent, customColor? } | null — solo hover/arrastre, no se aplica
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -28,20 +30,17 @@ export default function ThemeSwitcher() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const current = { style, accent };
+  const current = { style, accent, customColor };
   const effective = previewSkin || current; // lo que muestra la vista previa
 
-  const applySkin = (s, a) => {
-    setSkin(s, a);
-    const name = skinName({ style: s, accent: a });
-    // El material Kawaii tiene su propio tono de confirmación — tierno,
-    // pensado para esa audiencia — sin tocar la voz general del resto.
-    setToast(s === 'kawaii' ? { kawaii: true, name } : { kawaii: false, name });
+  const applySkin = (s, a, cc) => {
+    setSkin(s, a, cc);
+    setToast({ name: skinName({ style: s, accent: a }) });
     setPreviewSkin(null);
   };
 
   const isSelected = (s, a) => style === s && accent === a;
-  const accentHex = (id) => THEME_ACCENTS.find(x => x.id === id)?.swatch ?? '#7C3AED';
+  const accentHex = (id) => (id === 'custom' ? customColor : THEME_ACCENTS.find(x => x.id === id)?.swatch) ?? '#7C3AED';
 
   return (
     <div className="min-h-screen text-white flex flex-col gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto max-w-3xl mx-auto w-full">
@@ -50,19 +49,20 @@ export default function ThemeSwitcher() {
       <div>
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🎨 TEMA</p>
         <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
-        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. Pasa el mouse sobre un skin para probarlo antes de confirmarlo.</p>
+        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. Pasa el mouse (o arrastra el color personalizado) sobre un skin para probarlo antes de confirmarlo.</p>
       </div>
 
       {/* ── 1. Vista previa en vivo — domina la pantalla, no un preview chico al final ── */}
       <div className="theme-surface p-5">
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-3">
-          {effective.style === 'kawaii' ? 'Así de tierno' : 'Vista previa'} — <span className="text-gray-300">{skinName(effective)}</span>
+          Vista previa — <span className="text-gray-300">{skinName(effective)}</span>
         </p>
         <ThemedShell
           className="rounded-2xl overflow-hidden flex justify-center py-5 px-5"
           fitContent
           styleOverride={effective.style}
           accentOverride={effective.accent}
+          customColorOverride={effective.customColor}
         >
           <div className="theme-surface-featured w-full max-w-sm p-6">
             <div className="flex items-center gap-3 mb-5">
@@ -89,8 +89,8 @@ export default function ThemeSwitcher() {
         </button>
         {recents.map(r => (
           <button
-            key={`${r.style}-${r.accent}`}
-            onClick={() => applySkin(r.style, r.accent)}
+            key={`${r.style}-${r.accent}-${r.customColor}`}
+            onClick={() => applySkin(r.style, r.accent, r.customColor)}
             onMouseEnter={() => setPreviewSkin(r)}
             onMouseLeave={() => setPreviewSkin(null)}
             className="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
@@ -109,7 +109,7 @@ export default function ThemeSwitcher() {
         </button>
       </div>
 
-      {/* ── 3. Grid de 16 skins — un clic elige el combo completo, agrupado por material ── */}
+      {/* ── 3. Grid de skins — un clic elige el combo completo, agrupado por material ── */}
       <div className="flex flex-col gap-4">
         {THEME_STYLES.map(s => (
           <div key={s.id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
@@ -146,6 +146,44 @@ export default function ThemeSwitcher() {
                   </button>
                 );
               })}
+              {/* "Personalizado": el <input type="color"> nativo va escondido
+                  (sr-only) dentro del <label> — clickear cualquier parte del
+                  tile abre el selector del sistema operativo. `onInput`
+                  (dispara en cada tick mientras arrastra) solo actualiza la
+                  vista previa; `onChange` (dispara al soltar/cerrar el
+                  selector) recién confirma el skin de verdad. */}
+              {(() => {
+                const selected = isSelected(s.id, 'custom');
+                const hex = (previewSkin?.style === s.id && previewSkin?.accent === 'custom') ? previewSkin.customColor : customColor;
+                return (
+                  <label
+                    className="rounded-xl p-2.5 text-left border transition-all min-w-0 cursor-pointer"
+                    style={{
+                      background: selected ? `${hex}22` : 'var(--surface-bg-alt)',
+                      borderColor: selected ? hex : 'var(--surface-border-color)',
+                      boxShadow: selected ? `0 0 0 1px ${hex}55` : 'none',
+                    }}
+                  >
+                    <input
+                      type="color"
+                      value={hex}
+                      onInput={(e) => setPreviewSkin({ style: s.id, accent: 'custom', customColor: e.target.value })}
+                      onChange={(e) => applySkin(s.id, 'custom', e.target.value)}
+                      onBlur={() => setPreviewSkin(null)}
+                      className="sr-only"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20"
+                        style={{ background: hex }}
+                        aria-hidden
+                      />
+                      <span className="text-[11px] font-bold text-gray-200 truncate">Personalizado</span>
+                      {selected && <span className="ml-auto text-[10px] flex-shrink-0" style={{ color: hex }}>✓</span>}
+                    </div>
+                  </label>
+                );
+              })()}
             </div>
           </div>
         ))}
@@ -162,11 +200,7 @@ export default function ThemeSwitcher() {
       {/* ── Toast de confirmación — no bloqueante, se cierra solo ── */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-[100] bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
-          {toast.kawaii ? (
-            <>🎀 ¡"{toast.name}" aplicado! Te quedó tiernísimo</>
-          ) : (
-            <><span className="text-emerald-400">✓</span> Skin "{toast.name}" aplicado</>
-          )}
+          <span className="text-emerald-400">✓</span> Skin "{toast.name}" aplicado
         </div>
       )}
     </div>

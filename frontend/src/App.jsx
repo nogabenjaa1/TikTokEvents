@@ -16,7 +16,7 @@ import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
 import InterstitialAd from './InterstitialAd';
-import { ThemedShell, useTheme } from './ThemeContext';
+import { ThemedShell, useTheme, accentStyleVars } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
@@ -60,7 +60,7 @@ const NO_INSTA_WIN = {
   icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
 };
 
-// La tarjeta del overlay mide 400x700 fijo (pensada para el recorte de OBS)
+// La tarjeta del overlay mide 380x700 fijo (pensada para el recorte de OBS)
 // — se achica a este factor para que entre en un celular sin desbordar.
 const OVERLAY_PREVIEW_SCALE = 0.75;
 
@@ -76,8 +76,8 @@ function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activ
   return (
     <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
       <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
-      <div style={{ width: 400 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
-        <div style={{ width: 400, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
+      <div style={{ width: 380 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
+        <div style={{ width: 380, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
           <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} customization={customization} />
         </div>
       </div>
@@ -92,6 +92,19 @@ export default function App() {
   // Un solo dispositivo activo por licencia: si otro dispositivo se loguea
   // con la misma key, el backend nos desconecta y avisa por este evento.
   const [kickedOutMessage, setKickedOutMessage] = useState('');
+
+  // Único punto que cierra la sesión "de golpe" con un mensaje claro — lo
+  // dispara tanto el socket (`session_replaced`, ver más abajo) como
+  // cualquier fetch HTTP que reciba un 401 de sesión inválida (ver
+  // LicenseManager.jsx). Antes SOLO el socket pasaba por acá, así que un
+  // 401 en Licencias dejaba un cartel de error suelto ahí mientras el
+  // resto de la app (socket ya conectado de antes) seguía funcionando —
+  // ahora cualquiera de los dos casos lleva al mismo login limpio.
+  const handleSessionInvalid = (message) => {
+    clearSession();
+    setKickedOutMessage(message);
+    setSession(null);
+  };
 
   // Ads periódicos para licencia trial: se muestra un interstitial cada
   // TRIAL_AD_INTERVAL_MS (3 cada 2 horas) mientras haya sesión trial activa
@@ -141,11 +154,11 @@ export default function App() {
   // socket desde el tenant, nunca de su propio localStorage: el overlay
   // corre en la ventana de OBS, un navegador aparte que nunca comparte
   // sesión con el panel de control.
-  const [overlayTheme, setOverlayTheme] = useState({ style: 'default', accent: 'purple' });
+  const [overlayTheme, setOverlayTheme] = useState({ style: 'default', accent: 'purple', customColor: '#7C3AED' });
   // El panel SÍ tiene su propio tema local (useTheme, persistido en este
   // dispositivo); lo usamos acá solo para emitirlo al backend cada vez que
   // cambia, para que el overlay lo replique.
-  const { style: panelThemeStyle, accent: panelThemeAccent } = useTheme();
+  const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor } = useTheme();
 
   // Personalización de fondo + color de usuario por overlay (ver
   // overlayCustomization.js) — MISMO patrón de dos estados que el tema de
@@ -265,9 +278,7 @@ export default function App() {
     // volvemos a la pantalla de login con un mensaje claro (el overlay,
     // autenticado con la key cruda, nunca recibe este evento).
     socket.on('session_replaced', () => {
-      clearSession();
-      setKickedOutMessage('Cerraste la sesión aquí porque la licencia se usó desde otro dispositivo.');
-      setSession(null);
+      handleSessionInvalid('Cerraste la sesión aquí porque la licencia se usó desde otro dispositivo.');
     });
 
     // Estado real de la conexión live a TikTok. El backend reintenta solo
@@ -315,8 +326,8 @@ export default function App() {
   // debe RECIBIR el tema, jamás pisarlo con el suyo propio.
   useEffect(() => {
     if (overlayMode || !socket) return;
-    socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent });
-  }, [socket, overlayMode, panelThemeStyle, panelThemeAccent]);
+    socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
+  }, [socket, overlayMode, panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
 
   // Mismo criterio que el efecto de arriba, para la personalización de
   // overlays: se persiste en este dispositivo y se re-emite cada vez que
@@ -343,8 +354,8 @@ export default function App() {
   // no se vuelven a disparar si el streamer no cambió nada. Usamos refs
   // para mandar siempre el valor más reciente, sin importar cuándo llegue
   // el evento 'connect'.
-  const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent });
-  useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent }; }, [panelThemeStyle, panelThemeAccent]);
+  const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
+  useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor }; }, [panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
   const panelOverlayDraftRef = useRef(panelOverlayDraft);
   useEffect(() => { panelOverlayDraftRef.current = panelOverlayDraft; }, [panelOverlayDraft]);
 
@@ -491,45 +502,42 @@ export default function App() {
     if (screen === 'colors') {
       return <DiceOverlay diceState={diceState} theme={overlayTheme} customize={overlayCustomization.colors} />;
     }
-    // Sin `grid place-items-center` a propósito (a diferencia de Colores/
-    // Extensible, de tamaño fijo): centrar un recuadro de alto variable
-    // (crece de ~117px a ~557px según cuántas entradas hay) lo hacía
-    // reubicarse en la pantalla cada vez que sumaba o perdía una fila —
-    // pedido explícito de que el recuadro quede estático. `h-screen flex`
-    // deja que el recuadro (h-full adentro, ver Overlay.jsx) ocupe
-    // siempre el 100% de lo que mida la fuente de OBS, anclado desde
-    // arriba, sin importar cuántas entradas tenga ahora mismo.
+    // Sin `grid place-items-center` a propósito — el recuadro (380x700
+    // fijo, ver Overlay.jsx) queda anclado arriba con `h-screen flex` en
+    // vez de centrado, para que agregar o perder una fila del ranking
+    // nunca lo reubique en la pantalla (pedido explícito: "posición
+    // estática").
     if (screen === 'taptap') {
       return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <TopTapTapOverlay state={tapTapState} customize={overlayCustomization.taptap} />
         </div>
       );
     }
     if (screen === 'gifter') {
       return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <TopGifterOverlay state={gifterState} customize={overlayCustomization.gifter} />
         </div>
       );
     }
     if (screen === 'musicqueue') {
       return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <SpotifyQueueOverlay state={spotifyQueueState} customize={overlayCustomization.musicqueue} />
         </div>
       );
     }
     if (screen === 'alerts') {
       return (
-        <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <AlertOverlay socket={socket} />
         </div>
       );
     }
     if (screen === 'extensible') {
       return (
-        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent}>
+        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <ExtensibleOverlay state={extensibleState} customize={overlayCustomization.extensible} />
         </div>
       );
@@ -647,6 +655,7 @@ export default function App() {
         {sidebarMode === 'overlay' && (
           <OverlayLink
             socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList}
+            extensibleState={extensibleState} diceState={diceState}
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />
         )}
@@ -789,7 +798,7 @@ export default function App() {
         {sidebarMode === 'membership' && (
           <Membership session={session} onSessionUpdate={setSession} />
         )}
-        {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager />}
+        {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager onSessionInvalid={handleSessionInvalid} />}
       </main>
     </div>
 

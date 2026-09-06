@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
 import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill } from './overlayCustomization';
+import { accentStyleVars } from './ThemeContext';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -89,7 +90,7 @@ function PrizeStrip({ prize }) {
 
 function OfflineCard() {
   return (
-    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans">
       <div className="w-32 h-32 rounded-full border-4 border-dashed flex items-center justify-center mb-8 animate-pulse" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}>
         <span className="text-5xl opacity-40">💤</span>
       </div>
@@ -124,7 +125,7 @@ function KingOverlay({ state, prize, customize }) {
   if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
@@ -205,7 +206,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
     : null;
 
   return (
-    <div className="theme-die-frame w-[400px] min-h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'snipe' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ SNIPE ⚠️</div>}
       {state.mode === 'tiebreak' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-amber-500 to-amber-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🤝 DESEMPATE 🤝</div>}
       {state.paused && state.mode !== 'finished' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -343,7 +344,7 @@ function EliminationOverlay({ state, prize, customize }) {
     // Altura FIJA (no min-h): con muchos participantes las burbujas se
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
-    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -733,7 +734,7 @@ function RouletteOverlay({ state, prize, customize }) {
     : `Comenta "${state.keyword || '...'}"`;
 
   return (
-    <div className="theme-die-frame w-[400px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {(state.mode === 'spinning' || (state.mode === 'finished' && showingWheel)) && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
@@ -821,14 +822,17 @@ function RouletteOverlay({ state, prize, customize }) {
 // (rojo+corazón para likes, amarillo+moneda para regalos) sin duplicar todo
 // el layout — pedido explícito para que cada widget se vea más llamativo y
 // distinguible del otro a simple vista.
-// `h-full` (no alto automático): a propósito, el recuadro SIEMPRE ocupa el
-// 100% de lo que mida la fuente de OBS (ver el wrapper h-screen en App.jsx),
-// nunca crece/encoge según cuántas entradas tenga ahora mismo — eso es lo
-// que evita que se reubique en la pantalla al sumar o perder una fila
-// (pedido explícito: "posición estática"). La lista interna es la única
-// parte que crece/scrollea (flex-1 + overflow-y-auto); como el backend ya
-// limita a un top 8 (ver CONTINUOUS_LEADERBOARD_SIZE en tenant.js), en la
-// práctica nunca hace falta scrollear de verdad.
+// `h-[700px]` (fijo, no automático): estandarizado junto con el resto de
+// los overlays verticales (pedido explícito: "380x700 exactos" para todos)
+// — antes usaba `h-full` para ocupar lo que fuera que midiera la fuente de
+// OBS; ahora con un alto fijo conocido de antemano, el streamer configura
+// la fuente a esa misma medida y el recuadro nunca crece/encoge según
+// cuántas entradas tenga ahora mismo, que es lo que evita que se reubique
+// en la pantalla al sumar o perder una fila (pedido explícito: "posición
+// estática"). La lista interna es la única parte que crece/scrollea
+// (flex-1 + overflow-y-auto); como el backend ya limita a un top 8 (ver
+// CONTINUOUS_LEADERBOARD_SIZE en tenant.js), en la práctica nunca hace
+// falta scrollear de verdad.
 // Sin `theme-die-frame` a propósito (pedido explícito) — a diferencia de
 // Extensible/Colores, este widget NO lleva panel/fondo propio: la
 // personalización de fondo (ver overlayCustomization.js) se aplica
@@ -849,7 +853,7 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
   const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
   const nameOverride = getUsernameOverride(customize);
   return (
-    <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
+    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">{icon} {title}</p>
       {entries.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
@@ -927,9 +931,10 @@ export function ExtensibleOverlay({ state, customize }) {
 }
 
 // SPOTIFY: cola de canciones pedidas por chat (!play) — mismo criterio que
-// Top Tap-Tap/Top Gifter (sin panel/fondo propio, h-full anclado arriba en
-// vez de centrado, para no reubicarse en la pantalla al sumar una canción).
-// El backend ya limita a las últimas 8 (ver SPOTIFY_QUEUE_DISPLAY_SIZE).
+// Top Tap-Tap/Top Gifter (sin panel/fondo propio, alto fijo de 700px
+// anclado arriba en vez de centrado, para no reubicarse en la pantalla al
+// sumar una canción). El backend ya limita a las últimas 8 (ver
+// SPOTIFY_QUEUE_DISPLAY_SIZE).
 // `playing` (marcado por el polling de tenant.js contra la cola REAL de
 // Spotify, ver pollSpotifyQueue) resalta cuál está sonando ahora mismo —
 // las demás son lo que sigue. La lista se actualiza sola cuando el backend
@@ -945,7 +950,7 @@ export function SpotifyQueueOverlay({ state, customize }) {
   const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
   const nameOverride = getUsernameOverride(customize);
   return (
-    <div className="w-[380px] h-full p-5 flex flex-col gap-3 font-sans">
+    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Cola de canciones</p>
       {queue.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
@@ -1042,8 +1047,15 @@ export function AlertOverlay({ socket }) {
 // `embedded`: además del uso normal como página completa de OBS
 // (min-h-screen), este mismo componente se reusa como vista previa dentro
 // del panel en mobile — ver App.jsx, donde no hay forma de tener OBS y el
-// panel abiertos a la vez en un solo teléfono. En ese caso no debe reservar
-// el viewport entero, solo el tamaño real de la tarjeta (400x700).
+// panel abiertos a la vez en un solo teléfono — y en el modal de
+// personalización (ver OverlayPreviewBox.jsx). En esos casos no debe
+// reservar el viewport entero, solo el tamaño real de la tarjeta (380x700).
+// OJO: sacar la clase `min-h-screen` NO alcanza — `.themed-app` (index.css)
+// tiene su PROPIO `min-height: 100vh` incondicional, así que sin este
+// `style` inline el "grid place-items-center" seguía centrando la tarjeta
+// dentro de un alto de pantalla completa en vez del alto real del
+// contenedor — en el modal (mucho más chico que 100vh) esto empujaba la
+// tarjeta varios píxeles hacia abajo del punto de anclaje esperado.
 export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false, customization }) {
   // Rey del Trono/Zubastinis/Eliminación/Ruleta comparten UNA sola URL/
   // fuente de OBS (?screen=games) — así que también comparten una sola
@@ -1051,7 +1063,7 @@ export default function Overlay({ state, zubState, elimState, rouletteState, act
   // OVERLAY_CUSTOMIZE_LABELS en overlayCustomization.js).
   const gamesCustomize = customization?.games;
   return (
-    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} data-theme-style={theme.style} data-accent={theme.accent}>
+    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} style={{ ...(embedded ? { minHeight: 0 } : null), ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
       <div className="relative grid">
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'king' ? 1 : 0, visibility: activeApp === 'king' ? 'visible' : 'hidden', transform: activeApp === 'king' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>

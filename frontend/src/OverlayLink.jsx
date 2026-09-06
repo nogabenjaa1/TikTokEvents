@@ -81,7 +81,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
-      'Tamaño recomendado: 1920×1080 para el overlay de juegos (vertical); para Colores, ancho de al menos 960px con menos alto (es horizontal).',
+      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal).',
     ],
   },
   alerts: {
@@ -95,14 +95,14 @@ const OBS_HELP = {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
       'Agrega una fuente de Navegador por cada widget que quieras mostrar (Top Tap-Tap, Top Gifter, o ambos).',
-      'Ancho de ~400px alcanza — son widgets angostos de alto libre, se acomodan solos a la cantidad de gente en el ranking.',
+      'Tamaño exacto: 380×700 — igual que los demás overlays verticales.',
     ],
   },
   playlist: {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
-      'Modo Extensible: ancho de al menos 960px, con menos alto (es horizontal).',
-      'Cola de Spotify: ancho de ~400px alcanza (widget angosto, de alto libre) — necesita tu cuenta de Spotify conectada desde la pestaña Spotify en TikTokEvents.',
+      'Modo Extensible: 960×260 (es horizontal).',
+      'Cola de Spotify: 380×700 (igual que los demás overlays verticales) — necesita tu cuenta de Spotify conectada desde la pestaña Spotify en TikTokEvents.',
     ],
   },
 };
@@ -110,7 +110,7 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -274,6 +274,14 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
           onChange={(entry) => onCustomizeChange?.(customizingId, entry)}
           onApplyToAll={() => onApplyToAll?.(customizingId)}
           onClose={() => setCustomizingId(null)}
+          // Colores y Extensible NO dependen de una conexión en vivo a
+          // TikTok (el streamer los controla 100% desde su propio panel) —
+          // pedido explícito: mostrar en la vista previa el estado REAL
+          // actual (el dado que ya tiraron, los segundos por follow/regalo
+          // que ya configuraron) en vez de datos inventados. El resto de
+          // los overlays SÍ dependen del LIVE, así que siguen usando
+          // espectadores de prueba (ver overlayPreviewMocks.js).
+          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : null}
         />
       )}
     </div>

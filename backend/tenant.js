@@ -95,8 +95,8 @@ function shuffleArray(list) {
 // Espejo del catálogo de frontend/src/ThemeContext.jsx: valida lo que manda
 // el cliente antes de guardarlo/emitirlo, para que un socket manipulado a
 // mano no pueda meter un valor arbitrario en --theme-style/--accent.
-const VALID_THEME_STYLES = ['default', 'kawaii', 'minimal', 'cute'];
-const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
+const VALID_THEME_STYLES = ['default', 'cute'];
+const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'custom'];
 
 // Espejo de frontend/src/overlayCustomization.js: qué overlays se pueden
 // personalizar (fondo + color de nombre de usuario) desde la pestaña
@@ -287,7 +287,7 @@ class Tenant {
         // persona que ve el tema elegido. No persiste en disco a propósito
         // (mismo criterio que `prizes`): vive mientras el tenant está en
         // memoria, se resetea a `default`/`purple` si el server reinicia.
-        this.theme = { style: 'default', accent: 'purple' };
+        this.theme = { style: 'default', accent: 'purple', customColor: '#7C3AED' };
 
         // Fondo (transparente/sólido del tema/degradado) + color del nombre
         // de usuario (predeterminado/arcoíris/personalizado) por overlay —
@@ -2012,8 +2012,13 @@ class Tenant {
         socket.on('set_theme', (theme) => {
             const style = VALID_THEME_STYLES.includes(theme?.style) ? theme.style : this.theme.style;
             const accent = VALID_THEME_ACCENTS.includes(theme?.accent) ? theme.accent : this.theme.accent;
-            if (style === this.theme.style && accent === this.theme.accent) return;
-            this.theme = { style, accent };
+            // Solo importa cuando accent === 'custom' (ver accentStyleVars en
+            // ThemeContext.jsx) — igual se guarda siempre para que, si el
+            // streamer vuelve a "Personalizado", no arranque del valor por
+            // defecto en vez del último que había elegido.
+            const customColor = sanitizeHexColor(theme?.customColor, this.theme.customColor || '#7C3AED');
+            if (style === this.theme.style && accent === this.theme.accent && customColor === this.theme.customColor) return;
+            this.theme = { style, accent, customColor };
             this.broadcast.emit('theme_updated', this.theme);
         });
 

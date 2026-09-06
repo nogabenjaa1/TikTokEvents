@@ -61,7 +61,7 @@ function NamePreview({ type, from, to }) {
 // cada tarjeta en OverlayLink.jsx. Cada cambio se aplica al instante (mismo
 // criterio "en vivo" que el resto del panel, sin botón de guardar) — el
 // padre (App.jsx) es quien persiste en localStorage y reemite por socket.
-export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose }) {
+export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose, liveState }) {
   const bg = entry?.background || { type: 'solid' };
   const uc = entry?.usernameColor || { type: 'default' };
 
@@ -84,7 +84,7 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
             porque usa el mismo `entry` que se está editando. */}
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Vista previa (con espectadores de prueba)</p>
         <div className="mb-5">
-          <OverlayPreviewBox overlayId={overlayId} entry={entry} />
+          <OverlayPreviewBox overlayId={overlayId} entry={entry} liveState={liveState} />
         </div>
 
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Fondo del overlay</p>

@@ -23,7 +23,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
           // overlays" de la pestaña Overlays (mismo rincón superior derecho,
           // ver OverlayLink.jsx) — se desliza fuera de la vista apenas la
           // conexión con TikTok queda confirmada (ya no hace falta mirarla,
-          // ver la píldora compacta de abajo para ese estado) y reaparece
+          // ver el botón "Off" redondo de abajo para ese estado) y reaparece
           // solo si se corta. Solo en desktop (md:): en mobile es una barra
           // normal dentro del flujo, sin ese choque, así que se deja tal
           // cual (con su propio botón "Desconectar" siempre a mano ahí).
@@ -68,27 +68,30 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
         )}
       </div>
 
-      {/* Píldora compacta: lo único que queda visible en desktop una vez
-          conectado (la barra completa de arriba se deslizó fuera). Mucho
-          más angosta que la barra completa a propósito, para no volver a
-          chocar con el botón "Refrescar overlays" — solo el estado + un
-          botón para desconectar, sin el input (no hace falta editarlo
-          mientras ya está conectado). */}
-      <div
+      {/* Botón "Off": lo único que queda visible en desktop una vez
+          conectado (la barra completa de arriba se deslizó fuera) — pedido
+          explícito: nada de píldora con texto, solo un botón rojo chico
+          para desconectar. Redondo y mínimo (36px) a propósito: por más
+          angosta que se hiciera una píldora con texto, seguía cayendo en
+          el mismo rincón superior derecho que "Refrescar overlays" en
+          ciertos anchos de pantalla — ver OverlayLink.jsx, que además
+          movió ese botón fuera de esta franja superior para sacarse el
+          choque de encima desde el otro lado también. El username va en
+          el `title` (tooltip nativo al pasar el mouse), no visible todo el
+          tiempo. */}
+      <button
+        onClick={disabled ? undefined : onDisconnect}
+        disabled={disabled}
+        title={disabled ? `Conectado a @${username}` : `Conectado a @${username} — clic para desconectar`}
         className={[
-          'hidden md:flex fixed top-4 right-4 z-50 items-center gap-2 theme-surface px-3 py-2',
-          'transition-all duration-500 ease-in-out',
+          'hidden md:flex fixed top-4 right-4 z-50 w-9 h-9 rounded-full items-center justify-center',
+          'bg-red-600 hover:bg-red-500 text-white text-xs font-black shadow-lg shadow-red-950/50',
+          'transition-all duration-500 ease-in-out disabled:opacity-60 disabled:cursor-not-allowed',
           live ? 'opacity-100 translate-x-0' : 'opacity-0 pointer-events-none translate-x-[130%]',
         ].join(' ')}
       >
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-        <span className="text-[10px] font-bold text-green-400 truncate max-w-[110px]">@{username}</span>
-        {!disabled && (
-          <button onClick={onDisconnect} className="text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-300 flex-shrink-0">
-            Desconectar
-          </button>
-        )}
-      </div>
+        ⏻
+      </button>
     </>
   );
 }

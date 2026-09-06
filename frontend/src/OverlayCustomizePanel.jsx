@@ -1,5 +1,6 @@
 import React from 'react';
 import { RAINBOW_GRADIENT } from './overlayCustomization';
+import OverlayPreviewBox from './OverlayPreviewBox';
 
 const BG_OPTIONS = [
   { id: 'transparent', label: 'Transparente', hint: 'Sin color de fondo' },
@@ -60,7 +61,7 @@ function NamePreview({ type, from, to }) {
 // cada tarjeta en OverlayLink.jsx. Cada cambio se aplica al instante (mismo
 // criterio "en vivo" que el resto del panel, sin botón de guardar) — el
 // padre (App.jsx) es quien persiste en localStorage y reemite por socket.
-export default function OverlayCustomizePanel({ title, entry, onChange, onApplyToAll, onClose }) {
+export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose }) {
   const bg = entry?.background || { type: 'solid' };
   const uc = entry?.usernameColor || { type: 'default' };
 
@@ -73,6 +74,17 @@ export default function OverlayCustomizePanel({ title, entry, onChange, onApplyT
         <div className="flex items-start justify-between gap-4 mb-5">
           <h2 className="theme-heading text-base font-bold leading-tight">🎨 Personalizar<br /><span className="text-sm font-semibold text-gray-400">{title}</span></h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl leading-none flex-shrink-0">✕</button>
+        </div>
+
+        {/* Vista previa en vivo con espectadores de prueba (Test1/Test2/
+            Test3) — pedido explícito para poder ver el efecto de cada
+            cambio (fondo, color de texto, arcoíris, etc.) SIN estar
+            conectado a TikTok, y así detectar errores visuales antes de
+            salir al directo. Se actualiza sola con cada cambio de abajo,
+            porque usa el mismo `entry` que se está editando. */}
+        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Vista previa (con espectadores de prueba)</p>
+        <div className="mb-5">
+          <OverlayPreviewBox overlayId={overlayId} entry={entry} />
         </div>
 
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Fondo del overlay</p>

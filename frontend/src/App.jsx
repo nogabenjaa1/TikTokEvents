@@ -190,6 +190,15 @@ export default function App() {
     hasEditedUsernameRef.current = true;
     setUsername(value);
   };
+  // Se pone en `true` justo antes de adoptar el username que ya tenía
+  // conectado el backend (ver socket.on('live_status') más abajo) — el
+  // useEffect de sincronización lo lee UNA vez para saltarse el flujo de
+  // "checking..."/2s de debounce/set_desired_username de nuevo: eso es lo
+  // que hacía que la conexión SE VIERA como si arrancara de cero en cada
+  // F5 (el backend nunca la perdió, pero el panel igual mostraba
+  // "Buscando..." -> "Conectando..." un rato largo antes de confirmar lo
+  // que ya sabía por `live_status`).
+  const isAdoptingRef = useRef(false);
 
   // Crea (o destruye) el socket cuando hay con qué autenticarlo: la license
   // key de la URL en modo overlay, o el JWT de la sesión logueada. Cada
@@ -277,9 +286,19 @@ export default function App() {
     // vuelve a mandar `set_desired_username` con el MISMO username en vez
     // de `null`, y la conexión real (que el backend nunca perdió) sigue
     // intacta — sin esto, cada F5 mataba la conexión de TikTok de verdad.
+    // `isAdoptingRef`: sin esto, el panel VOLVÍA A MOSTRAR "Buscando..." /
+    // "Conectando..." un rato largo en cada F5 (el efecto de sincronización
+    // de más abajo siempre pasaba por su debounce de 2s + `checking` antes
+    // de confirmar), dando la sensación de que se reconectaba de cero
+    // aunque el backend nunca hubiera perdido nada — se refleja acá mismo
+    // el estado que el backend YA confirmó, sin ese paso intermedio.
     socket.on('live_status', ({ desiredUsername, connected }) => {
       if (connected) setConnectionStatus('connected');
-      if (desiredUsername && !hasEditedUsernameRef.current) setUsername(desiredUsername);
+      if (desiredUsername && !hasEditedUsernameRef.current) {
+        isAdoptingRef.current = true;
+        setUsername(desiredUsername);
+        setConnectionStatus(connected ? 'connected' : 'connecting');
+      }
     });
     socket.on('live_connected', onLiveConnected);
     socket.on('live_disconnected', onLiveDisconnected);
@@ -383,6 +402,33 @@ export default function App() {
       }
       return;
     }
+
+    // Este `username` vino de adoptar lo que el backend YA tenía conectado
+    // (ver socket.on('live_status')), no de que el streamer lo haya
+    // escrito ahora — saltarse el "checking..."/debounce de 2s/reemitir
+    // set_desired_username: el backend ya sabe que este username está
+    // conectado (o reintentando), no hace falta pasar por todo el flujo de
+    // "recién estoy verificando esto" de nuevo. Solo falta recuperar la
+    // lista de regalos, que sí se pierde al recargar (vive nada más en
+    // este estado de React, no en el backend).
+    if (isAdoptingRef.current) {
+      isAdoptingRef.current = false;
+      (async () => {
+        try {
+          const res = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
+          const data = await res.json();
+          if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) {
+            setGiftsList([NO_INSTA_WIN, ...data.gifts]);
+          } else {
+            setGiftsList([]);
+          }
+        } catch {
+          setGiftsList([]);
+        }
+      })();
+      return;
+    }
+
     setConnectionStatus('checking');
 
     const timeoutId = setTimeout(async () => {

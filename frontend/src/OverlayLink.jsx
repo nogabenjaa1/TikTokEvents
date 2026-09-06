@@ -144,36 +144,45 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx, con el
-          botón de refresco fijo a la derecha (no scrollea con las pestañas). */}
-      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-        <div className="flex flex-row items-center gap-2 overflow-x-auto flex-1 min-w-0">
-          {OVERLAY_TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={[
-                'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
-                tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-              ].join(' ')}
-            >
-              <span className="text-base leading-none">{t.icon}</span>
-              <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
-                {t.label}
-              </span>
-            </button>
-          ))}
-        </div>
+      {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx — el
+          botón de refresco YA NO vive acá (ver más abajo): sea cual sea su
+          ancho, un botón pegado al borde derecho de ESTA fila cae en el
+          mismo rincón superior donde flota la barra/botón "Off" de TikTok
+          (fixed top-4 right-4, ver TikTokLoginBar.jsx) en ciertos anchos de
+          pantalla. Bajarlo a su propia franja, fuera de esta banda
+          superior, saca el choque de encima desde este lado. */}
+      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+        {OVERLAY_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={[
+              'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
+              tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+            ].join(' ')}
+          >
+            <span className="text-base leading-none">{t.icon}</span>
+            <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
+              {t.label}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Franja propia, en el flujo normal del contenido (no fixed, no
+          pegada a ningún borde de la ventana) — a propósito lejos de la
+          banda superior donde flota la barra/botón "Off" de TikTok. */}
+      <div className="flex justify-center px-6 pt-4 flex-shrink-0">
         <button
           onClick={refreshOverlays}
           title="Recarga todas las ventanas de overlay abiertas — no borra ningún ranking ni estado"
-          className="theme-btn-secondary h-9 px-4 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-2 flex-shrink-0 whitespace-nowrap"
+          className="theme-btn-secondary w-full max-w-xl h-10 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
         >
           🔄 Refrescar overlays
         </button>
       </div>
 
-      <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
+      <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-4 font-sans flex-1 overflow-y-auto">
         {tab === 'events' && (
           <>
             <OverlayUrlCard
@@ -260,6 +269,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
       {customizingId && (
         <OverlayCustomizePanel
           title={OVERLAY_CUSTOMIZE_LABELS[customizingId]}
+          overlayId={customizingId}
           entry={overlayCustomization?.[customizingId]}
           onChange={(entry) => onCustomizeChange?.(customizingId, entry)}
           onApplyToAll={() => onApplyToAll?.(customizingId)}

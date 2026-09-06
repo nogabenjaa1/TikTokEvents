@@ -1458,7 +1458,15 @@ class Tenant {
         socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
         socket.emit('active_app_changed', this.activeApp);
-        socket.emit('live_status', { username: this.currentTikTokUsername, connected: this.liveConnected });
+        // `desiredUsername` (no solo `username`/`connected`) para que el panel
+        // pueda RECUPERAR la conexión que ya estaba viva después de un F5 —
+        // ver el comentario de `hasEditedUsernameRef` en App.jsx: sin esto,
+        // el panel arranca con el campo vacío en cada carga y termina
+        // mandando `set_desired_username(null)`, matando una conexión real
+        // que el backend nunca perdió (el Tenant vive en memoria mientras el
+        // proceso no se reinicie, independiente de que este socket puntual
+        // se haya desconectado/reconectado).
+        socket.emit('live_status', { username: this.currentTikTokUsername, desiredUsername: this.desiredUsername, connected: this.liveConnected });
         socket.emit('prizes_updated', this.prizes);
         socket.emit('theme_updated', this.theme);
         socket.emit('overlay_customization_update', this.overlayCustomization);

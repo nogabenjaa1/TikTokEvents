@@ -179,6 +179,17 @@ export default function App() {
 
   const usernameRef = useRef(username);
   useEffect(() => { usernameRef.current = username; }, [username]);
+  // Se pone en `true` la PRIMERA vez que el streamer toca el campo a mano
+  // (ver handleSetUsername) — hasta entonces, un `username` vacío significa
+  // "todavía no sabemos si el backend ya tenía algo conectado", no "el
+  // streamer quiere desconectar". Distinción clave para la persistencia de
+  // la conexión (ver comentario grande más abajo, en el useEffect que
+  // decide cuándo mandar `set_desired_username(null)`).
+  const hasEditedUsernameRef = useRef(false);
+  const handleSetUsername = (value) => {
+    hasEditedUsernameRef.current = true;
+    setUsername(value);
+  };
 
   // Crea (o destruye) el socket cuando hay con qué autenticarlo: la license
   // key de la URL en modo overlay, o el JWT de la sesión logueada. Cada
@@ -258,7 +269,18 @@ export default function App() {
     const onLiveDisconnected = () => {
       if (usernameRef.current.trim()) setConnectionStatus('connecting');
     };
-    socket.on('live_status', ({ connected }) => { if (connected) setConnectionStatus('connected'); });
+    // Al conectar (o reconectar) el socket, el backend cuenta qué username
+    // tiene REALMENTE conectado/intentando conectar ahora mismo (ver
+    // attachSocket en tenant.js) — si el streamer todavía no tocó el campo
+    // a mano esta vez (recién recargó la página, por ejemplo), adoptamos
+    // ese valor en vez de dejar el campo vacío: así el efecto de más abajo
+    // vuelve a mandar `set_desired_username` con el MISMO username en vez
+    // de `null`, y la conexión real (que el backend nunca perdió) sigue
+    // intacta — sin esto, cada F5 mataba la conexión de TikTok de verdad.
+    socket.on('live_status', ({ desiredUsername, connected }) => {
+      if (connected) setConnectionStatus('connected');
+      if (desiredUsername && !hasEditedUsernameRef.current) setUsername(desiredUsername);
+    });
     socket.on('live_connected', onLiveConnected);
     socket.on('live_disconnected', onLiveDisconnected);
     socket.on('live_connection_error', ({ message } = {}) => {
@@ -312,6 +334,15 @@ export default function App() {
     const resync = () => {
       socket.emit('set_theme', panelThemeRef.current);
       socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
+      // Mismo motivo que arriba, para la conexión de TikTok: si el backend
+      // se reinició (a diferencia de un simple F5 del panel, ahí sí se
+      // pierde la conexión real con TikTok — un reinicio del proceso no
+      // hay forma de evitarlo) mientras esta pestaña seguía abierta, el
+      // socket reconecta solo pero el Tenant nuevo arranca sin
+      // desiredUsername. Reafirmarlo acá lo reconecta sin que el streamer
+      // tenga que volver a escribir el usuario.
+      const current = usernameRef.current.trim().replace(/^@+/, '');
+      if (current) socket.emit('set_desired_username', current);
     };
     socket.on('connect', resync);
     return () => socket.off('connect', resync);
@@ -338,7 +369,18 @@ export default function App() {
       setConnectionStatus('idle');
       setConnectionError('');
       setGiftsList([]);
-      socket.emit('set_desired_username', null);
+      // OJO: `username` arranca vacío en cada carga de la página, así que
+      // este bloque también corre en el primer render de una sesión que en
+      // realidad SÍ tiene una conexión real viva del lado del backend
+      // (Tenant vive en memoria, sobrevive a un F5 aunque no a un reinicio
+      // del proceso). Mandar `set_desired_username(null)` acá pisaría esa
+      // conexión sin que el streamer lo haya pedido. Solo se manda de
+      // verdad una vez que el streamer tocó el campo a mano (ver
+      // handleSetUsername) — recién ahí un campo vacío significa
+      // "desconectar", no "todavía no sabemos nada".
+      if (hasEditedUsernameRef.current) {
+        socket.emit('set_desired_username', null);
+      }
       return;
     }
     setConnectionStatus('checking');
@@ -503,10 +545,11 @@ export default function App() {
       )}
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <TikTokLoginBar
-        username={username} setUsername={setUsername}
+        username={username} setUsername={handleSetUsername}
         connectionStatus={connectionStatus}
         connectionError={connectionError}
         disabled={usernameLocked}
+        onDisconnect={() => handleSetUsername('')}
       />
 
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.

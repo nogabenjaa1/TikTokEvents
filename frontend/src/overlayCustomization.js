@@ -21,10 +21,19 @@ export const OVERLAY_CUSTOMIZE_LABELS = {
   musicqueue: 'Cola de Spotify',
 };
 
+// Tamaños de fuente disponibles para texto/nombre de usuario — multiplicador
+// aplicado con `transform: scale()` (ver getUsernameOverride) en vez de un
+// `font-size` fijo: cada overlay ya usa un tamaño de base distinto para su
+// username (King: text-2xl, Top Tap-Tap: text-sm, etc.), así que escalar el
+// tamaño YA renderizado es la única forma de tener un control único que
+// funcione igual en los 6 overlays sin tener que hardcodear el tamaño base
+// de cada uno acá.
+export const FONT_SCALES = { normal: 1, large: 1.1, xlarge: 1.2 };
+
 function defaultEntry() {
   return {
     background: { type: 'solid', from: '#7C3AED', to: '#3B82F6' },
-    usernameColor: { type: 'default', color: '#FFFFFF' },
+    usernameColor: { type: 'default', color: '#FFFFFF', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
   };
 }
 
@@ -34,7 +43,7 @@ export function defaultOverlayCustomizationMap() {
 
 function isValidEntry(e) {
   return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
-    && !!e.usernameColor && ['default', 'rainbow', 'custom'].includes(e.usernameColor.type);
+    && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type);
 }
 
 export function loadOverlayCustomization() {
@@ -101,31 +110,57 @@ export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)')
 }
 
 // Color del texto de un username en HTML normal (no SVG, ver
-// getUsernameFill para eso). OJO: NO alcanza con un `style` inline — index.css
-// tiene reglas `!important` por tema que fuerzan el color de .text-white/
-// .text-gray-* (para que se vean bien en skins claros como Minimalista), y
-// esas SIEMPRE le ganan a un `color` inline sin !important sin importar la
-// especificidad. Por eso esto devuelve una CLASE (con su propio !important,
-// ver `.tkc-username-custom`/`.tkc-username-rainbow` al final de index.css)
-// en vez de un objeto de estilo — `cssVars` solo lleva la variable que esa
-// clase consume para el color personalizado.
-// `{ className: '', cssVars: {} }` (el default) no cambia ningún look
-// existente — el caller simplemente no agrega nada.
+// getUsernameFill para eso). OJO: NO alcanza con un `style` inline para el
+// COLOR — index.css tiene reglas `!important` por tema que fuerzan el color
+// de .text-white/.text-gray-* (para que se vean bien en skins claros como
+// Minimalista), y esas SIEMPRE le ganan a un `color` inline sin !important
+// sin importar la especificidad. Por eso el color/degradado/arcoíris se
+// resuelve con una CLASE (con su propio !important, ver
+// `.tkc-username-*` al final de index.css) — `cssVars` (pese al nombre,
+// legado de cuando solo llevaba variables CSS) es el objeto de estilo
+// inline que el caller mezcla en su `style`: además de las variables que
+// cada clase consume, ahí también va el `transform: scale()` del tamaño de
+// fuente (ESE sí puede ir inline sin pelear con ningún !important, nada más
+// lo toca).
+// `{ className: '', cssVars: {} }` (el default con tamaño "normal") no
+// cambia ningún look existente — el caller simplemente no agrega nada.
 export function getUsernameOverride(entry) {
-  const uc = entry?.usernameColor;
-  if (!uc || uc.type === 'default') return { className: '', cssVars: {} };
-  if (uc.type === 'rainbow') return { className: 'tkc-username-rainbow', cssVars: {} };
-  return { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': uc.color || '#FFFFFF' } };
+  const uc = entry?.usernameColor || {};
+  const scale = FONT_SCALES[uc.fontSize] ?? 1;
+  // `transform: scale()` (no `font-size`) porque cada overlay ya parte de
+  // un tamaño de base distinto (ver comentario de FONT_SCALES) — escalar
+  // el tamaño YA renderizado funciona igual sin importar cuál sea esa
+  // base. `transform-origin: center` para que crezca parejo hacia los dos
+  // lados en vez de invadir solo al vecino de la derecha en una fila.
+  const scaleStyle = scale !== 1 ? { display: 'inline-block', transform: `scale(${scale})`, transformOrigin: 'center' } : {};
+
+  if (!uc.type || uc.type === 'default') return { className: '', cssVars: scaleStyle };
+  if (uc.type === 'theme') return { className: 'tkc-username-theme', cssVars: scaleStyle };
+  if (uc.type === 'rainbow') return { className: 'tkc-username-rainbow', cssVars: scaleStyle };
+  if (uc.type === 'gradient') {
+    return {
+      className: 'tkc-username-gradient',
+      cssVars: { '--tkc-username-from': uc.from || '#7C3AED', '--tkc-username-to': uc.to || '#3B82F6', ...scaleStyle },
+    };
+  }
+  return { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': uc.color || '#FFFFFF', ...scaleStyle } };
 }
 
 // Equivalente a getUsernameOverride pero para <text> de SVG (la ruleta dibuja
-// los usernames con `fill`, no `color`) — el arcoíris ahí es un degradado
-// estático (id="tkc-rainbow-grad", definido una sola vez en RouletteWheel)
-// en vez de animado: animar los stops de un <linearGradient> en SVG puro
-// pide <animate> aparte, y el efecto ya se nota bien sin eso.
+// los usernames con `fill`, no `color`) — el arcoíris y el degradado
+// personalizado ahí son ESTÁTICOS (ids fijos "tkc-rainbow-grad"/
+// "tkc-custom-grad", definidos una sola vez en RouletteWheel, este último
+// alimentado con los colores reales vía sus <stop>) en vez de animados:
+// animar los stops de un <linearGradient> en SVG puro pide <animate>
+// aparte, y el efecto ya se nota bien sin eso. El escalado de tamaño NO
+// aplica acá — la ruleta ya ajusta su propio fontSize por sección (ver
+// RouletteWheel), agrandar más encima rompería el acomodo del texto
+// dentro de cada porción.
 export function getUsernameFill(entry, fallback) {
   const uc = entry?.usernameColor;
   if (!uc || uc.type === 'default') return fallback;
+  if (uc.type === 'theme') return 'var(--accent-soft)';
   if (uc.type === 'rainbow') return 'url(#tkc-rainbow-grad)';
+  if (uc.type === 'gradient') return 'url(#tkc-custom-grad)';
   return uc.color || fallback;
 }

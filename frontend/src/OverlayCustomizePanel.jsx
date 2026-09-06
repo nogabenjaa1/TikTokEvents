@@ -10,8 +10,16 @@ const BG_OPTIONS = [
 
 const NAME_OPTIONS = [
   { id: 'default', label: 'Predeterminado', hint: 'El color que ya trae este overlay' },
-  { id: 'rainbow', label: 'Arcoíris' },
-  { id: 'custom', label: 'Personalizado' },
+  { id: 'theme', label: 'Color sólido del tema', hint: 'El mismo acento que ya elegiste para el tema/skin' },
+  { id: 'custom', label: 'Personalizado', hint: 'Un solo color a tu elección' },
+  { id: 'gradient', label: 'Degradado personalizado', hint: 'Define tus propios dos colores' },
+  { id: 'rainbow', label: 'Arcoíris', hint: 'Degradado en movimiento' },
+];
+
+const FONT_SIZE_OPTIONS = [
+  { id: 'normal', label: 'Normal' },
+  { id: 'large', label: 'Grande' },
+  { id: 'xlarge', label: 'Extra grande' },
 ];
 
 function OptionRow({ active, onSelect, label, hint, children }) {
@@ -30,13 +38,28 @@ function OptionRow({ active, onSelect, label, hint, children }) {
   );
 }
 
-// Modal de personalización de un overlay individual — fondo (transparente /
-// color sólido del tema / degradado propio) y color del nombre de usuario
-// (predeterminado / arcoíris / personalizado). Se abre desde el botón
-// "🎨 Personalizar" de cada tarjeta en OverlayLink.jsx. Cada cambio se
-// aplica al instante (mismo criterio "en vivo" que el resto del panel, sin
-// botón de guardar) — el padre (App.jsx) es quien persiste en localStorage
-// y reemite por socket.
+// Muestra "@abc" con el look que tendría cada opción de color de texto —
+// puramente decorativo dentro del modal, así que puede usar `style` inline
+// normal sin pelear con ningún !important de tema (a diferencia de
+// getUsernameOverride, que sí necesita las clases de index.css porque
+// APLICA sobre el username real dentro del overlay).
+function NamePreview({ type, from, to }) {
+  if (type === 'default') return null;
+  if (type === 'theme') return <span className="text-base font-black flex-shrink-0" style={{ color: 'var(--accent-soft)' }}>@abc</span>;
+  if (type === 'rainbow') return <span className="text-base font-black flex-shrink-0" style={{ background: RAINBOW_GRADIENT, backgroundSize: '400% 100%', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;
+  if (type === 'gradient') return <span className="text-base font-black flex-shrink-0" style={{ background: `linear-gradient(90deg, ${from || '#7C3AED'}, ${to || '#3B82F6'})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;
+  return null;
+}
+
+// Modal de personalización de un overlay individual: fondo (transparente /
+// color sólido del tema / degradado propio / arcoíris en movimiento) y
+// texto/nombre de usuario (predeterminado / color sólido del tema /
+// personalizado / degradado propio / arcoíris en movimiento), con un
+// tamaño de fuente opcional (normal/grande/extra grande, ver FONT_SCALES en
+// overlayCustomization.js). Se abre desde el botón "🎨 Personalizar" de
+// cada tarjeta en OverlayLink.jsx. Cada cambio se aplica al instante (mismo
+// criterio "en vivo" que el resto del panel, sin botón de guardar) — el
+// padre (App.jsx) es quien persiste en localStorage y reemite por socket.
 export default function OverlayCustomizePanel({ title, entry, onChange, onApplyToAll, onClose }) {
   const bg = entry?.background || { type: 'solid' };
   const uc = entry?.usernameColor || { type: 'default' };
@@ -76,13 +99,11 @@ export default function OverlayCustomizePanel({ title, entry, onChange, onApplyT
           </div>
         )}
 
-        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Color del nombre de usuario</p>
+        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Texto y nombre de usuario</p>
         <div className="flex flex-col gap-2">
           {NAME_OPTIONS.map((opt) => (
             <OptionRow key={opt.id} active={uc.type === opt.id} onSelect={() => setUc({ type: opt.id })} label={opt.label} hint={opt.hint}>
-              {opt.id === 'rainbow' && (
-                <span className="text-base font-black flex-shrink-0" style={{ background: RAINBOW_GRADIENT, backgroundSize: '400% 100%', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>
-              )}
+              <NamePreview type={opt.id} from={uc.from} to={uc.to} />
             </OptionRow>
           ))}
         </div>
@@ -93,6 +114,33 @@ export default function OverlayCustomizePanel({ title, entry, onChange, onApplyT
             <input type="color" value={uc.color || '#FFFFFF'} onChange={(e) => setUc({ color: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
           </div>
         )}
+
+        {uc.type === 'gradient' && (
+          <div className="flex items-center gap-6 mt-3 mb-1 px-1">
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              Color inicial
+              <input type="color" value={uc.from || '#7C3AED'} onChange={(e) => setUc({ from: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              Color final
+              <input type="color" value={uc.to || '#3B82F6'} onChange={(e) => setUc({ to: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
+            </label>
+          </div>
+        )}
+
+        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Tamaño de letra (opcional)</p>
+        <div className="flex gap-2">
+          {FONT_SIZE_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setUc({ fontSize: opt.id })}
+              className={['flex-1 h-9 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-colors', (uc.fontSize || 'normal') === opt.id ? 'theme-nav-btn-active theme-accent-text' : 'text-gray-500'].join(' ')}
+              style={(uc.fontSize || 'normal') === opt.id ? undefined : { borderColor: 'var(--surface-border-color)' }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex gap-3 mt-6">
           <button onClick={onApplyToAll} className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">

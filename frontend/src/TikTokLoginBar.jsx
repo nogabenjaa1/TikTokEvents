@@ -15,7 +15,21 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
   const verifying = connectionStatus === 'connecting';
 
   return (
-    <div className="theme-surface tkc-mobile-flush w-full md:fixed md:top-4 md:right-4 md:z-50 md:w-64 p-4 flex-shrink-0">
+    <div
+      className={[
+        'theme-surface tkc-mobile-flush w-full md:fixed md:top-4 md:right-4 md:z-50 md:w-64 p-4 flex-shrink-0',
+        // Pedido explícito: en desktop chocaba con el botón "Refrescar
+        // overlays" de la pestaña Overlays (mismo rincón superior derecho,
+        // ver OverlayLink.jsx) — se desliza fuera de la vista apenas la
+        // conexión con TikTok queda confirmada (ya no hace falta mirarla) y
+        // reaparece solo si se corta. Solo en desktop (md:): en mobile es
+        // una barra normal dentro del flujo, sin ese choque, así que se
+        // deja tal cual. `pointer-events-none` mientras está oculta evita
+        // que el input siga siendo clickeable fuera de la pantalla.
+        'transition-all duration-500 ease-in-out',
+        live ? 'md:opacity-0 md:pointer-events-none md:translate-x-[400px]' : 'md:opacity-100 md:translate-x-0',
+      ].join(' ')}
+    >
       <div className="flex justify-between items-center mb-2">
         <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Usuario de TikTok</label>
         {connectionStatus === 'checking' && <span className="text-[10px] text-yellow-400 animate-pulse">Buscando...</span>}

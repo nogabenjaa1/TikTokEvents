@@ -105,7 +105,8 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'green'];
 // mano no pueda meter un `background` con CSS arbitrario.
 const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue'];
 const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
-const VALID_USERNAME_COLOR_TYPES = ['default', 'rainbow', 'custom'];
+const VALID_USERNAME_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
+const VALID_FONT_SIZES = ['normal', 'large', 'xlarge'];
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 function sanitizeHexColor(value, fallback) {
@@ -131,6 +132,9 @@ function sanitizeOverlayCustomization(raw) {
             usernameColor: {
                 type: VALID_USERNAME_COLOR_TYPES.includes(uc.type) ? uc.type : 'default',
                 color: sanitizeHexColor(uc.color, '#FFFFFF'),
+                from: sanitizeHexColor(uc.from, '#7C3AED'),
+                to: sanitizeHexColor(uc.to, '#3B82F6'),
+                fontSize: VALID_FONT_SIZES.includes(uc.fontSize) ? uc.fontSize : 'normal',
             },
         };
     }

@@ -493,11 +493,14 @@ function computeRouletteRotation(prevRotation, entriesNow, targetUsername) {
 // de resolver (roja si sale eliminada, dorada si es la ganadora) — quien
 // gira la rueda hasta dejarla bajo el puntero es RouletteOverlay, este
 // componente solo dibuja el estado actual, nunca gira por su cuenta.
-// <defs> con el degradado arcoíris que usa getUsernameFill('rainbow') — un
-// solo id compartido por todos los <text> de la rueda, se define una sola
-// vez sin importar si algún username lo termina usando o no (no cuesta nada
-// si no se referencia).
-function RainbowGradientDefs() {
+// <defs> con los degradados que puede pedir getUsernameFill: "arcoíris"
+// (id fijo, siempre los mismos colores) y "gradient" (id fijo pero
+// alimentado con los dos colores que haya elegido el streamer en esta
+// personalización) — un solo par compartido por todos los <text> de la
+// rueda, se define una sola vez sin importar si algún username lo termina
+// usando o no (no cuesta nada si no se referencia).
+function UsernameSvgDefs({ customize }) {
+  const uc = customize?.usernameColor;
   return (
     <defs>
       <linearGradient id="tkc-rainbow-grad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -507,6 +510,10 @@ function RainbowGradientDefs() {
         <stop offset="60%" stopColor="#3ddc84" />
         <stop offset="80%" stopColor="#3b82f6" />
         <stop offset="100%" stopColor="#a855f7" />
+      </linearGradient>
+      <linearGradient id="tkc-custom-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor={uc?.from || '#7C3AED'} />
+        <stop offset="100%" stopColor={uc?.to || '#3B82F6'} />
       </linearGradient>
     </defs>
   );
@@ -522,7 +529,7 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size, custo
     const only = entries[0];
     return (
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
-        <RainbowGradientDefs />
+        <UsernameSvgDefs customize={customize} />
         <circle cx={cx} cy={cy} r={r} fill={WHEEL_COLORS[0]} stroke="white" strokeWidth="2" />
         <text x={cx} y={cy} fontSize="13" fill={nameFill} fontWeight="800" textAnchor="middle" dominantBaseline="middle">
           @{only.username.length > 14 ? only.username.slice(0, 13) + '…' : only.username}
@@ -539,7 +546,7 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size, custo
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full">
-      <RainbowGradientDefs />
+      <UsernameSvgDefs customize={customize} />
       {entries.map((e, i) => {
         const startAngle = i * anglePer;
         const endAngle = startAngle + anglePer;

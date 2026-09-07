@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
 
 // Los bloques de entradas se van achicando a medida que hay más gente, para
 // que el recuadro siga cabiendo todo el elenco — mismo criterio que
@@ -21,7 +23,7 @@ function EntryBlock({ e, size }) {
 }
 
 const WINNER_RULE_LABELS = { first: 'Primero en salir', last: 'Último en quedar', position: 'Número específico' };
-const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...' };
+const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', result: 'RESULTADO' };
 
 // ─────────────────────────────────────────────
 // RULETA
@@ -38,11 +40,19 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...' };
 export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
   const [entryMode, setEntryMode]         = useState('chat');
   const [keyword, setKeyword]             = useState('participo');
-  const [entryWindowMin, setEntryWindowMin] = useState(5);
+  const [entryWindowSec, setEntryWindowSec] = useState(300);
   const [selectedGift, setSelectedGift]   = useState(null);
   const [isDropOpen, setIsDropOpen]       = useState(false);
   const [winnerRule, setWinnerRule]       = useState('first');
   const [winnerPosition, setWinnerPosition] = useState(1);
+  // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
+  // fases de selección/resultado a la mitad, eliminationsPerRound agrupa
+  // varias eliminaciones por paso del sorteo. lockedMode queda expuesto
+  // por consistencia, aunque en Ruleta no cambia nada de verdad — acá las
+  // entradas YA solo se aceptan mientras se está "uniendo" gente.
+  const [fastMode, setFastMode]           = useState(false);
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
+  const [lockedMode, setLockedMode]       = useState(true);
 
   useEffect(() => {
     setSelectedGift(giftsList.find(g => g.coins > 0) || null);
@@ -54,12 +64,13 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     tiktokUsername: username,
     entryMode,
     keyword: keyword.trim(),
-    entryWindowSec: Math.max(30, Math.round(entryWindowMin * 60)),
+    entryWindowSec: Math.max(30, Math.round(entryWindowSec)),
     targetGiftName: entryMode === 'gift' ? selectedGift?.name || '' : '',
     targetGiftIcon: entryMode === 'gift' ? selectedGift?.icon || '' : '',
     targetGiftCoins: entryMode === 'gift' ? selectedGift?.coins || 0 : 0,
     winnerRule,
     winnerPosition: Math.max(1, Math.round(winnerPosition)),
+    fastMode, eliminationsPerRound, lockedMode,
   });
 
   const startRoulette = () => {
@@ -87,7 +98,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   // falta el de "recién montado" (isMounted) — sin él, cada vez que el
   // streamer cambia de pestaña y vuelve a Ruleta, este efecto corre de
   // nuevo con los valores LOCALES por defecto (keyword 'participo',
-  // entryWindowMin 5, etc.) y los manda de una, pisando en vivo la
+  // entryWindowSec 300, etc.) y los manda de una, pisando en vivo la
   // configuración real de una ronda que ya estaba activa — esto es lo que
   // rompía correr Ruleta en simultáneo con otro modo (Extensible, por
   // ejemplo): con solo pasar por su pestaña sin tocar nada, la ronda de
@@ -101,7 +112,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     if (activeJustChanged) return;
     if (state.isActive && state.mode === 'joining') socket.emit('update_roulette_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryMode, keyword, entryWindowMin, selectedGift, winnerRule, winnerPosition, state.isActive, state.mode]);
+  }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound, lockedMode, state.isActive, state.mode]);
 
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
   const entries = state.entries || [];
@@ -122,17 +133,21 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
               {state.mode === 'joining' && (
                 <p className="text-3xl font-black tabular-nums text-white">
-                  {state.timeLeft || 0}<span className="text-base text-gray-600">s</span>
+                  {formatMMSS(state.timeLeft || 0)}
                 </p>
               )}
             </div>
           )}
         </div>
 
-        {state.lastEliminated && state.mode === 'spinning' && (
-          <div className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 mb-3 relative z-10">
-            <img src={state.lastEliminated.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
-            <span className="text-xs font-bold text-red-300">💀 @{state.lastEliminated.username} quedó fuera</span>
+        {(state.lastEliminatedList || []).length > 0 && (state.mode === 'spinning' || state.mode === 'result') && (
+          <div className="flex flex-col gap-1.5 mb-3 relative z-10">
+            {state.lastEliminatedList.map((e, i) => (
+              <div key={e.username + i} className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2">
+                <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
+                <span className="text-xs font-bold text-red-300">💀 @{e.username} quedó fuera</span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -230,12 +245,34 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
             {/* Ventana de entrada */}
             <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">TIEMPO PARA ENTRAR</label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{entryWindowMin} min</span>
-              </div>
-              <input type="range" min="1" max="30" step="1" value={entryWindowMin} onChange={e => setEntryWindowMin(Number(e.target.value))} />
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">TIEMPO PARA ENTRAR</label>
+              <TimeInput seconds={entryWindowSec} onChange={setEntryWindowSec} />
               <p className="text-[10px] text-gray-500 mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
+            </div>
+
+            {/* Cuántas caen por paso del sorteo */}
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💀 ELIMINADAS POR PASO</label>
+              <input
+                type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
+                onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
+                className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
+              />
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántas entradas se sacan de una en cada paso del sorteo (nunca incluye a la ganadora).</p>
+            </div>
+
+            {/* Fast Mode / Locked Mode */}
+            <div className="flex gap-3 mb-6">
+              <button type="button" onClick={() => setFastMode(f => !f)}
+                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                title="Reduce las animaciones de giro/resultado a la mitad (1s en vez de 2s)">
+                ⚡ Fast Mode
+              </button>
+              <button type="button" disabled
+                className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide theme-btn-primary opacity-70 cursor-default"
+                title="En Ruleta las entradas SIEMPRE se cierran al arrancar el giro — no hay forma de sumarse tarde, así que este modo queda activo por naturaleza del juego">
+                🔒 Locked Mode
+              </button>
             </div>
 
             {/* Regla de ganador */}

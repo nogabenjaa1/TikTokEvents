@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
 import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';
+import { formatMMSS } from './timeFormat';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -25,38 +26,6 @@ function computeElimBoxSize(containerWidth, containerHeight, count) {
   return { size: 6, gap: 3 };
 }
 
-// Arma la secuencia de "paradas" (tipo ruleta / yo-no-fui) para la animación
-// de sorteo: arranca rápido y se va frenando, y el ÚLTIMO paso siempre cae
-// exactamente en targetIdx, sin importar cuántas vueltas dio antes.
-function buildRevealPath(listLength, targetIdx, totalMs) {
-  const delays = [];
-  let d = 70;
-  let total = 0;
-  while (total + d < totalMs - 350) {
-    delays.push(d);
-    total += d;
-    d = Math.min(d * 1.18, 380);
-  }
-  delays.push(Math.max(totalMs - total, 300)); // paso final: el "aterrizaje"
-
-  // Cada parada salta a una posición al azar (no un recorrido secuencial
-  // tipo ruleta) para que se vea genuinamente aleatorio mientras "tira los
-  // dados" — evita repetir la misma posición dos veces seguidas para que
-  // no parezca trabada. El aterrizaje final siempre es targetIdx, que ya
-  // se decidió al azar en el backend (ver beginEliminationReveal).
-  const path = [];
-  for (let i = 0; i < delays.length - 1; i++) {
-    let idx = Math.floor(Math.random() * listLength);
-    if (listLength > 1) {
-      const prev = path[path.length - 1];
-      while (idx === prev) idx = Math.floor(Math.random() * listLength);
-    }
-    path.push(idx);
-  }
-  path.push(targetIdx);
-  return { path, delays };
-}
-
 // Aviso fijo del tiempo de snipe (King/Zub) o de re-join (Eliminación),
 // arriba de todo y bien visible: la gente lo ve ANTES de mandar el regalo,
 // no recién cuando ese modo se activa.
@@ -65,7 +34,7 @@ function TimeWarningBadge({ label, seconds }) {
   return (
     <div className="w-full flex justify-center">
       <span className="bg-red-950/70 border-2 border-red-500/70 text-red-200 font-black uppercase tracking-[0.2em] text-sm px-5 py-1.5 rounded-full shadow-[0_0_15px_rgba(239,68,68,0.35)]">
-        ⚠️ {label}: {seconds}s
+        ⚠️ {label}: {formatMMSS(seconds)}
       </span>
     </div>
   );
@@ -178,7 +147,7 @@ function KingOverlay({ state, prize, customize }) {
         ) : (
           <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">{state.paused ? 'PAUSADO' : state.mode === 'waiting' ? 'ESPERANDO...' : 'TIEMPO RESTANTE'}</p>
-            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'waiting' ? 'text-gray-500' : 'text-white'}`}>{state.timeLeft}</p>          </div>
+            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'waiting' ? 'text-gray-500' : 'text-white'}`}>{formatMMSS(state.timeLeft)}</p>          </div>
         )}
       </div>
     </div>
@@ -261,109 +230,106 @@ function ZubastinisOverlay({ state, prize, customize }) {
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">
               {state.paused ? 'PAUSADO' : state.mode === 'tiebreak' ? 'DESEMPATE' : 'TIEMPO RESTANTE'}
             </p>
-            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'tiebreak' ? 'text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]' : 'text-white'}`}>{state.timeLeft}</p>          </div>
+            <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'tiebreak' ? 'text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]' : 'text-white'}`}>{formatMMSS(state.timeLeft)}</p>          </div>
         )}
       </div>
     </div>
   );
 }
 
-// Cuánto se ve el cartel grande de "ELIMINATED" (ver EliminatedBannerVisual
-// más abajo) antes de esconderse solo. NO pausa nada del backend — el
-// temporizador de reingreso (Eliminación) o el siguiente paso del sorteo
-// (Ruleta) siguen corriendo en paralelo por su cuenta mientras el cartel
-// está en pantalla; pedido explícito de que la animación no bloquee el
-// flujo del juego.
-const ELIMINATED_BANNER_MS = 2200;
+// Tope de cuántos eliminados se dibujan en la fase de "resultado" (1
+// grande + hasta 4 burbujas) — mismo valor que ELIM_RESULT_DISPLAY_CAP en
+// tenant.js, pedido explícito. El resto (si eliminationsPerRound trae más)
+// se resume como texto "y N más...".
+const RESULT_DISPLAY_CAP = 5;
 
-// Se pone en `true` apenas `value` cambia de REFERENCIA (un evento nuevo —
-// el backend arma un objeto nuevo en cada eliminación), y solo por `ms`
-// antes de apagarse solo — evita que cada caller tenga que reinventar su
-// propio timer de "flash". `null`/`undefined` nunca dispara nada.
-function useFlash(value, ms) {
-  const [visible, setVisible] = useState(false);
-  const seenRef = useRef(null);
+// Resalta hasta RESULT_DISPLAY_CAP índices al azar del pool mientras
+// `active` es true, cambiando cada `intervalMs` — puramente cosmético
+// durante la fase de "selección" (pedido explícito: no importa quién
+// aparezca ahí, los eliminados de VERDAD los decidió el backend y recién
+// se muestran en la fase de "resultado", ver EliminationResultVisual).
+function useFlickerHighlight(active, poolLength, intervalMs = 180) {
+  const [indexes, setIndexes] = useState([]);
   useEffect(() => {
-    if (!value || seenRef.current === value) return;
-    seenRef.current = value;
-    setVisible(true);
-    const t = setTimeout(() => setVisible(false), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return visible;
+    if (!active || poolLength <= 0) { setIndexes([]); return; }
+    const pick = () => {
+      const pool = Array.from({ length: poolLength }, (_, i) => i);
+      const count = Math.min(RESULT_DISPLAY_CAP, poolLength);
+      const chosen = [];
+      for (let i = 0; i < count && pool.length; i++) {
+        chosen.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      }
+      setIndexes(chosen);
+    };
+    pick();
+    const id = setInterval(pick, intervalMs);
+    return () => clearInterval(id);
+  }, [active, poolLength, intervalMs]);
+  return indexes;
 }
 
-// Cartel grande de "ELIMINATED" — mismo criterio visual que el del
-// ganador (avatar grande con glow + texto grande), pero para CADA
-// eliminación individual, no solo la final. Puramente presentacional y
-// TEMPORAL: cada caller decide cuándo mostrarlo/ocultarlo (Eliminación lo
-// autogestiona con `useFlash`; Ruleta lo sincroniza con su propia
-// coreografía de giro/resaltado — ver más abajo). `pointer-events-none`
-// porque es un overlay pasivo de OBS, no hay nada clickeable debajo que
-// deba quedar bloqueado.
-function EliminatedBannerVisual({ eliminated }) {
-  if (!eliminated) return null;
+// Resultado de una ronda de eliminación — el primero en grande (mismo
+// criterio visual que el cartel de GANADOR: avatar con glow + texto
+// grande "ELIMINATED", en inglés a propósito, mismo pedido explícito que
+// ya usaba el cartel individual anterior), hasta RESULT_DISPLAY_CAP-1 más
+// en burbujas al lado, y "y N más..." si sobran. Reemplaza a la grilla de
+// participantes mientras dura la fase de "resultado" — el backend ya se
+// encarga de que esa fase tenga un fin de ciclo fijo (ver
+// REVEAL_RESULT_MS en tenant.js), así que no hace falta ningún timer acá.
+function EliminationResultVisual({ list }) {
+  if (!list || list.length === 0) return null;
+  const [first, ...rest] = list;
+  const bubbles = rest.slice(0, RESULT_DISPLAY_CAP - 1);
+  const extra = list.length - 1 - bubbles.length;
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60 animate-pop pointer-events-none">
+    <div className="flex flex-col items-center gap-3 animate-pop">
       <div className="relative">
-        <div className="absolute -top-10 -right-6 text-[64px] drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] z-30">💀</div>
+        <div className="absolute -top-10 -right-6 text-[56px] drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] z-30">💀</div>
         <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-red-600" />
-        <img src={eliminated.avatar} className="w-28 h-28 rounded-full border-4 relative z-10 object-cover shadow-2xl border-red-500 grayscale" />
+        <img src={first.avatar} className="w-24 h-24 rounded-full border-4 relative z-10 object-cover shadow-2xl border-red-500 grayscale" />
       </div>
-      <div className="text-[40px] leading-none font-black tracking-widest text-red-500 animate-pulse">ELIMINATED</div>
-      <p className="text-lg font-black text-red-300">@{eliminated.username}</p>
+      <div className="text-[28px] leading-none font-black tracking-widest text-red-500 animate-pulse">ELIMINATED</div>
+      <p className="text-sm font-black text-red-300">@{first.username}</p>
+      {(bubbles.length > 0 || extra > 0) && (
+        <div className="flex items-center gap-2 flex-wrap justify-center max-w-full px-2">
+          {bubbles.map((e, i) => (
+            <div key={e.username + i} className="flex flex-col items-center gap-0.5">
+              <img src={e.avatar} className="w-10 h-10 rounded-full border-2 border-red-500 object-cover grayscale" />
+              <span className="text-[8px] text-red-300 max-w-[44px] truncate">@{e.username}</span>
+            </div>
+          ))}
+          {extra > 0 && <span className="text-xs font-bold text-red-300">y {extra} más...</span>}
+        </div>
+      )}
     </div>
   );
 }
 
 function EliminationOverlay({ state, prize, customize }) {
-  const [highlightIdx, setHighlightIdx] = useState(-1);
-  const revealKeyRef = useRef(null);
   const gridRef = useRef(null);
   const [boxSize, setBoxSize] = useState(64);
   const [gridGap, setGridGap] = useState(6);
 
-  // Sonidos: arranca el sorteo ('revealing'), se resuelve una eliminación
-  // ('revealing' -> 'rejoin'), y el mismo sonido de ganador que King/Zub.
+  // Sonidos: arranca el sorteo ('revealing'), se resuelve la ronda
+  // ('revealing' -> 'result', el momento real en que el backend ya sacó a
+  // los eliminados), y el mismo sonido de ganador que King/Zub.
   const prevElimRef = useRef({ mounted: false, mode: null });
   useEffect(() => {
     if (!state) return;
     const prev = prevElimRef.current;
     if (prev.mounted) {
       if (state.mode === 'revealing' && prev.mode !== 'revealing') playSelecting();
-      if (state.mode === 'rejoin' && prev.mode === 'revealing') playEliminate();
+      if (state.mode === 'result' && prev.mode === 'revealing') playEliminate();
       if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
     }
     prevElimRef.current = { mounted: true, mode: state.mode };
   }, [state?.mode, state?.winner]);
 
-  // Corre la animación de sorteo una sola vez por cada reveal (identificado
-  // por revealTargetId), y la resetea cuando termina o cambia de ronda.
-  useEffect(() => {
-    if (!state || state.mode !== 'revealing') {
-      revealKeyRef.current = null;
-      setHighlightIdx(-1);
-      return;
-    }
-
-    const list = state.participants || [];
-    if (list.length === 0 || revealKeyRef.current === state.revealTargetId) return;
-    revealKeyRef.current = state.revealTargetId;
-
-    let targetIdx = list.findIndex(p => p.id === state.revealTargetId);
-    if (targetIdx === -1) targetIdx = 0;
-
-    const { path, delays } = buildRevealPath(list.length, targetIdx, state.revealDurationMs || 4000);
-    let elapsed = 0;
-    const timers = path.map((idx, i) => {
-      elapsed += delays[i];
-      return setTimeout(() => setHighlightIdx(idx), elapsed);
-    });
-
-    return () => timers.forEach(clearTimeout);
-  }, [state && state.mode, state && state.revealTargetId]);
-
   const participants = (state && state.participants) || [];
+  // Puramente cosmético — ver comentario de useFlickerHighlight. Los
+  // eliminados de VERDAD llegan en state.lastEliminatedList recién en la
+  // fase de "resultado", no dependen de esto para nada.
+  const flickerIndexes = useFlickerHighlight(state?.mode === 'revealing', participants.length);
 
   // Mide el área real disponible para la grilla de participantes y
   // recalcula el tamaño de burbuja más grande que hace que todos entren —
@@ -381,11 +347,7 @@ function EliminationOverlay({ state, prize, customize }) {
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [participants.length, state && state.instaWinGiftName, prize, state && state.lastEliminated, state && state.mode]);
-
-  // Solo mientras el juego sigue (no compite con el cartel de GANADOR del
-  // final) — ver comentario de ELIMINATED_BANNER_MS.
-  const eliminatedFlash = useFlash(state && state.mode !== 'finished' ? state.lastEliminated : null, ELIMINATED_BANNER_MS);
+  }, [participants.length, state && state.instaWinGiftName, prize, state && state.mode]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 
@@ -397,7 +359,6 @@ function EliminationOverlay({ state, prize, customize }) {
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
-      <EliminatedBannerVisual eliminated={eliminatedFlash ? state.lastEliminated : null} />
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -410,7 +371,15 @@ function EliminationOverlay({ state, prize, customize }) {
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">💀 ELIMINACIÓN — ÚNETE CON:</p>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold">💀 ELIMINACIÓN — ÚNETE CON:</p>
+          {/* Pedido explícito: el público tiene que saber en qué modo están
+              jugando — Locked Mode significa que nadie nuevo entra ya
+              arrancada la dinámica. */}
+          {state.lockedMode && (
+            <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
+          )}
+        </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
@@ -435,15 +404,6 @@ function EliminationOverlay({ state, prize, customize }) {
         <PrizeStrip prize={prize} />
       </div>
 
-      {state.lastEliminated && state.mode !== 'finished' && (
-        <div className="mt-4 flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 w-full">
-          <img src={state.lastEliminated.avatar} className="w-8 h-8 rounded-full border-2 border-red-500 object-cover grayscale" />
-          <span className="text-xs font-bold text-red-300">
-            💀 @{state.lastEliminated.username} {state.lastEliminated.final === false ? 'perdió un slot' : 'fue eliminado'}
-          </span>
-        </div>
-      )}
-
       <div ref={gridRef} style={{ gap: gridGap }} className="w-full flex-1 flex flex-wrap justify-center items-center content-center my-2 overflow-hidden">
         {state.mode === 'finished' ? (
           state.winner && (
@@ -455,9 +415,11 @@ function EliminationOverlay({ state, prize, customize }) {
               </div>
             </div>
           )
+        ) : state.mode === 'result' ? (
+          <EliminationResultVisual list={state.lastEliminatedList} />
         ) : participants.length > 0 ? (
           participants.map((p, i) => {
-            const isHighlighted = state.mode === 'revealing' && i === highlightIdx;
+            const isHighlighted = state.mode === 'revealing' && flickerIndexes.includes(i);
             return (
               <div key={p.id} title={p.username} style={{ width: boxSize }}
                 className={`flex flex-col items-center gap-0.5 transition-all duration-150 ${state.mode === 'revealing' ? (isHighlighted ? 'scale-125 z-10' : 'opacity-30 scale-90') : ''}`}>
@@ -490,12 +452,16 @@ function EliminationOverlay({ state, prize, customize }) {
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎲 SORTEANDO...</p>
           </div>
+        ) : state.mode === 'result' ? (
+          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+            <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminados</p>
+          </div>
         ) : (
           // Más chico que en King/Zub a propósito: le deja más espacio a la
           // grilla de participantes, que puede tener muchos más elementos.
           <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">{state.paused ? 'PAUSADO' : timerTitle}</p>
-            <p className={`text-[52px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white'}`}>{state.timeLeft}</p>
+            <p className={`text-[52px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white'}`}>{formatMMSS(state.timeLeft)}</p>
           </div>
         )}
       </div>
@@ -512,33 +478,6 @@ function polarPoint(cx, cy, r, angleDeg) {
 }
 
 const WHEEL_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#f97316', '#14b8a6'];
-
-// Cuánto dura la animación de "girar hasta detenerse" en cada paso, y
-// cuántas vueltas completas de más da antes de aterrizar (puro efecto
-// visual). Se mantiene bien por debajo del delay mínimo entre pasos que
-// manda el backend (1100ms, ver ROULETTE_REVEAL_DELAY_DEFAULT_MS en
-// tenant.js) para que la rueda siempre alcance a aterrizar del todo antes
-// de que llegue el siguiente paso.
-const ROULETTE_SPIN_MS = 800;
-const ROULETTE_EXTRA_TURNS = 2;
-// Pausa después de que una sección desaparece y la rueda se reordena con
-// una menos, ANTES de arrancar a girar hacia el próximo objetivo — pedido
-// explícito: que el giro se note como un paso aparte, sobre la rueda ya
-// reestructurada, no mezclado con el instante en que alguien recién sale.
-const ROULETTE_SETTLE_MS = 350;
-
-// Calcula la rotación ABSOLUTA (nunca hacia atrás, siempre sumando vueltas
-// para adelante) que deja a `targetUsername` justo debajo del puntero fijo
-// (arriba del todo) — recalculada sobre `entriesNow`, la lista tal como
-// está la rueda EN ESTE MOMENTO (antes de sacar a nadie más).
-function computeRouletteRotation(prevRotation, entriesNow, targetUsername) {
-  const idx = entriesNow.findIndex(e => e.username === targetUsername);
-  if (idx === -1) return prevRotation;
-  const anglePer = 360 / entriesNow.length;
-  const midAngle = idx * anglePer + anglePer / 2;
-  const delta = (((-midAngle - prevRotation) % 360) + 360) % 360;
-  return prevRotation + delta + ROULETTE_EXTRA_TURNS * 360;
-}
 
 // La ruleta de verdad: un círculo dividido en tantas secciones iguales
 // como entradas queden, cada una con el username adentro (nunca la foto —
@@ -639,150 +578,36 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size, custo
   );
 }
 
-// El orden de los pasos lo pacea el BACKEND (ver stepRouletteReveal en
-// tenant.js — cada paso llega ya con el delay de suspenso aplicado del
-// lado del servidor, cada vez más lento cerca del final). Este componente
-// dibuja una ruleta tipo pastel de verdad (RouletteWheel de arriba) que
-// GIRA hasta detenerse exactamente en quien corresponda cada paso —
-// eliminado (rojo) o ganador (dorado) — se queda ahí un instante bien
-// visible, y recién entonces esa sección desaparece (o, si es la
-// ganadora, la ruleta da paso a la tarjeta grande con la foto).
+// El backend gobierna el ciclo entero de 2 fases (spinning/result, ver
+// beginRouletteStep/resolveRouletteStep en tenant.js), así que este
+// componente ya no tiene que coreografiar nada por su cuenta: la rueda
+// (RouletteWheel) es un elemento puramente decorativo mientras se está
+// "uniendo" gente — no hay forma física de girarla hasta señalar a VARIAS
+// personas a la vez (eliminationsPerRound), así que en cuanto arranca el
+// sorteo se reemplaza por el mismo destello + resultado en burbujas que
+// usa Eliminación (ver useFlickerHighlight/EliminationResultVisual),
+// consistente entre los dos modos.
 function RouletteOverlay({ state, prize, customize }) {
   const wheelBoxRef = useRef(null);
   const [wheelSize, setWheelSize] = useState(240);
-  // Usernames ya confirmados "fuera" en esta ronda, y quién está resaltado
-  // ahora mismo bajo el puntero (el paso más reciente, todavía visible
-  // aunque ya esté en `eliminatedUsernames`, para que se vea el momento
-  // antes de desaparecer). Nota: si el modo regalo repite el mismo
-  // username en varios slots, se apaga esa sección entera al salir el
-  // primero — aceptable para el efecto visual, ya que el sorteo real sigue
-  // siendo por slot en el backend.
-  const [eliminatedUsernames, setEliminatedUsernames] = useState(() => new Set());
-  const [highlightUsername, setHighlightUsername] = useState(null);
-  const [highlightKind, setHighlightKind] = useState(null); // 'eliminate' | 'winner'
-  const [rotation, setRotation] = useState(0);
-  // Si hay ganador, la tarjeta grande con la foto recién se muestra
-  // después de que la rueda termina de girar hasta marcarlo — antes de eso
-  // se sigue viendo la rueda, ya aterrizando en dorado sobre esa sección.
-  const [showWinnerCard, setShowWinnerCard] = useState(false);
-  // Cartel grande de "ELIMINATED" (ver EliminatedBannerVisual) — a
-  // diferencia de Eliminación, acá se sincroniza a mano con la propia
-  // coreografía de giro/resaltado de más abajo en vez de usar `useFlash`,
-  // para que aparezca justo cuando la rueda termina de aterrizar en esa
-  // persona, no apenas llega el evento del backend (que es antes de que
-  // la rueda visualmente gire hasta ahí).
-  const [eliminatedBanner, setEliminatedBanner] = useState(null);
-  const rotationRef = useRef(0);
-  // La entrada que está "en el aire" (ya se mandó a girar hacia ella, pero
-  // todavía no se confirmó del todo como afuera) — se resuelve de una
-  // apenas llega el paso siguiente, sin depender de que su propio timer
-  // haya disparado. Así, aunque un navegador en 2do plano frene los
-  // timers, nunca queda nadie pegado: como mucho, se pierde el instante de
-  // brillo de ESE paso puntual, pero jamás la persona se queda para siempre.
-  const pendingRef = useRef(null);
 
-  const finalizePending = () => {
-    if (!pendingRef.current) return;
-    const { username } = pendingRef.current;
-    pendingRef.current = null;
-    setEliminatedUsernames(prev => (prev.has(username) ? prev : new Set(prev).add(username)));
-  };
-
+  // Sonidos: arranca el sorteo ('spinning'), se resuelve un paso
+  // ('spinning' -> 'result', el momento real en que el backend ya sacó a
+  // los eliminados), y el mismo sonido de ganador que los demás modos.
   const prevRef = useRef({ mounted: false, mode: null });
   useEffect(() => {
     if (!state) return;
     const prev = prevRef.current;
-    if (prev.mounted && state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
-    prevRef.current = { mounted: true, mode: state.mode };
-  }, [state?.mode]);
-
-  // Arranca una ronda nueva -> se borra el rastro de la ronda anterior.
-  useEffect(() => {
-    if (state?.mode === 'joining') {
-      setEliminatedUsernames(new Set());
-      setHighlightUsername(null);
-      setHighlightKind(null);
-      setShowWinnerCard(false);
-      setEliminatedBanner(null);
-      setRotation(0);
-      rotationRef.current = 0;
-      pendingRef.current = null;
+    if (prev.mounted) {
+      if (state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
+      if (state.mode === 'result' && prev.mode === 'spinning') playEliminate();
+      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
     }
-  }, [state?.mode]);
-
-  const entries = (state && state.entries) || [];
-
-  // Cada roulette_step, en dos fases bien separadas (pedido explícito):
-  // 1) se confirma YA a quien haya quedado pendiente del paso anterior — la
-  //    rueda se redibuja más chica y se deja asentar un instante, quieta.
-  // 2) recién ahí arranca a girar hacia el nuevo objetivo, aterriza, se
-  //    resalta en rojo, y tras un instante se confirma como afuera.
-  useEffect(() => {
-    if (state?.mode !== 'spinning' || !state?.lastEliminated) return;
-    // Capturado por valor: aunque el setState de finalizePending recién se
-    // aplique en el próximo render, acá ya sabemos con certeza qué username
-    // hay que excluir al calcular la rueda "ya reestructurada".
-    const justFinalized = pendingRef.current?.username;
-    finalizePending();
-    const username = state.lastEliminated.username;
-    const timeouts = [];
-    timeouts.push(setTimeout(() => {
-      const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== justFinalized);
-      const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
-      rotationRef.current = next;
-      setRotation(next);
-      pendingRef.current = { username };
-      timeouts.push(setTimeout(() => {
-        playEliminate();
-        setHighlightUsername(username);
-        setHighlightKind('eliminate');
-        // El cartel grande recién arranca acá (la rueda ya aterrizó de
-        // verdad en esta persona), y se esconde solo por su cuenta —
-        // independiente del resaltado chico de la rueda (500ms), que sigue
-        // su propio timing de siempre.
-        setEliminatedBanner(state.lastEliminated);
-        timeouts.push(setTimeout(() => {
-          finalizePending();
-          setHighlightUsername(null);
-        }, 500));
-        timeouts.push(setTimeout(() => setEliminatedBanner(null), ELIMINATED_BANNER_MS));
-      }, ROULETTE_SPIN_MS));
-    }, ROULETTE_SETTLE_MS));
-    return () => timeouts.forEach(clearTimeout);
-  }, [state?.lastEliminated, state?.mode]);
-
-  // Termina con ganador: primero se confirma/reestructura lo que haya
-  // quedado pendiente del último paso, se deja asentar un instante, y
-  // recién ahí la rueda gira hasta marcarlo en dorado — antes de dar paso
-  // a la tarjeta grande con la foto (nunca antes: la foto de perfil solo
-  // se muestra con el ganador ya confirmado).
-  useEffect(() => {
-    if (state?.mode !== 'finished') return;
-    const justFinalized = pendingRef.current?.username;
-    finalizePending();
-    if (!state.winner) { setShowWinnerCard(true); return; }
-    const username = state.winner.username;
-    const timeouts = [];
-    timeouts.push(setTimeout(() => {
-      const entriesNow = entries.filter(e => !eliminatedUsernames.has(e.username) && e.username !== justFinalized);
-      const next = computeRouletteRotation(rotationRef.current, entriesNow, username);
-      rotationRef.current = next;
-      setRotation(next);
-      setHighlightUsername(username);
-      setHighlightKind('winner');
-      timeouts.push(setTimeout(() => { playWinner(); setShowWinnerCard(true); }, ROULETTE_SPIN_MS));
-    }, ROULETTE_SETTLE_MS));
-    return () => timeouts.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    prevRef.current = { mounted: true, mode: state.mode };
   }, [state?.mode, state?.winner]);
 
-  // Lo que se dibuja en la ruleta: todavía no se sacó nadie, o se acaba de
-  // sacar/ganar pero sigue un instante más resaltado antes de desaparecer
-  // (o de dar paso a la tarjeta del ganador).
-  const wheelEntries = entries.filter(e => !eliminatedUsernames.has(e.username) || e.username === highlightUsername);
-  // Todavía girando hacia el ganador (mode ya es 'finished' pero la rueda
-  // no terminó de aterrizar) -> se sigue viendo la rueda, no la tarjeta.
-  const showingWheel = state?.mode !== 'finished' || !showWinnerCard;
+  const entries = (state && state.entries) || [];
+  const flickerIndexes = useFlickerHighlight(state?.mode === 'spinning', entries.length);
 
   useLayoutEffect(() => {
     const el = wheelBoxRef.current;
@@ -802,15 +627,23 @@ function RouletteOverlay({ state, prize, customize }) {
 
   return (
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
-      <EliminatedBannerVisual eliminated={eliminatedBanner} />
-      {(state.mode === 'spinning' || (state.mode === 'finished' && showingWheel)) && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
+      {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
         <TimeWarningBadge label="Cierra en" seconds={state.mode === 'joining' ? state.timeLeft : undefined} />
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">🎡 RULETA</p>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold">🎡 RULETA</p>
+          {/* Pedido explícito: el público tiene que saber en qué modo
+              están jugando. En Ruleta esto siempre está "trabado" por
+              naturaleza del juego (nunca se puede entrar tarde), se
+              muestra igual por consistencia con Eliminación. */}
+          {state.lockedMode && (
+            <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
+          )}
+        </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
             {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
@@ -821,32 +654,41 @@ function RouletteOverlay({ state, prize, customize }) {
         <PrizeStrip prize={prize} />
       </div>
 
-      {state.lastEliminated && state.mode === 'spinning' && (
-        <div className="mt-4 flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 w-full">
-          <span className="text-xs font-bold text-red-300">💀 @{state.lastEliminated.username} quedó fuera</span>
-        </div>
-      )}
-
       <div ref={wheelBoxRef} className="w-full flex-1 flex items-center justify-center my-2 overflow-hidden relative">
-        {!showingWheel ? (
+        {state.mode === 'finished' ? (
           state.winner && (
             <div className="flex flex-col items-center animate-pop">
               <div className="relative">
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
-                {/* La foto de perfil recién se muestra acá, con el ganador
-                    ya definido y la rueda ya detenida — durante el giro la
-                    ruleta solo muestra usernames, nunca avatares. */}
                 <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
               </div>
             </div>
           )
-        ) : wheelEntries.length > 0 ? (
-          <>
-            <div style={{ width: wheelSize, height: wheelSize, transform: `rotate(${rotation}deg)`, transition: `transform ${ROULETTE_SPIN_MS}ms cubic-bezier(0.15, 0.7, 0.2, 1)` }}>
-              <RouletteWheel entries={wheelEntries} highlightUsername={highlightUsername} highlightColor={highlightKind === 'winner' ? '#facc15' : '#ef4444'} size={wheelSize} customize={customize} />
+        ) : state.mode === 'result' ? (
+          <EliminationResultVisual list={state.lastEliminatedList} />
+        ) : state.mode === 'spinning' ? (
+          entries.length > 0 ? (
+            <div className="w-full flex flex-wrap gap-2 justify-center items-center content-center max-h-full overflow-hidden">
+              {entries.map((e, i) => {
+                const isHighlighted = flickerIndexes.includes(i);
+                return (
+                  <div key={e.id} className={`flex flex-col items-center gap-0.5 transition-all duration-150 ${isHighlighted ? 'scale-125 z-10' : 'opacity-30 scale-90'}`}>
+                    <img src={e.avatar} className={`w-12 h-12 rounded-full border-2 object-cover flex-shrink-0 ${isHighlighted ? 'border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.7)]' : ''}`} style={{ borderColor: isHighlighted ? undefined : 'var(--accent)' }} />
+                    <span className={`text-[8px] max-w-[48px] truncate ${isHighlighted ? 'text-yellow-300 font-bold' : 'text-gray-300'}`}>@{e.username}</span>
+                  </div>
+                );
+              })}
             </div>
-            {/* Puntero fijo (no gira con la ruleta) marcando la sección de arriba. */}
+          ) : (
+            <p className="text-gray-600 text-sm italic text-center">Esperando participantes...</p>
+          )
+        ) : entries.length > 0 ? (
+          <>
+            <div style={{ width: wheelSize, height: wheelSize }}>
+              <RouletteWheel entries={entries} highlightUsername={null} highlightColor="#ef4444" size={wheelSize} customize={customize} />
+            </div>
+            {/* Puntero fijo, decorativo mientras se junta gente. */}
             <div className="absolute left-1/2 -translate-x-1/2 top-0 text-3xl drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>🔻</div>
           </>
         ) : (
@@ -855,7 +697,7 @@ function RouletteOverlay({ state, prize, customize }) {
       </div>
 
       <div className="w-full text-center mt-auto">
-        {state.mode === 'finished' && !showingWheel ? (
+        {state.mode === 'finished' ? (
           <div className="flex flex-col items-center gap-2 py-2">
             {state.winner ? (
               <>
@@ -866,14 +708,18 @@ function RouletteOverlay({ state, prize, customize }) {
               <div className="text-[32px] leading-none font-black tracking-widest text-red-500">SIN GANADOR</div>
             )}
           </div>
-        ) : state.mode === 'spinning' || (state.mode === 'finished' && showingWheel) ? (
+        ) : state.mode === 'spinning' ? (
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
+          </div>
+        ) : state.mode === 'result' ? (
+          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+            <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminadas</p>
           </div>
         ) : (
           <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">TIEMPO PARA ENTRAR</p>
-            <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{state.timeLeft}</p>
+            <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{formatMMSS(state.timeLeft)}</p>
           </div>
         )}
       </div>

@@ -10,17 +10,24 @@ const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 const db = require('./db');
 const spotify = require('./spotify');
 
-// Duración de la animación de "sorteo" (tipo ruleta) en el overlay de
-// Eliminación antes de revelar a quién le tocó.
-const ELIM_REVEAL_MS = 4000;
+// Eliminación/Ruleta comparten el mismo ciclo de revelado, en DOS fases de
+// duración fija (pedido explícito): "selección" (la animación de sorteo/
+// giro, puramente cosmética) y "resultado" (se muestra quién quedó afuera
+// hasta que termina, y recién ahí se oculta sola — antes se quedaba
+// pegada en pantalla hasta la siguiente eliminación, bug real a
+// propósito corregido acá). "Fast Mode" (ver elimState.fastMode/
+// rouletteState.fastMode) reduce ambas fases a la mitad.
+const REVEAL_SELECT_MS = 2000;
+const REVEAL_RESULT_MS = 2000;
+const REVEAL_SELECT_MS_FAST = 1000;
+const REVEAL_RESULT_MS_FAST = 1000;
 
-// RULETA: delay (ms) antes de revelar el siguiente lugar, según cuántos
-// pasos faltan para llegar al ganador — 0 = el próximo paso ES el ganador
-// (la pausa más larga, el momento de más suspenso), 1-3 = los últimos
-// lugares antes de esa revelación, ya notablemente más lentos que el resto.
-// Cualquier distancia mayor usa el ritmo normal.
-const ROULETTE_REVEAL_DELAY_MS = { 0: 5000, 1: 4000, 2: 3000, 3: 2000 };
-const ROULETTE_REVEAL_DELAY_DEFAULT_MS = 1100;
+// Tope de cuántos eliminados se muestran en grande/en burbujas por ronda
+// en el overlay (ver EliminatedResultVisual en Overlay.jsx) — pedido
+// explícito: 1 grande + hasta 4 burbujas, el resto va como texto "y N
+// más...". No limita cuántos se pueden eliminar por ronda de verdad
+// (eliminationsPerRound), solo cuántos se DIBUJAN.
+const ELIM_RESULT_DISPLAY_CAP = 5;
 
 // tiktok-live-connector arma la conexión en dos pasos: primero pide datos
 // por HTTP (con timeout propio, ~10s, ver TIKTOK_CLIENT_TIMEOUT), y recién
@@ -115,6 +122,31 @@ function shuffleArray(list) {
     return copy;
 }
 
+// Elige hasta `maxCount` slots al azar de `pool` para eliminar en una sola
+// ronda (ver elimState.eliminationsPerRound) — nunca deja el pool en CERO
+// usuarios distintos: si un usuario tiene varios slots, perder algunos no
+// lo saca del todo, así que solo se frena de agregar un slot más cuando
+// hacerlo dejaría a ese usuario (Y a todos los demás) sin ningún slot. El
+// resultado no importa quién sea puntualmente (es al azar de verdad sobre
+// TODO el pool, no solo sobre los primeros N) — mismo criterio que
+// shuffleArray/beginRouletteSpin.
+function pickEliminationBatch(pool, maxCount) {
+    const shuffled = shuffleArray(pool);
+    const remaining = {};
+    pool.forEach(p => { remaining[p.username] = (remaining[p.username] || 0) + 1; });
+    let distinctAlive = Object.keys(remaining).length;
+    const batch = [];
+    for (const slot of shuffled) {
+        if (batch.length >= maxCount) break;
+        const wouldEmptyPool = remaining[slot.username] === 1 && distinctAlive === 1;
+        if (wouldEmptyPool) continue;
+        remaining[slot.username] -= 1;
+        if (remaining[slot.username] === 0) distinctAlive -= 1;
+        batch.push(slot);
+    }
+    return batch;
+}
+
 // Espejo del catálogo de frontend/src/ThemeContext.jsx: valida lo que manda
 // el cliente antes de guardarlo/emitirlo, para que un socket manipulado a
 // mano no pueda meter un valor arbitrario en --theme-style/--accent.
@@ -207,17 +239,25 @@ class Tenant {
 
         // ── ELIMINACIÓN ──
         this.elimState = {
-            isActive: false, mode: 'idle', paused: false, // idle | joining | revealing | rejoin | finished
+            isActive: false, mode: 'idle', paused: false, // idle | joining | revealing | result | rejoin | finished
             targetGiftName: '', targetGiftIcon: '', targetGiftCoins: 0,
             instaWinGiftName: '', instaWinGiftIcon: '', instaWinGiftCoins: 0,
             baseTime: 60, rejoinTime: 20, timeLeft: 0,
+            // fastMode: fases de 1s en vez de 2s (ver REVEAL_SELECT_MS/
+            // REVEAL_RESULT_MS). eliminationsPerRound: cuántos slots caen
+            // por ronda de sorteo (antes siempre 1). lockedMode: si está
+            // activo, solo entra gente durante 'joining' — nadie se suma
+            // ya empezada la dinámica (ver processGiftElim).
+            fastMode: false, eliminationsPerRound: 1, lockedMode: false,
             participants: [], // [{ id, username, avatar }]
-            revealTargetId: null,
-            lastEliminated: null, winner: null,
+            revealTargetIds: [], // slots sorteados en la ronda de 'revealing' actual
+            lastEliminatedList: [], // [{ username, avatar, final }] de la última ronda ya resuelta
+            winner: null,
         };
         this.elimTimerInterval = null;
         this.elimSlotCounter = 0;
         this.elimRevealTimeout = null;
+        this.elimResultTimeout = null;
         // Ver comentario de kingTargetAccum/kingInstaWinAccum más arriba.
         this.elimEntryAccum = {};
         this.elimInstaWinAccum = {};
@@ -231,14 +271,22 @@ class Tenant {
         // dice EN QUÉ LUGAR del sorteo aparece la ganadora, no la elige de
         // antemano.
         this.rouletteState = {
-            isActive: false, mode: 'idle', paused: false, // idle | joining | spinning | finished
+            isActive: false, mode: 'idle', paused: false, // idle | joining | spinning | result | finished
             entryMode: 'chat', keyword: '', entryWindowSec: 300,
             targetGiftName: '', targetGiftIcon: '', targetGiftCoins: 0,
             winnerRule: 'first', winnerPosition: 1, // 'first' | 'last' | 'position'
             timeLeft: 0,
+            // Mismo criterio que elimState (ver comentario ahí): fastMode
+            // reduce las fases de selección/resultado a la mitad,
+            // eliminationsPerRound agrupa varias eliminaciones por paso.
+            // lockedMode queda expuesto por consistencia con Eliminación,
+            // pero en Ruleta no cambia nada de verdad: acá las entradas YA
+            // solo se aceptan durante 'joining' (nunca hubo forma de
+            // sumarse tarde), así que este modo siempre está "trabado".
+            fastMode: false, eliminationsPerRound: 1, lockedMode: false,
             entries: [], // [{ id, username, avatar }]
-            revealOrder: [], winnerIndex: -1, revealCursor: 0, // solo durante 'spinning'
-            lastEliminated: null, winner: null,
+            revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [], // solo durante 'spinning'/'result'
+            lastEliminatedList: [], winner: null,
         };
         this.rouletteTimerInterval = null;
         this.rouletteSlotCounter = 0;
@@ -423,6 +471,24 @@ class Tenant {
         if (!this.anyContestNeedsConnection()) this.disconnectTikTok();
     }
 
+    // Bug crítico corregido a propósito (pedido explícito): cuando el LIVE
+    // se corta de verdad (ver el `live_stream_ended` que dispara esto,
+    // justo después de confirmar con isUserOfflineError/wasEverConnected
+    // en ensureTikTokConnection), CUALQUIER modo que haya quedado activo
+    // se detiene solo, como si el streamer hubiera tocado "Detener" — antes
+    // se quedaban "activos" para siempre sin ganador, y como el panel
+    // bloquea la edición mientras algo está activo, no había forma de
+    // arrancar una partida nueva hasta reiniciar el proceso entero. Cada
+    // stopX ya revisa/limpia su propio estado — acá solo hace falta
+    // llamarlos, sin duplicar lógica.
+    stopAllActiveGames() {
+        if (this.contestState.isActive) this.stopKingContest();
+        if (this.zubState.isActive) this.stopZubastinis();
+        if (this.elimState.isActive) this.stopElimination();
+        if (this.rouletteState.isActive) this.stopRoulette();
+        if (this.extensibleState.isActive) this.stopExtensible();
+    }
+
     scheduleReconnect(username) {
         if (!this.anyContestNeedsConnection()) return;
         if (this.retryTimeout) clearTimeout(this.retryTimeout);
@@ -579,6 +645,12 @@ class Tenant {
                 console.log(`[${this.licenseId}] [TIKTOK] 🛑 @${username} ya no está en vivo — se corta el reintento automático.`);
                 this.wasEverConnected = false;
                 this.desiredUsername = null;
+                // Bug crítico corregido a propósito: cualquier modo que
+                // haya quedado activo se detiene solo (ver
+                // stopAllActiveGames) — sin esto, el panel se quedaba
+                // bloqueado para siempre esperando un ganador que ya nunca
+                // iba a llegar.
+                this.stopAllActiveGames();
                 this.broadcast.emit('live_stream_ended', { username });
                 this.maybeDisconnectTikTok();
                 throw err;
@@ -1143,6 +1215,18 @@ class Tenant {
         }
     }
 
+    // Extraído a método (antes vivía inline en socket.on('stop_contest'))
+    // para poder llamarlo también desde stopAllActiveGames — ver el
+    // comentario grande ahí sobre por qué hace falta.
+    stopKingContest() {
+        this.contestState.isActive = false;
+        this.contestState.mode = 'idle';
+        this.contestState.paused = false;
+        if (this.kingTimerInterval) clearInterval(this.kingTimerInterval);
+        this.broadcast.emit('state_update', this.contestState);
+        this.maybeDisconnectTikTok();
+    }
+
     // ==========================================
     // LÓGICA: ZUBASTINIS (TOP 3 GIFTERS)
     // ==========================================
@@ -1235,6 +1319,17 @@ class Tenant {
         this.broadcast.emit('zub_state_update', this.getZubPublicState());
     }
 
+    // Ver comentario de stopKingContest.
+    stopZubastinis() {
+        this.zubState.isActive = false;
+        this.zubState.mode = 'idle';
+        this.zubState.paused = false;
+        this.zubState.tiebreakUsernames = [];
+        if (this.zubTimerInterval) clearInterval(this.zubTimerInterval);
+        this.broadcast.emit('zub_state_update', this.getZubPublicState());
+        this.maybeDisconnectTikTok();
+    }
+
     // ==========================================
     // LÓGICA: ELIMINACIÓN
     // ==========================================
@@ -1244,9 +1339,12 @@ class Tenant {
             targetGiftName: this.elimState.targetGiftName, targetGiftIcon: this.elimState.targetGiftIcon, targetGiftCoins: this.elimState.targetGiftCoins,
             instaWinGiftName: this.elimState.instaWinGiftName, instaWinGiftIcon: this.elimState.instaWinGiftIcon, instaWinGiftCoins: this.elimState.instaWinGiftCoins,
             baseTime: this.elimState.baseTime, rejoinTime: this.elimState.rejoinTime, timeLeft: this.elimState.timeLeft,
+            fastMode: this.elimState.fastMode, eliminationsPerRound: this.elimState.eliminationsPerRound, lockedMode: this.elimState.lockedMode,
             participants: this.elimState.participants,
-            revealTargetId: this.elimState.revealTargetId, revealDurationMs: ELIM_REVEAL_MS,
-            lastEliminated: this.elimState.lastEliminated, winner: this.elimState.winner,
+            revealTargetIds: this.elimState.revealTargetIds,
+            revealSelectMs: this.elimState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
+            revealResultMs: this.elimState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
+            lastEliminatedList: this.elimState.lastEliminatedList, winner: this.elimState.winner,
         };
     }
 
@@ -1266,9 +1364,11 @@ class Tenant {
     // por SLOT (no por usuario): alguien con 3 slots tiene 3x más chances de
     // que le toque perder uno, pero solo queda afuera del todo cuando pierde
     // su último slot. Si queda 1 o menos usuarios distintos, termina el juego
-    // directamente; si no, se elige el slot que va a caer y arranca la
-    // animación de "sorteo" en el overlay — recién cuando esa animación termina
-    // se elimina el slot de verdad y arranca el tiempo de rejoin.
+    // directamente; si no, se eligen hasta `eliminationsPerRound` slots al
+    // azar (ver pickEliminationBatch) y arranca la fase de "selección" —
+    // puramente cosmética en el overlay, dura REVEAL_SELECT_MS (o la mitad
+    // en fastMode) — recién cuando esa fase termina se elimina la batch de
+    // verdad y arranca la fase de "resultado" (ver resolveEliminationReveal).
     beginEliminationReveal() {
         const pool = this.elimState.participants;
         const distinctUsers = new Set(pool.map(p => p.username));
@@ -1278,39 +1378,60 @@ class Tenant {
             return;
         }
 
-        const idx = Math.floor(Math.random() * pool.length);
+        const maxCount = Math.max(1, this.elimState.eliminationsPerRound || 1);
+        const batch = pickEliminationBatch(pool, maxCount);
         this.elimState.mode = 'revealing';
-        this.elimState.revealTargetId = pool[idx].id;
-        console.log(`[${this.licenseId}] [ELIMINACION] 🎯 SORTEANDO...`);
+        this.elimState.revealTargetIds = batch.map(p => p.id);
+        console.log(`[${this.licenseId}] [ELIMINACION] 🎯 SORTEANDO... (${batch.length})`);
         this.broadcast.emit('elim_reveal_started', this.getElimPublicState());
 
         if (this.elimRevealTimeout) clearTimeout(this.elimRevealTimeout);
-        this.elimRevealTimeout = setTimeout(() => this.resolveEliminationReveal(), ELIM_REVEAL_MS);
+        const selectMs = this.elimState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS;
+        this.elimRevealTimeout = setTimeout(() => this.resolveEliminationReveal(), selectMs);
     }
 
+    // Saca de verdad los slots sorteados y muestra el resultado por
+    // REVEAL_RESULT_MS (o la mitad en fastMode) — pasado ese tiempo, se
+    // oculta solo y recién ahí arranca el tiempo de rejoin (bug real
+    // corregido a propósito: antes el cartel de "eliminado" se quedaba
+    // pegado en pantalla hasta la ronda siguiente, en vez de tener un fin
+    // de ciclo propio).
     resolveEliminationReveal() {
         this.elimRevealTimeout = null;
         const pool = this.elimState.participants;
-        const idx = pool.findIndex(p => p.id === this.elimState.revealTargetId);
-        const victimSlot = idx !== -1 ? pool.splice(idx, 1)[0] : null;
-        this.elimState.revealTargetId = null;
+        const ids = this.elimState.revealTargetIds || [];
+        const eliminatedSlots = [];
+        ids.forEach(id => {
+            const idx = pool.findIndex(p => p.id === id);
+            if (idx !== -1) eliminatedSlots.push(pool.splice(idx, 1)[0]);
+        });
+        this.elimState.revealTargetIds = [];
 
-        if (victimSlot) {
-            const stillHasSlots = pool.some(p => p.username === victimSlot.username);
-            this.elimState.lastEliminated = { username: victimSlot.username, avatar: victimSlot.avatar, final: !stillHasSlots };
-            console.log(`[${this.licenseId}] [ELIMINACION] 💀 SLOT ELIMINADO: @${victimSlot.username}${stillHasSlots ? ' (le quedan slots)' : ' (fuera del todo)'}`);
-        }
+        this.elimState.lastEliminatedList = eliminatedSlots.map(slot => ({
+            username: slot.username, avatar: slot.avatar,
+            final: !pool.some(p => p.username === slot.username),
+        }));
+        console.log(`[${this.licenseId}] [ELIMINACION] 💀 ELIMINADOS: ${this.elimState.lastEliminatedList.map(e => '@' + e.username).join(', ') || '(nadie)'}`);
 
-        this.elimState.mode = 'rejoin';
-        this.elimState.timeLeft = this.elimState.rejoinTime;
+        this.elimState.mode = 'result';
         this.broadcast.emit('elim_eliminated', this.getElimPublicState());
+
+        if (this.elimResultTimeout) clearTimeout(this.elimResultTimeout);
+        const resultMs = this.elimState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS;
+        this.elimResultTimeout = setTimeout(() => {
+            this.elimResultTimeout = null;
+            this.elimState.mode = 'rejoin';
+            this.elimState.timeLeft = this.elimState.rejoinTime;
+            this.elimState.lastEliminatedList = [];
+            this.broadcast.emit('elim_state_update', this.getElimPublicState());
+        }, resultMs);
     }
 
     startElimTimer() {
         if (this.elimTimerInterval) clearInterval(this.elimTimerInterval);
 
         this.elimTimerInterval = setInterval(() => {
-            if (!this.elimState.isActive || this.elimState.mode === 'revealing' || this.elimState.paused) return;
+            if (!this.elimState.isActive || this.elimState.mode === 'revealing' || this.elimState.mode === 'result' || this.elimState.paused) return;
             this.elimState.timeLeft--;
 
             if (this.elimState.timeLeft <= 0) {
@@ -1342,12 +1463,18 @@ class Tenant {
     // — pedido explícito, tiene sentido en un modo de "slots" como este.
     processGiftElim({ username, avatar, totalCoins }) {
         if (!this.elimState.isActive || this.elimState.paused) return;
-        // 'revealing' (la animación de sorteo) también acepta regalos: antes se
-        // ignoraban del todo y esos usuarios se quedaban afuera de la siguiente
-        // ronda de rejoin sin darse cuenta. Ahora entran igual, solo que no
-        // participan del sorteo que ya está en curso (arrancó con la lista de
-        // antes) — quedan listos para la ronda que sigue apenas termine.
-        if (this.elimState.mode !== 'joining' && this.elimState.mode !== 'rejoin' && this.elimState.mode !== 'revealing') return;
+        // Locked Mode (pedido explícito): solo se suma gente durante la
+        // ventana inicial de 'joining' — nadie nuevo entra ya arrancada la
+        // dinámica, ni siquiera en 'rejoin' (que sin este modo sí acepta
+        // gente nueva en cualquier momento, ver el bloque de abajo).
+        if (this.elimState.lockedMode && this.elimState.mode !== 'joining') return;
+        // 'revealing'/'result' (la animación de sorteo y el cartel de
+        // resultado) también aceptan regalos: antes se ignoraban del todo y
+        // esos usuarios se quedaban afuera de la siguiente ronda de rejoin
+        // sin darse cuenta. Ahora entran igual, solo que no participan del
+        // sorteo que ya está en curso (arrancó con la lista de antes) —
+        // quedan listos para la ronda que sigue apenas termine.
+        if (this.elimState.mode !== 'joining' && this.elimState.mode !== 'rejoin' && this.elimState.mode !== 'revealing' && this.elimState.mode !== 'result') return;
 
         if (this.elimState.instaWinGiftCoins > 0) {
             const accWin = this.accumulateGiftCoins(this.elimInstaWinAccum, username, totalCoins || 0);
@@ -1384,6 +1511,17 @@ class Tenant {
         this.broadcast.emit('elim_state_update', this.getElimPublicState());
     }
 
+    // Ver comentario de stopKingContest.
+    stopElimination() {
+        this.elimState.isActive = false;
+        this.elimState.mode = 'idle';
+        if (this.elimTimerInterval) clearInterval(this.elimTimerInterval);
+        if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
+        if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
+        this.broadcast.emit('elim_state_update', this.getElimPublicState());
+        this.maybeDisconnectTikTok();
+    }
+
     // ==========================================
     // LÓGICA: RULETA (sorteo por comentario o por regalo)
     // ==========================================
@@ -1396,8 +1534,11 @@ class Tenant {
             targetGiftName: this.rouletteState.targetGiftName, targetGiftIcon: this.rouletteState.targetGiftIcon, targetGiftCoins: this.rouletteState.targetGiftCoins,
             winnerRule: this.rouletteState.winnerRule, winnerPosition: this.rouletteState.winnerPosition,
             timeLeft: this.rouletteState.timeLeft,
+            fastMode: this.rouletteState.fastMode, eliminationsPerRound: this.rouletteState.eliminationsPerRound, lockedMode: this.rouletteState.lockedMode,
+            revealSelectMs: this.rouletteState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
+            revealResultMs: this.rouletteState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
             entries: this.rouletteState.entries,
-            lastEliminated: this.rouletteState.lastEliminated, winner: this.rouletteState.winner,
+            lastEliminatedList: this.rouletteState.lastEliminatedList, winner: this.rouletteState.winner,
         };
     }
 
@@ -1446,38 +1587,76 @@ class Tenant {
         this.rouletteState.revealOrder = shuffleArray(entries);
         this.rouletteState.winnerIndex = winnerPos - 1;
         this.rouletteState.revealCursor = 0;
-        this.rouletteState.lastEliminated = null;
+        this.rouletteState.lastEliminatedList = [];
         console.log(`[${this.licenseId}] [RULETA] 🎡 GIRANDO — ${total} entradas, ganadora en la posición ${winnerPos}`);
         this.broadcast.emit('roulette_spin_started', this.getRoulettePublicState());
-        this.stepRouletteReveal();
+        this.beginRouletteStep();
     }
 
-    // Revela un lugar a la vez del shuffle ya armado. Al llegar al índice
-    // ganador, para ahí — no hace falta seguir revelando el resto de la
-    // lista. El delay antes de cada paso se achica cerca del final (ver
-    // ROULETTE_REVEAL_DELAY_MS) para el efecto de suspenso pedido.
-    stepRouletteReveal() {
+    // Arranca la fase de "selección" de un paso — mismo criterio de 2 fases
+    // que Eliminación (ver beginEliminationReveal/REVEAL_SELECT_MS): dura
+    // REVEAL_SELECT_MS (o la mitad en fastMode), es puramente cosmética en
+    // el overlay, y agrupa hasta `eliminationsPerRound` eliminaciones por
+    // paso en vez de revelar de a una — la ganadora (revealOrder[winnerIndex])
+    // nunca entra en un batch: si ya no queda nadie más antes de ella, el
+    // sorteo termina y la declara.
+    beginRouletteStep() {
         const { revealOrder, winnerIndex, revealCursor } = this.rouletteState;
-        const entry = revealOrder[revealCursor];
-
-        if (revealCursor === winnerIndex) {
-            this.rouletteState.mode = 'finished';
-            this.rouletteState.isActive = false;
-            this.rouletteState.winner = { username: entry.username, avatar: entry.avatar };
-            this.rouletteState.lastEliminated = null;
-            console.log(`[${this.licenseId}] [RULETA] 👑 GANADORA: @${entry.username}`);
-            this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
-            this.maybeDisconnectTikTok();
+        if (revealCursor >= winnerIndex) {
+            this.finishRouletteWithWinner();
             return;
         }
+        const remainingBeforeWinner = winnerIndex - revealCursor;
+        const batchSize = Math.min(Math.max(1, this.rouletteState.eliminationsPerRound || 1), remainingBeforeWinner);
+        this.rouletteState.revealTargetIndexes = Array.from({ length: batchSize }, (_, i) => revealCursor + i);
+        this.rouletteState.mode = 'spinning';
+        this.broadcast.emit('roulette_step_started', this.getRoulettePublicState());
 
-        this.rouletteState.lastEliminated = { username: entry.username, avatar: entry.avatar };
+        if (this.rouletteRevealTimeout) clearTimeout(this.rouletteRevealTimeout);
+        const selectMs = this.rouletteState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS;
+        this.rouletteRevealTimeout = setTimeout(() => this.resolveRouletteStep(), selectMs);
+    }
+
+    // Saca de verdad a los de este paso y muestra el resultado por
+    // REVEAL_RESULT_MS (o la mitad en fastMode) antes de arrancar el
+    // siguiente paso — mismo ciclo de "aparece y se oculta solo" que
+    // Eliminación (ver resolveEliminationReveal).
+    resolveRouletteStep() {
+        this.rouletteRevealTimeout = null;
+        const { revealOrder, revealTargetIndexes } = this.rouletteState;
+        const eliminated = revealTargetIndexes.map(i => revealOrder[i]);
+        this.rouletteState.lastEliminatedList = eliminated.map(e => ({ username: e.username, avatar: e.avatar }));
+        this.rouletteState.revealCursor += revealTargetIndexes.length;
+        this.rouletteState.revealTargetIndexes = [];
+        // Pedido explícito (bug real): `entries` es lo que ve el panel de
+        // administración (la lista de participantes activos), y antes
+        // nunca se tocaba durante el sorteo — `revealOrder` es una COPIA
+        // barajada aparte, así que las eliminaciones nunca se reflejaban
+        // ahí. Eliminación ya sacaba de verdad de `participants`, esto
+        // iguala el comportamiento acá.
+        const eliminatedIds = new Set(eliminated.map(e => e.id));
+        this.rouletteState.entries = this.rouletteState.entries.filter(e => !eliminatedIds.has(e.id));
+        this.rouletteState.mode = 'result';
+        console.log(`[${this.licenseId}] [RULETA] 💀 ELIMINADAS: ${this.rouletteState.lastEliminatedList.map(e => '@' + e.username).join(', ')}`);
         this.broadcast.emit('roulette_step', this.getRoulettePublicState());
 
-        this.rouletteState.revealCursor += 1;
-        const distanceToWinner = this.rouletteState.winnerIndex - this.rouletteState.revealCursor;
-        const delay = ROULETTE_REVEAL_DELAY_MS[distanceToWinner] ?? ROULETTE_REVEAL_DELAY_DEFAULT_MS;
-        this.rouletteRevealTimeout = setTimeout(() => this.stepRouletteReveal(), delay);
+        const resultMs = this.rouletteState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS;
+        this.rouletteRevealTimeout = setTimeout(() => {
+            this.rouletteRevealTimeout = null;
+            this.rouletteState.lastEliminatedList = [];
+            this.beginRouletteStep();
+        }, resultMs);
+    }
+
+    finishRouletteWithWinner() {
+        const entry = this.rouletteState.revealOrder[this.rouletteState.winnerIndex];
+        this.rouletteState.mode = 'finished';
+        this.rouletteState.isActive = false;
+        this.rouletteState.winner = { username: entry.username, avatar: entry.avatar };
+        this.rouletteState.lastEliminatedList = [];
+        console.log(`[${this.licenseId}] [RULETA] 👑 GANADORA: @${entry.username}`);
+        this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
+        this.maybeDisconnectTikTok();
     }
 
     // Modo Chat: comentar la keyword configurada da UNA vida, sin importar
@@ -1519,6 +1698,17 @@ class Tenant {
             state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar });
         }
         this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+    }
+
+    // Ver comentario de stopKingContest.
+    stopRoulette() {
+        this.rouletteState.isActive = false;
+        this.rouletteState.mode = 'idle';
+        this.rouletteState.paused = false;
+        if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
+        if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
+        this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
+        this.maybeDisconnectTikTok();
     }
 
     // ==========================================
@@ -1628,6 +1818,15 @@ class Tenant {
         const units = Math.max(1, repeatCount || 1);
         state.timeLeft += state.secondsPerGift * units;
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+    }
+
+    // Ver comentario de stopKingContest.
+    stopExtensible() {
+        this.extensibleState.isActive = false;
+        this.extensibleState.paused = false;
+        if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+        this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+        this.maybeDisconnectTikTok();
     }
 
     // ==========================================
@@ -1776,14 +1975,7 @@ class Tenant {
             }
         });
 
-        socket.on('stop_contest', () => {
-            this.contestState.isActive = false;
-            this.contestState.mode = 'idle';
-            this.contestState.paused = false;
-            if (this.kingTimerInterval) clearInterval(this.kingTimerInterval);
-            this.broadcast.emit('state_update', this.contestState);
-            this.maybeDisconnectTikTok();
-        });
+        socket.on('stop_contest', () => this.stopKingContest());
 
         // ── ZUBASTINIS ──────────────────────────────
         socket.on('start_zubastinis', (config) => {
@@ -1850,15 +2042,7 @@ class Tenant {
             }
         });
 
-        socket.on('stop_zubastinis', () => {
-            this.zubState.isActive = false;
-            this.zubState.mode = 'idle';
-            this.zubState.paused = false;
-            this.zubState.tiebreakUsernames = [];
-            if (this.zubTimerInterval) clearInterval(this.zubTimerInterval);
-            this.broadcast.emit('zub_state_update', this.getZubPublicState());
-            this.maybeDisconnectTikTok();
-        });
+        socket.on('stop_zubastinis', () => this.stopZubastinis());
 
         // ── ELIMINACIÓN ──────────────────────────────
         socket.on('start_elimination', (config) => {
@@ -1866,12 +2050,16 @@ class Tenant {
             db.incrementUsage(this.licenseId, 'elim_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(elim_starts):`, err.message));
 
             if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
+            if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
             this.elimState = {
                 isActive: true, mode: 'joining', paused: false,
                 targetGiftName: config.targetGiftName, targetGiftIcon: config.targetGiftIcon, targetGiftCoins: config.targetGiftCoins,
                 instaWinGiftName: config.instaWinGiftName || '', instaWinGiftIcon: config.instaWinGiftIcon || '', instaWinGiftCoins: config.instaWinGiftCoins || 0,
                 baseTime: config.baseTime, rejoinTime: config.rejoinTime, timeLeft: config.baseTime,
-                participants: [], revealTargetId: null, lastEliminated: null, winner: null,
+                fastMode: !!config.fastMode,
+                eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
+                lockedMode: !!config.lockedMode,
+                participants: [], revealTargetIds: [], lastEliminatedList: [], winner: null,
             };
             this.elimSlotCounter = 0;
             this.elimEntryAccum = {};
@@ -1902,12 +2090,13 @@ class Tenant {
             if (this.elimState.isActive) {
                 console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO ELIMINACIÓN...`);
                 if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
+                if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
                 this.elimState.mode = 'joining';
                 this.elimState.paused = false;
                 this.elimState.timeLeft = this.elimState.baseTime;
                 this.elimState.participants = [];
-                this.elimState.revealTargetId = null;
-                this.elimState.lastEliminated = null;
+                this.elimState.revealTargetIds = [];
+                this.elimState.lastEliminatedList = [];
                 this.elimState.winner = null;
                 this.elimSlotCounter = 0;
                 this.elimEntryAccum = {};
@@ -1927,6 +2116,9 @@ class Tenant {
                 this.elimState.instaWinGiftCoins = newConfig.instaWinGiftCoins || 0;
                 this.elimState.baseTime = newConfig.baseTime;
                 this.elimState.rejoinTime = newConfig.rejoinTime;
+                this.elimState.fastMode = !!newConfig.fastMode;
+                this.elimState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
+                this.elimState.lockedMode = !!newConfig.lockedMode;
 
                 // Igual que en Rey del Trono: no se toca timeLeft. La fase que
                 // esté corriendo sigue con el tiempo que ya tenía; el valor nuevo
@@ -1936,14 +2128,7 @@ class Tenant {
             }
         });
 
-        socket.on('stop_elimination', () => {
-            this.elimState.isActive = false;
-            this.elimState.mode = 'idle';
-            if (this.elimTimerInterval) clearInterval(this.elimTimerInterval);
-            if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
-            this.broadcast.emit('elim_state_update', this.getElimPublicState());
-            this.maybeDisconnectTikTok();
-        });
+        socket.on('stop_elimination', () => this.stopElimination());
 
         // ── RULETA ──────────────────────────────────
         // No hay evento de "girar" manual: el giro arranca solo al vencer
@@ -1961,8 +2146,11 @@ class Tenant {
                 targetGiftName: config.targetGiftName || '', targetGiftIcon: config.targetGiftIcon || '', targetGiftCoins: config.targetGiftCoins || 0,
                 winnerRule: config.winnerRule || 'first', winnerPosition: config.winnerPosition || 1,
                 timeLeft: config.entryWindowSec,
-                entries: [], revealOrder: [], winnerIndex: -1, revealCursor: 0,
-                lastEliminated: null, winner: null,
+                fastMode: !!config.fastMode,
+                eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
+                lockedMode: !!config.lockedMode,
+                entries: [], revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [],
+                lastEliminatedList: [], winner: null,
             };
             this.rouletteSlotCounter = 0;
             this.rouletteEntryAccum = {};
@@ -1992,6 +2180,9 @@ class Tenant {
                 this.rouletteState.targetGiftCoins = config.targetGiftCoins || 0;
                 this.rouletteState.winnerRule = config.winnerRule || 'first';
                 this.rouletteState.winnerPosition = config.winnerPosition || 1;
+                this.rouletteState.fastMode = !!config.fastMode;
+                this.rouletteState.eliminationsPerRound = Math.max(1, Number(config.eliminationsPerRound) || 1);
+                this.rouletteState.lockedMode = !!config.lockedMode;
             }
             this.rouletteState.mode = 'joining';
             this.rouletteState.paused = false;
@@ -2000,7 +2191,8 @@ class Tenant {
             this.rouletteState.revealOrder = [];
             this.rouletteState.winnerIndex = -1;
             this.rouletteState.revealCursor = 0;
-            this.rouletteState.lastEliminated = null;
+            this.rouletteState.revealTargetIndexes = [];
+            this.rouletteState.lastEliminatedList = [];
             this.rouletteState.winner = null;
             this.rouletteSlotCounter = 0;
             this.rouletteEntryAccum = {};
@@ -2025,6 +2217,9 @@ class Tenant {
                 this.rouletteState.targetGiftCoins = newConfig.targetGiftCoins || 0;
                 this.rouletteState.winnerRule = newConfig.winnerRule || 'first';
                 this.rouletteState.winnerPosition = newConfig.winnerPosition || 1;
+                this.rouletteState.fastMode = !!newConfig.fastMode;
+                this.rouletteState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
+                this.rouletteState.lockedMode = !!newConfig.lockedMode;
                 this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             }
         });
@@ -2047,15 +2242,7 @@ class Tenant {
             }
         });
 
-        socket.on('stop_roulette', () => {
-            this.rouletteState.isActive = false;
-            this.rouletteState.mode = 'idle';
-            this.rouletteState.paused = false;
-            if (this.rouletteTimerInterval) clearInterval(this.rouletteTimerInterval);
-            if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
-            this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
-            this.maybeDisconnectTikTok();
-        });
+        socket.on('stop_roulette', () => this.stopRoulette());
 
         // ── MODO EXTENSIBLE ──────────────────────────
         // 120 minutos (7200s) de tope para el tiempo base — mismo límite que
@@ -2122,13 +2309,7 @@ class Tenant {
             }
         });
 
-        socket.on('stop_extensible', () => {
-            this.extensibleState.isActive = false;
-            this.extensibleState.paused = false;
-            if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
-            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
-            this.maybeDisconnectTikTok();
-        });
+        socket.on('stop_extensible', () => this.stopExtensible());
 
         // ── TOP GIFTER / TOP TAP-TAP (rankings continuos) ──
         // Sin start/stop: solo un botón de "reiniciar" a mano desde la

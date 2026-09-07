@@ -1,13 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-// mm:ss — el contador puede superar los 99 minutos fácil (arranca chico y
-// crece con follows/regalos), así que el minuto no se acota a 2 dígitos.
-function formatTime(totalSeconds) {
-  const s = Math.max(0, Math.round(totalSeconds || 0));
-  const mins = Math.floor(s / 60);
-  const secs = s % 60;
-  return `${mins}:${String(secs).padStart(2, '0')}`;
-}
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
 
 // ─────────────────────────────────────────────
 // MODO EXTENSIBLE
@@ -20,13 +13,13 @@ function formatTime(totalSeconds) {
 // la idea es premiar cualquier apoyo, no una dinámica de puntería.
 // ─────────────────────────────────────────────
 export default function Extensible({ state, socket, username, connectionStatus }) {
-  const [baseTimeMin, setBaseTimeMin] = useState(1);
+  const [baseTimeSec, setBaseTimeSec] = useState(60);
   const [secondsPerFollow, setSecondsPerFollow] = useState(5);
   const [secondsPerGift, setSecondsPerGift] = useState(3);
 
   const buildConfig = () => ({
     tiktokUsername: username,
-    baseTime: Math.max(1, Math.round(baseTimeMin * 60)),
+    baseTime: Math.max(1, Math.round(baseTimeSec)),
     secondsPerFollow: Math.max(0, Math.round(secondsPerFollow)),
     secondsPerGift: Math.max(0, Math.round(secondsPerGift)),
   });
@@ -46,7 +39,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
   // una fase "de espera" propia: el contador corre todo el tiempo). El
   // guard de "recién montado" (isMounted) es crítico acá: sin él, cada vez
   // que el streamer cambia de pestaña y vuelve, este efecto corre de nuevo
-  // con los valores LOCALES por defecto (baseTimeMin 1, secondsPerFollow 5,
+  // con los valores LOCALES por defecto (baseTimeSec 60, secondsPerFollow 5,
   // etc.) y los manda de una, pisando en vivo un contador que ya estaba
   // corriendo con otros valores — esto rompía tener Extensible corriendo en
   // simultáneo con otro modo, con solo pasar por esta pestaña sin tocar nada.
@@ -59,7 +52,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
     if (activeJustChanged) return;
     if (state.isActive) socket.emit('update_extensible_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseTimeMin, secondsPerFollow, secondsPerGift, state.isActive]);
+  }, [baseTimeSec, secondsPerFollow, secondsPerGift, state.isActive]);
 
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
 
@@ -75,7 +68,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
         </div>
 
         <p className={`relative z-10 text-center text-6xl font-black tabular-nums ${state.finished ? 'text-yellow-300' : state.paused ? 'text-gray-500' : 'text-white'}`}>
-          {formatTime(state.timeLeft)}
+          {formatMMSS(state.timeLeft)}
         </p>
         {state.finished && (
           <p className="relative z-10 text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">TIEMPO AGOTADO</p>
@@ -100,11 +93,8 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Tiempo base */}
             <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">TIEMPO BASE (AL INICIAR/REINICIAR)</label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{baseTimeMin} min</span>
-              </div>
-              <input type="range" min="1" max="120" step="1" value={baseTimeMin} onChange={e => setBaseTimeMin(Number(e.target.value))} />
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">TIEMPO BASE (AL INICIAR/REINICIAR)</label>
+              <TimeInput seconds={baseTimeSec} onChange={setBaseTimeSec} maxSeconds={7200} />
               <p className="text-[10px] text-gray-500 mt-1">Con cuánto tiempo arranca el contador — solo se aplica al Iniciar o Reiniciar.</p>
             </div>
 

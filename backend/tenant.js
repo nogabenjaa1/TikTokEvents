@@ -29,6 +29,11 @@ const REVEAL_RESULT_MS_FAST = 1000;
 // (eliminationsPerRound), solo cuántos se DIBUJAN.
 const ELIM_RESULT_DISPLAY_CAP = 5;
 
+// Avatar de relleno para entradas manuales (ver elim_add_manual_entry/
+// roulette_add_manual_entry): un cuadrado negro liso, para usuarios nuevos
+// que el admin suma a mano y que no tienen foto de perfil real de TikTok.
+const DEFAULT_MANUAL_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="black"/></svg>');
+
 // tiktok-live-connector arma la conexión en dos pasos: primero pide datos
 // por HTTP (con timeout propio, ~10s, ver TIKTOK_CLIENT_TIMEOUT), y recién
 // después abre el WebSocket real a TikTok — ese segundo paso, con la
@@ -279,11 +284,11 @@ class Tenant {
             // Mismo criterio que elimState (ver comentario ahí): fastMode
             // reduce las fases de selección/resultado a la mitad,
             // eliminationsPerRound agrupa varias eliminaciones por paso.
-            // lockedMode queda expuesto por consistencia con Eliminación,
-            // pero en Ruleta no cambia nada de verdad: acá las entradas YA
-            // solo se aceptan durante 'joining' (nunca hubo forma de
+            // Sin lockedMode a propósito (pedido explícito, se sacó del panel):
+            // en Ruleta las entradas YA solo se aceptan durante 'joining' tanto
+            // en modo Chat como en modo Gift (nunca hubo forma de
             // sumarse tarde), así que este modo siempre está "trabado".
-            fastMode: false, eliminationsPerRound: 1, lockedMode: false,
+            fastMode: false, eliminationsPerRound: 1,
             entries: [], // [{ id, username, avatar }]
             revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [], // solo durante 'spinning'/'result'
             lastEliminatedList: [], winner: null,
@@ -1534,7 +1539,7 @@ class Tenant {
             targetGiftName: this.rouletteState.targetGiftName, targetGiftIcon: this.rouletteState.targetGiftIcon, targetGiftCoins: this.rouletteState.targetGiftCoins,
             winnerRule: this.rouletteState.winnerRule, winnerPosition: this.rouletteState.winnerPosition,
             timeLeft: this.rouletteState.timeLeft,
-            fastMode: this.rouletteState.fastMode, eliminationsPerRound: this.rouletteState.eliminationsPerRound, lockedMode: this.rouletteState.lockedMode,
+            fastMode: this.rouletteState.fastMode, eliminationsPerRound: this.rouletteState.eliminationsPerRound,
             revealSelectMs: this.rouletteState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
             revealResultMs: this.rouletteState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
             entries: this.rouletteState.entries,
@@ -1965,12 +1970,14 @@ class Tenant {
                 this.contestState.mainTime = newConfig.mainTime;
                 this.contestState.snipeTime = newConfig.snipeTime;
 
-                // A propósito NO se toca timeLeft acá: cambiar el tiempo no debe
-                // recortar/alargar la fase que está corriendo en este momento (eso
-                // reiniciaba el conteo del participante actual de la nada). El
-                // nuevo valor queda guardado y se aplica solo la próxima vez que
-                // esa fase arranca de cero (alguien roba el lugar -> nuevo mainTime;
-                // se acaba el main -> nuevo snipeTime).
+                // Pedido explícito: reflejar el cambio de tiempo al instante si la
+                // fase correspondiente está corriendo ahora mismo (igual que ya
+                // hacía Zubastinis) — si se agranda el tiempo, el conteo salta
+                // hacia arriba; si se achica, salta hacia abajo. En 'waiting'
+                // (todavía no llegó el primer regalo) no hay nada que saltar, el
+                // valor nuevo ya queda guardado para cuando arranque.
+                if (this.contestState.mode === 'main') this.contestState.timeLeft = newConfig.mainTime;
+                else if (this.contestState.mode === 'snipe') this.contestState.timeLeft = newConfig.snipeTime;
                 this.broadcast.emit('state_update', this.contestState);
             }
         });
@@ -2118,14 +2125,42 @@ class Tenant {
                 this.elimState.rejoinTime = newConfig.rejoinTime;
                 this.elimState.fastMode = !!newConfig.fastMode;
                 this.elimState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
-                this.elimState.lockedMode = !!newConfig.lockedMode;
+                // Pedido explícito: una vez arrancada la ronda con Locked Mode
+                // activado, no se puede desactivar hasta Detener/Reiniciar — evita
+                // levantar el bloqueo a mitad de ronda para dejar entrar gente
+                // nueva a último momento. Prender sí se puede en cualquier momento.
+                this.elimState.lockedMode = this.elimState.lockedMode || !!newConfig.lockedMode;
 
-                // Igual que en Rey del Trono: no se toca timeLeft. La fase que
-                // esté corriendo sigue con el tiempo que ya tenía; el valor nuevo
-                // se aplica solo la próxima vez que esa fase arranca de cero
-                // (próxima ventana de unirse o próxima ventana de rejoin).
+                // Pedido explícito (igual que Zubastinis): reflejar el cambio de
+                // tiempo al instante si la fase correspondiente está corriendo
+                // ahora mismo — si se agranda el tiempo, el conteo salta hacia
+                // arriba; si se achica, salta hacia abajo.
+                if (this.elimState.mode === 'joining') this.elimState.timeLeft = newConfig.baseTime;
+                else if (this.elimState.mode === 'rejoin') this.elimState.timeLeft = newConfig.rejoinTime;
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
             }
+        });
+
+        // Suma entradas a mano, sin depender de un regalo o comentario real —
+        // pedido explícito para poder premiar a alguien puntualmente o corregir
+        // a mano. Cuentan EXACTAMENTE igual que las entradas por regalo (mismo
+        // array de slots que usa el sorteo), y a propósito ignoran Locked Mode:
+        // es una acción explícita del admin, no una entrada automática. Si el
+        // usuario ya está en la lista, reusa su avatar real; si es nuevo, le
+        // pone el avatar de relleno negro (ver DEFAULT_MANUAL_AVATAR).
+        socket.on('elim_add_manual_entry', ({ username, count } = {}) => {
+            if (!this.elimState.isActive || this.elimState.mode === 'finished') return;
+            const uname = (username || '').trim();
+            if (!uname) return;
+            const n = Math.max(1, Math.min(1000, Math.round(Number(count) || 1)));
+            const existing = this.elimState.participants.find(p => p.username === uname);
+            const avatar = existing ? existing.avatar : DEFAULT_MANUAL_AVATAR;
+            for (let i = 0; i < n; i++) {
+                this.elimSlotCounter += 1;
+                this.elimState.participants.push({ id: this.elimSlotCounter, username: uname, avatar });
+            }
+            console.log(`[${this.licenseId}] [ELIMINACION] ➕ Entrada manual: @${uname} x${n}`);
+            this.broadcast.emit('elim_state_update', this.getElimPublicState());
         });
 
         socket.on('stop_elimination', () => this.stopElimination());
@@ -2148,7 +2183,6 @@ class Tenant {
                 timeLeft: config.entryWindowSec,
                 fastMode: !!config.fastMode,
                 eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
-                lockedMode: !!config.lockedMode,
                 entries: [], revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [],
                 lastEliminatedList: [], winner: null,
             };
@@ -2182,7 +2216,6 @@ class Tenant {
                 this.rouletteState.winnerPosition = config.winnerPosition || 1;
                 this.rouletteState.fastMode = !!config.fastMode;
                 this.rouletteState.eliminationsPerRound = Math.max(1, Number(config.eliminationsPerRound) || 1);
-                this.rouletteState.lockedMode = !!config.lockedMode;
             }
             this.rouletteState.mode = 'joining';
             this.rouletteState.paused = false;
@@ -2203,10 +2236,10 @@ class Tenant {
         // Cambios en vivo MIENTRAS se está uniendo gente (antes de que
         // arranque el giro, que ya queda comprometido con el shuffle) — el
         // mismo patrón que update_elim_settings/update_settings en los
-        // otros modos. A propósito NO se toca timeLeft: cambiar la ventana
-        // de entrada no debe recortar/alargar la cuenta regresiva que ya
-        // está corriendo, el valor nuevo se aplica recién la próxima vez
-        // que se inicia o reinicia la ronda.
+        // otros modos. Pedido explícito (igual que Zubastinis): la ventana de
+        // entrada SÍ se refleja al instante en el conteo que está corriendo
+        // (como acá solo se llega con mode === 'joining', siempre es la fase
+        // activa) — si se agranda, salta hacia arriba; si se achica, hacia abajo.
         socket.on('update_roulette_settings', (newConfig) => {
             if (this.rouletteState.isActive && this.rouletteState.mode === 'joining') {
                 this.rouletteState.entryMode = newConfig.entryMode === 'gift' ? 'gift' : 'chat';
@@ -2219,9 +2252,29 @@ class Tenant {
                 this.rouletteState.winnerPosition = newConfig.winnerPosition || 1;
                 this.rouletteState.fastMode = !!newConfig.fastMode;
                 this.rouletteState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
-                this.rouletteState.lockedMode = !!newConfig.lockedMode;
+                this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
                 this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             }
+        });
+
+        // Ver comentario de elim_add_manual_entry — mismo criterio acá: cuenta
+        // como una entrada real (mismo array que usa el sorteo), solo se puede
+        // sumar mientras la ventana de entrada sigue abierta ('joining'), porque
+        // una vez que arranca el giro el orden ya quedó barajado y fijo
+        // (revealOrder/winnerIndex, ver beginRouletteSpin) — sumar gente después
+        // no tendría forma de entrar en ese sorteo ya en curso.
+        socket.on('roulette_add_manual_entry', ({ username, count } = {}) => {
+            if (!this.rouletteState.isActive || this.rouletteState.mode !== 'joining') return;
+            const uname = (username || '').trim();
+            if (!uname) return;
+            const n = Math.max(1, Math.min(1000, Math.round(Number(count) || 1)));
+            const existing = this.rouletteState.entries.find(e => e.username === uname);
+            const avatar = existing ? existing.avatar : DEFAULT_MANUAL_AVATAR;
+            for (let i = 0; i < n; i++) {
+                this.rouletteState.entries.push({ id: ++this.rouletteSlotCounter, username: uname, avatar });
+            }
+            console.log(`[${this.licenseId}] [RULETA] ➕ Entrada manual: @${uname} x${n}`);
+            this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
         });
 
         // Pausa/reanuda SOLO la cuenta de "tiempo para entrar" (mientras
@@ -2269,12 +2322,24 @@ class Tenant {
             }
         });
 
-        // A propósito NUNCA toca `timeLeft` — pedido explícito: los segundos
-        // por follow/regalo (y la base, para el próximo reinicio) deben
-        // poder cambiarse en vivo SIN reiniciar el contador que ya corre.
+        // Segundos por follow/regalo: se pueden cambiar en vivo sin reiniciar
+        // el contador, como siempre (pedido explícito original). Tiempo base:
+        // ahora se refleja al instante (pedido explícito nuevo, mismo criterio
+        // que los demás modos) pero SUMANDO/RESTANDO la diferencia en vez de
+        // pisar timeLeft directo — a diferencia de Rey del Trono/Zubastinis/
+        // Eliminación/Ruleta, acá timeLeft ya lleva sumado en vivo lo que los
+        // follows/regalos fueron agregando durante la corrida, y pisarlo de
+        // una borraría ese bonus ya ganado.
         socket.on('update_extensible_settings', (config) => {
             if (!this.extensibleState.isActive) return;
-            if (config?.baseTime !== undefined) this.extensibleState.baseTime = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
+            if (config?.baseTime !== undefined) {
+                const newBase = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
+                const delta = newBase - this.extensibleState.baseTime;
+                this.extensibleState.baseTime = newBase;
+                if (!this.extensibleState.finished) {
+                    this.extensibleState.timeLeft = Math.max(0, this.extensibleState.timeLeft + delta);
+                }
+            }
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());

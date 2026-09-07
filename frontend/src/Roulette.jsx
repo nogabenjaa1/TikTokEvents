@@ -47,12 +47,14 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   const [winnerPosition, setWinnerPosition] = useState(1);
   // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
   // fases de selección/resultado a la mitad, eliminationsPerRound agrupa
-  // varias eliminaciones por paso del sorteo. lockedMode queda expuesto
-  // por consistencia, aunque en Ruleta no cambia nada de verdad — acá las
-  // entradas YA solo se aceptan mientras se está "uniendo" gente.
+  // varias eliminaciones por paso del sorteo. Sin lockedMode a propósito
+  // (pedido explícito, se sacó del panel): en Ruleta las entradas YA solo
+  // se aceptan mientras se está "uniendo" gente, tanto en Chat como en
+  // Gift — no hay nada que un toggle pudiera cambiar de verdad.
   const [fastMode, setFastMode]           = useState(false);
   const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
-  const [lockedMode, setLockedMode]       = useState(true);
+  const [manualUsername, setManualUsername] = useState('');
+  const [manualCount, setManualCount]       = useState(1);
 
   useEffect(() => {
     setSelectedGift(giftsList.find(g => g.coins > 0) || null);
@@ -70,8 +72,16 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     targetGiftCoins: entryMode === 'gift' ? selectedGift?.coins || 0 : 0,
     winnerRule,
     winnerPosition: Math.max(1, Math.round(winnerPosition)),
-    fastMode, eliminationsPerRound, lockedMode,
+    fastMode, eliminationsPerRound,
   });
+
+  const addManualEntry = () => {
+    const uname = manualUsername.trim().replace(/^@/, '');
+    if (!uname) return;
+    socket.emit('roulette_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
+    setManualUsername('');
+    setManualCount(1);
+  };
 
   const startRoulette = () => {
     if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
@@ -112,7 +122,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     if (activeJustChanged) return;
     if (state.isActive && state.mode === 'joining') socket.emit('update_roulette_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound, lockedMode, state.isActive, state.mode]);
+  }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound, state.isActive, state.mode]);
 
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
   const entries = state.entries || [];
@@ -245,7 +255,9 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
             {/* Ventana de entrada */}
             <div className="mb-4">
-              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">TIEMPO PARA ENTRAR</label>
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
+                TIEMPO PARA ENTRAR {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              </label>
               <TimeInput seconds={entryWindowSec} onChange={setEntryWindowSec} />
               <p className="text-[10px] text-gray-500 mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
             </div>
@@ -261,18 +273,42 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántas entradas se sacan de una en cada paso del sorteo (nunca incluye a la ganadora).</p>
             </div>
 
-            {/* Fast Mode / Locked Mode */}
-            <div className="flex gap-3 mb-6">
+            {/* Fast Mode (sin Locked Mode a propósito: en Ruleta las entradas
+                SIEMPRE se cierran al arrancar el giro, tanto en Chat como en
+                Gift — no hay nada que un toggle pudiera cambiar de verdad). */}
+            <div className="mb-6">
               <button type="button" onClick={() => setFastMode(f => !f)}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
                 title="Reduce las animaciones de giro/resultado a la mitad (1s en vez de 2s)">
                 ⚡ Fast Mode
               </button>
-              <button type="button" disabled
-                className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide theme-btn-primary opacity-70 cursor-default"
-                title="En Ruleta las entradas SIEMPRE se cierran al arrancar el giro — no hay forma de sumarse tarde, así que este modo queda activo por naturaleza del juego">
-                🔒 Locked Mode
-              </button>
+            </div>
+
+            {/* Entrada manual (admin): suma entradas a mano a un usuario
+                existente o nuevo, sin depender de un regalo o comentario
+                real — cuenta exactamente igual que una entrada por regalo.
+                Solo mientras la ventana de entrada sigue abierta: una vez
+                que arranca el giro, el orden ya quedó barajado y fijo. */}
+            <div className="mb-6 pt-4 border-t border-white/10">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">➕ AGREGAR ENTRADA MANUAL</label>
+              <div className="flex gap-2">
+                <input
+                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
+                  placeholder="usuario"
+                  className="theme-input flex-1 p-2 text-sm outline-none"
+                />
+                <input
+                  type="number" min="1" value={manualCount}
+                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
+                  className="theme-input w-16 p-2 text-center text-sm outline-none"
+                />
+                <button type="button" onClick={addManualEntry}
+                  disabled={!state.isActive || state.mode !== 'joining' || !manualUsername.trim()}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  Agregar
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo/comentario. Solo mientras está abierta la ventana de entrada.</p>
             </div>
 
             {/* Regla de ganador */}

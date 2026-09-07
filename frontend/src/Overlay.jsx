@@ -268,6 +268,30 @@ function useFlickerHighlight(active, poolLength, intervalMs = 180) {
   return indexes;
 }
 
+// Barra que se vacía de 100% a 0% en `durationMs` — pedido explícito: que
+// la duración configurada de cada fase (revealSelectMs/revealResultMs, ver
+// tenant.js) se vea reflejada en el overlay, no solo en el timing interno.
+// Vía transición CSS pura (sin setInterval): al activarse fuerza un primer
+// frame al 100% y recién en el siguiente pide el 0%, así el navegador anima
+// la transición completa en vez de arrancar ya vacía. Cambiar `durationMs`
+// mientras está activa (ej. Fast Mode a mitad de ciclo) no debería pasar en
+// la práctica, ya que cada fase nueva vuelve a montar esta barra desde cero.
+function PhaseProgressBar({ active, durationMs, colorClass }) {
+  const [full, setFull] = useState(true);
+  useEffect(() => {
+    if (!active) return;
+    setFull(true);
+    const raf = requestAnimationFrame(() => setFull(false));
+    return () => cancelAnimationFrame(raf);
+  }, [active, durationMs]);
+  if (!active) return null;
+  return (
+    <div className="w-full h-1.5 rounded-full overflow-hidden bg-black/30 mt-3">
+      <div className={`h-full ${colorClass}`} style={{ width: full ? '100%' : '0%', transition: `width ${durationMs}ms linear` }} />
+    </div>
+  );
+}
+
 // Resultado de una ronda de eliminación — el primero en grande (mismo
 // criterio visual que el cartel de GANADOR: avatar con glow + texto
 // grande "ELIMINATED", en inglés a propósito, mismo pedido explícito que
@@ -451,10 +475,12 @@ function EliminationOverlay({ state, prize, customize }) {
         ) : state.mode === 'revealing' ? (
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎲 SORTEANDO...</p>
+            <PhaseProgressBar active={state.mode === 'revealing'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
           <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminados</p>
+            <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>
         ) : (
           // Más chico que en King/Zub a propósito: le deja más espacio a la
@@ -637,12 +663,11 @@ function RouletteOverlay({ state, prize, customize }) {
         <div className="flex items-center gap-2 mb-3">
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold">🎡 RULETA</p>
           {/* Pedido explícito: el público tiene que saber en qué modo
-              están jugando. En Ruleta esto siempre está "trabado" por
-              naturaleza del juego (nunca se puede entrar tarde), se
-              muestra igual por consistencia con Eliminación. */}
-          {state.lockedMode && (
-            <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
-          )}
+              están jugando. Sin condición (a diferencia de Eliminación):
+              en Ruleta esto siempre está "trabado" por naturaleza del
+              juego, tanto en modo Chat como en modo Gift — nunca se puede
+              entrar tarde, no depende de ningún toggle configurable. */}
+          <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
         </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
           <div className="flex items-center gap-2">
@@ -711,10 +736,12 @@ function RouletteOverlay({ state, prize, customize }) {
         ) : state.mode === 'spinning' ? (
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
+            <PhaseProgressBar active={state.mode === 'spinning'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
           <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
             <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminadas</p>
+            <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>
         ) : (
           <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>

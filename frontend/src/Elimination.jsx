@@ -63,6 +63,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [lockedMode, setLockedMode]             = useState(false);
   const [isDropOpen, setIsDropOpen]             = useState(false);
   const [isInstaDropOpen, setIsInstaDropOpen]   = useState(false);
+  const [manualUsername, setManualUsername]     = useState('');
+  const [manualCount, setManualCount]           = useState(1);
 
   useEffect(() => {
     setSelectedGift(giftsList.find(g => g.coins > 0) || null);
@@ -113,6 +115,25 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const stopElimination    = () => socket.emit('stop_elimination');
   const restartElimination = () => socket.emit('restart_elimination');
   const togglePause        = () => socket.emit(state.paused ? 'resume_elimination' : 'pause_elimination');
+
+  // Suma entradas a mano a un usuario existente o nuevo, sin depender de un
+  // regalo real — cuenta exactamente igual que una entrada por regalo
+  // (mismo array de slots que usa el sorteo, ver processGiftElim/
+  // elim_add_manual_entry en tenant.js).
+  const addManualEntry = () => {
+    const uname = manualUsername.trim().replace(/^@/, '');
+    if (!uname) return;
+    socket.emit('elim_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
+    setManualUsername('');
+    setManualCount(1);
+  };
+
+  // Pedido explícito: una vez arrancada la ronda con Locked Mode activado,
+  // no se puede desactivar hasta Detener/Reiniciar — el toggle queda
+  // deshabilitado visualmente en ese caso. Prender sí se puede en cualquier
+  // momento (el backend además lo refuerza con el mismo criterio, ver
+  // update_elim_settings).
+  const lockedModeLocked = state.isActive && lockedMode;
 
   // Los ajustes se pueden tocar mientras se confirma el username o la
   // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
@@ -294,7 +315,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO PARA UNIRSE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de unirse actual: se aplica en la próxima ronda">(próx. ronda)</span>}
+                  TIEMPO PARA UNIRSE {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
               </div>
               <TimeInput seconds={baseTime} onChange={setBaseTime} />
@@ -304,7 +325,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE REINGRESO {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de reingreso actual: se aplica en la próxima eliminación">(próx. ronda)</span>}
+                  TIEMPO DE REINGRESO {state.isActive && state.mode === 'rejoin' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
               </div>
               <TimeInput seconds={rejoinTime} onChange={setRejoinTime} />
@@ -328,11 +349,39 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 title="Reduce las animaciones de sorteo/resultado a la mitad (1s en vez de 2s)">
                 ⚡ Fast Mode
               </button>
-              <button type="button" onClick={() => setLockedMode(l => !l)}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
-                title="Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después">
+              <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)}
+                disabled={lockedModeLocked}
+                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'} ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                title={lockedModeLocked ? 'No se puede desactivar hasta Detener o Reiniciar la ronda' : 'Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después'}>
                 🔒 Locked Mode
               </button>
+            </div>
+
+            {/* Entrada manual (admin): suma entradas a mano a un usuario
+                existente o nuevo, sin depender de un regalo real — cuenta
+                exactamente igual que una entrada por regalo (afecta vidas,
+                insta-win, etc.). A propósito ignora Locked Mode: es una
+                acción explícita del admin, no una entrada automática. */}
+            <div className="mb-6 pt-4 border-t border-white/10">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">➕ AGREGAR ENTRADA MANUAL</label>
+              <div className="flex gap-2">
+                <input
+                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
+                  placeholder="usuario"
+                  className="theme-input flex-1 p-2 text-sm outline-none"
+                />
+                <input
+                  type="number" min="1" value={manualCount}
+                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
+                  className="theme-input w-16 p-2 text-center text-sm outline-none"
+                />
+                <button type="button" onClick={addManualEntry}
+                  disabled={!state.isActive || state.mode === 'finished' || !manualUsername.trim()}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  Agregar
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
 
             {/* Botones */}

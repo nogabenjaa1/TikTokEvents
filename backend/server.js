@@ -540,7 +540,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
         return res.status(400).json({ success: false, error: `Formato no soportado: ${req.file.mimetype}` });
     }
     const finalPosition = ['center', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'center';
-    const finalDuration = Math.max(1000, Math.min(30000, Number(durationMs) || 5000));
+    const finalDuration = Math.max(1000, Math.min(15000, Number(durationMs) || 5000));
 
     try {
         // Si ya había una alerta para este regalo, borra su archivo viejo del

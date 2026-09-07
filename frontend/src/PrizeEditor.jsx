@@ -29,10 +29,14 @@ function fileToDataUrl(file, maxSize = 200) {
   });
 }
 
-// Editor del premio de un modo (king/zub/elim): título + imagen opcional
-// (arrastrable o clic para elegir). Emite 'update_prize' al backend, que lo
-// rebota a todos los clientes (incluido el overlay) vía 'prizes_updated'.
-export default function PrizeEditor({ socket, app, prize }) {
+// Editor del premio — COMPARTIDO entre Rey del Trono/Zubastinis/
+// Eliminación/Ruleta (pedido explícito: cargar la foto/texto una vez desde
+// cualquiera de los cuatro modos lo aplica a los demás, sin repetir la
+// misma imagen/texto en cada uno): título + imagen opcional (arrastrable o
+// clic para elegir). Emite 'update_prize' al backend, que lo rebota a
+// todos los clientes (incluido el overlay) vía 'prize_updated' — un solo
+// premio en `tenant.js`, no uno por modo.
+export default function PrizeEditor({ socket, prize }) {
   const [title, setTitle] = useState(prize?.title || '');
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
@@ -40,7 +44,7 @@ export default function PrizeEditor({ socket, app, prize }) {
   const image = prize?.image || null;
 
   const emitPrize = (nextTitle, nextImage) => {
-    socket?.emit('update_prize', { app, title: nextTitle, image: nextImage });
+    socket?.emit('update_prize', { title: nextTitle, image: nextImage });
   };
 
   // El título se emite con un pequeño debounce para no mandar un evento de

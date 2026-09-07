@@ -73,13 +73,13 @@ const OVERLAY_PREVIEW_SCALE = 0.75;
 // OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
 // forzado al modo que se esté mirando, porque la idea es confirmar qué ve
 // la audiencia ahora mismo, no simular un modo que no está activo.
-function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prizes, theme, customization }) {
+function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prize, theme, customization }) {
   return (
     <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
       <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
       <div style={{ width: 380 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
         <div style={{ width: 380, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={theme} customization={customization} />
+          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={theme} customization={customization} />
         </div>
       </div>
     </div>
@@ -172,9 +172,11 @@ export default function App() {
   const [overlayCustomization, setOverlayCustomizationState] = useState(defaultOverlayCustomizationMap());
   const [panelOverlayDraft, setPanelOverlayDraft] = useState(() => loadOverlayCustomization());
 
-  // Premios por modo (título + imagen opcional), seteados desde los paneles
-  // y mostrados en el overlay. El backend es la fuente de verdad.
-  const [prizes, setPrizes] = useState({ king: null, zub: null, elim: null, roulette: null });
+  // Premio COMPARTIDO entre Rey del Trono/Zubastinis/Eliminación/Ruleta
+  // (título + imagen opcional) — se setea desde cualquiera de los cuatro
+  // paneles y se aplica a todos (ver PrizeEditor.jsx/tenant.js). El
+  // backend es la fuente de verdad.
+  const [prize, setPrize] = useState(null);
 
   // Estado de Color Says (dados), sincronizado hacia/desde el overlay
   // especial de Colores (?screen=colors) — ver Colorsays.jsx/tenant.js.
@@ -259,7 +261,7 @@ export default function App() {
 
     // Escuchar cambios de app activa (para el overlay)
     socket.on('active_app_changed', setActiveApp);
-    socket.on('prizes_updated', setPrizes);
+    socket.on('prize_updated', setPrize);
     socket.on('dice_state_update', setDiceState);
     // El overlay se pinta con el skin que le llega acá — nunca con su
     // propio localStorage (ver comment de overlayTheme más arriba).
@@ -543,7 +545,7 @@ export default function App() {
         </div>
       );
     }
-    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />;
+    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />;
   }
 
   const logout = () => {
@@ -702,9 +704,9 @@ export default function App() {
                   <AdminPanel
                     state={state} socket={socket}
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                    prize={prizes.king}
+                    prize={prize}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -716,9 +718,9 @@ export default function App() {
                   <Zubastinis
                     state={zubState} socket={socket}
                     username={username} connectionStatus={connectionStatus}
-                    prize={prizes.zub}
+                    prize={prize}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -730,9 +732,9 @@ export default function App() {
                   <Elimination
                     state={elimState} socket={socket}
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                    prize={prizes.elim}
+                    prize={prize}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}
@@ -744,9 +746,9 @@ export default function App() {
                   <Roulette
                     state={rouletteState} socket={socket}
                     username={username} connectionStatus={connectionStatus} giftsList={giftsList}
-                    prize={prizes.roulette}
+                    prize={prize}
                   />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prizes={prizes} theme={overlayTheme} customization={overlayCustomization} />
+                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
                 </>
               )
             )}

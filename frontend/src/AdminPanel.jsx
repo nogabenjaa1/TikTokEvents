@@ -288,7 +288,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="king" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

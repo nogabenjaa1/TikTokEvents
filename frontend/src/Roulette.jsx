@@ -298,7 +298,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="roulette" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

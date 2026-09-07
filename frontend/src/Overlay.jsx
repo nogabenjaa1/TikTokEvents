@@ -994,16 +994,73 @@ const ALERT_POSITION_CLASSES = {
   right: 'items-center justify-end pr-10',
 };
 
+// Tope duro de duración en pantalla, sin importar lo guardado — mismo
+// límite que ya aplica el slider y el backend (ver AlertsAdmin.jsx /
+// server.js), repetido acá como última red de seguridad para alertas
+// guardadas antes de que existiera el límite.
+const ALERT_MAX_DURATION_MS = 15000;
+
+// Contenido visual de una alerta — separado de AlertOverlay para poder
+// reusarlo TAL CUAL en la Vista previa del panel de administración (ver
+// AlertsAdmin.jsx) sin depender de un socket real ni de esperar a que un
+// espectador mande el regalo. `alert.count` (> 1 cuando el backend agrupó
+// varios envíos del mismo regalo en un combo, ver settleAlertCombo en
+// tenant.js) se muestra como "×N" para dejar claro que fue un combo y no
+// una alerta más apilada.
+// OJO posición: NO se puede usar `fixed inset-0` directo acá — `.themed-app
+// > * { position: relative }` (ver index.css) pisa el `position: fixed` de
+// cualquier hijo directo con la MISMA especificidad y sin !important de
+// ningún lado, así que ganaba por orden de declaración: la alerta quedaba
+// con `position: relative` de verdad (no fixed), por eso "Centro" se veía
+// arriba — sin un contenedor de tamaño de pantalla completa, "centrado"
+// solo centraba dentro de una caja del alto de la imagen, insertada al
+// principio del flujo normal. `.tkc-alert-viewport` (index.css) fuerza
+// `position: fixed` con !important para ganar esa pelea.
+export function AlertVisual({ alert }) {
+  if (!alert) return null;
+  const positionClass = ALERT_POSITION_CLASSES[alert.position] || ALERT_POSITION_CLASSES.center;
+  return (
+    <div className={`tkc-alert-viewport flex pointer-events-none ${positionClass}`}>
+      <div className="relative">
+        {(alert.mediaType === 'image' || alert.mediaType === 'gif') && (
+          <img src={alert.mediaUrl} className="max-w-[600px] max-h-[600px] object-contain" />
+        )}
+        {alert.mediaType === 'video' && (
+          <video src={alert.mediaUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={false} />
+        )}
+        {alert.mediaType === 'audio' && (
+          <audio src={alert.mediaUrl} autoPlay />
+        )}
+        {alert.count > 1 && (
+          <span className="absolute -top-3 -right-3 bg-yellow-400 text-black text-lg font-black px-3 py-1 rounded-full shadow-lg">
+            ×{alert.count}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ALERTAS DE REGALOS: reproduce el recurso (imagen/gif/video/audio)
-// asignado al regalo que acaba de llegar (ver processGiftAlert en
-// tenant.js). Cola propia — si llegan varios regalos con alerta casi
-// juntos, se muestran una atrás de la otra en vez de superponerse; cada
-// una dura exactamente `durationMs` sin importar el tipo de recurso (el
-// audio/video sigue sonando de fondo si es más largo que eso, pero la
-// alerta visual/el turno de la cola avanza igual).
+// asignado al regalo que acaba de llegar (ver processGiftAlert/
+// settleAlertCombo en tenant.js). Cola propia — si llegan varios regalos
+// con alerta casi juntos, se muestran una atrás de la otra en vez de
+// superponerse; cada una dura exactamente `durationMs` (tope duro
+// ALERT_MAX_DURATION_MS) sin importar el tipo de recurso (el audio/video
+// sigue sonando de fondo si es más largo que eso, pero la alerta visual/
+// el turno de la cola avanza igual).
 export function AlertOverlay({ socket }) {
   const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
+  // Ref (no state): si hay una alerta en pantalla ahora mismo. Separar esto
+  // del efecto que la oculta es lo que arregla el bug real que tenía esto
+  // antes: un solo useEffect con `[queue, current]` de dependencias se
+  // reiniciaba a sí mismo apenas llamaba `setCurrent(next)` en su propio
+  // cuerpo (current pasó de null a `next`), y el cleanup de ESE reinicio
+  // cancelaba el setTimeout recién creado antes de que llegara a disparar
+  // — la alerta quedaba pegada en pantalla para siempre y la cola nunca
+  // avanzaba a la siguiente.
+  const showingRef = useRef(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -1012,32 +1069,30 @@ export function AlertOverlay({ socket }) {
     return () => socket.off('alert_triggered', onTrigger);
   }, [socket]);
 
+  // Avanza la cola — depende SOLO de `queue`, así que setear `current`
+  // acá adentro no vuelve a disparar este mismo efecto.
   useEffect(() => {
-    if (current || queue.length === 0) return;
+    if (showingRef.current || queue.length === 0) return;
     const [next, ...rest] = queue;
+    showingRef.current = true;
     setCurrent(next);
     setQueue(rest);
-    const timer = setTimeout(() => setCurrent(null), Math.max(500, next.durationMs || 5000));
+  }, [queue]);
+
+  // Oculta la alerta actual — depende SOLO de `current`, así que su
+  // cleanup nunca se dispara por avanzar la cola, solo cuando `current`
+  // cambia de verdad (o el componente se desmonta).
+  useEffect(() => {
+    if (!current) return;
+    const duration = Math.min(ALERT_MAX_DURATION_MS, Math.max(500, current.durationMs || 5000));
+    const timer = setTimeout(() => {
+      setCurrent(null);
+      showingRef.current = false;
+    }, duration);
     return () => clearTimeout(timer);
-  }, [queue, current]);
+  }, [current]);
 
-  if (!current) return null;
-
-  const positionClass = ALERT_POSITION_CLASSES[current.position] || ALERT_POSITION_CLASSES.center;
-
-  return (
-    <div className={`fixed inset-0 flex pointer-events-none ${positionClass}`}>
-      {(current.mediaType === 'image' || current.mediaType === 'gif') && (
-        <img src={current.mediaUrl} className="max-w-[600px] max-h-[600px] object-contain" />
-      )}
-      {current.mediaType === 'video' && (
-        <video src={current.mediaUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={false} />
-      )}
-      {current.mediaType === 'audio' && (
-        <audio src={current.mediaUrl} autoPlay />
-      )}
-    </div>
-  );
+  return <AlertVisual alert={current} />;
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le
@@ -1057,7 +1112,7 @@ export function AlertOverlay({ socket }) {
 // dentro de un alto de pantalla completa en vez del alto real del
 // contenedor — en el modal (mucho más chico que 100vh) esto empujaba la
 // tarjeta varios píxeles hacia abajo del punto de anclaje esperado.
-export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prizes = {}, theme = { style: 'default', accent: 'purple' }, embedded = false, customization }) {
+export default function Overlay({ state, zubState, elimState, rouletteState, activeApp, prize = null, theme = { style: 'default', accent: 'purple' }, embedded = false, customization }) {
   // Rey del Trono/Zubastinis/Eliminación/Ruleta comparten UNA sola URL/
   // fuente de OBS (?screen=games) — así que también comparten una sola
   // personalización de fondo/nombre de usuario, la de id "games" (ver
@@ -1068,22 +1123,22 @@ export default function Overlay({ state, zubState, elimState, rouletteState, act
       <div className="relative grid">
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'king' ? 1 : 0, visibility: activeApp === 'king' ? 'visible' : 'hidden', transform: activeApp === 'king' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>
-          <KingOverlay state={state} prize={prizes.king} customize={gamesCustomize} />
+          <KingOverlay state={state} prize={prize} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'zub' ? 1 : 0, visibility: activeApp === 'zub' ? 'visible' : 'hidden', transform: activeApp === 'zub' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>
-          <ZubastinisOverlay state={zubState} prize={prizes.zub} customize={gamesCustomize} />
+          <ZubastinisOverlay state={zubState} prize={prize} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'elim' ? 1 : 0, visibility: activeApp === 'elim' ? 'visible' : 'hidden', transform: activeApp === 'elim' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
-          <EliminationOverlay state={elimState} prize={prizes.elim} customize={gamesCustomize} />
+          <EliminationOverlay state={elimState} prize={prize} customize={gamesCustomize} />
         </div>
 
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'roulette' ? 1 : 0, visibility: activeApp === 'roulette' ? 'visible' : 'hidden', transform: activeApp === 'roulette' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)' }}>
-          <RouletteOverlay state={rouletteState} prize={prizes.roulette} customize={gamesCustomize} />
+          <RouletteOverlay state={rouletteState} prize={prize} customize={gamesCustomize} />
         </div>
       </div>
     </div>

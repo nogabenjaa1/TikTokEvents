@@ -50,6 +50,18 @@ class TikTokConnectTimeoutError extends Error {
 // ranking (ver processLikeTapTap/settleTapTap).
 const TAPTAP_SETTLE_MS = 1500;
 
+// ALERTAS DE REGALOS: un combo de TikTok ya llega consolidado (ver
+// handleGiftEvent, que espera `repeatEnd`), pero un espectador puede mandar
+// el MISMO regalo varias veces seguidas como envíos separados (sin ser un
+// combo nativo de TikTok) — sin este margen, cada envío dispararía su
+// propia alerta apilada encima de la anterior. Mismo mecanismo de
+// "asentamiento" que TAPTAP_SETTLE_MS (ver processGiftAlert/
+// settleAlertCombo): cada envío nuevo del mismo regalo por la misma
+// persona reinicia la cuenta regresiva y suma al total, y recién cuando
+// pasan ALERT_COMBO_SETTLE_MS sin un envío nuevo se dispara UNA sola
+// alerta con el total acumulado.
+const ALERT_COMBO_SETTLE_MS = 700;
+
 // Cuántos puestos exponen los rankings continuos (Top Gifter / Top Tap-Tap)
 // — no son partidas con inicio/fin, así que no hace falta acotarlos a un
 // top 3 como Zubastinis.
@@ -271,6 +283,9 @@ class Tenant {
         this.alertConfigs = {};
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
+        // Combos en curso sin asentar todavía (ver ALERT_COMBO_SETTLE_MS /
+        // processGiftAlert/settleAlertCombo) — { [username:giftName]: { alert, count, timer } }.
+        this.pendingAlertCombos = {};
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
@@ -304,12 +319,16 @@ class Tenant {
         // especial de Colores para que la audiencia vea lo mismo en vivo.
         this.diceState = { diceCount: 4, diceResult: [], rolling: false };
 
-        // ── PREMIOS (opcionales, por modo) ──
-        // { title, image } donde image es un data URL chico (≤ ~100px de
-        // lado, redimensionado en el cliente) o null. Se muestran en el
-        // overlay para que la gente sepa qué se está jugando. Viven fuera de
-        // los estados de juego a propósito: sobreviven a start/stop.
-        this.prizes = { king: null, zub: null, elim: null, roulette: null };
+        // ── PREMIO (compartido entre Rey del Trono / Zubastinis /
+        // Eliminación / Ruleta) ──
+        // { title, image } (image: data URL chico, ≤ ~100px de lado,
+        // redimensionado en el cliente) o null. UN solo premio para los
+        // cuatro modos a propósito — pedido explícito: cargarlo una vez
+        // desde cualquiera de ellos (ver PrizeEditor.jsx) lo aplica a los
+        // demás sin tener que repetir la misma imagen/texto en cada uno.
+        // Vive fuera de los estados de juego a propósito: sobrevive a
+        // start/stop.
+        this.prize = null;
 
         // ── CONEXIÓN TIKTOK (una por tenant) ──
         this.tiktokConnection = null;
@@ -348,6 +367,11 @@ class Tenant {
         // un tenant que ya no está escuchando likes.
         Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
         this.tapTapPending = {};
+
+        // Mismo criterio: un combo de alerta a medio asentar no debe quedar
+        // con un timer vivo apuntando a una conexión que ya se cerró.
+        Object.values(this.pendingAlertCombos).forEach((p) => clearTimeout(p.timer));
+        this.pendingAlertCombos = {};
     }
 
     maybeDisconnectTikTok() {
@@ -594,18 +618,44 @@ class Tenant {
     }
 
     // Un regalo puede combo-ear (repeatCount > 1) sin que eso deba disparar
-    // la alerta varias veces seguidas — dispara UNA vez por evento ya
-    // consolidado (handleGiftEvent ya esperó a que termine el combo).
-    processGiftAlert({ giftName }) {
+    // la alerta varias veces seguidas — handleGiftEvent ya esperó a que
+    // termine el combo NATIVO de TikTok, pero un espectador puede además
+    // mandar el mismo regalo varias veces seguidas como envíos SEPARADOS
+    // (sin ser un combo de TikTok) — acá se agrupan esos también, por
+    // persona+regalo, con el mismo mecanismo de asentamiento que Top
+    // Tap-Tap (ver ALERT_COMBO_SETTLE_MS/settleAlertCombo): nunca se
+    // apilan dos alertas del mismo regalo+persona, se combinan en una
+    // sola con el total.
+    processGiftAlert({ username, giftName, repeatCount }) {
         if (!giftName) return;
         const alert = this.alertConfigs[giftName.toLowerCase()];
         if (!alert) return;
+        const key = `${username || ''}:${giftName.toLowerCase()}`;
+        const units = Math.max(1, repeatCount || 1);
+        const pending = this.pendingAlertCombos[key];
+        if (pending) {
+            pending.count += units;
+            clearTimeout(pending.timer);
+        } else {
+            this.pendingAlertCombos[key] = { alert, count: units, timer: null };
+        }
+        this.pendingAlertCombos[key].timer = setTimeout(() => this.settleAlertCombo(key), ALERT_COMBO_SETTLE_MS);
+    }
+
+    // El combo terminó (silencio de ALERT_COMBO_SETTLE_MS): recién acá se
+    // dispara la alerta, ya con el total acumulado en `count` — el overlay
+    // (ver AlertOverlay en Overlay.jsx) muestra "×N" cuando count > 1.
+    settleAlertCombo(key) {
+        const pending = this.pendingAlertCombos[key];
+        if (!pending) return;
+        delete this.pendingAlertCombos[key];
         this.broadcast.emit('alert_triggered', {
             triggerId: ++this.alertTriggerCounter,
-            mediaUrl: alert.mediaUrl,
-            mediaType: alert.mediaType,
-            durationMs: alert.durationMs,
-            position: alert.position,
+            mediaUrl: pending.alert.mediaUrl,
+            mediaType: pending.alert.mediaType,
+            durationMs: pending.alert.durationMs,
+            position: pending.alert.position,
+            count: pending.count,
         });
     }
 
@@ -1467,7 +1517,7 @@ class Tenant {
         // proceso no se reinicie, independiente de que este socket puntual
         // se haya desconectado/reconectado).
         socket.emit('live_status', { username: this.currentTikTokUsername, desiredUsername: this.desiredUsername, connected: this.liveConnected });
-        socket.emit('prizes_updated', this.prizes);
+        socket.emit('prize_updated', this.prize);
         socket.emit('theme_updated', this.theme);
         socket.emit('overlay_customization_update', this.overlayCustomization);
         socket.emit('dice_state_update', this.diceState);
@@ -1485,17 +1535,17 @@ class Tenant {
             this.broadcast.emit('dice_state_update', this.diceState);
         });
 
-        // ── PREMIOS ─────────────────────────────────
+        // ── PREMIO (compartido entre Rey del Trono/Zubastinis/Eliminación/
+        // Ruleta) ─────────────────────────────────
         // La imagen llega ya redimensionada por el cliente (~100px de lado)
         // como data URL; igual se valida acá tamaño y formato para que un
         // cliente malicioso no infle la memoria del tenant ni meta HTML.
-        socket.on('update_prize', ({ app, title, image } = {}) => {
-            if (!['king', 'zub', 'elim', 'roulette'].includes(app)) return;
+        socket.on('update_prize', ({ title, image } = {}) => {
             const cleanTitle = typeof title === 'string' ? title.slice(0, 60).trim() : '';
             const cleanImage = (typeof image === 'string' && image.startsWith('data:image/') && image.length <= 500000)
                 ? image : null;
-            this.prizes[app] = (cleanTitle || cleanImage) ? { title: cleanTitle, image: cleanImage } : null;
-            this.broadcast.emit('prizes_updated', this.prizes);
+            this.prize = (cleanTitle || cleanImage) ? { title: cleanTitle, image: cleanImage } : null;
+            this.broadcast.emit('prize_updated', this.prize);
         });
 
         // ── VERIFICACIÓN DE USUARIO LIVE (independiente de cualquier módulo) ──

@@ -221,7 +221,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="zub" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

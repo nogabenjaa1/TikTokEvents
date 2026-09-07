@@ -92,6 +92,21 @@ input[type=range]::-moz-range-thumb {
 /* El contenido real siempre por encima de cualquier capa decorativa ::before que use algún material a futuro. */
 .themed-app > * { position: relative; z-index: 1; }
 
+/* Alertas de regalos (ver AlertVisual en Overlay.jsx): esta regla de acá
+   arriba pisaba el `position: fixed` de la alerta por ser un hijo directo
+   de `.themed-app` — misma especificidad (0,1,0) y sin !important de
+   ningún lado, así que ganaba por orden de declaración, y la alerta
+   quedaba con `position: relative` de verdad. Sin `fixed`, un `inset-0`
+   no hace nada útil sobre un elemento que sigue fluyendo normal, así que
+   "Centro" terminaba viéndose arriba de todo (la caja, del alto de la
+   imagen, insertada al principio del flujo). `!important` para ganar la
+   pelea sin depender del orden de declaración. */
+.tkc-alert-viewport {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+}
+
 /* Overlays angostos que se componen sobre la escena real de OBS (Top
    Tap-Tap, Top Gifter, Modo Extensible) — a diferencia del overlay de
    juegos/Colores (pensados para llenar casi todo el recorte con su propia

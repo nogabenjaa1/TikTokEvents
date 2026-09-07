@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import { AlertVisual } from './Overlay';
 
 const POSITIONS = [
   { id: 'center', label: 'Centro' },
@@ -10,6 +11,25 @@ const POSITIONS = [
 ];
 
 const MEDIA_TYPE_ICON = { image: '🖼️', gif: '🎞️', video: '🎬', audio: '🎧' };
+
+// Mismo límite que ya aplica el backend (ver server.js) y el propio
+// AlertOverlay (ALERT_MAX_DURATION_MS en Overlay.jsx) — el slider de acá
+// no deja pasarse, así que nunca se guarda algo que el overlay vaya a
+// recortar de todos modos.
+const MAX_DURATION_S = 15;
+
+// Deduce el "tipo" de un archivo elegido en el <input type="file"> con el
+// mismo criterio que ALERT_MEDIA_TYPES en server.js — para la vista previa
+// (ver PreviewOverlay más abajo), que corre 100% en el cliente antes de
+// subir nada.
+function fileMediaType(file) {
+  if (!file) return null;
+  if (file.type === 'image/gif') return 'gif';
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  if (file.type.startsWith('audio/')) return 'audio';
+  return null;
+}
 
 // ─────────────────────────────────────────────
 // ALERTAS DE REGALOS — panel de administración
@@ -33,6 +53,46 @@ export default function AlertsAdmin({ giftsList }) {
   const [position, setPosition] = useState('center');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Vista previa (pedido explícito: ver cómo se va a ver la alerta —
+  // imagen, texto, posición y animación — sin depender de que un
+  // espectador mande el regalo de verdad). `previewObjectUrl` guarda la
+  // URL de blob creada para previsualizar un archivo TODAVÍA sin guardar,
+  // para poder revocarla cuando termina y no filtrar memoria.
+  const [previewAlert, setPreviewAlert] = useState(null);
+  const previewObjectUrl = useRef(null);
+  const previewTimer = useRef(null);
+
+  useEffect(() => () => {
+    clearTimeout(previewTimer.current);
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+  }, []);
+
+  const showPreview = (alertLike) => {
+    clearTimeout(previewTimer.current);
+    if (previewObjectUrl.current) { URL.revokeObjectURL(previewObjectUrl.current); previewObjectUrl.current = null; }
+    setPreviewAlert(alertLike);
+    previewTimer.current = setTimeout(() => setPreviewAlert(null), Math.min(15000, Math.max(500, alertLike.durationMs)));
+  };
+
+  const previewDraft = () => {
+    const mediaType = fileMediaType(file);
+    if (!mediaType) return setError('Elige un archivo para poder previsualizarlo.');
+    setError('');
+    const url = URL.createObjectURL(file);
+    previewObjectUrl.current = url;
+    showPreview({ mediaUrl: url, mediaType, durationMs: Math.round(duration * 1000), position });
+  };
+
+  const previewSaved = (alert) => {
+    showPreview({ mediaUrl: alert.mediaUrl, mediaType: alert.mediaType, durationMs: alert.durationMs, position: alert.position });
+  };
+
+  const closePreview = () => {
+    clearTimeout(previewTimer.current);
+    if (previewObjectUrl.current) { URL.revokeObjectURL(previewObjectUrl.current); previewObjectUrl.current = null; }
+    setPreviewAlert(null);
+  };
 
   const fetchAlerts = async () => {
     try {
@@ -142,7 +202,8 @@ export default function AlertsAdmin({ giftsList }) {
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">DURACIÓN EN PANTALLA</label>
                 <span className="theme-chip font-bold px-2 rounded text-xs">{duration}s</span>
               </div>
-              <input type="range" min="1" max="30" step="1" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+              <input type="range" min="1" max={MAX_DURATION_S} step="1" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+              <p className="text-[10px] text-gray-500 mt-1">Máximo {MAX_DURATION_S}s por alerta.</p>
             </div>
 
             <div className="mb-6">
@@ -159,13 +220,23 @@ export default function AlertsAdmin({ giftsList }) {
 
             {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
 
-            <button
-              onClick={save}
-              disabled={saving}
-              className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? 'SUBIENDO...' : 'GUARDAR ALERTA'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={previewDraft}
+                disabled={!file}
+                className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                👁️ VISTA PREVIA
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'SUBIENDO...' : 'GUARDAR ALERTA'}
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -183,6 +254,9 @@ export default function AlertsAdmin({ giftsList }) {
                   <p className="text-sm font-bold text-white truncate">{alert.giftName}</p>
                   <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
                 </div>
+                <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">
+                  👁️
+                </button>
                 <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline flex-shrink-0">
                   Borrar
                 </button>
@@ -193,6 +267,18 @@ export default function AlertsAdmin({ giftsList }) {
           <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta.</p>
         )}
       </div>
+
+      {previewAlert && (
+        <>
+          <AlertVisual alert={previewAlert} />
+          <button
+            onClick={closePreview}
+            className="fixed top-4 right-4 z-[10000] theme-btn-secondary px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+          >
+            ✕ Cerrar vista previa
+          </button>
+        </>
+      )}
     </div>
   );
 }

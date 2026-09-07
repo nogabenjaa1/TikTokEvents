@@ -204,8 +204,20 @@ export default function App() {
   const hasEditedUsernameRef = useRef(false);
   const handleSetUsername = (value) => {
     hasEditedUsernameRef.current = true;
+    setForceUnlockUsername(false);
     setUsername(value);
   };
+  // Se pone en `true` cuando el backend confirma que el LIVE terminó de
+  // verdad (ver socket.on('live_stream_ended') más abajo) — pisa el
+  // bloqueo normal de `usernameLocked` (que solo mira si algún modo sigue
+  // "activo") para el caso puntual de una partida que quedó activa sin
+  // ganador porque la conexión se cortó a mitad de camino: sin esto, el
+  // campo se quedaba bloqueado para siempre y, como la conexión ahora
+  // persiste solo (ver `set_desired_username`), cada F5 reintentaba con el
+  // mismo usuario y repetía el mismo error sin parar.
+  const [forceUnlockUsername, setForceUnlockUsername] = useState(false);
+  const forceUnlockRef = useRef(false);
+  useEffect(() => { forceUnlockRef.current = forceUnlockUsername; }, [forceUnlockUsername]);
   // Se pone en `true` justo antes de adoptar el username que ya tenía
   // conectado el backend (ver socket.on('live_status') más abajo) — el
   // useEffect de sincronización lo lee UNA vez para saltarse el flujo de
@@ -288,7 +300,7 @@ export default function App() {
     // (cada 3s) mientras haya un username deseado, así que si se cae la
     // conexión mientras seguimos con el mismo username escrito, volvemos a
     // "connecting" en vez de "error" (el backend ya está reintentando).
-    const onLiveConnected = () => { setConnectionError(''); setConnectionStatus('connected'); };
+    const onLiveConnected = () => { setConnectionError(''); setConnectionStatus('connected'); setForceUnlockUsername(false); };
     const onLiveDisconnected = () => {
       if (usernameRef.current.trim()) setConnectionStatus('connecting');
     };
@@ -319,6 +331,17 @@ export default function App() {
     socket.on('live_connection_error', ({ message } = {}) => {
       setConnectionError(message || 'No se pudo conectar al LIVE.');
       setConnectionStatus('error');
+    });
+    // El backend confirma que el LIVE se cortó de verdad (no un bache
+    // momentáneo) y ya dejó de reintentar solo (ver ensureTikTokConnection
+    // en tenant.js) — libera el campo aunque algún modo haya quedado
+    // "activo" sin ganador por la desconexión a mitad de partida, para
+    // poder ingresar otro usuario o reintentar el mismo de forma
+    // controlada, en vez de quedar bloqueado repitiendo el mismo error.
+    socket.on('live_stream_ended', ({ username: endedUsername } = {}) => {
+      setForceUnlockUsername(true);
+      setConnectionStatus('error');
+      setConnectionError(`El directo de @${endedUsername || usernameRef.current} terminó. Ingresa un usuario para iniciar una nueva sesión.`);
     });
 
     return () => socket.off();
@@ -373,9 +396,13 @@ export default function App() {
       // hay forma de evitarlo) mientras esta pestaña seguía abierta, el
       // socket reconecta solo pero el Tenant nuevo arranca sin
       // desiredUsername. Reafirmarlo acá lo reconecta sin que el streamer
-      // tenga que volver a escribir el usuario.
+      // tenga que volver a escribir el usuario. EXCEPTO si el backend ya
+      // confirmó que ese LIVE terminó (ver socket.on('live_stream_ended')):
+      // reafirmarlo acá reiniciaría el mismo reintento infinito que se
+      // acaba de cortar, con solo que el socket reconecte por cualquier
+      // otro motivo (ej. un bache de red del lado del navegador).
       const current = usernameRef.current.trim().replace(/^@+/, '');
-      if (current) socket.emit('set_desired_username', current);
+      if (current && !forceUnlockRef.current) socket.emit('set_desired_username', current);
     };
     socket.on('connect', resync);
     return () => socket.off('connect', resync);
@@ -557,8 +584,13 @@ export default function App() {
   };
 
   // El username queda bloqueado mientras cualquier módulo que dependa de la
-  // conexión live esté activo (todos comparten la misma conexión).
-  const usernameLocked = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive;
+  // conexión live esté activo (todos comparten la misma conexión) — salvo
+  // que el backend ya haya confirmado que el LIVE terminó de verdad
+  // (`forceUnlockUsername`, ver socket.on('live_stream_ended')): eso puede
+  // pasar con un modo todavía "activo" sin ganador porque la conexión se
+  // cortó a mitad de partida, y bloquear el campo en ese caso solo dejaba
+  // al streamer sin forma de ingresar otro usuario ni de reintentar.
+  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive);
 
   // Recordatorio de vencimiento in-app: licencias lifetime no tienen expiresAt.
   // Sin sesión (visitante anónimo, solo Color Says) no hay nada que recordar.

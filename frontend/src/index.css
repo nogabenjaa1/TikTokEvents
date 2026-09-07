@@ -106,6 +106,43 @@ input[type=range]::-moz-range-thumb {
   inset: 0 !important;
   z-index: 9999 !important;
 }
+/* Vista previa en vivo del panel de alertas (ver AlertsAdmin.jsx): mismo
+   componente `AlertVisual`, pero acá la "pantalla completa" es la propia
+   cajita chica de la miniatura (el caller la deja `position: relative`),
+   no el viewport real del navegador. */
+.tkc-alert-viewport.tkc-alert-embedded {
+  position: absolute !important;
+  z-index: 1 !important;
+}
+
+/* Animaciones de entrada/salida de alertas (ver ANIMATION_IN_OPTIONS/
+   ANIMATION_OUT_OPTIONS en AlertsAdmin.jsx) — se aplican al contenido de
+   adentro de `.tkc-alert-viewport`, nunca al contenedor de posicionamiento
+   en sí (que siempre tiene que quedarse fijo/quieto). Duración fija
+   (ANIM_DURATION_MS en Overlay.jsx) para que el JS que coordina las fases
+   (entering/visible/exiting) y el CSS nunca queden desincronizados. */
+@keyframes tkc-alert-in-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tkc-alert-out-fade { from { opacity: 1; } to { opacity: 0; } }
+@keyframes tkc-alert-in-slide-up { from { opacity: 0; transform: translateY(50px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tkc-alert-out-slide-up { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-50px); } }
+@keyframes tkc-alert-in-slide-down { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tkc-alert-out-slide-down { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(50px); } }
+@keyframes tkc-alert-in-zoom { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes tkc-alert-out-zoom { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.4); } }
+@keyframes tkc-alert-in-bounce {
+  0% { opacity: 0; transform: scale(0.3); }
+  60% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.tkc-alert-anim-in-fade { animation: tkc-alert-in-fade 400ms ease-out both; }
+.tkc-alert-anim-out-fade { animation: tkc-alert-out-fade 400ms ease-in both; }
+.tkc-alert-anim-in-slide-up { animation: tkc-alert-in-slide-up 400ms ease-out both; }
+.tkc-alert-anim-out-slide-up { animation: tkc-alert-out-slide-up 400ms ease-in both; }
+.tkc-alert-anim-in-slide-down { animation: tkc-alert-in-slide-down 400ms ease-out both; }
+.tkc-alert-anim-out-slide-down { animation: tkc-alert-out-slide-down 400ms ease-in both; }
+.tkc-alert-anim-in-zoom { animation: tkc-alert-in-zoom 400ms ease-out both; }
+.tkc-alert-anim-out-zoom { animation: tkc-alert-out-zoom 400ms ease-in both; }
+.tkc-alert-anim-in-bounce { animation: tkc-alert-in-bounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
 /* Overlays angostos que se componen sobre la escena real de OBS (Top
    Tap-Tap, Top Gifter, Modo Extensible) — a diferencia del overlay de

@@ -160,7 +160,13 @@ const ready = pool.query(`
       created_at BIGINT NOT NULL,
       UNIQUE(license_id, gift_name)
     )
-  `));
+  `))
+  // Animación de entrada/salida de la alerta (ver ANIMATION_PRESETS en
+  // AlertsAdmin.jsx/Overlay.jsx) — 'fade' de default porque es la que
+  // menos desentona si una alerta vieja (guardada antes de que existiera
+  // este campo) nunca lo configuró.
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS entrance_anim TEXT NOT NULL DEFAULT 'fade'`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
 async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular' }) {
@@ -324,11 +330,11 @@ async function getAlertConfig(id) {
 // Un solo alert por (licencia, regalo) — volver a guardar para el mismo
 // regalo reemplaza el anterior (el caller ya se encargó de borrar el
 // archivo viejo del storage antes de llamar acá, ver server.js).
-async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position }) {
+async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim, exitAnim }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, entrance_anim, exit_anim, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             media_url = EXCLUDED.media_url,
@@ -336,8 +342,10 @@ async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath,
             media_type = EXCLUDED.media_type,
             duration_ms = EXCLUDED.duration_ms,
             position = EXCLUDED.position,
+            entrance_anim = EXCLUDED.entrance_anim,
+            exit_anim = EXCLUDED.exit_anim,
             created_at = EXCLUDED.created_at
-    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, Date.now()]);
+    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', Date.now()]);
     return getAlertConfig(id);
 }
 

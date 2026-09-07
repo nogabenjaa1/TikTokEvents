@@ -51,18 +51,22 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
           <span className={`text-[10px] font-bold uppercase tracking-widest flex-1 ${live ? 'text-green-400' : verifying ? 'text-yellow-400' : 'text-gray-500'}`}>
             {live ? 'Conectado en vivo' : verifying ? 'Conectando en vivo...' : connectionStatus === 'error' ? 'Error de conexión' : 'Sin conexión en vivo'}
           </span>
-          {/* Desconexión explícita, a mano — pedido explícito: la conexión
-              ahora persiste sola entre recargas (ver App.jsx), así que hace
-              falta una forma clara de cortarla cuando SÍ se quiere, en vez
-              de solo "borrar el campo" (que sigue funcionando igual, esto
-              es lo mismo con un botón más obvio). Solo tiene sentido
-              mientras hay algo conectado o intentándolo. */}
-          {(live || verifying) && !disabled && (
-            <button onClick={onDisconnect} className="text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-300 flex-shrink-0">
-              Desconectar
-            </button>
-          )}
         </div>
+        {/* Desconexión explícita, a mano — pedido explícito: la conexión
+            ahora persiste sola entre recargas (ver App.jsx), así que hace
+            falta una forma clara de cortarla cuando SÍ se quiere, en vez de
+            solo "borrar el campo" (que sigue funcionando igual, esto es lo
+            mismo con un botón más obvio). Solo tiene sentido mientras hay
+            algo conectado o intentándolo. Botón de ANCHO COMPLETO en su
+            propia fila (antes era un link de texto chico pegado al borde
+            derecho de esta tarjeta angosta de 256px — pedido explícito de
+            que sea más cómodo de clickear, no un target diminuto en la
+            esquina). */}
+        {(live || verifying) && !disabled && (
+          <button onClick={onDisconnect} className="theme-btn-secondary w-full mt-2.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-300">
+            ⏻ Desconectar
+          </button>
+        )}
         {connectionStatus === 'error' && connectionError && (
           <p className="mt-2 text-[10px] leading-snug text-red-300" role="alert">{connectionError}</p>
         )}

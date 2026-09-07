@@ -268,6 +268,54 @@ function ZubastinisOverlay({ state, prize, customize }) {
   );
 }
 
+// Cuánto se ve el cartel grande de "ELIMINATED" (ver EliminatedBannerVisual
+// más abajo) antes de esconderse solo. NO pausa nada del backend — el
+// temporizador de reingreso (Eliminación) o el siguiente paso del sorteo
+// (Ruleta) siguen corriendo en paralelo por su cuenta mientras el cartel
+// está en pantalla; pedido explícito de que la animación no bloquee el
+// flujo del juego.
+const ELIMINATED_BANNER_MS = 2200;
+
+// Se pone en `true` apenas `value` cambia de REFERENCIA (un evento nuevo —
+// el backend arma un objeto nuevo en cada eliminación), y solo por `ms`
+// antes de apagarse solo — evita que cada caller tenga que reinventar su
+// propio timer de "flash". `null`/`undefined` nunca dispara nada.
+function useFlash(value, ms) {
+  const [visible, setVisible] = useState(false);
+  const seenRef = useRef(null);
+  useEffect(() => {
+    if (!value || seenRef.current === value) return;
+    seenRef.current = value;
+    setVisible(true);
+    const t = setTimeout(() => setVisible(false), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return visible;
+}
+
+// Cartel grande de "ELIMINATED" — mismo criterio visual que el del
+// ganador (avatar grande con glow + texto grande), pero para CADA
+// eliminación individual, no solo la final. Puramente presentacional y
+// TEMPORAL: cada caller decide cuándo mostrarlo/ocultarlo (Eliminación lo
+// autogestiona con `useFlash`; Ruleta lo sincroniza con su propia
+// coreografía de giro/resaltado — ver más abajo). `pointer-events-none`
+// porque es un overlay pasivo de OBS, no hay nada clickeable debajo que
+// deba quedar bloqueado.
+function EliminatedBannerVisual({ eliminated }) {
+  if (!eliminated) return null;
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60 animate-pop pointer-events-none">
+      <div className="relative">
+        <div className="absolute -top-10 -right-6 text-[64px] drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] z-30">💀</div>
+        <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-red-600" />
+        <img src={eliminated.avatar} className="w-28 h-28 rounded-full border-4 relative z-10 object-cover shadow-2xl border-red-500 grayscale" />
+      </div>
+      <div className="text-[40px] leading-none font-black tracking-widest text-red-500 animate-pulse">ELIMINATED</div>
+      <p className="text-lg font-black text-red-300">@{eliminated.username}</p>
+    </div>
+  );
+}
+
 function EliminationOverlay({ state, prize, customize }) {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const revealKeyRef = useRef(null);
@@ -335,6 +383,10 @@ function EliminationOverlay({ state, prize, customize }) {
     return () => ro.disconnect();
   }, [participants.length, state && state.instaWinGiftName, prize, state && state.lastEliminated, state && state.mode]);
 
+  // Solo mientras el juego sigue (no compite con el cartel de GANADOR del
+  // final) — ver comentario de ELIMINATED_BANNER_MS.
+  const eliminatedFlash = useFlash(state && state.mode !== 'finished' ? state.lastEliminated : null, ELIMINATED_BANNER_MS);
+
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 
   const timerTitle = state.mode === 'rejoin' ? 'REINGRESO' : 'TIEMPO PARA UNIRSE';
@@ -345,6 +397,7 @@ function EliminationOverlay({ state, prize, customize }) {
     // achican vía elimSizeFor en vez de estirar la tarjeta — si el overlay
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+      <EliminatedBannerVisual eliminated={eliminatedFlash ? state.lastEliminated : null} />
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
@@ -612,6 +665,13 @@ function RouletteOverlay({ state, prize, customize }) {
   // después de que la rueda termina de girar hasta marcarlo — antes de eso
   // se sigue viendo la rueda, ya aterrizando en dorado sobre esa sección.
   const [showWinnerCard, setShowWinnerCard] = useState(false);
+  // Cartel grande de "ELIMINATED" (ver EliminatedBannerVisual) — a
+  // diferencia de Eliminación, acá se sincroniza a mano con la propia
+  // coreografía de giro/resaltado de más abajo en vez de usar `useFlash`,
+  // para que aparezca justo cuando la rueda termina de aterrizar en esa
+  // persona, no apenas llega el evento del backend (que es antes de que
+  // la rueda visualmente gire hasta ahí).
+  const [eliminatedBanner, setEliminatedBanner] = useState(null);
   const rotationRef = useRef(0);
   // La entrada que está "en el aire" (ya se mandó a girar hacia ella, pero
   // todavía no se confirmó del todo como afuera) — se resuelve de una
@@ -643,6 +703,7 @@ function RouletteOverlay({ state, prize, customize }) {
       setHighlightUsername(null);
       setHighlightKind(null);
       setShowWinnerCard(false);
+      setEliminatedBanner(null);
       setRotation(0);
       rotationRef.current = 0;
       pendingRef.current = null;
@@ -675,10 +736,16 @@ function RouletteOverlay({ state, prize, customize }) {
         playEliminate();
         setHighlightUsername(username);
         setHighlightKind('eliminate');
+        // El cartel grande recién arranca acá (la rueda ya aterrizó de
+        // verdad en esta persona), y se esconde solo por su cuenta —
+        // independiente del resaltado chico de la rueda (500ms), que sigue
+        // su propio timing de siempre.
+        setEliminatedBanner(state.lastEliminated);
         timeouts.push(setTimeout(() => {
           finalizePending();
           setHighlightUsername(null);
         }, 500));
+        timeouts.push(setTimeout(() => setEliminatedBanner(null), ELIMINATED_BANNER_MS));
       }, ROULETTE_SPIN_MS));
     }, ROULETTE_SETTLE_MS));
     return () => timeouts.forEach(clearTimeout);
@@ -735,6 +802,7 @@ function RouletteOverlay({ state, prize, customize }) {
 
   return (
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+      <EliminatedBannerVisual eliminated={eliminatedBanner} />
       {(state.mode === 'spinning' || (state.mode === 'finished' && showingWheel)) && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
@@ -1000,6 +1068,13 @@ const ALERT_POSITION_CLASSES = {
 // guardadas antes de que existiera el límite.
 const ALERT_MAX_DURATION_MS = 15000;
 
+// Duración FIJA de las animaciones de entrada/salida — tiene que coincidir
+// con la de las clases `.tkc-alert-anim-*` en index.css: quien coordina las
+// fases (entering/visible/exiting) es JS (acá y en AlertsAdmin.jsx), así
+// que si un lado cambia sin el otro, la animación se corta a mitad de
+// camino o el contenido queda "pegado" un instante antes de ocultarse.
+export const ANIM_DURATION_MS = 400;
+
 // Contenido visual de una alerta — separado de AlertOverlay para poder
 // reusarlo TAL CUAL en la Vista previa del panel de administración (ver
 // AlertsAdmin.jsx) sin depender de un socket real ni de esperar a que un
@@ -1016,12 +1091,23 @@ const ALERT_MAX_DURATION_MS = 15000;
 // solo centraba dentro de una caja del alto de la imagen, insertada al
 // principio del flujo normal. `.tkc-alert-viewport` (index.css) fuerza
 // `position: fixed` con !important para ganar esa pelea.
-export function AlertVisual({ alert }) {
+// `phase`: 'entering' | 'visible' | 'exiting' — decide qué animación de
+// index.css (`.tkc-alert-anim-in-*`/`.tkc-alert-anim-out-*`) aplicar según
+// `alert.entranceAnim`/`alert.exitAnim` ('none' = sin animación, aparece/
+// desaparece de golpe). Quien coordina CUÁNDO cambia de fase es el caller
+// (AlertOverlay para la alerta real; AlertsAdmin.jsx para la vista
+// previa en vivo del panel) — este componente es puramente presentacional.
+// `embedded`: la vista previa del panel la usa dentro de una cajita chica
+// en vez de la pantalla completa real — ver `.tkc-alert-embedded` en
+// index.css.
+export function AlertVisual({ alert, phase = 'visible', embedded = false }) {
   if (!alert) return null;
   const positionClass = ALERT_POSITION_CLASSES[alert.position] || ALERT_POSITION_CLASSES.center;
+  const preset = phase === 'exiting' ? (alert.exitAnim || 'none') : (alert.entranceAnim || 'none');
+  const animClass = phase !== 'visible' && preset !== 'none' ? `tkc-alert-anim-${phase === 'exiting' ? 'out' : 'in'}-${preset}` : '';
   return (
-    <div className={`tkc-alert-viewport flex pointer-events-none ${positionClass}`}>
-      <div className="relative">
+    <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`}>
+      <div className={`relative ${animClass}`}>
         {(alert.mediaType === 'image' || alert.mediaType === 'gif') && (
           <img src={alert.mediaUrl} className="max-w-[600px] max-h-[600px] object-contain" />
         )}
@@ -1052,6 +1138,7 @@ export function AlertVisual({ alert }) {
 export function AlertOverlay({ socket }) {
   const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
+  const [phase, setPhase] = useState('visible');
   // Ref (no state): si hay una alerta en pantalla ahora mismo. Separar esto
   // del efecto que la oculta es lo que arregla el bug real que tenía esto
   // antes: un solo useEffect con `[queue, current]` de dependencias se
@@ -1081,18 +1168,27 @@ export function AlertOverlay({ socket }) {
 
   // Oculta la alerta actual — depende SOLO de `current`, así que su
   // cleanup nunca se dispara por avanzar la cola, solo cuando `current`
-  // cambia de verdad (o el componente se desmonta).
+  // cambia de verdad (o el componente se desmonta). Además coordina las 3
+  // fases de la animación (entering -> visible -> exiting) DENTRO de la
+  // misma ventana `duration` configurada — la entrada ocupa los primeros
+  // ANIM_DURATION_MS y la salida los últimos, así la alerta nunca queda
+  // más tiempo en pantalla del que el streamer configuró.
   useEffect(() => {
     if (!current) return;
     const duration = Math.min(ALERT_MAX_DURATION_MS, Math.max(500, current.durationMs || 5000));
-    const timer = setTimeout(() => {
-      setCurrent(null);
-      showingRef.current = false;
-    }, duration);
-    return () => clearTimeout(timer);
+    setPhase('entering');
+    const timers = [
+      setTimeout(() => setPhase('visible'), ANIM_DURATION_MS),
+      setTimeout(() => setPhase('exiting'), Math.max(ANIM_DURATION_MS, duration - ANIM_DURATION_MS)),
+      setTimeout(() => {
+        setCurrent(null);
+        showingRef.current = false;
+      }, duration),
+    ];
+    return () => timers.forEach(clearTimeout);
   }, [current]);
 
-  return <AlertVisual alert={current} />;
+  return <AlertVisual alert={current} phase={phase} />;
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le

@@ -337,6 +337,15 @@ class Tenant {
         this.connectingPromise = null;
         this.retryTimeout = null;
         this.desiredUsername = null;
+        // Si esta conexión llegó a estar en vivo ALGUNA VEZ (ver
+        // ensureTikTokConnection/getTikTokConnectionErrorMessage) — distingue
+        // "todavía no arrancó el LIVE" (reintentar para siempre tiene
+        // sentido, el streamer puede estar por salir) de "el LIVE YA
+        // terminó" (reintentar con el mismo username para siempre solo
+        // repite el mismo error sin parar — ver el aviso de "offline" más
+        // abajo). Se resetea a false en disconnectTikTok (conexión nueva de
+        // cero) y en cuanto se confirma el próximo `live_connected`.
+        this.wasEverConnected = false;
     }
 
     // Broadcast scopeado: reemplaza los antiguos io.emit(...) globales.
@@ -361,6 +370,7 @@ class Tenant {
         this.currentTikTokUsername = null;
         this.liveConnected = false;
         this.connectingPromise = null;
+        this.wasEverConnected = false;
 
         // Ráfagas de tap-tap en curso quedan huérfanas si la conexión se cae
         // a mitad de una: sin esto, sus timers seguirían vivos apuntando a
@@ -500,6 +510,7 @@ class Tenant {
         this.connectingPromise = timedConnect.then(() => {
             console.log(`[${this.licenseId}] [TIKTOK] ✅ ¡CONECTADO!`);
             this.liveConnected = true;
+            this.wasEverConnected = true;
             this.connectingPromise = null;
             this.broadcast.emit('live_connected', username);
         }).catch(err => {
@@ -518,6 +529,25 @@ class Tenant {
                 code: err?.name || 'ConnectionError',
                 message: this.getTikTokConnectionErrorMessage(err),
             });
+            // El LIVE llegó a estar conectado de verdad y AHORA TikTok
+            // confirma que esta cuenta ya no está transmitiendo -> el
+            // streamer terminó su transmisión. Reintentar con el mismo
+            // username para siempre solo repetiría este mismo error sin
+            // parar (pedido explícito a arreglar) — se corta el reintento
+            // automático, se libera `desiredUsername` (deja el campo
+            // editable en el panel, ver `live_stream_ended` en App.jsx) y
+            // arranca de cero para la PRÓXIMA vez que se ponga un username.
+            // Si nunca llegó a conectar (`wasEverConnected` false), puede
+            // ser que el streamer todavía no salió al aire — ahí sí vale la
+            // pena seguir reintentando solo, como siempre.
+            if (this.wasEverConnected && this.isUserOfflineError(err)) {
+                console.log(`[${this.licenseId}] [TIKTOK] 🛑 @${username} ya no está en vivo — se corta el reintento automático.`);
+                this.wasEverConnected = false;
+                this.desiredUsername = null;
+                this.broadcast.emit('live_stream_ended', { username });
+                this.maybeDisconnectTikTok();
+                throw err;
+            }
             this.scheduleReconnect(username);
             throw err;
         });
@@ -525,12 +555,17 @@ class Tenant {
         return this.connectingPromise;
     }
 
+    isUserOfflineError(error) {
+        const raw = String(error?.message || '').toLowerCase();
+        return error?.name === 'UserOfflineError' || raw.includes("isn't online") || raw.includes('offline');
+    }
+
     getTikTokConnectionErrorMessage(error) {
         const raw = String(error?.message || '').toLowerCase();
         if (error instanceof TikTokConnectTimeoutError) {
             return `La conexión no respondió a tiempo (¿estás en vivo ahora mismo?). Si esto se repite seguido aunque sí estés en vivo, puede deberse a que TikTok está bloqueando las conexiones directas desde este servidor — configurar una API key de Euler Stream (variable de entorno SIGN_API_KEY, gratis en eulerstream.com) suele evitarlo.`;
         }
-        if (error?.name === 'UserOfflineError' || raw.includes("isn't online") || raw.includes('offline')) {
+        if (this.isUserOfflineError(error)) {
             return 'TikTok indica que esta cuenta no está transmitiendo en vivo.';
         }
         if (raw.includes('rate limit') || raw.includes('too many') || raw.includes('429')) {
@@ -600,6 +635,7 @@ class Tenant {
                 this.alertConfigs[row.gift_name.toLowerCase()] = {
                     id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
                     mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+                    entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
                 };
             });
         } catch (err) {
@@ -655,6 +691,8 @@ class Tenant {
             mediaType: pending.alert.mediaType,
             durationMs: pending.alert.durationMs,
             position: pending.alert.position,
+            entranceAnim: pending.alert.entranceAnim,
+            exitAnim: pending.alert.exitAnim,
             count: pending.count,
         });
     }
@@ -1295,6 +1333,7 @@ class Tenant {
 
         if (entries.length === 0) {
             this.rouletteState.mode = 'finished';
+            this.rouletteState.isActive = false;
             this.rouletteState.winner = null;
             console.log(`[${this.licenseId}] [RULETA] 🛑 FINALIZADA — nadie participó`);
             this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
@@ -1328,6 +1367,7 @@ class Tenant {
 
         if (revealCursor === winnerIndex) {
             this.rouletteState.mode = 'finished';
+            this.rouletteState.isActive = false;
             this.rouletteState.winner = { username: entry.username, avatar: entry.avatar };
             this.rouletteState.lastEliminated = null;
             console.log(`[${this.licenseId}] [RULETA] 👑 GANADORA: @${entry.username}`);

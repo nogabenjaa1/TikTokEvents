@@ -513,10 +513,18 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 // el overlay al llegar un regalo puntual — ver tenant.js (processGiftAlert)
 // para el disparo en vivo y storage.js para dónde vive el archivo.
 // ==========================================
+// Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
+// AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
+// de golpe"; 'bounce' es exclusivo de entrada (no tiene mucho sentido
+// como salida, ver Overlay.jsx).
+const ENTRANCE_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom', 'bounce'];
+const EXIT_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom'];
+
 function serializeAlert(row) {
     return {
         id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
         mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+        entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
     };
 }
 
@@ -526,9 +534,10 @@ app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
 });
 
 // multipart/form-data: `media` es el archivo, `giftName`/`durationMs`/
-// `position` van como campos de texto normales del mismo form.
+// `position`/`entranceAnim`/`exitAnim` van como campos de texto normales
+// del mismo form.
 app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.single('media'), async (req, res) => {
-    const { giftName, durationMs, position } = req.body || {};
+    const { giftName, durationMs, position, entranceAnim, exitAnim } = req.body || {};
     if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
         return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
     }
@@ -541,6 +550,8 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
     }
     const finalPosition = ['center', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'center';
     const finalDuration = Math.max(1000, Math.min(15000, Number(durationMs) || 5000));
+    const finalEntranceAnim = ENTRANCE_ANIMS.includes(entranceAnim) ? entranceAnim : 'fade';
+    const finalExitAnim = EXIT_ANIMS.includes(exitAnim) ? exitAnim : 'fade';
 
     try {
         // Si ya había una alerta para este regalo, borra su archivo viejo del
@@ -558,6 +569,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
         const row = await db.upsertAlertConfig({
             id, licenseId: req.license.id, giftName: giftName.trim(),
             mediaUrl, mediaPath, mediaType, durationMs: finalDuration, position: finalPosition,
+            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim,
         });
         // Mantiene al día el cache en memoria que usa processGiftAlert —
         // sin esto, la alerta recién guardada no dispararía hasta el

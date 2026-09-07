@@ -5,10 +5,12 @@ import { formatMMSS } from './timeFormat';
 // ─────────────────────────────────────────────
 // MODO EXTENSIBLE
 // Cuenta regresiva tipo "subathon": arranca en un tiempo base y cada follow
-// o regalo detectado le SUMA segundos (al revés de los demás modos, acá
-// nunca se descuenta por eventos, solo por el paso del tiempo). Los
-// segundos por follow/regalo son editables en vivo sin reiniciar el
-// contador — el tiempo base solo se aplica al Iniciar/Reiniciar.
+// o regalo detectado le SUMA segundos (o RESTA, en Modo Inverso — ver
+// reverseMode). Los segundos por follow/regalo y el Modo Inverso son
+// editables en vivo sin reiniciar el contador; el tiempo base en cambio
+// queda BLOQUEADO una vez arrancado (pedido explícito, ver más abajo) — solo
+// se aplica al Iniciar/Reiniciar. Para tocar el tiempo mientras corre están
+// los botones de ajuste manual (+/- minutos, ver adjustTime).
 // Cualquier regalo cuenta (no hay uno específico que elegir), a propósito:
 // la idea es premiar cualquier apoyo, no una dinámica de puntería.
 // ─────────────────────────────────────────────
@@ -16,12 +18,15 @@ export default function Extensible({ state, socket, username, connectionStatus }
   const [baseTimeSec, setBaseTimeSec] = useState(60);
   const [secondsPerFollow, setSecondsPerFollow] = useState(5);
   const [secondsPerGift, setSecondsPerGift] = useState(3);
+  const [reverseMode, setReverseMode] = useState(false);
+  const [customAdjustMin, setCustomAdjustMin] = useState(1);
 
   const buildConfig = () => ({
     tiktokUsername: username,
     baseTime: Math.max(1, Math.round(baseTimeSec)),
     secondsPerFollow: Math.max(0, Math.round(secondsPerFollow)),
     secondsPerGift: Math.max(0, Math.round(secondsPerGift)),
+    reverseMode,
   });
 
   const startExtensible = () => {
@@ -33,16 +38,24 @@ export default function Extensible({ state, socket, username, connectionStatus }
   const restartExtensible = () => socket.emit('restart_extensible', buildConfig());
   const togglePause = () => socket.emit(state.paused ? 'resume_extensible' : 'pause_extensible');
 
-  // Segundos por follow/regalo (y la base, para el próximo reinicio) se
-  // reflejan en vivo sin cortar el contador que ya está corriendo — mismo
-  // patrón que Ruleta/Eliminación, pero acá SIEMPRE que está activo (no hay
-  // una fase "de espera" propia: el contador corre todo el tiempo). El
-  // guard de "recién montado" (isMounted) es crítico acá: sin él, cada vez
+  // Suma/resta tiempo a mano mientras el contador está activo (pedido
+  // explícito) — reemplaza la antigua edición en vivo del tiempo base, que
+  // ahora queda bloqueada (ver TimeInput más abajo). Puede incluso "revivir"
+  // una cuenta que ya llegó a 0 (ver adjust_extensible_time en tenant.js).
+  const adjustTime = (deltaSeconds) => socket.emit('adjust_extensible_time', { deltaSeconds });
+
+  // Segundos por follow/regalo y Modo Inverso se reflejan en vivo sin cortar
+  // el contador que ya está corriendo — mismo patrón que Ruleta/Eliminación,
+  // pero acá SIEMPRE que está activo (no hay una fase "de espera" propia: el
+  // contador corre todo el tiempo). El tiempo base YA NO viaja en vivo por
+  // acá (pedido explícito, revisado): mientras está activo queda bloqueado
+  // en el panel, y el valor solo se vuelve a aplicar en el próximo Reiniciar.
+  // El guard de "recién montado" (isMounted) es crítico acá: sin él, cada vez
   // que el streamer cambia de pestaña y vuelve, este efecto corre de nuevo
-  // con los valores LOCALES por defecto (baseTimeSec 60, secondsPerFollow 5,
-  // etc.) y los manda de una, pisando en vivo un contador que ya estaba
-  // corriendo con otros valores — esto rompía tener Extensible corriendo en
-  // simultáneo con otro modo, con solo pasar por esta pestaña sin tocar nada.
+  // con los valores LOCALES por defecto (secondsPerFollow 5, etc.) y los
+  // manda de una, pisando en vivo un contador que ya estaba corriendo con
+  // otros valores — esto rompía tener Extensible corriendo en simultáneo con
+  // otro modo, con solo pasar por esta pestaña sin tocar nada.
   const isMounted = useRef(false);
   const justActivated = useRef(state.isActive);
   useEffect(() => {
@@ -52,7 +65,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
     if (activeJustChanged) return;
     if (state.isActive) socket.emit('update_extensible_settings', buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseTimeSec, secondsPerFollow, secondsPerGift, state.isActive]);
+  }, [secondsPerFollow, secondsPerGift, reverseMode, state.isActive]);
 
   const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
 
@@ -93,9 +106,41 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Tiempo base */}
             <div className="mb-4">
-              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">TIEMPO BASE (AL INICIAR/REINICIAR)</label>
-              <TimeInput seconds={baseTimeSec} onChange={setBaseTimeSec} maxSeconds={7200} />
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
+                TIEMPO BASE (AL INICIAR/REINICIAR) {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Bloqueado mientras el modo está activo — usa los botones de ajuste manual de acá abajo para cambiar el tiempo en vivo">(bloqueado)</span>}
+              </label>
+              <TimeInput seconds={baseTimeSec} onChange={setBaseTimeSec} maxSeconds={7200} disabled={state.isActive} />
               <p className="text-[10px] text-gray-500 mt-1">Con cuánto tiempo arranca el contador — solo se aplica al Iniciar o Reiniciar.</p>
+            </div>
+
+            {/* Ajuste manual de tiempo en vivo */}
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">⏱️ AJUSTAR TIEMPO EN VIVO</label>
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                <button type="button" onClick={() => adjustTime(-300)} disabled={!state.isActive}
+                  className="theme-btn-danger py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">-5m</button>
+                <button type="button" onClick={() => adjustTime(-60)} disabled={!state.isActive}
+                  className="theme-btn-danger py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">-1m</button>
+                <button type="button" onClick={() => adjustTime(60)} disabled={!state.isActive}
+                  className="theme-btn-primary py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">+1m</button>
+                <button type="button" onClick={() => adjustTime(300)} disabled={!state.isActive}
+                  className="theme-btn-primary py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">+5m</button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="number" min="0" step="1" value={customAdjustMin}
+                  onChange={e => setCustomAdjustMin(Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="minutos"
+                  className="theme-input flex-1 p-2 text-sm text-center outline-none"
+                />
+                <button type="button" onClick={() => adjustTime(Math.round(customAdjustMin * 60))}
+                  disabled={!state.isActive || !customAdjustMin}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Sumar</button>
+                <button type="button" onClick={() => adjustTime(-Math.round(customAdjustMin * 60))}
+                  disabled={!state.isActive || !customAdjustMin}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Restar</button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Se refleja al instante en el overlay y en el panel, sin reiniciar el contador. Solo funciona con el modo activo.</p>
             </div>
 
             {/* Segundos por follow */}
@@ -107,11 +152,11 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 onChange={e => setSecondsPerFollow(Math.max(0, Number(e.target.value) || 0))}
                 className="theme-input w-full p-3 text-sm outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1">Cada nuevo seguidor le suma esto al contador — se aplica al instante, sin reiniciar.</p>
+              <p className="text-[10px] text-gray-500 mt-1">Cada nuevo seguidor le {reverseMode ? 'resta' : 'suma'} esto al contador — se aplica al instante, sin reiniciar.</p>
             </div>
 
             {/* Segundos por regalo */}
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 SEGUNDOS POR REGALO</label>
               <input
                 type="number" min="0"
@@ -120,6 +165,16 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 className="theme-input w-full p-3 text-sm outline-none"
               />
               <p className="text-[10px] text-gray-500 mt-1">Cualquier regalo cuenta, multiplicado por la cantidad enviada — se aplica al instante, sin reiniciar.</p>
+            </div>
+
+            {/* Modo Inverso */}
+            <div className="mb-6">
+              <button type="button" onClick={() => setReverseMode(r => !r)}
+                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${reverseMode ? 'theme-btn-danger' : 'theme-btn-secondary'}`}
+                title="Cada follow o regalo RESTA tiempo en vez de sumar">
+                {reverseMode ? '🔻 Modo Inverso (RESTA tiempo)' : '🔺 Modo Normal (SUMA tiempo)'}
+              </button>
+              <p className="text-[10px] text-gray-500 mt-1">Se puede cambiar en cualquier momento, incluso con el contador activo.</p>
             </div>
 
             {/* Botones */}

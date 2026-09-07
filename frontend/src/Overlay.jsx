@@ -846,6 +846,11 @@ export function ExtensibleOverlay({ state, customize }) {
   const secs = seconds % 60;
   const finished = !!s.finished;
   const paused = !finished && !!s.paused;
+  // Modo Inverso (pedido explícito): el signo que se muestra tiene que
+  // reflejar lo que de verdad hace cada follow/regalo ahora mismo — resta
+  // en vez de sumar — para que el público entienda la dinámica al toque.
+  const reverse = !!s.reverseMode;
+  const sign = reverse ? '-' : '+';
   const titleOverride = getUsernameOverride(customize);
   return (
     <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} style={resolveBackgroundStyle(customize)}>
@@ -855,17 +860,23 @@ export function ExtensibleOverlay({ state, customize }) {
           y el texto se veía más chico de lo que en verdad estaba — pedido
           explícito de que el tamaño quede fijo en reposo y en marcha. */}
       <div className="flex flex-col gap-3 flex-shrink-0">
-        <p className={`theme-accent-text text-sm uppercase tracking-[0.3em] font-black ${titleOverride.className}`} style={titleOverride.cssVars}>⏱️ Extensible</p>
-        {/* Pedido explícito: que el público vea claramente cuánto suma cada
-            acción — texto grande, no una nota chica al pie. */}
-        <p className="text-gray-300 text-3xl font-black leading-tight">
-          👤 +{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
-          🪙 +{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
+        <div className="flex items-center gap-2">
+          <p className={`theme-accent-text text-sm uppercase tracking-[0.3em] font-black ${titleOverride.className}`} style={titleOverride.cssVars}>⏱️ Extensible</p>
+          {reverse && (
+            <span className="bg-red-950/60 border border-red-500/60 text-red-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔻 Inverso</span>
+          )}
+        </div>
+        {/* Pedido explícito: que el público vea claramente cuánto suma (o
+            resta, en Modo Inverso) cada acción — texto grande, no una nota
+            chica al pie. */}
+        <p className={`text-3xl font-black leading-tight ${reverse ? 'text-red-300' : 'text-gray-300'}`}>
+          👤 {sign}{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
+          🪙 {sign}{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
         </p>
         {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
         {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}
       </div>
-      <p className={`text-8xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : 'text-white'}`}>
+      <p className={`text-8xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : reverse ? 'text-red-400' : 'text-white'}`}>
         {mins}:{String(secs).padStart(2, '0')}
       </p>
     </div>

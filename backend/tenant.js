@@ -29,10 +29,25 @@ const REVEAL_RESULT_MS_FAST = 1000;
 // (eliminationsPerRound), solo cuántos se DIBUJAN.
 const ELIM_RESULT_DISPLAY_CAP = 5;
 
-// Avatar de relleno para entradas manuales (ver elim_add_manual_entry/
-// roulette_add_manual_entry): un cuadrado negro liso, para usuarios nuevos
-// que el admin suma a mano y que no tienen foto de perfil real de TikTok.
-const DEFAULT_MANUAL_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="black"/></svg>');
+// Galería de avatares de relleno para entradas manuales (ver
+// elim_add_manual_entry/roulette_add_manual_entry): 10 círculos de colores
+// variados con un emoji simple, para usuarios nuevos que el admin suma a
+// mano y que no tienen foto de perfil real de TikTok (pedido explícito:
+// reemplaza el cuadrado negro liso que se usaba antes, poco prolijo en el
+// overlay). Se elige uno al azar por usuario nuevo; como quien llama ya
+// reusa el avatar existente si el usuario repite, la elección queda fija
+// para ese usuario mientras dure la ronda (ver pickDefaultManualAvatar).
+const DEFAULT_MANUAL_AVATARS = [
+    ['#F87171', '🦊'], ['#FBBF24', '🐯'], ['#34D399', '🐸'], ['#60A5FA', '🐨'],
+    ['#A78BFA', '🐵'], ['#F472B6', '🐱'], ['#4ADE80', '🐶'], ['#FB923C', '🦁'],
+    ['#22D3EE', '🐼'], ['#C084FC', '🦉'],
+].map(([bg, emoji]) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" rx="50" fill="${bg}"/><text x="50" y="66" font-size="52" text-anchor="middle">${emoji}</text></svg>`
+));
+
+function pickDefaultManualAvatar() {
+    return DEFAULT_MANUAL_AVATARS[Math.floor(Math.random() * DEFAULT_MANUAL_AVATARS.length)];
+}
 
 // tiktok-live-connector arma la conexión en dos pasos: primero pide datos
 // por HTTP (con timeout propio, ~10s, ver TIKTOK_CLIENT_TIMEOUT), y recién
@@ -324,6 +339,11 @@ class Tenant {
         this.extensibleState = {
             isActive: false, finished: false, paused: false,
             baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3,
+            // reverseMode: pedido explícito ("Extensible Inverso") — invierte
+            // el efecto de follows/regalos, que RESTAN en vez de sumar tiempo.
+            // El paso natural del segundero (ver startExtensibleTimer) sigue
+            // restando siempre igual, no depende de esto.
+            reverseMode: false,
             timeLeft: 0,
         };
         this.extensibleTimerInterval = null;
@@ -1783,6 +1803,7 @@ class Tenant {
             baseTime: this.extensibleState.baseTime,
             secondsPerFollow: this.extensibleState.secondsPerFollow,
             secondsPerGift: this.extensibleState.secondsPerGift,
+            reverseMode: this.extensibleState.reverseMode,
             timeLeft: this.extensibleState.timeLeft,
         };
     }
@@ -1810,18 +1831,33 @@ class Tenant {
     processFollowExtensible() {
         const state = this.extensibleState;
         if (!state.isActive || state.finished || state.paused) return;
-        state.timeLeft += state.secondsPerFollow;
+        // reverseMode invierte el signo: cada follow RESTA en vez de sumar
+        // (pedido explícito, "Extensible Inverso") — si llega a 0 por esto,
+        // termina igual que cuando lo agota el paso natural del segundero.
+        state.timeLeft = Math.max(0, state.timeLeft + (state.reverseMode ? -state.secondsPerFollow : state.secondsPerFollow));
+        if (state.timeLeft <= 0) {
+            state.timeLeft = 0;
+            state.finished = true;
+            if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+        }
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
     }
 
     // Suma `secondsPerGift` POR UNIDAD del combo (repeatCount) — mismo
     // criterio que Ruleta en modo regalo: cualquier regalo cuenta, a
     // propósito no está atado a un regalo específico como Eliminación/Ruleta.
+    // Mismo criterio de reverseMode que processFollowExtensible.
     processGiftExtensible({ repeatCount }) {
         const state = this.extensibleState;
         if (!state.isActive || state.finished || state.paused) return;
         const units = Math.max(1, repeatCount || 1);
-        state.timeLeft += state.secondsPerGift * units;
+        const magnitude = state.secondsPerGift * units;
+        state.timeLeft = Math.max(0, state.timeLeft + (state.reverseMode ? -magnitude : magnitude));
+        if (state.timeLeft <= 0) {
+            state.timeLeft = 0;
+            state.finished = true;
+            if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+        }
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
     }
 
@@ -2147,14 +2183,15 @@ class Tenant {
         // array de slots que usa el sorteo), y a propósito ignoran Locked Mode:
         // es una acción explícita del admin, no una entrada automática. Si el
         // usuario ya está en la lista, reusa su avatar real; si es nuevo, le
-        // pone el avatar de relleno negro (ver DEFAULT_MANUAL_AVATAR).
+        // toca uno al azar de la galería (ver DEFAULT_MANUAL_AVATARS/
+        // pickDefaultManualAvatar) — queda fijo mientras dure la ronda.
         socket.on('elim_add_manual_entry', ({ username, count } = {}) => {
             if (!this.elimState.isActive || this.elimState.mode === 'finished') return;
             const uname = (username || '').trim();
             if (!uname) return;
             const n = Math.max(1, Math.min(1000, Math.round(Number(count) || 1)));
             const existing = this.elimState.participants.find(p => p.username === uname);
-            const avatar = existing ? existing.avatar : DEFAULT_MANUAL_AVATAR;
+            const avatar = existing ? existing.avatar : pickDefaultManualAvatar();
             for (let i = 0; i < n; i++) {
                 this.elimSlotCounter += 1;
                 this.elimState.participants.push({ id: this.elimSlotCounter, username: uname, avatar });
@@ -2269,7 +2306,7 @@ class Tenant {
             if (!uname) return;
             const n = Math.max(1, Math.min(1000, Math.round(Number(count) || 1)));
             const existing = this.rouletteState.entries.find(e => e.username === uname);
-            const avatar = existing ? existing.avatar : DEFAULT_MANUAL_AVATAR;
+            const avatar = existing ? existing.avatar : pickDefaultManualAvatar();
             for (let i = 0; i < n; i++) {
                 this.rouletteState.entries.push({ id: ++this.rouletteSlotCounter, username: uname, avatar });
             }
@@ -2312,6 +2349,7 @@ class Tenant {
                 baseTime,
                 secondsPerFollow: Math.max(0, Number(config?.secondsPerFollow) || 0),
                 secondsPerGift: Math.max(0, Number(config?.secondsPerGift) || 0),
+                reverseMode: !!config?.reverseMode,
                 timeLeft: baseTime,
             };
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
@@ -2322,26 +2360,43 @@ class Tenant {
             }
         });
 
-        // Segundos por follow/regalo: se pueden cambiar en vivo sin reiniciar
-        // el contador, como siempre (pedido explícito original). Tiempo base:
-        // ahora se refleja al instante (pedido explícito nuevo, mismo criterio
-        // que los demás modos) pero SUMANDO/RESTANDO la diferencia en vez de
-        // pisar timeLeft directo — a diferencia de Rey del Trono/Zubastinis/
-        // Eliminación/Ruleta, acá timeLeft ya lleva sumado en vivo lo que los
-        // follows/regalos fueron agregando durante la corrida, y pisarlo de
-        // una borraría ese bonus ya ganado.
+        // Segundos por follow/regalo y Modo Inverso: se pueden cambiar en vivo
+        // sin reiniciar el contador (pedido explícito). Tiempo base: pedido
+        // explícito REVISADO — ya NO se edita en vivo (antes sí, sumando la
+        // diferencia); ahora queda BLOQUEADO mientras el modo está activo, y
+        // el valor que llegue acá se ignora a propósito (solo importa para el
+        // próximo Reiniciar, ver restart_extensible más abajo). Para cambiar
+        // el tiempo mientras corre está adjust_extensible_time (+/-, ver más
+        // abajo), que sí actúa al instante.
         socket.on('update_extensible_settings', (config) => {
             if (!this.extensibleState.isActive) return;
-            if (config?.baseTime !== undefined) {
-                const newBase = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
-                const delta = newBase - this.extensibleState.baseTime;
-                this.extensibleState.baseTime = newBase;
-                if (!this.extensibleState.finished) {
-                    this.extensibleState.timeLeft = Math.max(0, this.extensibleState.timeLeft + delta);
-                }
-            }
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
+            if (config?.reverseMode !== undefined) this.extensibleState.reverseMode = !!config.reverseMode;
+            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+        });
+
+        // Ajuste manual de tiempo mientras el contador está activo (pedido
+        // explícito: +1/+5 min, -1/-5 min, o un valor a medida desde el
+        // panel) — reemplaza la antigua edición en vivo del tiempo base, que
+        // ahora queda bloqueada (ver update_extensible_settings). A
+        // diferencia de los follows/regalos, esto SÍ puede "revivir" una
+        // cuenta que ya había llegado a 0: es una acción explícita del admin,
+        // no una entrada automática, así que si el nuevo total queda arriba
+        // de 0 el timer se re-arma solo.
+        socket.on('adjust_extensible_time', ({ deltaSeconds } = {}) => {
+            if (!this.extensibleState.isActive) return;
+            const delta = Math.max(-MAX_EXTENSIBLE_BASE_SECONDS, Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.round(Number(deltaSeconds) || 0)));
+            if (!delta) return;
+            const state = this.extensibleState;
+            state.timeLeft = Math.max(0, state.timeLeft + delta);
+            if (state.timeLeft > 0 && state.finished) {
+                state.finished = false;
+                this.startExtensibleTimer();
+            } else if (state.timeLeft <= 0) {
+                state.finished = true;
+                if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+            }
             this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
         });
 
@@ -2351,6 +2406,7 @@ class Tenant {
             if (config?.baseTime !== undefined) this.extensibleState.baseTime = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);
+            if (config?.reverseMode !== undefined) this.extensibleState.reverseMode = !!config.reverseMode;
             this.extensibleState.timeLeft = this.extensibleState.baseTime;
             this.extensibleState.finished = false;
             this.extensibleState.paused = false;

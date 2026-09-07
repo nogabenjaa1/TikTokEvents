@@ -62,6 +62,17 @@ const TAPTAP_SETTLE_MS = 1500;
 // alerta con el total acumulado.
 const ALERT_COMBO_SETTLE_MS = 700;
 
+// ENTRADAS/INSTA-WIN POR VALOR (Rey del Trono/Eliminación/Ruleta): pedido
+// explícito — los regalos de un mismo espectador solo se combinan entre sí
+// si llegan separados por GIFT_ACCUMULATE_WINDOW_MS o menos; si pasa más
+// tiempo que eso desde su último regalo, lo acumulado hasta ahora se
+// pierde y el siguiente regalo arranca una cuenta nueva de cero. A
+// diferencia de TAPTAP_SETTLE_MS/ALERT_COMBO_SETTLE_MS (esperan el
+// silencio para recién ahí actuar), acá se evalúa el umbral EN CADA
+// regalo nuevo con el total acumulado hasta ese momento — ver
+// accumulateGiftCoins/processGiftKing/processGiftElim/processGiftRoulette.
+const GIFT_ACCUMULATE_WINDOW_MS = 10000;
+
 // Cuántos puestos exponen los rankings continuos (Top Gifter / Top Tap-Tap)
 // — no son partidas con inicio/fin, así que no hace falta acotarlos a un
 // top 3 como Zubastinis.
@@ -175,6 +186,13 @@ class Tenant {
             mainTime: 15, snipeTime: 5, timeLeft: 0, lastParticipant: null, winner: null
         };
         this.kingTimerInterval = null;
+        // Acumuladores por espectador para entradas/insta-win por valor (ver
+        // GIFT_ACCUMULATE_WINDOW_MS/accumulateGiftCoins/processGiftKing) —
+        // { [username]: { total, lastAt, grantedUnits } }. Separados entre sí
+        // (target vs insta-win) porque cada uno compara contra un umbral
+        // distinto y se reinicia en momentos distintos.
+        this.kingTargetAccum = {};
+        this.kingInstaWinAccum = {};
 
         // ── ZUBASTINIS (TOP 3 GIFTERS) ──
         this.zubState = {
@@ -200,6 +218,9 @@ class Tenant {
         this.elimTimerInterval = null;
         this.elimSlotCounter = 0;
         this.elimRevealTimeout = null;
+        // Ver comentario de kingTargetAccum/kingInstaWinAccum más arriba.
+        this.elimEntryAccum = {};
+        this.elimInstaWinAccum = {};
 
         // ── RULETA (sorteo por comentario o por regalo) ──
         // entryMode 'chat': comenta la keyword (opcionalmente solo
@@ -221,6 +242,9 @@ class Tenant {
         };
         this.rouletteTimerInterval = null;
         this.rouletteSlotCounter = 0;
+        // Ver comentario de kingTargetAccum/kingInstaWinAccum más arriba. Sin
+        // insta-win propio, así que solo hace falta el de entradas.
+        this.rouletteEntryAccum = {};
         this.rouletteRevealTimeout = null;
 
         // ── TOP GIFTER (ranking continuo de regalos) ──
@@ -382,6 +406,17 @@ class Tenant {
         // con un timer vivo apuntando a una conexión que ya se cerró.
         Object.values(this.pendingAlertCombos).forEach((p) => clearTimeout(p.timer));
         this.pendingAlertCombos = {};
+
+        // Acumuladores de entradas/insta-win por valor (ver
+        // GIFT_ACCUMULATE_WINDOW_MS) — sin timers propios que limpiar, pero
+        // se descartan igual: si la conexión se cortó, cualquier
+        // acumulación a medio camino no debería sobrevivir a una
+        // reconexión con un LIVE distinto.
+        this.kingTargetAccum = {};
+        this.kingInstaWinAccum = {};
+        this.elimEntryAccum = {};
+        this.elimInstaWinAccum = {};
+        this.rouletteEntryAccum = {};
     }
 
     maybeDisconnectTikTok() {
@@ -1048,22 +1083,59 @@ class Tenant {
         }, 1000);
     }
 
-    processGiftKing({ username, avatar, giftName }) {
+    // Acumula `coins` de `username` en `accumMap`, respetando la ventana de
+    // GIFT_ACCUMULATE_WINDOW_MS: si su último regalo fue hace más de eso,
+    // el acumulado se pierde y arranca de cero con este regalo; si no, se
+    // suma al que ya tenía. `grantedUnits` (arranca en 0, lo actualiza cada
+    // caller) es cuántas "unidades" de ese acumulado ya se cobraron —
+    // existe para que un acumulado que sigue creciendo (varios regalos
+    // seguidos dentro de la ventana) pueda otorgar entradas de a una a
+    // medida que cruza cada múltiplo del umbral, en vez de volver a
+    // otorgar las mismas de nuevo cada vez que se reevalúa.
+    accumulateGiftCoins(accumMap, username, coins) {
+        const now = Date.now();
+        const prev = accumMap[username];
+        if (prev && now - prev.lastAt <= GIFT_ACCUMULATE_WINDOW_MS) {
+            prev.total += coins;
+            prev.lastAt = now;
+        } else {
+            accumMap[username] = { total: coins, lastAt: now, grantedUnits: 0 };
+        }
+        return accumMap[username];
+    }
+
+    // Insta-win y entrada por VALOR en vez de nombre exacto — mismo motivo
+    // que Eliminación/Ruleta (ver processGiftElim): el catálogo del
+    // selector y el regalo real en vivo pueden no nombrar igual el mismo
+    // regalo entre las dos versiones de la librería que usa este proyecto.
+    // Pedido explícito y distinto de Eliminación/Ruleta: acá NO se otorgan
+    // entradas proporcionales al valor (un regalo de 30x el costo no debe
+    // reiniciar el temporizador 30 veces seguidas) — cruzar el umbral
+    // cuenta como UNA sola entrada válida, sin importar por cuánto se pase,
+    // y el acumulado se reinicia entero apenas se cobra esa entrada.
+    processGiftKing({ username, avatar, giftName, totalCoins }) {
         if (!this.contestState.isActive || this.contestState.mode === 'finished' || this.contestState.paused) return;
 
-        if (this.contestState.instaWinGiftName && giftName.toLowerCase() === this.contestState.instaWinGiftName.toLowerCase()) {
-            this.contestState.lastParticipant = { username, avatar, giftName };
-            this.contestState.winner = this.contestState.lastParticipant;
-            this.contestState.mode = 'finished';
-            this.contestState.isActive = false;
-            if (this.kingTimerInterval) clearInterval(this.kingTimerInterval);
-            this.broadcast.emit('gift_received', this.contestState);
-            this.broadcast.emit('winner_declared', this.contestState);
-            this.maybeDisconnectTikTok();
-            return;
+        if (this.contestState.instaWinGiftCoins > 0) {
+            const acc = this.accumulateGiftCoins(this.kingInstaWinAccum, username, totalCoins || 0);
+            if (acc.total >= this.contestState.instaWinGiftCoins) {
+                delete this.kingInstaWinAccum[username];
+                this.contestState.lastParticipant = { username, avatar, giftName };
+                this.contestState.winner = this.contestState.lastParticipant;
+                this.contestState.mode = 'finished';
+                this.contestState.isActive = false;
+                if (this.kingTimerInterval) clearInterval(this.kingTimerInterval);
+                this.broadcast.emit('gift_received', this.contestState);
+                this.broadcast.emit('winner_declared', this.contestState);
+                this.maybeDisconnectTikTok();
+                return;
+            }
         }
 
-        if (giftName.toLowerCase() === this.contestState.targetGiftName.toLowerCase()) {
+        if (!this.contestState.targetGiftCoins) return;
+        const acc = this.accumulateGiftCoins(this.kingTargetAccum, username, totalCoins || 0);
+        if (acc.total >= this.contestState.targetGiftCoins) {
+            delete this.kingTargetAccum[username];
             this.contestState.lastParticipant = { username, avatar, giftName };
             this.contestState.mode = 'main';
             this.contestState.timeLeft = this.contestState.mainTime;
@@ -1253,19 +1325,22 @@ class Tenant {
         }, 1000);
     }
 
-    // Da entradas por VALOR, no por nombre exacto: cualquier regalo cuenta,
-    // convertido a "cuántas veces vale al regalo base configurado" según
-    // sus monedas (`totalCoins` del evento ÷ targetGiftCoins, piso). Esto
-    // reemplaza la comparación anterior por nombre exacto
-    // (`giftName === targetGiftName`), que en la práctica nunca coincidía
-    // para Eliminación/Ruleta: el catálogo del selector sale de la
-    // librería v1 (ver /api/setup/:username en server.js) pero el regalo
-    // real en vivo llega decodificado por la v2, y esta versión concreta
-    // de ambas no siempre nombra el mismo regalo igual — con monedas en
-    // vez de nombre, la comparación es sobre un número que la propia
-    // TikTok ya resolvió igual en los dos casos, así que nunca desincroniza.
-    // Pedido explícito: Rey del Trono NO se toca, sigue por nombre exacto.
-    processGiftElim({ username, avatar, giftName, totalCoins }) {
+    // Da entradas E insta-win por VALOR, no por nombre exacto: cualquier
+    // regalo cuenta, acumulado por espectador dentro de
+    // GIFT_ACCUMULATE_WINDOW_MS (ver accumulateGiftCoins) y convertido a
+    // "cuántas veces vale al regalo base configurado" según sus monedas.
+    // Esto reemplaza la comparación anterior por nombre exacto
+    // (`giftName === targetGiftName`), que en la práctica nunca coincidía:
+    // el catálogo del selector sale de la librería v1 (ver
+    // /api/setup/:username en server.js) pero el regalo real en vivo llega
+    // decodificado por la v2, y esta versión concreta de ambas no siempre
+    // nombra el mismo regalo igual — con monedas en vez de nombre, la
+    // comparación es sobre un número que la propia TikTok ya resolvió
+    // igual en los dos casos, así que nunca desincroniza.
+    // A diferencia de Rey del Trono (una sola entrada por umbral cruzado,
+    // sin importar el sobrante), acá SÍ se otorgan entradas proporcionales
+    // — pedido explícito, tiene sentido en un modo de "slots" como este.
+    processGiftElim({ username, avatar, totalCoins }) {
         if (!this.elimState.isActive || this.elimState.paused) return;
         // 'revealing' (la animación de sorteo) también acepta regalos: antes se
         // ignoraban del todo y esos usuarios se quedaban afuera de la siguiente
@@ -1274,28 +1349,35 @@ class Tenant {
         // antes) — quedan listos para la ronda que sigue apenas termine.
         if (this.elimState.mode !== 'joining' && this.elimState.mode !== 'rejoin' && this.elimState.mode !== 'revealing') return;
 
-        if (this.elimState.instaWinGiftName && giftName.toLowerCase() === this.elimState.instaWinGiftName.toLowerCase()) {
-            // Si llega durante la animación, cancelamos el sorteo pendiente para
-            // que no se resuelva después y pise este resultado.
-            if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
-            this.elimState.mode = 'finished';
-            this.elimState.isActive = false;
-            this.elimState.revealTargetId = null;
-            this.elimState.winner = { username, avatar };
-            clearInterval(this.elimTimerInterval);
-            console.log(`[${this.licenseId}] [ELIMINACION] 👑 INSTA-WIN: @${username}`);
-            this.broadcast.emit('elim_winner_declared', this.getElimPublicState());
-            this.maybeDisconnectTikTok();
-            return;
+        if (this.elimState.instaWinGiftCoins > 0) {
+            const accWin = this.accumulateGiftCoins(this.elimInstaWinAccum, username, totalCoins || 0);
+            if (accWin.total >= this.elimState.instaWinGiftCoins) {
+                delete this.elimInstaWinAccum[username];
+                // Si llega durante la animación, cancelamos el sorteo pendiente
+                // para que no se resuelva después y pise este resultado.
+                if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
+                this.elimState.mode = 'finished';
+                this.elimState.isActive = false;
+                this.elimState.revealTargetId = null;
+                this.elimState.winner = { username, avatar };
+                clearInterval(this.elimTimerInterval);
+                console.log(`[${this.licenseId}] [ELIMINACION] 👑 INSTA-WIN: @${username}`);
+                this.broadcast.emit('elim_winner_declared', this.getElimPublicState());
+                this.maybeDisconnectTikTok();
+                return;
+            }
         }
 
         if (!this.elimState.targetGiftCoins) return;
-        const slotsToAdd = Math.floor((totalCoins || 0) / this.elimState.targetGiftCoins);
-        if (slotsToAdd < 1) return;
+        const acc = this.accumulateGiftCoins(this.elimEntryAccum, username, totalCoins || 0);
+        const totalUnits = Math.floor(acc.total / this.elimState.targetGiftCoins);
+        const newUnits = totalUnits - acc.grantedUnits;
+        if (newUnits < 1) return;
+        acc.grantedUnits = totalUnits;
 
         // Admite duplicados: cada slot equivalente agrega una entrada nueva,
         // aunque el usuario ya esté participando.
-        for (let i = 0; i < slotsToAdd; i++) {
+        for (let i = 0; i < newUnits; i++) {
             this.elimSlotCounter += 1;
             this.elimState.participants.push({ id: this.elimSlotCounter, username, avatar });
         }
@@ -1419,17 +1501,21 @@ class Tenant {
     // criterio y mismo motivo que processGiftElim (el catálogo del
     // selector viene de la librería v1, el regalo real en vivo lo decodifica
     // la v2, y esta versión concreta de ambas no siempre nombra igual el
-    // mismo regalo). Cualquier regalo cuenta, convertido a "cuántas veces
-    // vale al regalo base configurado" según sus monedas (más regalos, más
-    // chances, a propósito — mismo mecanismo de slots que Eliminación).
+    // mismo regalo). Cualquier regalo cuenta, acumulado por espectador
+    // dentro de GIFT_ACCUMULATE_WINDOW_MS y convertido a "cuántas veces
+    // vale al regalo base configurado" según sus monedas — proporcional,
+    // igual que Eliminación (más regalos, más chances, a propósito).
     processGiftRoulette({ username, avatar, totalCoins }) {
         const state = this.rouletteState;
         if (!state.isActive || state.mode !== 'joining' || state.paused || state.entryMode !== 'gift') return;
         if (!state.targetGiftCoins) return;
-        const slotsToAdd = Math.floor((totalCoins || 0) / state.targetGiftCoins);
-        if (slotsToAdd < 1) return;
+        const acc = this.accumulateGiftCoins(this.rouletteEntryAccum, username, totalCoins || 0);
+        const totalUnits = Math.floor(acc.total / state.targetGiftCoins);
+        const newUnits = totalUnits - acc.grantedUnits;
+        if (newUnits < 1) return;
+        acc.grantedUnits = totalUnits;
 
-        for (let i = 0; i < slotsToAdd; i++) {
+        for (let i = 0; i < newUnits; i++) {
             state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar });
         }
         this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
@@ -1631,6 +1717,8 @@ class Tenant {
                 lastParticipant: null,
                 winner: null
             };
+            this.kingTargetAccum = {};
+            this.kingInstaWinAccum = {};
             this.broadcast.emit('contest_started', this.contestState);
 
             if (config.tiktokUsername) {
@@ -1660,6 +1748,8 @@ class Tenant {
                 this.contestState.timeLeft = this.contestState.mainTime;
                 this.contestState.lastParticipant = null;
                 this.contestState.winner = null;
+                this.kingTargetAccum = {};
+                this.kingInstaWinAccum = {};
                 this.broadcast.emit('state_update', this.contestState);
                 this.startKingTimer();
             }
@@ -1784,6 +1874,8 @@ class Tenant {
                 participants: [], revealTargetId: null, lastEliminated: null, winner: null,
             };
             this.elimSlotCounter = 0;
+            this.elimEntryAccum = {};
+            this.elimInstaWinAccum = {};
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
             this.startElimTimer();
 
@@ -1818,6 +1910,8 @@ class Tenant {
                 this.elimState.lastEliminated = null;
                 this.elimState.winner = null;
                 this.elimSlotCounter = 0;
+                this.elimEntryAccum = {};
+                this.elimInstaWinAccum = {};
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
                 this.startElimTimer();
             }
@@ -1871,6 +1965,7 @@ class Tenant {
                 lastEliminated: null, winner: null,
             };
             this.rouletteSlotCounter = 0;
+            this.rouletteEntryAccum = {};
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             this.startRouletteTimer();
 
@@ -1908,6 +2003,7 @@ class Tenant {
             this.rouletteState.lastEliminated = null;
             this.rouletteState.winner = null;
             this.rouletteSlotCounter = 0;
+            this.rouletteEntryAccum = {};
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             this.startRouletteTimer();
         });

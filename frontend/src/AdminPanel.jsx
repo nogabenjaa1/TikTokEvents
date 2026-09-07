@@ -184,6 +184,9 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo cuenta si su valor en monedas alcanza a este (acumulando varios seguidos, máximo 10s entre uno y otro) — sin importar por cuánto se pase, siempre cuenta como una sola vez.
+              </p>
             </div>
 
             {/* Selector Insta-Win */}
@@ -226,6 +229,9 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
+              </p>
             </div>
 
             {/* Base Time */}

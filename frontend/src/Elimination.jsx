@@ -227,7 +227,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 </div>
               )}
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">
-                Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas).
+                Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
               </p>
             </div>
 
@@ -271,6 +271,9 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
+              </p>
             </div>
 
             {/* Base Time */}

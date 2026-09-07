@@ -222,7 +222,9 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                     ))}
                   </div>
                 )}
-                <p className="text-[10px] text-gray-500 mt-1">Cada regalo enviado suma una entrada más — más regalos, más chances.</p>
+                <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                  Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas).
+                </p>
               </div>
             )}
 

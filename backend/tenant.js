@@ -1253,7 +1253,19 @@ class Tenant {
         }, 1000);
     }
 
-    processGiftElim({ username, avatar, giftName, repeatCount }) {
+    // Da entradas por VALOR, no por nombre exacto: cualquier regalo cuenta,
+    // convertido a "cuántas veces vale al regalo base configurado" según
+    // sus monedas (`totalCoins` del evento ÷ targetGiftCoins, piso). Esto
+    // reemplaza la comparación anterior por nombre exacto
+    // (`giftName === targetGiftName`), que en la práctica nunca coincidía
+    // para Eliminación/Ruleta: el catálogo del selector sale de la
+    // librería v1 (ver /api/setup/:username en server.js) pero el regalo
+    // real en vivo llega decodificado por la v2, y esta versión concreta
+    // de ambas no siempre nombra el mismo regalo igual — con monedas en
+    // vez de nombre, la comparación es sobre un número que la propia
+    // TikTok ya resolvió igual en los dos casos, así que nunca desincroniza.
+    // Pedido explícito: Rey del Trono NO se toca, sigue por nombre exacto.
+    processGiftElim({ username, avatar, giftName, totalCoins }) {
         if (!this.elimState.isActive || this.elimState.paused) return;
         // 'revealing' (la animación de sorteo) también acepta regalos: antes se
         // ignoraban del todo y esos usuarios se quedaban afuera de la siguiente
@@ -1277,11 +1289,12 @@ class Tenant {
             return;
         }
 
-        if (!this.elimState.targetGiftName || giftName.toLowerCase() !== this.elimState.targetGiftName.toLowerCase()) return;
+        if (!this.elimState.targetGiftCoins) return;
+        const slotsToAdd = Math.floor((totalCoins || 0) / this.elimState.targetGiftCoins);
+        if (slotsToAdd < 1) return;
 
-        // Admite duplicados: cada regalo (o cada unidad de un combo) agrega un
-        // slot nuevo, aunque el usuario ya esté participando.
-        const slotsToAdd = Math.max(1, repeatCount || 1);
+        // Admite duplicados: cada slot equivalente agrega una entrada nueva,
+        // aunque el usuario ya esté participando.
         for (let i = 0; i < slotsToAdd; i++) {
             this.elimSlotCounter += 1;
             this.elimState.participants.push({ id: this.elimSlotCounter, username, avatar });
@@ -1402,15 +1415,20 @@ class Tenant {
         this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
     }
 
-    // Modo Gift: mandar el regalo configurado suma una entrada POR CADA
-    // unidad del combo — mismo mecanismo de slots que ya usa Eliminación
-    // (más regalos, más chances, a propósito).
-    processGiftRoulette({ username, avatar, giftName, repeatCount }) {
+    // Modo Gift: da entradas por VALOR, no por nombre exacto — mismo
+    // criterio y mismo motivo que processGiftElim (el catálogo del
+    // selector viene de la librería v1, el regalo real en vivo lo decodifica
+    // la v2, y esta versión concreta de ambas no siempre nombra igual el
+    // mismo regalo). Cualquier regalo cuenta, convertido a "cuántas veces
+    // vale al regalo base configurado" según sus monedas (más regalos, más
+    // chances, a propósito — mismo mecanismo de slots que Eliminación).
+    processGiftRoulette({ username, avatar, totalCoins }) {
         const state = this.rouletteState;
         if (!state.isActive || state.mode !== 'joining' || state.paused || state.entryMode !== 'gift') return;
-        if (!state.targetGiftName || giftName.toLowerCase() !== state.targetGiftName.toLowerCase()) return;
+        if (!state.targetGiftCoins) return;
+        const slotsToAdd = Math.floor((totalCoins || 0) / state.targetGiftCoins);
+        if (slotsToAdd < 1) return;
 
-        const slotsToAdd = Math.max(1, repeatCount || 1);
         for (let i = 0; i < slotsToAdd; i++) {
             state.entries.push({ id: ++this.rouletteSlotCounter, username, avatar });
         }

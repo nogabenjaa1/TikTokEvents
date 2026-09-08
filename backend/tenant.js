@@ -1869,13 +1869,17 @@ class Tenant {
 
     // Un follow detectado suma `secondsPerFollow` al tiempo restante. No hace
     // falta deduplicar por usuario: es TikTok quien decide cuándo emitir el
-    // evento, y cada aparición es información nueva de la plataforma. En
-    // pausa tampoco suma — pausar congela el contador por completo, no solo
-    // la cuenta regresiva (mismo criterio que Rey del Trono/Zubastinis/
-    // Eliminación con sus gifts mientras están pausados).
+    // evento, y cada aparición es información nueva de la plataforma. Pedido
+    // explícito (revisado): a diferencia de Rey del Trono/Zubastinis/
+    // Eliminación, en Extensible la pausa SOLO congela el paso natural del
+    // segundero (ver startExtensibleTimer) — los follows/regalos siguen
+    // sumando (o restando, en reverseMode) mientras está pausado, para que
+    // ese apoyo no se pierda si el streamer tuvo que pausar por un
+    // imprevisto. Al reanudar, el conteo simplemente sigue desde el valor
+    // ya actualizado.
     processFollowExtensible() {
         const state = this.extensibleState;
-        if (!state.isActive || state.finished || state.paused) return;
+        if (!state.isActive || state.finished) return;
         // reverseMode invierte el signo: cada follow RESTA en vez de sumar
         // (pedido explícito, "Extensible Inverso") — si llega a 0 por esto,
         // termina igual que cuando lo agota el paso natural del segundero.
@@ -1897,10 +1901,11 @@ class Tenant {
     // (diamondCount * repeatCount, ya calculado en handleGiftEvent), que sí
     // refleja el valor real del regalo — cualquier regalo cuenta, a
     // propósito no está atado a uno específico como Eliminación/Ruleta.
-    // Mismo criterio de reverseMode que processFollowExtensible.
+    // Mismo criterio de reverseMode y de pausa que processFollowExtensible
+    // (ver comentario ahí): sigue sumando/restando aunque esté pausado.
     processGiftExtensible({ totalCoins }) {
         const state = this.extensibleState;
-        if (!state.isActive || state.finished || state.paused) return;
+        if (!state.isActive || state.finished) return;
         const coins = Math.max(1, totalCoins || 1);
         const magnitude = state.secondsPerGift * coins;
         state.timeLeft = Math.max(0, state.timeLeft + (state.reverseMode ? -magnitude : magnitude));

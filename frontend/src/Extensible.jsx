@@ -157,14 +157,14 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Segundos por regalo */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 SEGUNDOS POR REGALO</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 SEGUNDOS POR MONEDA DEL REGALO</label>
               <input
                 type="number" min="0"
                 value={secondsPerGift}
                 onChange={e => setSecondsPerGift(Math.max(0, Number(e.target.value) || 0))}
                 className="theme-input w-full p-3 text-sm outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1">Cualquier regalo cuenta, multiplicado por la cantidad enviada — se aplica al instante, sin reiniciar.</p>
+              <p className="text-[10px] text-gray-500 mt-1">Cualquier regalo cuenta, multiplicado por su valor en monedas (ej: con 3 acá, un regalo de 50 monedas suma 150s) — se aplica al instante, sin reiniciar.</p>
             </div>
 
             {/* Modo Inverso */}

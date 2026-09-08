@@ -1843,15 +1843,21 @@ class Tenant {
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
     }
 
-    // Suma `secondsPerGift` POR UNIDAD del combo (repeatCount) — mismo
-    // criterio que Ruleta en modo regalo: cualquier regalo cuenta, a
-    // propósito no está atado a un regalo específico como Eliminación/Ruleta.
+    // Bug real reportado: "SEGUNDOS POR REGALO" está pensado como segundos
+    // POR MONEDA (♦) del regalo — un regalo de 50 monedas debe sumar 50x
+    // este valor — pero multiplicaba por `repeatCount` (cuántas veces se
+    // mandó el MISMO regalo en el combo, no su valor). Con un regalo caro
+    // mandado una sola vez, repeatCount daba 1 y el conteo casi no se movía,
+    // como si el regalo no se hubiera detectado. Ahora usa `totalCoins`
+    // (diamondCount * repeatCount, ya calculado en handleGiftEvent), que sí
+    // refleja el valor real del regalo — cualquier regalo cuenta, a
+    // propósito no está atado a uno específico como Eliminación/Ruleta.
     // Mismo criterio de reverseMode que processFollowExtensible.
-    processGiftExtensible({ repeatCount }) {
+    processGiftExtensible({ totalCoins }) {
         const state = this.extensibleState;
         if (!state.isActive || state.finished || state.paused) return;
-        const units = Math.max(1, repeatCount || 1);
-        const magnitude = state.secondsPerGift * units;
+        const coins = Math.max(1, totalCoins || 1);
+        const magnitude = state.secondsPerGift * coins;
         state.timeLeft = Math.max(0, state.timeLeft + (state.reverseMode ? -magnitude : magnitude));
         if (state.timeLeft <= 0) {
             state.timeLeft = 0;

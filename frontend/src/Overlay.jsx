@@ -871,7 +871,7 @@ export function ExtensibleOverlay({ state, customize }) {
             chica al pie. */}
         <p className={`text-3xl font-black leading-tight ${reverse ? 'text-red-300' : 'text-gray-300'}`}>
           👤 {sign}{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
-          🪙 {sign}{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por regalo</span>
+          🪙 {sign}{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por moneda del regalo</span>
         </p>
         {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
         {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}

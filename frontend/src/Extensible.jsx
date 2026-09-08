@@ -1,6 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TimeInput from './TimeInput';
-import { formatMMSS } from './timeFormat';
+import { formatHHMMSS } from './timeFormat';
+
+// Bug real reportado: los campos de "segundos por moneda"/"segundos por
+// seguidor" (y el tiempo base) son estado LOCAL del componente — al cambiar
+// de pestaña (Ruleta, Eliminación, etc.) y volver, App.jsx desmonta y
+// vuelve a montar <Extensible> de cero, así que esos campos volvían a sus
+// valores por defecto (5/3/60) aunque el streamer ya los hubiera
+// personalizado. Mismo patrón que ya usa TtsChat.jsx (ver STORAGE_KEY ahí):
+// se guarda cada cambio en localStorage y se recupera al montar, en vez de
+// arrancar siempre de los valores por defecto.
+const STORAGE_KEY = 'tiktok-concurso-extensible-settings';
+const DEFAULTS = { baseTimeSec: 60, secondsPerFollow: 5, secondsPerGift: 3, reverseMode: false };
+
+function loadSavedConfig() {
+  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
+  catch { return DEFAULTS; }
+}
 
 // ─────────────────────────────────────────────
 // MODO EXTENSIBLE
@@ -15,11 +31,40 @@ import { formatMMSS } from './timeFormat';
 // la idea es premiar cualquier apoyo, no una dinámica de puntería.
 // ─────────────────────────────────────────────
 export default function Extensible({ state, socket, username, connectionStatus }) {
-  const [baseTimeSec, setBaseTimeSec] = useState(60);
-  const [secondsPerFollow, setSecondsPerFollow] = useState(5);
-  const [secondsPerGift, setSecondsPerGift] = useState(3);
-  const [reverseMode, setReverseMode] = useState(false);
+  // Semilla inicial (pedido explícito, ver comentario de STORAGE_KEY más
+  // arriba): arranca de lo último guardado en este navegador.
+  const saved = loadSavedConfig();
+  const [baseTimeSec, setBaseTimeSec] = useState(saved.baseTimeSec);
+  const [secondsPerFollow, setSecondsPerFollow] = useState(saved.secondsPerFollow);
+  const [secondsPerGift, setSecondsPerGift] = useState(saved.secondsPerGift);
+  const [reverseMode, setReverseMode] = useState(saved.reverseMode);
   const [customAdjustMin, setCustomAdjustMin] = useState(1);
+
+  // Si el panel se monta con el modo YA activo (se remontó a mitad de una
+  // corrida — volver de otra pestaña, o F5 — bug real reportado), los campos
+  // tienen que terminar reflejando los valores REALES del servidor, no lo
+  // guardado/por defecto. Esto NO se puede resolver en los useState de
+  // arriba: al montar, `state` todavía trae el valor inicial de App.jsx
+  // (isActive: false) hasta que el socket manda el primer snapshot real, así
+  // que leer `state.isActive` ahí siempre ve "false" aunque en verdad ya
+  // haya una corrida activa. Este efecto se dispara UNA sola vez, recién
+  // cuando `state.isActive` confirma que sí la hay, y nunca más — no debe
+  // pisar ediciones manuales posteriores del streamer.
+  const syncedFromLiveRef = useRef(false);
+  useEffect(() => {
+    if (syncedFromLiveRef.current || !state.isActive) return;
+    syncedFromLiveRef.current = true;
+    setSecondsPerFollow(state.secondsPerFollow ?? saved.secondsPerFollow);
+    setSecondsPerGift(state.secondsPerGift ?? saved.secondsPerGift);
+    setReverseMode(!!state.reverseMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isActive]);
+
+  // Persiste cualquier cambio para que sobreviva a cambiar de pestaña (o
+  // recargar la página) sin perder la configuración personalizada.
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch {}
+  }, [baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode]);
 
   const buildConfig = () => ({
     tiktokUsername: username,
@@ -81,7 +126,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
         </div>
 
         <p className={`relative z-10 text-center text-6xl font-black tabular-nums ${state.finished ? 'text-yellow-300' : state.paused ? 'text-gray-500' : 'text-white'}`}>
-          {formatMMSS(state.timeLeft)}
+          {formatHHMMSS(state.timeLeft)}
         </p>
         {state.finished && (
           <p className="relative z-10 text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">TIEMPO AGOTADO</p>

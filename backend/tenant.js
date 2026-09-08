@@ -306,6 +306,11 @@ class Tenant {
             fastMode: false, eliminationsPerRound: 1,
             entries: [], // [{ id, username, avatar }]
             revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [], // solo durante 'spinning'/'result'
+            // currentSpinIndex: a quién apunta el giro EN ESTE MOMENTO dentro
+            // del batch (índice absoluto en revealOrder, null si no está
+            // girando); spinQueue: los que todavía faltan girar del batch
+            // actual — ver beginRouletteSubSpin/resolveRouletteBatch.
+            currentSpinIndex: null, spinQueue: [],
             lastEliminatedList: [], winner: null,
         };
         this.rouletteTimerInterval = null;
@@ -1563,6 +1568,23 @@ class Tenant {
             revealSelectMs: this.rouletteState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
             revealResultMs: this.rouletteState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
             entries: this.rouletteState.entries,
+            // aliveOrder/currentSpinIndex (pedido explícito: que la ruleta
+            // GIRE antes de cada eliminado, no solo el flicker de antes) —
+            // el overlay usa esto para dibujar la rueda real y rotarla hasta
+            // dejar a `currentSpinIndex` bajo el puntero, uno a la vez, antes
+            // de agrupar el resultado del batch. `aliveOrder` es un RECORTE
+            // de revealOrder (todo lo que sigue vivo desde revealCursor en
+            // adelante, ganadora incluida) y `currentSpinIndex` ya viene
+            // como índice LOCAL dentro de ese recorte — a propósito nunca se
+            // exponen revealOrder/winnerIndex/revealCursor completos, para
+            // no filtrarle a quien inspeccione el tráfico quién va a ganar
+            // antes de tiempo.
+            aliveOrder: this.rouletteState.mode === 'spinning' || this.rouletteState.mode === 'result'
+                ? this.rouletteState.revealOrder.slice(this.rouletteState.revealCursor).map(e => ({ id: e.id, username: e.username, avatar: e.avatar }))
+                : [],
+            currentSpinIndex: this.rouletteState.currentSpinIndex === null || this.rouletteState.currentSpinIndex === undefined
+                ? null
+                : this.rouletteState.currentSpinIndex - this.rouletteState.revealCursor,
             lastEliminatedList: this.rouletteState.lastEliminatedList, winner: this.rouletteState.winner,
         };
     }
@@ -1613,18 +1635,19 @@ class Tenant {
         this.rouletteState.winnerIndex = winnerPos - 1;
         this.rouletteState.revealCursor = 0;
         this.rouletteState.lastEliminatedList = [];
+        this.rouletteState.currentSpinIndex = null;
+        this.rouletteState.spinQueue = [];
         console.log(`[${this.licenseId}] [RULETA] 🎡 GIRANDO — ${total} entradas, ganadora en la posición ${winnerPos}`);
         this.broadcast.emit('roulette_spin_started', this.getRoulettePublicState());
         this.beginRouletteStep();
     }
 
-    // Arranca la fase de "selección" de un paso — mismo criterio de 2 fases
-    // que Eliminación (ver beginEliminationReveal/REVEAL_SELECT_MS): dura
-    // REVEAL_SELECT_MS (o la mitad en fastMode), es puramente cosmética en
-    // el overlay, y agrupa hasta `eliminationsPerRound` eliminaciones por
-    // paso en vez de revelar de a una — la ganadora (revealOrder[winnerIndex])
-    // nunca entra en un batch: si ya no queda nadie más antes de ella, el
-    // sorteo termina y la declara.
+    // Arranca un paso: agrupa hasta `eliminationsPerRound` eliminaciones por
+    // batch (la ganadora, revealOrder[winnerIndex], nunca entra en uno — si
+    // ya no queda nadie más antes de ella, el sorteo termina y la declara),
+    // pero pedido explícito revisado: la ruleta tiene que GIRAR una vez por
+    // cada eliminado del batch (no una sola vez para todo el grupo) antes de
+    // mostrar el resultado agrupado — ver beginRouletteSubSpin.
     beginRouletteStep() {
         const { revealOrder, winnerIndex, revealCursor } = this.rouletteState;
         if (revealCursor >= winnerIndex) {
@@ -1633,26 +1656,48 @@ class Tenant {
         }
         const remainingBeforeWinner = winnerIndex - revealCursor;
         const batchSize = Math.min(Math.max(1, this.rouletteState.eliminationsPerRound || 1), remainingBeforeWinner);
-        this.rouletteState.revealTargetIndexes = Array.from({ length: batchSize }, (_, i) => revealCursor + i);
-        this.rouletteState.mode = 'spinning';
+        const batchIndexes = Array.from({ length: batchSize }, (_, i) => revealCursor + i);
+        this.rouletteState.revealTargetIndexes = batchIndexes;
+        this.rouletteState.spinQueue = [...batchIndexes];
+        this.beginRouletteSubSpin();
+    }
+
+    // Gira hacia UNA persona a la vez dentro del batch actual (pedido
+    // explícito: "gira antes de cada eliminado", incluso con
+    // eliminationsPerRound > 1) — dura REVEAL_SELECT_MS (o la mitad en
+    // fastMode) por persona, encadenado sin pausa entre uno y el siguiente.
+    // Recién cuando se giró hacia TODOS los del batch se muestra el
+    // resultado agrupado (ver resolveRouletteBatch) — la rueda en sí
+    // (aliveOrder) no cambia de tamaño hasta ese momento, solo el índice al
+    // que apunta el puntero en cada giro.
+    beginRouletteSubSpin() {
+        const state = this.rouletteState;
+        if (state.spinQueue.length === 0) {
+            this.resolveRouletteBatch();
+            return;
+        }
+        state.currentSpinIndex = state.spinQueue.shift();
+        state.mode = 'spinning';
         this.broadcast.emit('roulette_step_started', this.getRoulettePublicState());
 
         if (this.rouletteRevealTimeout) clearTimeout(this.rouletteRevealTimeout);
-        const selectMs = this.rouletteState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS;
-        this.rouletteRevealTimeout = setTimeout(() => this.resolveRouletteStep(), selectMs);
+        const selectMs = state.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS;
+        this.rouletteRevealTimeout = setTimeout(() => this.beginRouletteSubSpin(), selectMs);
     }
 
-    // Saca de verdad a los de este paso y muestra el resultado por
+    // Saca de verdad a todos los del batch (ya se giró hacia cada uno, ver
+    // beginRouletteSubSpin) y muestra el resultado agrupado por
     // REVEAL_RESULT_MS (o la mitad en fastMode) antes de arrancar el
     // siguiente paso — mismo ciclo de "aparece y se oculta solo" que
     // Eliminación (ver resolveEliminationReveal).
-    resolveRouletteStep() {
+    resolveRouletteBatch() {
         this.rouletteRevealTimeout = null;
         const { revealOrder, revealTargetIndexes } = this.rouletteState;
         const eliminated = revealTargetIndexes.map(i => revealOrder[i]);
         this.rouletteState.lastEliminatedList = eliminated.map(e => ({ username: e.username, avatar: e.avatar }));
         this.rouletteState.revealCursor += revealTargetIndexes.length;
         this.rouletteState.revealTargetIndexes = [];
+        this.rouletteState.currentSpinIndex = null;
         // Pedido explícito (bug real): `entries` es lo que ve el panel de
         // administración (la lista de participantes activos), y antes
         // nunca se tocaba durante el sorteo — `revealOrder` es una COPIA
@@ -2227,6 +2272,7 @@ class Tenant {
                 fastMode: !!config.fastMode,
                 eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
                 entries: [], revealOrder: [], winnerIndex: -1, revealCursor: 0, revealTargetIndexes: [],
+                currentSpinIndex: null, spinQueue: [],
                 lastEliminatedList: [], winner: null,
             };
             this.rouletteSlotCounter = 0;
@@ -2268,6 +2314,8 @@ class Tenant {
             this.rouletteState.winnerIndex = -1;
             this.rouletteState.revealCursor = 0;
             this.rouletteState.revealTargetIndexes = [];
+            this.rouletteState.currentSpinIndex = null;
+            this.rouletteState.spinQueue = [];
             this.rouletteState.lastEliminatedList = [];
             this.rouletteState.winner = null;
             this.rouletteSlotCounter = 0;

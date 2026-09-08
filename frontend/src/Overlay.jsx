@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
 import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';
-import { formatMMSS } from './timeFormat';
+import { formatMMSS, formatHHMMSS } from './timeFormat';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -505,6 +505,26 @@ function polarPoint(cx, cy, r, angleDeg) {
 
 const WHEEL_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#f97316', '#14b8a6'];
 
+// Vueltas completas de más que da la rueda antes de "aterrizar" en el
+// índice objetivo — puro efecto visual, no cambia a quién apunta.
+const ROULETTE_SPIN_EXTRA_TURNS = 2;
+
+// Calcula la rotación ABSOLUTA (nunca hacia atrás, siempre sumando vueltas
+// hacia adelante desde `prevRotation`) que deja al índice LOCAL
+// `targetLocalIndex` (dentro de una rueda de `aliveCount` secciones) justo
+// debajo del puntero fijo (arriba del todo, igual convención que
+// RouletteWheel/polarPoint). Pedido explícito: que la ruleta gire de
+// verdad antes de cada eliminado, no solo un destello — la rueda entera
+// (el <div> que envuelve RouletteWheel) es la que rota vía CSS, nunca las
+// secciones individuales.
+function computeRouletteRotation(prevRotation, aliveCount, targetLocalIndex) {
+  if (targetLocalIndex === null || targetLocalIndex === undefined || aliveCount <= 0) return prevRotation;
+  const anglePer = 360 / aliveCount;
+  const midAngle = targetLocalIndex * anglePer + anglePer / 2;
+  const delta = (((-midAngle - prevRotation) % 360) + 360) % 360;
+  return prevRotation + delta + ROULETTE_SPIN_EXTRA_TURNS * 360;
+}
+
 // La ruleta de verdad: un círculo dividido en tantas secciones iguales
 // como entradas queden, cada una con el username adentro (nunca la foto —
 // eso pedido explícito: la foto de perfil solo se muestra al final, con
@@ -604,18 +624,24 @@ function RouletteWheel({ entries, highlightUsername, highlightColor, size, custo
   );
 }
 
-// El backend gobierna el ciclo entero de 2 fases (spinning/result, ver
-// beginRouletteStep/resolveRouletteStep en tenant.js), así que este
-// componente ya no tiene que coreografiar nada por su cuenta: la rueda
-// (RouletteWheel) es un elemento puramente decorativo mientras se está
-// "uniendo" gente — no hay forma física de girarla hasta señalar a VARIAS
-// personas a la vez (eliminationsPerRound), así que en cuanto arranca el
-// sorteo se reemplaza por el mismo destello + resultado en burbujas que
-// usa Eliminación (ver useFlickerHighlight/EliminationResultVisual),
-// consistente entre los dos modos.
+// El backend gobierna el ciclo entero de 3 fases por batch (N sub-giros,
+// uno por cada eliminado, más un resultado agrupado — ver beginRouletteStep/
+// beginRouletteSubSpin/resolveRouletteBatch en tenant.js), así que este
+// componente solo tiene que animar la rotación en respuesta a
+// `state.currentSpinIndex`: cada vez que cambia (nuevo sub-giro dentro del
+// batch), se recalcula el ángulo objetivo sobre `state.aliveOrder` (el
+// recorte de quién sigue vivo, fijo durante todo el batch) y se deja que la
+// transición CSS haga el giro visual — nunca se resetea a mitad de un
+// batch, así que varios eliminados seguidos se sienten como giros
+// consecutivos de la MISMA rueda, no una que vuelve a 0 cada vez. Recién
+// cuando terminan todos los sub-giros del batch se reemplaza por el
+// resultado agrupado en burbujas (ver EliminationResultVisual), igual que
+// en Eliminación.
 function RouletteOverlay({ state, prize, customize }) {
   const wheelBoxRef = useRef(null);
   const [wheelSize, setWheelSize] = useState(240);
+  const [rotation, setRotation] = useState(0);
+  const rotationRef = useRef(0);
 
   // Sonidos: arranca el sorteo ('spinning'), se resuelve un paso
   // ('spinning' -> 'result', el momento real en que el backend ya sacó a
@@ -633,7 +659,25 @@ function RouletteOverlay({ state, prize, customize }) {
   }, [state?.mode, state?.winner]);
 
   const entries = (state && state.entries) || [];
-  const flickerIndexes = useFlickerHighlight(state?.mode === 'spinning', entries.length);
+  const aliveOrder = (state && state.aliveOrder) || [];
+
+  // Ronda nueva -> la rueda vuelve a 0 (sin esto, el giro de una ronda
+  // vieja se arrastraría como punto de partida de la próxima).
+  useEffect(() => {
+    if (state?.mode === 'joining') { setRotation(0); rotationRef.current = 0; }
+  }, [state?.mode]);
+
+  // Cada sub-giro nuevo del batch actual (currentSpinIndex cambia) calcula
+  // el próximo ángulo ABSOLUTO (siempre hacia adelante desde donde quedó) y
+  // deja que la transición CSS (duración = revealSelectMs, ver el estilo
+  // más abajo) anime el giro — puramente declarativo, sin timers propios.
+  useEffect(() => {
+    if (state?.mode !== 'spinning' || state?.currentSpinIndex === null || state?.currentSpinIndex === undefined) return;
+    const next = computeRouletteRotation(rotationRef.current, aliveOrder.length, state.currentSpinIndex);
+    rotationRef.current = next;
+    setRotation(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.currentSpinIndex, state?.mode]);
 
   useLayoutEffect(() => {
     const el = wheelBoxRef.current;
@@ -693,18 +737,14 @@ function RouletteOverlay({ state, prize, customize }) {
         ) : state.mode === 'result' ? (
           <EliminationResultVisual list={state.lastEliminatedList} />
         ) : state.mode === 'spinning' ? (
-          entries.length > 0 ? (
-            <div className="w-full flex flex-wrap gap-2 justify-center items-center content-center max-h-full overflow-hidden">
-              {entries.map((e, i) => {
-                const isHighlighted = flickerIndexes.includes(i);
-                return (
-                  <div key={e.id} className={`flex flex-col items-center gap-0.5 transition-all duration-150 ${isHighlighted ? 'scale-125 z-10' : 'opacity-30 scale-90'}`}>
-                    <img src={e.avatar} className={`w-12 h-12 rounded-full border-2 object-cover flex-shrink-0 ${isHighlighted ? 'border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.7)]' : ''}`} style={{ borderColor: isHighlighted ? undefined : 'var(--accent)' }} />
-                    <span className={`text-[8px] max-w-[48px] truncate ${isHighlighted ? 'text-yellow-300 font-bold' : 'text-gray-300'}`}>@{e.username}</span>
-                  </div>
-                );
-              })}
-            </div>
+          aliveOrder.length > 0 ? (
+            <>
+              <div style={{ width: wheelSize, height: wheelSize, transform: `rotate(${rotation}deg)`, transition: `transform ${state.revealSelectMs || 2000}ms cubic-bezier(0.15, 0.85, 0.35, 1)` }}>
+                <RouletteWheel entries={aliveOrder} highlightUsername={null} size={wheelSize} customize={customize} />
+              </div>
+              {/* Puntero fijo: no gira, la rueda de abajo sí. */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-0 text-3xl drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))' }}>🔻</div>
+            </>
           ) : (
             <p className="text-gray-600 text-sm italic text-center">Esperando participantes...</p>
           )
@@ -842,8 +882,6 @@ export function TopGifterOverlay({ state, customize }) {
 export function ExtensibleOverlay({ state, customize }) {
   const s = state || {};
   const seconds = Math.max(0, Math.round(s.timeLeft || 0));
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
   const finished = !!s.finished;
   const paused = !finished && !!s.paused;
   // Modo Inverso (pedido explícito): el signo que se muestra tiene que
@@ -876,8 +914,8 @@ export function ExtensibleOverlay({ state, customize }) {
         {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
         {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}
       </div>
-      <p className={`text-8xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : reverse ? 'text-red-400' : 'text-white'}`}>
-        {mins}:{String(secs).padStart(2, '0')}
+      <p className={`text-7xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : reverse ? 'text-red-400' : 'text-white'}`}>
+        {formatHHMMSS(seconds)}
       </p>
     </div>
   );

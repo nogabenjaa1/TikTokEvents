@@ -262,6 +262,13 @@ export default function App() {
     socket.on('roulette_state_update',    setRouletteState);
     socket.on('roulette_timer_updated',   setRouletteState);
     socket.on('roulette_spin_started',    setRouletteState);
+    // Bug real (encontrado ahora, pedido explícito de que la ruleta gire
+    // antes de cada eliminado): faltaba escuchar este evento — el backend
+    // ya lo emitía en cada sub-giro (ver beginRouletteSubSpin en
+    // tenant.js) con el currentSpinIndex al día, pero como nadie lo
+    // escuchaba acá, el overlay nunca se enteraba de los sub-giros
+    // intermedios, solo del arranque y del resultado final del batch.
+    socket.on('roulette_step_started',    setRouletteState);
     socket.on('roulette_step',            setRouletteState);
     socket.on('roulette_winner_declared', setRouletteState);
 

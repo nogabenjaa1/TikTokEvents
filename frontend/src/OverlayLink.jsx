@@ -76,7 +76,12 @@ function TapTapDiagnosticsBox({ diagnostics }) {
   const d = diagnostics || {};
   const fmt = (ts) => ts ? new Date(ts).toLocaleTimeString() : '—';
   return (
-    <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs">
+    // Pedido explícito: `theme-input` toma su radio de `--surface-radius-sm`
+    // (varía según el tema — en Kawaii/Cute puede ser muy grande, "demasiado
+    // redondeado" para este recuadro puntual) — a propósito NO se toca esa
+    // variable global (afectaría a TODOS los inputs/chips del tema), solo
+    // se pisa el radio acá con un valor fijo moderado (10px).
+    <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs" style={{ borderRadius: '10px' }}>
       <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">🩺 Diagnóstico (likes crudos recibidos de TikTok)</p>
       <div className="grid grid-cols-2 gap-2 text-gray-300">
         <p>Total recibidos: <span className="font-black text-white">{d.totalReceived ?? 0}</span></p>

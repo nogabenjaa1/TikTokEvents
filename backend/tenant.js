@@ -334,6 +334,16 @@ class Tenant {
         // processLikeTapTap/settleTapTap).
         this.tapTapState = { leaderboard: {} }; // { [username]: { username, avatar, likes } }
         this.tapTapPending = {}; // { [username]: { avatar, likes, timer } }
+        // Diagnóstico (pedido explícito, reporte de bug: "solo registra 1-2
+        // usuarios de forma intermitente") — cuenta CADA evento 'like' crudo
+        // que llega de TikTok, sin importar si pasa los filtros de
+        // handleLikeEvent, para poder distinguir en vivo si el problema es
+        // de RECEPCIÓN (TikTok/la librería no manda los eventos de más
+        // usuarios) o de PROCESAMIENTO (los recibimos pero algo los
+        // descarta acá). Se resetea junto con el ranking (ver
+        // reset_taptap_leaderboard) y con cada nueva conexión a TikTok.
+        this.tapTapDiagnostics = { totalReceived: 0, totalSettled: 0, distinctUsers: new Set(), lastEventAt: null, lastEventUsername: null, lastSettledAt: null };
+        this.tapTapDiagnosticsBroadcastTimer = null;
 
         // ── MODO EXTENSIBLE (cuenta regresiva que crece con follows y regalos) ──
         // Arranca en `baseTime` y cada follow/regalo detectado le suma
@@ -558,7 +568,21 @@ class Tenant {
             }
         }
 
-        if (this.tiktokConnection && this.currentTikTokUsername !== username) this.disconnectTikTok();
+        if (this.tiktokConnection && this.currentTikTokUsername !== username) {
+            this.disconnectTikTok();
+        } else if (this.tiktokConnection) {
+            // Reconexión al MISMO usuario (ej. tras el 'disconnected' de
+            // scheduleReconnect) — a propósito NO se llama a
+            // disconnectTikTok() acá: eso borraría tapTapPending/los
+            // acumuladores de regalos de una sesión que en los hechos sigue
+            // siendo la misma. Pero el objeto de conexión VIEJO sí hay que
+            // soltarlo (bug real encontrado revisando el reporte de
+            // Tap-Tap): antes quedaba sin dueño, sin listeners removidos ni
+            // desconectado explícitamente, al reemplazar la referencia acá
+            // abajo por una conexión nueva.
+            this.tiktokConnection.removeAllListeners();
+            this.tiktokConnection.disconnect();
+        }
 
         this.currentTikTokUsername = username;
         console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
@@ -845,6 +869,13 @@ class Tenant {
     handleLikeEvent(data) {
         const username = data.uniqueId;
         const likeCount = Number(data.count) || 0;
+
+        // Diagnóstico (ver tapTapDiagnostics): se cuenta el evento CRUDO,
+        // llegue o no a sumar algo, para distinguir si el problema es que
+        // TikTok/la librería no manda eventos de más usuarios (recepción) o
+        // si algo de acá abajo los descarta (procesamiento).
+        this.recordTapTapEvent(username, likeCount);
+
         if (!username || likeCount <= 0) return;
 
         const avatar = data.profilePictureUrl || '';
@@ -1808,6 +1839,45 @@ class Tenant {
         return { leaderboard: top };
     }
 
+    // Ver comentario de tapTapDiagnostics en el constructor. `distinctUsers`
+    // es un Set interno (no se manda tal cual — solo su tamaño), así que
+    // esto arma el objeto plano que sí viaja por socket.
+    getTapTapDiagnostics() {
+        const d = this.tapTapDiagnostics;
+        return {
+            totalReceived: d.totalReceived,
+            totalSettled: d.totalSettled,
+            distinctUserCount: d.distinctUsers.size,
+            lastEventAt: d.lastEventAt,
+            lastEventUsername: d.lastEventUsername,
+            lastSettledAt: d.lastSettledAt,
+        };
+    }
+
+    // Se llama en CADA 'like' crudo que llega de TikTok, pase o no los
+    // filtros de handleLikeEvent — pedido explícito (reporte de bug) de
+    // poder ver en consola/panel si el problema es que TikTok/la librería
+    // no está mandando eventos de más usuarios (acá nunca aparecerían) o si
+    // los recibimos y algo los descarta después (acá sí aparecerían, pero
+    // no en el ranking final). El broadcast al panel se throttlea a 1 vez
+    // por segundo como mucho, para no saturar el socket si hay una ráfaga
+    // de cientos de likes en simultáneo.
+    recordTapTapEvent(username, likeCount) {
+        const d = this.tapTapDiagnostics;
+        d.totalReceived += 1;
+        d.lastEventAt = Date.now();
+        d.lastEventUsername = username || null;
+        if (username) d.distinctUsers.add(username);
+        console.log(`[${this.licenseId}] [TAPTAP] 👆 like recibido: @${username || '???'} x${likeCount}`);
+
+        if (!this.tapTapDiagnosticsBroadcastTimer) {
+            this.tapTapDiagnosticsBroadcastTimer = setTimeout(() => {
+                this.tapTapDiagnosticsBroadcastTimer = null;
+                this.broadcast.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
+            }, 1000);
+        }
+    }
+
     // Acumula en `pendingByUser` sin tocar el ranking público todavía, y
     // reinicia el temporizador de asentamiento de ESE usuario — así una
     // ráfaga de 12k taps seguidos no mueve el número del overlay hasta que
@@ -1834,7 +1904,18 @@ class Tenant {
         if (!this.tapTapState.leaderboard[username]) this.tapTapState.leaderboard[username] = { username, avatar: pending.avatar, likes: 0 };
         this.tapTapState.leaderboard[username].avatar = pending.avatar || this.tapTapState.leaderboard[username].avatar;
         this.tapTapState.leaderboard[username].likes += pending.likes;
+        this.tapTapDiagnostics.totalSettled += 1;
+        this.tapTapDiagnostics.lastSettledAt = Date.now();
+        console.log(`[${this.licenseId}] [TAPTAP] ✅ asentado: @${username} +${pending.likes} likes`);
         this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
+        // Bug real encontrado verificando el diagnóstico: sin esto,
+        // "asentados al ranking" se quedaba pegado en el último valor que
+        // había mandado recordTapTapEvent (que solo se dispara con un
+        // 'like' CRUDO nuevo) — si no llegaba ningún tap más después de que
+        // este asentamiento ocurriera (1.5s más tarde, ver
+        // TAPTAP_SETTLE_MS), el panel nunca se enteraba de que sí se
+        // asentó, aunque el ranking real ya lo reflejaba bien.
+        this.broadcast.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
     }
 
     // ==========================================
@@ -1944,6 +2025,7 @@ class Tenant {
         socket.emit('roulette_state_update', this.getRoulettePublicState());
         socket.emit('gifter_state_update', this.getGifterPublicState());
         socket.emit('taptap_state_update', this.getTapTapPublicState());
+        socket.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
         socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
@@ -2504,7 +2586,13 @@ class Tenant {
             Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
             this.tapTapPending = {};
             this.tapTapState.leaderboard = {};
+            // Reseteo completo pedido explícito (bug de Tap-Tap): el
+            // diagnóstico también arranca de cero, para no arrastrar
+            // conteos de una sesión/directo anterior.
+            if (this.tapTapDiagnosticsBroadcastTimer) { clearTimeout(this.tapTapDiagnosticsBroadcastTimer); this.tapTapDiagnosticsBroadcastTimer = null; }
+            this.tapTapDiagnostics = { totalReceived: 0, totalSettled: 0, distinctUsers: new Set(), lastEventAt: null, lastEventUsername: null, lastSettledAt: null };
             this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
+            this.broadcast.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
         });
 
         // ── SPOTIFY ──────────────────────────────────

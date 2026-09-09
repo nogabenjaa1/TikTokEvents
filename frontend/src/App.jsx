@@ -121,6 +121,12 @@ export default function App() {
   // Rankings continuos (sin partida/ganador, ver tenant.js) para los
   // overlays angostos de Top Tap-Tap y Top Gifter.
   const [tapTapState, setTapTapState] = useState({ leaderboard: [] });
+  // Diagnóstico de Tap-Tap (pedido explícito, reporte de bug: "solo
+  // registra 1-2 usuarios") — cuenta cada 'like' crudo recibido de TikTok,
+  // llegue o no a sumar al ranking, para poder ver en el panel si el
+  // problema es de recepción o de procesamiento (ver tapTapDiagnostics en
+  // tenant.js).
+  const [tapTapDiagnostics, setTapTapDiagnostics] = useState({ totalReceived: 0, totalSettled: 0, distinctUserCount: 0, lastEventAt: null, lastEventUsername: null, lastSettledAt: null });
   const [gifterState, setGifterState] = useState({ leaderboard: [] });
   // Modo Extensible: cuenta regresiva que crece con follows/regalos, con su
   // propio overlay horizontal (?screen=extensible) — no participa del
@@ -273,6 +279,7 @@ export default function App() {
     socket.on('roulette_winner_declared', setRouletteState);
 
     socket.on('taptap_state_update', setTapTapState);
+    socket.on('taptap_diagnostics_update', setTapTapDiagnostics);
     socket.on('gifter_state_update', setGifterState);
     socket.on('extensible_state_update', setExtensibleState);
     socket.on('spotify_queue_update', setSpotifyQueueState);
@@ -701,7 +708,7 @@ export default function App() {
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
         {sidebarMode === 'overlay' && (
           <OverlayLink
-            socket={socket} tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList}
+            socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList}
             extensibleState={extensibleState} diceState={diceState}
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />

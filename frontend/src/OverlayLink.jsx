@@ -64,6 +64,34 @@ function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetCon
   );
 }
 
+// Diagnóstico de Tap-Tap (pedido explícito, reporte de bug: "solo registra
+// 1-2 usuarios de forma intermitente") — muestra cuántos 'like' CRUDOS llegó
+// a recibir el servidor de TikTok, sin importar si terminaron en el
+// ranking, para que el streamer pueda distinguir en el momento si el
+// problema es que TikTok/la conexión no está mandando eventos de más
+// gente (acá se vería un número bajo, o que no sube) o si los recibimos
+// pero no llegan a asentarse (acá el total sí sube pero el ranking del
+// overlay no refleja tantos usuarios).
+function TapTapDiagnosticsBox({ diagnostics }) {
+  const d = diagnostics || {};
+  const fmt = (ts) => ts ? new Date(ts).toLocaleTimeString() : '—';
+  return (
+    <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs">
+      <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">🩺 Diagnóstico (likes crudos recibidos de TikTok)</p>
+      <div className="grid grid-cols-2 gap-2 text-gray-300">
+        <p>Total recibidos: <span className="font-black text-white">{d.totalReceived ?? 0}</span></p>
+        <p>Asentados al ranking: <span className="font-black text-white">{d.totalSettled ?? 0}</span></p>
+        <p>Usuarios distintos: <span className="font-black text-white">{d.distinctUserCount ?? 0}</span></p>
+        <p>Último recibido: <span className="font-black text-white">{fmt(d.lastEventAt)}</span></p>
+      </div>
+      {d.lastEventUsername && (
+        <p className="text-gray-500 mt-1">Último usuario: @{d.lastEventUsername}</p>
+      )}
+      <p className="text-gray-600 mt-2 leading-snug">Si este número no sube aunque veas gente tocando la pantalla en tu directo, el problema es que TikTok no está mandando esos eventos (no depende de este panel). Si sube pero "usuarios distintos" queda bajo, avísanos con este dato.</p>
+    </div>
+  );
+}
+
 // Sub-navegación del panel de Overlays — mismo patrón visual que EVENT_TABS
 // de App.jsx (fila horizontal de pestañas), pedido explícito para que la
 // vitrina de enlaces deje de ser una sola página larga y quede agrupada por
@@ -110,7 +138,7 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQueueState, giftsList, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, giftsList, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -224,6 +252,7 @@ export default function OverlayLink({ socket, tapTapState, gifterState, spotifyQ
               resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
               onCustomize={() => setCustomizingId('taptap')}
             />
+            <TapTapDiagnosticsBox diagnostics={tapTapDiagnostics} />
             <OverlayUrlCard
               title="Top Gifter (ranking de regalos)"
               description={`Widget angosto aparte con quién más regaló en el directo${gifterCount ? ` — ${gifterCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}

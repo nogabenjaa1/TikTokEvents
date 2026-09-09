@@ -135,7 +135,7 @@ export default function App() {
   // Cola de canciones pedidas por chat con !play (ver Spotify.jsx) — mismo
   // patrón que tapTapState/gifterState: un solo estado centralizado que
   // sirve tanto al panel como al overlay propio (?screen=musicqueue).
-  const [spotifyQueueState, setSpotifyQueueState] = useState({ queue: [] });
+  const [spotifyQueueState, setSpotifyQueueState] = useState({ queue: [], nowPlaying: null });
   // Quién puede usar !play/!skip — vive en el backend (no en localStorage
   // como TTS) porque acá el permiso lo tiene que aplicar el SERVIDOR antes
   // de llamar a la API real de Spotify, no el navegador de cada espectador.

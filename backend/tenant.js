@@ -1923,7 +1923,6 @@ class Tenant {
         d.lastEventAt = Date.now();
         d.lastEventUsername = username || null;
         if (username) d.distinctUsers.add(username);
-        console.log(`[${this.licenseId}] [TAPTAP] 👆 like recibido: @${username || '???'} x${likeCount}`);
 
         if (!this.tapTapDiagnosticsBroadcastTimer) {
             this.tapTapDiagnosticsBroadcastTimer = setTimeout(() => {
@@ -1961,7 +1960,6 @@ class Tenant {
         this.tapTapState.leaderboard[username].likes += pending.likes;
         this.tapTapDiagnostics.totalSettled += 1;
         this.tapTapDiagnostics.lastSettledAt = Date.now();
-        console.log(`[${this.licenseId}] [TAPTAP] ✅ asentado: @${username} +${pending.likes} likes`);
         this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
         // Bug real encontrado verificando el diagnóstico: sin esto,
         // "asentados al ranking" se quedaba pegado en el último valor que

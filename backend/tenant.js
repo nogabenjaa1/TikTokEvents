@@ -536,6 +536,45 @@ class Tenant {
         if (this.extensibleState.isActive) this.stopExtensible();
     }
 
+    // Pedido explícito ("Reinicio automático de overlays al establecer una
+    // nueva conexión con TikTok"): los rankings continuos (Top Gifter, Top
+    // Tap-Tap — antes solo se reiniciaban a mano, ver
+    // reset_gifter_leaderboard/reset_taptap_leaderboard) y la cola de
+    // pedidos de Spotify por chat no deben arrastrar datos de un directo
+    // anterior. Se llama SOLO en una conexión genuinamente nueva (ver el
+    // chequeo de wasEverConnected en ensureTikTokConnection) — nunca en una
+    // reconexión automática tras un corte transitorio sobre el MISMO
+    // directo, ni al desconectarse (a propósito: el streamer puede querer
+    // ver el ranking final antes de arrancar de nuevo), ni en un simple
+    // refresh de página (el estado vive acá, no en el navegador).
+    //
+    // A propósito NO toca los modos de juego (Rey del Trono, Zubastinis,
+    // Eliminación, Ruleta, Extensible): esos ya se frenan solos en cuanto
+    // se confirma que el LIVE anterior terminó de verdad (ver
+    // stopAllActiveGames más arriba) y cada uno arranca con su propio
+    // estado limpio al presionar "Iniciar" — llamar a stopAllActiveGames()
+    // acá de nuevo pisaría una partida que el streamer arranca justo
+    // AHORA, ya que en varios flujos arrancar una partida es lo que
+    // dispara esta misma conexión. Tampoco toca `nowPlaying` de
+    // Spotify (la canción sonando de verdad no depende de la sesión de
+    // TikTok) ni ninguna configuración/preferencia (temas, presets de voz,
+    // etc.).
+    resetContinuousStateForNewSession() {
+        this.gifterState.leaderboard = {};
+        this.broadcast.emit('gifter_state_update', this.getGifterPublicState());
+
+        Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
+        this.tapTapPending = {};
+        this.tapTapState.leaderboard = {};
+        if (this.tapTapDiagnosticsBroadcastTimer) { clearTimeout(this.tapTapDiagnosticsBroadcastTimer); this.tapTapDiagnosticsBroadcastTimer = null; }
+        this.tapTapDiagnostics = { totalReceived: 0, totalSettled: 0, distinctUsers: new Set(), lastEventAt: null, lastEventUsername: null, lastSettledAt: null };
+        this.broadcast.emit('taptap_state_update', this.getTapTapPublicState());
+        this.broadcast.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
+
+        this.spotifyQueueState.queue = [];
+        this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+    }
+
     scheduleReconnect(username) {
         if (!this.anyContestNeedsConnection()) return;
         if (this.retryTimeout) clearTimeout(this.retryTimeout);
@@ -671,6 +710,14 @@ class Tenant {
 
         this.connectingPromise = timedConnect.then(() => {
             console.log(`[${this.licenseId}] [TIKTOK] ✅ ¡CONECTADO!`);
+            // Ver el comentario de resetContinuousStateForNewSession: si
+            // wasEverConnected sigue en false acá, esta conexión es
+            // genuinamente nueva (no una reconexión automática sobre el
+            // mismo directo — ver 'Reconexión al MISMO usuario' más
+            // arriba, que a propósito nunca toca esta bandera).
+            if (!this.wasEverConnected) {
+                this.resetContinuousStateForNewSession();
+            }
             this.liveConnected = true;
             this.wasEverConnected = true;
             this.connectingPromise = null;

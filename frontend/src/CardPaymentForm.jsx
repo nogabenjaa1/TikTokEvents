@@ -47,7 +47,7 @@ function friendlyDeclineMessage(statusDetail) {
 // hosteado de MP) el redirect de create-preference. El Brick tokeniza la
 // tarjeta en un iframe de MercadoPago; acá nunca se ve el número real, solo
 // el token + payment_method_id que arma en su callback onSubmit.
-export default function CardPaymentForm({ planType, diceTier, amount, email, onSuccess, onCancel }) {
+export default function CardPaymentForm({ planType, diceTier, amount, email, zipCode, streetName, streetNumber, onSuccess, onCancel }) {
   const [sdkState, setSdkState] = useState('loading'); // loading | ready | error | no-key
   const [submitError, setSubmitError] = useState('');
   const [pending, setPending] = useState(false);
@@ -88,6 +88,9 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, onS
               planType,
               diceTier,
               email,
+              zipCode,
+              streetName,
+              streetNumber,
               // Pedido explicito de MercadoPago (checklist de calidad,
               // "Apellido del comprador"): reusa el nombre del titular que
               // el propio Brick ya pide para la tarjeta, en vez de agregar
@@ -168,6 +171,12 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, onS
       {pending && <p className="text-[10px] text-gray-500 text-center">Procesando pago...</p>}
       {submitError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{submitError}</p>}
       <div id={BRICK_CONTAINER_ID} />
+      {/* Pedido explicito de MercadoPago (checklist de calidad,
+          "Logos oficiales de Mercado Pago"): refuerza confianza en el
+          comprador -- no impacta el puntaje, pero ayuda a la conversion. */}
+      <p className="text-[9px] text-gray-500 text-center flex items-center justify-center gap-1">
+        🔒 Pago 100% seguro procesado por <strong>Mercado Pago</strong>
+      </p>
     </div>
   );
 }

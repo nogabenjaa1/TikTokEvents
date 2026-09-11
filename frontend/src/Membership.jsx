@@ -38,6 +38,13 @@ export default function Membership({ session, onSessionUpdate }) {
   // handleBuy). Si mas adelante se quiere precargarlo o usarlo para
   // recibos, habria que persistirlo en licenses, pero eso es aparte.
   const [email, setEmail] = useState('');
+  // Pedido explicito de MercadoPago (checklist de calidad de
+  // integracion, "Dirección del comprador"): opcional para el
+  // streamer -- solo se manda si completa las 3 partes juntas (ver
+  // CardPaymentForm.jsx). Ayuda a bajar rechazos del motor antifraude.
+  const [zipCode, setZipCode] = useState('');
+  const [streetName, setStreetName] = useState('');
+  const [streetNumber, setStreetNumber] = useState('');
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   // Plan que se esta pagando ahora mismo con el formulario embebido (Card
   // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
@@ -243,11 +250,26 @@ export default function Membership({ session, onSessionUpdate }) {
           className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
       </div>
 
+      <div className="w-full max-w-2xl">
+        <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
+        <div className="flex gap-2">
+          <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
+            className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
+            className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
+            className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+        </div>
+      </div>
+
       {payingPlan && (
         <CardPaymentForm
           planType={payingPlan}
           amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
           email={email.trim()}
+          zipCode={zipCode.trim()}
+          streetName={streetName.trim()}
+          streetNumber={streetNumber.trim()}
           onSuccess={handlePaymentSuccess}
           onCancel={() => setPayingPlan(null)}
         />

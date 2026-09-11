@@ -53,6 +53,7 @@ const { WebcastPushConnection: WebcastPushConnectionV1 } = require('tiktok-live-
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 
 const { MercadoPagoConfig, Preference, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 
@@ -190,6 +191,18 @@ const app = express();
 // en ese header y tira ERR_ERL_UNEXPECTED_X_FORWARDED_FOR en cada request
 // a una ruta con rate limit (login, free-trial, admin, pagos, etc.).
 app.set('trust proxy', 1);
+// Cabeceras de seguridad estandar (X-Frame-Options, X-Content-Type-
+// Options, Strict-Transport-Security, Referrer-Policy, quita X-Powered-
+// By, etc.) -- pedido explicito de una revision de seguridad del sitio.
+// A proposito SIN Content-Security-Policy ni Cross-Origin-Embedder-
+// Policy: el sitio carga Google AdSense, Adsterra y el SDK de
+// MercadoPago (que a su vez carga reCAPTCHA) desde muchisimos dominios
+// de terceros -- una CSP mal armada podria romper en silencio los
+// anuncios (ingresos) o el cobro con tarjeta (lo mas critico del sitio,
+// recien estabilizado) sin que se note hasta que alguien reporte el
+// problema. Si se quiere una CSP real, hay que armarla con tiempo y
+// probar cada integracion de terceros a mano, no activarla a ciegas.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json());
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -717,7 +730,7 @@ app.get('/api/pricing', (req, res) => {
 });
 
 app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName } = req.body || {};
+    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
@@ -747,6 +760,14 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
     if (diceTier) titleParts.push(diceTier.toUpperCase());
     const itemTitle = `TikTokEvents - ${titleParts.join(' + ')}`;
     const { firstName, lastName } = splitFullName(fullName);
+    // Pedido explícito de MercadoPago (checklist de calidad, "Dirección
+    // del comprador"): opcional para el streamer (no se bloquea la compra
+    // si no la completa), pero si vienen las 3 partes se manda -- MP dice
+    // que cuanto más completo el objeto payer, menor la probabilidad de
+    // rechazo por su motor antifraude.
+    const address = (zipCode && streetName && streetNumber)
+        ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
+        : undefined;
 
     try {
         const preference = new Preference(getMpClient());
@@ -764,7 +785,18 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
                     unit_price: amountCents / 100,
                 }],
                 external_reference: externalReference,
-                payer: { email: cleanEmail, first_name: firstName, last_name: lastName },
+                payer: { email: cleanEmail, first_name: firstName, last_name: lastName, address },
+                // Pedido explícito de MercadoPago (checklist de calidad,
+                // "Descripción-Resumen de tarjeta"): lo que ve el
+                // comprador en el resumen de su tarjeta -- ayuda a que
+                // reconozca el cargo y no lo desconozca/impugne como
+                // fraude ante su banco.
+                statement_descriptor: 'TIKTOKEVENTS',
+                // Pedido explícito de MercadoPago (checklist de calidad,
+                // "Máximo de cuotas"): sin esto, MP ofrece hasta 18 cuotas
+                // por default -- no tiene sentido para un plan de $10-
+                // $1800 MXN, y agrega complejidad/fricción sin motivo.
+                payment_methods: { installments: 1 },
                 back_urls: {
                     success: `${FRONTEND_URL}/?payment=success`,
                     pending: `${FRONTEND_URL}/?payment=pending`,
@@ -927,7 +959,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 // ese endpoint roto) -- a este endpoint solo llega el token, nunca el
 // numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
+    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -980,6 +1012,11 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
     const { firstName, lastName } = splitFullName(fullName);
+    // Mismo criterio que create-preference: opcional, se manda solo si
+    // vienen las 3 partes juntas.
+    const address = (zipCode && streetName && streetNumber)
+        ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
+        : undefined;
 
     try {
         const amountStr = (amountCents / 100).toFixed(2);
@@ -1000,6 +1037,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                     email: cleanEmail,
                     first_name: firstName,
                     last_name: lastName,
+                    address,
                     identification: (identificationType && identificationNumber)
                         ? { type: identificationType, number: identificationNumber }
                         : undefined,
@@ -1012,6 +1050,12 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                             type: cardType,
                             token,
                             installments: Number(installments) || 1,
+                            // Mismo pedido de MercadoPago que en
+                            // create-preference ("Descripción-Resumen de
+                            // tarjeta") -- confirmado que la Orders API
+                            // acepta este campo acá adentro de
+                            // payment_method (no a nivel order).
+                            statement_descriptor: 'TIKTOKEVENTS',
                         },
                     }],
                 },

@@ -130,6 +130,24 @@ const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetim
 // sola fuente de verdad para el formato de email valido.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// El Card Payment Brick a veces devuelve un payment_method_id mas
+// especifico que la marca generica (ej. "debmaster" para debito
+// Mastercard de ciertos bancos/fintechs como Nubank) aunque el logo
+// mostrado sea el generico -- bug real encontrado en produccion: la
+// Orders API (a diferencia de la vieja Payments API) solo acepta
+// amex/master/visa en payment_method.id, y rechaza cualquier otra cosa
+// con "value must be one of amex, master, visa". Se normaliza por
+// substring en vez de una lista fija de valores conocidos, para cubrir
+// variantes que no hemos visto todavia sin tener que ir agregandolas a
+// mano cada vez que aparece una nueva.
+function normalizeCardBrand(paymentMethodId) {
+    const raw = String(paymentMethodId || '').toLowerCase();
+    if (raw.includes('amex')) return 'amex';
+    if (raw.includes('master')) return 'master';
+    if (raw.includes('visa')) return 'visa';
+    return paymentMethodId;
+}
+
 // No bloqueante a propósito (igual que MP_ACCESS_TOKEN): si todavía no se
 // configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
 // plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
@@ -901,6 +919,11 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
 
+    const normalizedPaymentMethodId = normalizeCardBrand(paymentMethodId);
+    if (normalizedPaymentMethodId !== paymentMethodId) {
+        console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
+    }
+
     try {
         const amountStr = (amountCents / 100).toFixed(2);
         const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {
@@ -926,7 +949,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                     payments: [{
                         amount: amountStr,
                         payment_method: {
-                            id: paymentMethodId,
+                            id: normalizedPaymentMethodId,
                             type: 'credit_card',
                             token,
                             installments: Number(installments) || 1,

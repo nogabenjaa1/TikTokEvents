@@ -447,6 +447,44 @@ app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimite
 });
 
 // ==========================================
+// PRECIOS DE LICENCIAS (pedido explicito: "Modificacion manual de precios de
+// licencias desde el panel de administracion") -- solo admin puede editar
+// (auth.requireAdmin), el precio vigente se sirve por separado en
+// GET /api/pricing (publico, ver la seccion de PAGOS mas abajo) para que la
+// vitrina de compra y este panel lean siempre el mismo numero.
+// ==========================================
+app.post('/api/admin/pricing', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const { planType, amountCents } = req.body || {};
+    if (!pricing.isValidPlan(planType)) {
+        return res.status(400).json({ success: false, error: 'Plan inválido' });
+    }
+    if (!Number.isInteger(amountCents) || amountCents < pricing.MIN_PLAN_PRICE_CENTS) {
+        return res.status(400).json({ success: false, error: `El precio mínimo es de ${(pricing.MIN_PLAN_PRICE_CENTS / 100).toFixed(2)} MXN` });
+    }
+    try {
+        const { oldAmountCents } = await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
+        res.json({ success: true, planType, oldAmountCents, newAmountCents: amountCents });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/admin/pricing/history', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const rows = await db.getPricingHistory();
+    res.json({
+        success: true,
+        history: rows.map(r => ({
+            id: r.id,
+            planType: r.plan_type,
+            oldAmountCents: r.old_amount_cents,
+            newAmountCents: r.new_amount_cents,
+            changedBy: r.changed_by,
+            changedAt: r.changed_at,
+        })),
+    });
+});
+
+// ==========================================
 // SPOTIFY: cada licencia conecta SU PROPIA cuenta por OAuth (Authorization
 // Code Flow) para que !play en el chat le agregue canciones a SU cola —
 // ver spotify.js para las restricciones reales (Premium + dispositivo
@@ -603,6 +641,14 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
 // { planType?: 'month'|'annual'|'lifetime', diceTier?: 'pro'|'vip' } — al
 // menos uno de los dos (compra de "solo addon" sin renovar el plan, o
 // renovación de plan sin tocar el addon, son ambas válidas).
+// Precios vigentes de los 3 planes (override del admin si existe, default
+// de pricing.js si no) -- publica a proposito, sin auth: la vitrina de
+// Membership.jsx la necesita ANTES de que exista una sesion (ver el
+// comentario de "Anonymous purchase flow" en Membership.jsx).
+app.get('/api/pricing', (req, res) => {
+    res.json({ success: true, prices: pricing.getAllPlanPricesCents() });
+});
+
 app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
     const { planType, diceTier } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
@@ -816,6 +862,12 @@ app.use((req, res) => {
     if (fs.existsSync(FRONTEND_INDEX)) return res.sendFile(FRONTEND_INDEX);
     res.status(404).json({ success: false, error: 'No encontrado. Este backend solo expone la API; el frontend se sirve por separado.' });
 });
+
+// Fire-and-forget (mismo criterio que otros catch silenciosos de arranque
+// en este archivo): si Supabase esta caido justo al arrancar, el proceso
+// sigue con los precios default de PLAN_PRICES_CENTS en vez de no levantar
+// -- el admin puede volver a guardar el precio despues para reintentar.
+pricing.loadPriceOverrides().catch(err => console.error('[PRICING] No se pudieron cargar los overrides de precio al arrancar:', err.message));
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

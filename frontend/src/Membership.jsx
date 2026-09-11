@@ -34,6 +34,18 @@ export default function Membership({ session, onSessionUpdate }) {
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
 
+  // Precios vigentes desde el backend (pueden diferir de los defaults de
+  // PLANS de abajo si el admin los edito desde el panel de Licencias, ver
+  // GET /api/pricing) -- null mientras no llego la respuesta, ahi se usa el
+  // default como fallback para no dejar la vitrina en blanco un instante.
+  const [livePrices, setLivePrices] = useState(null);
+  useEffect(() => {
+    fetch(`${backendUrl()}/api/pricing`)
+      .then(res => res.json())
+      .then(data => { if (data.success) setLivePrices(data.prices); })
+      .catch(() => {}); // sin precios en vivo, se sigue viendo el default
+  }, []);
+
   // Ingresar con una clave que ya tienes (admin, prueba gratis guardada de
   // antes, etc.) sin tener que entrar a un panel de juego bloqueado primero
   // — antes esta era la única forma de loguearse: el Login embebido que
@@ -210,7 +222,7 @@ export default function Membership({ session, onSessionUpdate }) {
                   <p className="text-xs font-black uppercase tracking-widest">{plan.label}</p>
                   {plan.savingsChip && <span className="theme-chip text-[9px] font-black whitespace-nowrap">{plan.savingsChip}</span>}
                 </div>
-                <p className="text-2xl font-black">MX${plan.mxn.toLocaleString('es-MX')}</p>
+                <p className="text-2xl font-black">MX${(livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn).toLocaleString('es-MX')}</p>
                 <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${plan.usd}</p>
                 {plan.id === 'lifetime' && (
                   <p className="text-[9px] text-gray-500 leading-snug mt-2">{LIFETIME_LEGEND}</p>

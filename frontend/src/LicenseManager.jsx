@@ -14,6 +14,13 @@ const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000; // 3 días
 // reales de administración de la plataforma.
 const DICE_TIERS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'Admin' };
 
+// Precios editables (pedido explicito: "Modificacion manual de precios de
+// licencias desde el panel de administracion") -- a proposito SOLO los 3
+// planes de venta autoservicio (Mensual/Anual/Lifetime, ver backend/pricing.js
+// PLAN_PRICES_CENTS); los addons de Color Says quedan afuera del pedido.
+const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
+const MIN_PRICE_MXN = 1; // piso pedido explicitamente: 1 peso
+
 const STATUS_FILTERS = [
   { id: 'all',      label: 'Todas' },
   { id: 'active',   label: 'Activas' },
@@ -95,6 +102,16 @@ export default function LicenseManager({ onSessionInvalid }) {
   const [extendType, setExtendType] = useState('week');
   const [extendDiceTier, setExtendDiceTier] = useState('regular');
 
+  // Precios de licencias -- separado del CRUD de licencias de arriba a
+  // proposito: son dos conceptos distintos (una licencia puntual vs. lo que
+  // cuesta cada plan para TODOS), aunque compartan el mismo panel de admin.
+  const [prices, setPrices] = useState(null); // { month, annual, lifetime } en centavos
+  const [priceInputs, setPriceInputs] = useState({});
+  const [savingPlan, setSavingPlan] = useState(null);
+  const [priceHistory, setPriceHistory] = useState(null); // null = nunca se pidio
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const pushToast = useCallback((message, type = 'success') => {
     const id = Date.now() + Math.random();
@@ -137,6 +154,66 @@ export default function LicenseManager({ onSessionInvalid }) {
   }, [handleUnauthorized]);
 
   useEffect(() => { fetchLicenses(); }, [fetchLicenses]);
+
+  // Publica a proposito (mismo endpoint que usa la vitrina de Membership.jsx)
+  // -- no hace falta authHeaders acá, pero no molesta tenerlos: si mas
+  // adelante este endpoint pidiera auth, seguiria andando sin tocar esto.
+  const fetchPrices = useCallback(async () => {
+    try {
+      const res = await fetch(`${backendUrl()}/api/pricing`);
+      const data = await res.json();
+      if (data.success) {
+        setPrices(data.prices);
+        setPriceInputs(Object.fromEntries(Object.entries(data.prices).map(([k, cents]) => [k, (cents / 100).toString()])));
+      }
+    } catch { /* el panel sigue funcionando sin precios cargados */ }
+  }, []);
+
+  useEffect(() => { fetchPrices(); }, [fetchPrices]);
+
+  const savePrice = async (planType) => {
+    const pesos = parseFloat(priceInputs[planType]);
+    if (!Number.isFinite(pesos) || pesos < MIN_PRICE_MXN) {
+      pushToast(`El precio mínimo es de ${MIN_PRICE_MXN.toFixed(2)} MXN`, 'error');
+      return;
+    }
+    const amountCents = Math.round(pesos * 100);
+    setSavingPlan(planType);
+    try {
+      const res = await fetch(`${backendUrl()}/api/admin/pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ planType, amountCents }),
+      });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo guardar el precio');
+      pushToast(`Precio de ${PRICING_PLAN_LABELS[planType]} actualizado`);
+      fetchPrices();
+      if (historyOpen) fetchHistory();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    } finally {
+      setSavingPlan(null);
+    }
+  };
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`${backendUrl()}/api/admin/pricing/history`, { headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (data.success) setPriceHistory(data.history);
+    } catch { /* el historial es informativo, no bloquea nada si falla */ }
+    finally { setHistoryLoading(false); }
+  }, [handleUnauthorized]);
+
+  const toggleHistory = () => {
+    const opening = !historyOpen;
+    setHistoryOpen(opening);
+    if (opening && priceHistory === null) fetchHistory();
+  };
 
   const createLicense = async (e) => {
     e.preventDefault();
@@ -329,6 +406,57 @@ export default function LicenseManager({ onSessionInvalid }) {
           {creating ? 'CREANDO...' : 'CREAR LICENCIA'}
         </button>
       </form>
+
+      {/* Precios de licencias -- pedido explicito: "Modificacion manual de
+          precios de licencias desde el panel de administracion". Mismo
+          patron visual que el formulario de "Crear licencia" de arriba. */}
+      <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
+        <p className="theme-label text-xs uppercase tracking-widest font-semibold">Precios de licencias</p>
+        {prices === null ? (
+          <p className="text-gray-600 text-sm italic">Cargando precios...</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {Object.keys(PRICING_PLAN_LABELS).map((planType) => (
+              <div key={planType} className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-300 w-16 shrink-0">{PRICING_PLAN_LABELS[planType]}</span>
+                <span className="text-[11px] text-gray-500 shrink-0">MX$</span>
+                <input
+                  type="number" min={MIN_PRICE_MXN} step="0.01"
+                  value={priceInputs[planType] ?? ''}
+                  onChange={e => setPriceInputs(p => ({ ...p, [planType]: e.target.value }))}
+                  className="theme-input flex-1 p-2 outline-none text-sm"
+                />
+                <button
+                  onClick={() => savePrice(planType)}
+                  disabled={savingPlan === planType || priceInputs[planType] === (prices[planType] / 100).toString()}
+                  className="theme-btn-primary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingPlan === planType ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            ))}
+            <p className="text-[9px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
+            <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start mt-1">
+              {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
+            </button>
+            {historyOpen && (
+              <div className="theme-input p-2 mt-1 flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {historyLoading ? (
+                  <p className="text-[10px] text-gray-500 italic">Cargando historial...</p>
+                ) : !priceHistory || priceHistory.length === 0 ? (
+                  <p className="text-[10px] text-gray-500 italic">Todavía no hay cambios registrados.</p>
+                ) : priceHistory.map(h => (
+                  <p key={h.id} className="text-[10px] text-gray-400">
+                    {fmtDate(h.changedAt)} · {PRICING_PLAN_LABELS[h.planType] || h.planType} · @{h.changedBy} ·{' '}
+                    {h.oldAmountCents != null && <>MX${(h.oldAmountCents / 100).toLocaleString('es-MX')} → </>}
+                    MX${(h.newAmountCents / 100).toLocaleString('es-MX')}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
 

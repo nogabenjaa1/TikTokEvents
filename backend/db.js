@@ -166,7 +166,36 @@ const ready = pool.query(`
   // menos desentona si una alerta vieja (guardada antes de que existiera
   // este campo) nunca lo configuró.
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS entrance_anim TEXT NOT NULL DEFAULT 'fade'`))
-  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`));
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`))
+  // Precios editables desde el panel de Licencias (pedido explicito:
+  // "Modificacion manual de precios de licencias desde el panel de
+  // administracion") -- una fila por plan que el admin haya tocado; un plan
+  // SIN fila aca sigue usando el default de PLAN_PRICES_CENTS en
+  // backend/pricing.js. amount_cents en vez de un decimal en pesos por el
+  // mismo criterio que `payments.amount_cents`: nunca representar dinero en
+  // coma flotante.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS pricing_overrides (
+      plan_type TEXT PRIMARY KEY,
+      amount_cents INTEGER NOT NULL,
+      updated_at BIGINT NOT NULL,
+      updated_by TEXT NOT NULL
+    )
+  `))
+  // Auditoria de cada cambio de precio (pedido explicito, seccion "Historial
+  // de cambios"): a diferencia de pricing_overrides (que solo guarda el
+  // valor VIGENTE de cada plan), esta tabla nunca se pisa -- cada fila es un
+  // cambio puntual, para poder ver quien bajo el precio a $1 y cuando.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS pricing_history (
+      id TEXT PRIMARY KEY,
+      plan_type TEXT NOT NULL,
+      old_amount_cents INTEGER,
+      new_amount_cents INTEGER NOT NULL,
+      changed_by TEXT NOT NULL,
+      changed_at BIGINT NOT NULL
+    )
+  `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
 async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular' }) {
@@ -420,9 +449,48 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Devuelve un mapa { [plan_type]: amount_cents } -- solo los planes que el
+// admin haya sobreescrito alguna vez, ver el comentario de la tabla arriba.
+async function getPricingOverrides() {
+    await ready;
+    const { rows } = await pool.query('SELECT plan_type, amount_cents FROM pricing_overrides');
+    const map = {};
+    rows.forEach(r => { map[r.plan_type] = r.amount_cents; });
+    return map;
+}
+
+// Upsert del precio vigente + una fila de historial en la misma llamada --
+// no hace falta una transaccion explicita: si el INSERT de historial
+// fallara, preferimos que el UPSERT del precio vigente (lo unico que de
+// verdad afecta lo que se cobra) haya quedado aplicado antes que perder
+// ambos por un rollback sobre una tabla puramente de auditoria.
+async function setPricingOverride(planType, amountCents, updatedBy) {
+    await ready;
+    const now = Date.now();
+    const { rows: prevRows } = await pool.query('SELECT amount_cents FROM pricing_overrides WHERE plan_type = $1', [planType]);
+    const oldAmountCents = prevRows.length > 0 ? prevRows[0].amount_cents : null;
+    await pool.query(`
+        INSERT INTO pricing_overrides (plan_type, amount_cents, updated_at, updated_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (plan_type) DO UPDATE SET amount_cents = $2, updated_at = $3, updated_by = $4
+    `, [planType, amountCents, now, updatedBy]);
+    await pool.query(`
+        INSERT INTO pricing_history (id, plan_type, old_amount_cents, new_amount_cents, changed_by, changed_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+    `, [require('crypto').randomUUID(), planType, oldAmountCents, amountCents, updatedBy, now]);
+    return { oldAmountCents };
+}
+
+async function getPricingHistory(limit = 50) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM pricing_history ORDER BY changed_at DESC LIMIT $1', [limit]);
+    return rows;
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
+    getPricingOverrides, setPricingOverride, getPricingHistory,
 };

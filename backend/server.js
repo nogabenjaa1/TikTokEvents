@@ -86,10 +86,10 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .filter(Boolean);
 const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
-// URLs propias (no las de MercadoPago) para armar la preferencia de pago:
-// a dónde manda la notificación (BACKEND_URL) y a dónde vuelve el streamer
-// después de pagar (FRONTEND_URL, el dominio de Vercel en producción).
-const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+// URL propia (no las de MercadoPago) para armar la preferencia de pago: a
+// dónde vuelve el streamer después de pagar (el dominio de Vercel en
+// producción). A dónde manda la notificación NO se define acá a propósito
+// (ver el comentario en create-preference más abajo, en notification_url).
 const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://localhost:5173').replace(/\/$/, '');
 
 // Se crea perezosamente (no al levantar el server) para que el resto de la
@@ -698,7 +698,19 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
                     failure: `${FRONTEND_URL}/?payment=failure`,
                 },
                 auto_return: 'approved',
-                notification_url: `${BACKEND_URL}/api/payments/webhook`,
+                // A propósito SIN notification_url acá: MercadoPago
+                // documenta que la URL configurada al crear una preferencia
+                // TIENE PRIORIDAD sobre la configurada en el dashboard
+                // ("Tus integraciones" > Webhooks), y esa vía alternativa
+                // no queda documentada con el mismo esquema de firma
+                // (x-signature/HMAC) que sí aplica al método del dashboard
+                // -- verificado en producción: una notificación de PRUEBA
+                // disparada desde el dashboard SÍ validó bien contra
+                // MP_WEBHOOK_SECRET, mientras que las de compras reales
+                // (que sí pisaban esta URL acá) daban SignatureMismatch
+                // siempre. Dejar que MP use la URL del dashboard para TODO
+                // evita ese canal separado. Requiere que la URL configurada
+                // ahí sea exactamente la URL de este backend + /api/payments/webhook.
             },
         });
         res.json({ success: true, checkoutUrl: result.init_point });

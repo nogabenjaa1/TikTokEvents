@@ -122,6 +122,9 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // Etiqueta que va en el medio de la key legible (alias-etiqueta-hash, ver
 // auth.generateLabeledKey) cuando se compra ese plan.
 const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
+// Compartido entre create-preference y el cobro directo (charge) -- una
+// sola fuente de verdad para el formato de email valido.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // No bloqueante a propósito (igual que MP_ACCESS_TOKEN): si todavía no se
 // configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
@@ -676,7 +679,7 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
     // debe llevar payer.email -- nunca se confía en que el front lo mande
     // bien formado, se revalida acá igual que planType/diceTier.
     const cleanEmail = typeof email === 'string' ? email.trim() : '';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    if (!EMAIL_RE.test(cleanEmail)) {
         return res.status(400).json({ success: false, error: 'Ingresa un correo válido para continuar con el pago' });
     }
 
@@ -770,76 +773,155 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     try {
         const payment = new Payment(getMpClient());
         const paymentData = await payment.get({ id: dataId });
-        if (paymentData.status !== 'approved') return;
-
-        const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-        const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-        const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
-        if (!licenseId || (!planType && !diceTier)) {
-            console.error('[MP] Webhook con external_reference inválido:', paymentData.external_reference);
-            return;
-        }
-
-        // El UNIQUE sobre mp_payment_id hace esto idempotente: si ya vimos
-        // este pago (reintento de notificación), insertPaymentIfNew devuelve
-        // false y no se vuelve a aplicar nada.
-        const isNew = await db.insertPaymentIfNew({
-            id: crypto.randomUUID(),
-            licenseId,
-            mpPaymentId: String(paymentData.id),
-            planType: planType || null,
-            diceTier: diceTier || null,
-            amountCents: pricing.computeAmountCents({ planType, diceTier }),
-            status: paymentData.status,
-            createdAt: Date.now(),
-        });
-        if (!isNew) return;
-
-        const license = await db.findById(licenseId);
-        if (!license) {
-            console.error('[MP] Webhook para una licencia inexistente:', licenseId);
-            return;
-        }
-
-        const update = {};
-        if (planType) {
-            update.licenseType = planType;
-            // Si venía de una prueba gratis con días sin usar, esos días se
-            // suman arriba del plan nuevo en vez de perderse — pedido
-            // explícito para que pasar de trial a pago no se sienta como
-            // "perder lo que ya tenía". No aplica a lifetime (no vence).
-            const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
-                ? (license.expires_at - Date.now())
-                : 0;
-            const baseExpiresAt = auth.computeExpiresAt(planType);
-            update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
-
-            // Rota la key para que el prefijo refleje el plan nuevo
-            // (alias-MONTHLY-hash, etc. — pedido explícito, ver
-            // auth.generateLabeledKey). Mismo id/sesión: solo cambia la key
-            // en sí, así que cualquier sesión ya abierta sigue funcionando,
-            // pero la URL del overlay vieja (que lleva la key vieja
-            // incrustada) deja de servir — pending_key_reveal es lo que le
-            // permite al frontend mostrarle la key nueva la próxima vez que
-            // llama a /api/auth/verify, para que la actualice en OBS.
-            const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
-            update.keyHash = auth.hashKey(newRawKey);
-            update.keyPrefix = auth.keyPrefix(newRawKey);
-            update.pendingKeyReveal = newRawKey;
-        }
-        if (diceTier) {
-            // Nunca degradar: si ya tenía VIP y compra PRO por error/de nuevo,
-            // se queda con VIP.
-            const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
-            const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
-            if (newRank > currentRank) update.diceTier = diceTier;
-        }
-        if (Object.keys(update).length > 0) {
-            await db.applyPurchase(licenseId, update);
-            console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
-        }
+        await applyApprovedPaymentIfNew(paymentData);
     } catch (err) {
         console.error('[MP] Error procesando webhook:', err.message);
+    }
+});
+
+// Aplica una compra ya APROBADA por MercadoPago a la licencia
+// correspondiente -- compartido entre el webhook (pagos via preferencia/
+// Checkout Pro) y el cobro directo de /api/payments/charge (Card Payment
+// Brick/Checkout API), ya que ambos caminos terminan con el mismo shape de
+// objeto Payment de MercadoPago (id, status, external_reference). Idempotente
+// via el UNIQUE de payments.mp_payment_id (ver insertPaymentIfNew): llamarla
+// dos veces con el mismo pago (ej. el webhook llega DESPUES de que el cobro
+// directo ya lo aplico al toque) no aplica el cambio dos veces.
+async function applyApprovedPaymentIfNew(paymentData) {
+    if (paymentData.status !== 'approved') return { applied: false };
+
+    const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
+    const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
+    const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
+    if (!licenseId || (!planType && !diceTier)) {
+        console.error('[MP] external_reference invalido:', paymentData.external_reference);
+        return { applied: false };
+    }
+
+    // El UNIQUE sobre mp_payment_id hace esto idempotente: si ya vimos este
+    // pago (reintento de webhook, o el cobro directo ya lo aplico antes),
+    // insertPaymentIfNew devuelve false y no se vuelve a aplicar nada.
+    const isNew = await db.insertPaymentIfNew({
+        id: crypto.randomUUID(),
+        licenseId,
+        mpPaymentId: String(paymentData.id),
+        planType: planType || null,
+        diceTier: diceTier || null,
+        amountCents: pricing.computeAmountCents({ planType, diceTier }),
+        status: paymentData.status,
+        createdAt: Date.now(),
+    });
+    if (!isNew) return { applied: false, alreadyProcessed: true };
+
+    const license = await db.findById(licenseId);
+    if (!license) {
+        console.error('[MP] Pago para una licencia inexistente:', licenseId);
+        return { applied: false };
+    }
+
+    const update = {};
+    if (planType) {
+        update.licenseType = planType;
+        const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
+            ? (license.expires_at - Date.now())
+            : 0;
+        const baseExpiresAt = auth.computeExpiresAt(planType);
+        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
+
+        const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
+        update.keyHash = auth.hashKey(newRawKey);
+        update.keyPrefix = auth.keyPrefix(newRawKey);
+        update.pendingKeyReveal = newRawKey;
+    }
+    if (diceTier) {
+        const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
+        const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
+        if (newRank > currentRank) update.diceTier = diceTier;
+    }
+    if (Object.keys(update).length > 0) {
+        await db.applyPurchase(licenseId, update);
+        console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+    }
+    return { applied: true, licenseId };
+}
+
+// ==========================================
+// COBRO DIRECTO (Checkout API + Card Payment Brick) -- alternativa a
+// create-preference/redirect mientras el checkout hosteado de MercadoPago
+// tiene un bug confirmado del lado de ellos (challenge-orchestrator nunca
+// resuelve por un CORS mal configurado en mercadolibre.com/jms/lgz/
+// background/automation, asi que el boton "Pagar" de SU pagina nunca se
+// habilita -- reproducido en dos navegadores distintos, con y sin cuenta de
+// MP). Aca el comprador nunca sale de este sitio: el Card Payment Brick
+// tokeniza la tarjeta en un iframe de MercadoPago (mismo mecanismo que ya
+// usa CardVerifyForm.jsx para verificar tarjetas sin cobrar, que nunca toco
+// ese endpoint roto) -- a este endpoint solo llega el token, nunca el
+// numero de tarjeta real.
+app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
+    const { planType, diceTier, email, token, payment_method_id: paymentMethodId, installments, issuer_id: issuerId, identificationType, identificationNumber } = req.body || {};
+    if (planType !== undefined && !pricing.isValidPlan(planType)) {
+        return res.status(400).json({ success: false, error: 'Plan invalido' });
+    }
+    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Addon invalido' });
+    }
+    if (!planType && !diceTier) {
+        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    }
+    const cleanEmail = typeof email === 'string' ? email.trim() : '';
+    if (!EMAIL_RE.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
+    }
+    if (!token || typeof token !== 'string') {
+        return res.status(400).json({ success: false, error: 'Falta el token de la tarjeta' });
+    }
+    if (!paymentMethodId || typeof paymentMethodId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Falta el medio de pago' });
+    }
+
+    // El monto SIEMPRE se calcula aca desde pricing.js -- igual que
+    // create-preference, nunca se confia en un transaction_amount que
+    // pueda venir del formData del Brick.
+    const amountCents = pricing.computeAmountCents({ planType, diceTier });
+    const externalReference = `${req.license.id}:${planType || '-'}:${diceTier || '-'}`;
+    const titleParts = [];
+    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
+    if (diceTier) titleParts.push(diceTier.toUpperCase());
+
+    try {
+        const payment = new Payment(getMpClient());
+        const result = await payment.create({
+            body: {
+                transaction_amount: amountCents / 100,
+                token,
+                description: `TikTokEvents - ${titleParts.join(' + ')}`,
+                installments: Number(installments) || 1,
+                payment_method_id: paymentMethodId,
+                issuer_id: issuerId || undefined,
+                payer: {
+                    email: cleanEmail,
+                    identification: (identificationType && identificationNumber)
+                        ? { type: identificationType, number: identificationNumber }
+                        : undefined,
+                },
+                external_reference: externalReference,
+            },
+            requestOptions: { idempotencyKey: crypto.randomUUID() },
+        });
+
+        if (result.status === 'approved') {
+            await applyApprovedPaymentIfNew(result);
+        }
+
+        res.json({
+            success: true,
+            status: result.status,
+            statusDetail: result.status_detail,
+            paymentId: result.id,
+        });
+    } catch (err) {
+        console.error('[MP] Error creando pago directo:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
     }
 });
 

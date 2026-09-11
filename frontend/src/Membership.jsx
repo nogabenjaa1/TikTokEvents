@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import CardPaymentForm from './CardPaymentForm';
 
 const PLANS = [
   { id: 'month', label: 'Mensual', usd: '6.99', mxn: 126, period: '/ mes' },
@@ -38,6 +39,13 @@ export default function Membership({ session, onSessionUpdate }) {
   // recibos, habria que persistirlo en licenses, pero eso es aparte.
   const [email, setEmail] = useState('');
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
+  // Plan que se esta pagando ahora mismo con el formulario embebido (Card
+  // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
+  // redirect a mercadopago.com.mx/checkout/ mientras esa pagina hosteada
+  // tenga el bug confirmado del challenge-orchestrator (ver el chat: el
+  // boton "Pagar" de MP nunca se habilita, reproducido en dos navegadores
+  // distintos). El comprador nunca sale de este sitio con este camino.
+  const [payingPlan, setPayingPlan] = useState(null);
   const [error, setError] = useState('');
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
@@ -130,19 +138,25 @@ export default function Membership({ session, onSessionUpdate }) {
     setLoadingTarget(planType);
     try {
       const ok = await ensureSession();
-      if (!ok) { setLoadingTarget(null); return; }
-      const res = await fetch(`${backendUrl()}/api/payments/create-preference`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ planType, email: cleanEmail }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo iniciar el pago');
-      window.location.href = data.checkoutUrl;
+      if (!ok) return;
+      setPayingPlan(planType);
     } catch (err) {
       setError(err.message);
+    } finally {
       setLoadingTarget(null);
     }
+  };
+
+  // Se llama cuando /api/payments/charge confirma un pago aprobado -- mismo
+  // flujo que ya usaba el banner de exito del redirect (refrescar la sesion
+  // y mostrar la clave rotada si el plan nuevo genero una).
+  const handlePaymentSuccess = async () => {
+    setPayingPlan(null);
+    setBanner('success');
+    const updated = await refreshSession();
+    if (!updated) return;
+    onSessionUpdate?.(updated);
+    if (updated.revealedKey) setRevealedKey(updated.revealedKey);
   };
 
   return (
@@ -229,6 +243,17 @@ export default function Membership({ session, onSessionUpdate }) {
           className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
       </div>
 
+      {payingPlan && (
+        <CardPaymentForm
+          planType={payingPlan}
+          amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+          email={email.trim()}
+          onSuccess={handlePaymentSuccess}
+          onCancel={() => setPayingPlan(null)}
+        />
+      )}
+
+      {!payingPlan && (
       <div className="w-full max-w-2xl">
         <p className="theme-label text-[10px] mb-3">Elige tu plan</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -253,7 +278,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 ) : rank > currentPlanRank ? (
                   <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
                     className="theme-btn-primary w-full mt-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                    {loadingTarget === plan.id ? 'Redirigiendo...' : buttonLabel}
+                    {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
                   </button>
                 ) : null}
               </div>
@@ -261,6 +286,7 @@ export default function Membership({ session, onSessionUpdate }) {
           })}
         </div>
       </div>
+      )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}
     </div>

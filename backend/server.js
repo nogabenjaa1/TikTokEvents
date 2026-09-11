@@ -95,9 +95,20 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://loc
 // Se crea perezosamente (no al levantar el server) para que el resto de la
 // app siga funcionando aunque todavía no se haya cargado MP_ACCESS_TOKEN —
 // solo las rutas de pago fallan hasta que se configure.
+// Interruptor MP_TEST_MODE (pedido explícito, para probar compras con
+// las tarjetas de prueba de MP sin arriesgar el Access Token real): en vez
+// de pisar MP_ACCESS_TOKEN con el de prueba en Render (fácil de olvidar
+// devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
+// dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
+// producción queda intacto todo el tiempo, listo para volver apagando el
+// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial) y
+// Payment.get() del webhook: ambos pasan por este mismo getMpClient(), así
+// que activar el flag los pone en modo prueba a los tres a la vez.
 function getMpClient() {
-    const accessToken = process.env.MP_ACCESS_TOKEN;
-    if (!accessToken) throw new Error('Falta MP_ACCESS_TOKEN en las variables de entorno');
+    const testMode = process.env.MP_TEST_MODE === 'true';
+    const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
+    const accessToken = process.env[envVar];
+    if (!accessToken) throw new Error(`Falta ${envVar} en las variables de entorno`);
     return new MercadoPagoConfig({ accessToken });
 }
 

@@ -923,6 +923,13 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     if (normalizedPaymentMethodId !== paymentMethodId) {
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
+    // El prefijo "deb" (debmaster/debvisa, confirmado en logs de produccion
+    // con una tarjeta de debito real de Nubank) indica una tarjeta de
+    // DEBITO -- mandarla como credit_card a la Orders API dio un 422
+    // generico "Unprocessable Entity" sin mas detalle (confirmado en vivo).
+    // Antes se mandaba credit_card siempre sin importar el tipo real.
+    const isDebit = String(paymentMethodId || '').toLowerCase().startsWith('deb');
+    const cardType = isDebit ? 'debit_card' : 'credit_card';
 
     try {
         const amountStr = (amountCents / 100).toFixed(2);
@@ -950,7 +957,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                         amount: amountStr,
                         payment_method: {
                             id: normalizedPaymentMethodId,
-                            type: 'credit_card',
+                            type: cardType,
                             token,
                             installments: Number(installments) || 1,
                         },

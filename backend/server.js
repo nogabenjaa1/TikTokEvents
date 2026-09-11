@@ -54,7 +54,7 @@ const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
-const { MercadoPagoConfig, Preference, Payment, CardToken } = require('mercadopago');
+const { MercadoPagoConfig, Preference, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 
 const multer = require('multer');
 
@@ -718,31 +718,22 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     const xRequestId = req.headers['x-request-id'];
     const dataId = req.query['data.id'] || req.query['id'];
 
-    if (!secret || !xSignature || !xRequestId || !dataId) {
+    if (!secret || !dataId) {
         return res.sendStatus(400);
     }
 
-    const sigParts = String(xSignature).split(',').reduce((acc, part) => {
-        const [key, value] = part.split('=');
-        if (key && value) acc[key.trim()] = value.trim();
-        return acc;
-    }, {});
-    const manifest = `id:${String(dataId).toLowerCase()};request-id:${xRequestId};ts:${sigParts.ts};`;
-    const expectedHash = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
-    if (!sigParts.v1 || expectedHash !== sigParts.v1) {
-        // Diagnóstico sin exponer el secreto completo: si el largo del
-        // secreto configurado no es el esperado, casi siempre es un
-        // espacio/salto de línea de más al pegarlo en Render. Comparar los
-        // primeros caracteres de ambos hashes ayuda a distinguir "secreto
-        // distinto por completo" de "manifest armado distinto" sin lograr
-        // filtrar nada útil para un atacante (8 caracteres de un HMAC-SHA256
-        // no sirven para reconstruir nada).
-        console.error('[MP] Webhook con firma inválida — descartado', {
-            secretLength: secret.length,
-            manifest,
-            expectedPrefix: expectedHash.slice(0, 8),
-            receivedPrefix: String(sigParts.v1 || '').slice(0, 8),
-        });
+    // Validador OFICIAL del SDK (mercadopago >= 3.x lo trae de fábrica) en
+    // vez del HMAC armado a mano que había acá antes -- mismo algoritmo
+    // (verificado byte a byte contra la implementación manual), pero de
+    // paso da un motivo puntual de rechazo (SignatureFailureReason) en vez
+    // de un genérico "no coincide", que ayuda muchísimo a diagnosticar la
+    // próxima vez que esto falle (secreto vencido vs. header ausente vs.
+    // timestamp fuera de rango, etc.).
+    try {
+        WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId, secret });
+    } catch (err) {
+        const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
+        console.error('[MP] Webhook con firma inválida — descartado', { reason, dataId, xRequestId, secretLength: secret.length });
         return res.sendStatus(401);
     }
 

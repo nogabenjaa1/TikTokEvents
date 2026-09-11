@@ -919,17 +919,23 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
 
-    const normalizedPaymentMethodId = normalizeCardBrand(paymentMethodId);
+    // El prefijo "deb" (debmaster/debvisa) indica una tarjeta de DEBITO.
+    // Confirmado en logs de produccion, en ese orden:
+    // 1) mandando siempre credit_card + id normalizado a la marca generica
+    //    ('master') -> 422 generico "Unprocessable Entity" para una
+    //    tarjeta de debito real (Nubank).
+    // 2) corrigiendo el type a 'debit_card' pero SIN dejar de normalizar
+    //    el id a 'master' -> 400 "value must be one of 'debmaster',
+    //    'debvisa'" -- para debito el id CORRECTO es justamente el que
+    //    normalizeCardBrand le sacaba el prefijo. O sea: normalizar la
+    //    marca solo aplica a credito; a debito hay que dejar el id
+    //    original tal cual vino del Brick.
+    const isDebit = String(paymentMethodId || '').toLowerCase().startsWith('deb');
+    const cardType = isDebit ? 'debit_card' : 'credit_card';
+    const normalizedPaymentMethodId = isDebit ? paymentMethodId : normalizeCardBrand(paymentMethodId);
     if (normalizedPaymentMethodId !== paymentMethodId) {
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
-    // El prefijo "deb" (debmaster/debvisa, confirmado en logs de produccion
-    // con una tarjeta de debito real de Nubank) indica una tarjeta de
-    // DEBITO -- mandarla como credit_card a la Orders API dio un 422
-    // generico "Unprocessable Entity" sin mas detalle (confirmado en vivo).
-    // Antes se mandaba credit_card siempre sin importar el tipo real.
-    const isDebit = String(paymentMethodId || '').toLowerCase().startsWith('deb');
-    const cardType = isDebit ? 'debit_card' : 'credit_card';
 
     try {
         const amountStr = (amountCents / 100).toFixed(2);

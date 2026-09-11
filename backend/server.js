@@ -104,12 +104,16 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://loc
 // flag. Ídem CardToken (verificación de tarjeta en /api/free-trial) y
 // Payment.get() del webhook: ambos pasan por este mismo getMpClient(), así
 // que activar el flag los pone en modo prueba a los tres a la vez.
-function getMpClient() {
+function getMpAccessToken() {
     const testMode = process.env.MP_TEST_MODE === 'true';
     const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
     const accessToken = process.env[envVar];
     if (!accessToken) throw new Error(`Falta ${envVar} en las variables de entorno`);
-    return new MercadoPagoConfig({ accessToken });
+    return accessToken;
+}
+
+function getMpClient() {
+    return new MercadoPagoConfig({ accessToken: getMpAccessToken() });
 }
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
@@ -773,7 +777,12 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     try {
         const payment = new Payment(getMpClient());
         const paymentData = await payment.get({ id: dataId });
-        await applyApprovedPaymentIfNew(paymentData);
+        if (paymentData.status === 'approved') {
+            const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
+            const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
+            const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
+            await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
+        }
     } catch (err) {
         console.error('[MP] Error procesando webhook:', err.message);
     }
@@ -781,20 +790,19 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 
 // Aplica una compra ya APROBADA por MercadoPago a la licencia
 // correspondiente -- compartido entre el webhook (pagos via preferencia/
-// Checkout Pro) y el cobro directo de /api/payments/charge (Card Payment
-// Brick/Checkout API), ya que ambos caminos terminan con el mismo shape de
-// objeto Payment de MercadoPago (id, status, external_reference). Idempotente
-// via el UNIQUE de payments.mp_payment_id (ver insertPaymentIfNew): llamarla
-// dos veces con el mismo pago (ej. el webhook llega DESPUES de que el cobro
-// directo ya lo aplico al toque) no aplica el cambio dos veces.
-async function applyApprovedPaymentIfNew(paymentData) {
-    if (paymentData.status !== 'approved') return { applied: false };
-
-    const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-    const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-    const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
+// Checkout Pro, que parsea su propio external_reference antes de llamar
+// esto) y el cobro directo de /api/payments/charge (Card Payment Brick/
+// Checkout API, que ya conoce licenseId/planType/diceTier de su propio
+// request y no necesita parsear nada de vuelta -- la Orders API de Checkout
+// API ademas NO acepta ':' en external_reference, a diferencia de
+// Preference, asi que cada camino arma ese campo con su propia regla y acá
+// solo se reciben los valores ya resueltos). Idempotente via el UNIQUE de
+// payments.mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con
+// el mismo pago (ej. el webhook llega DESPUES de que el cobro directo ya lo
+// aplico al toque) no aplica el cambio dos veces.
+async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId }) {
     if (!licenseId || (!planType && !diceTier)) {
-        console.error('[MP] external_reference invalido:', paymentData.external_reference);
+        console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
         return { applied: false };
     }
 
@@ -804,11 +812,11 @@ async function applyApprovedPaymentIfNew(paymentData) {
     const isNew = await db.insertPaymentIfNew({
         id: crypto.randomUUID(),
         licenseId,
-        mpPaymentId: String(paymentData.id),
+        mpPaymentId: String(mpPaymentId),
         planType: planType || null,
         diceTier: diceTier || null,
         amountCents: pricing.computeAmountCents({ planType, diceTier }),
-        status: paymentData.status,
+        status: 'approved',
         createdAt: Date.now(),
     });
     if (!isNew) return { applied: false, alreadyProcessed: true };
@@ -858,7 +866,7 @@ async function applyApprovedPaymentIfNew(paymentData) {
 // ese endpoint roto) -- a este endpoint solo llega el token, nunca el
 // numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, token, payment_method_id: paymentMethodId, installments, issuer_id: issuerId, identificationType, identificationNumber } = req.body || {};
+    const { planType, diceTier, email, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -883,41 +891,81 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     // create-preference, nunca se confia en un transaction_amount que
     // pueda venir del formData del Brick.
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
-    const externalReference = `${req.license.id}:${planType || '-'}:${diceTier || '-'}`;
+    // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
+    // acepta ese caracter en external_reference (confirmado probando:
+    // "'$.external_reference' - does not match pattern"). No hace falta que
+    // sea parseable de vuelta: applyApprovedPaymentIfNew se llama mas abajo
+    // con licenseId/planType/diceTier que YA tenemos en este scope.
+    const externalReference = `${req.license.id}-${planType || 'none'}-${diceTier || 'none'}-${Date.now()}`;
     const titleParts = [];
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
 
     try {
-        const payment = new Payment(getMpClient());
-        const result = await payment.create({
-            body: {
-                transaction_amount: amountCents / 100,
-                token,
+        const amountStr = (amountCents / 100).toFixed(2);
+        const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getMpAccessToken()}`,
+                'X-Idempotency-Key': crypto.randomUUID(),
+            },
+            body: JSON.stringify({
+                type: 'online',
+                processing_mode: 'automatic',
+                total_amount: amountStr,
+                external_reference: externalReference,
                 description: `TikTokEvents - ${titleParts.join(' + ')}`,
-                installments: Number(installments) || 1,
-                payment_method_id: paymentMethodId,
-                issuer_id: issuerId || undefined,
                 payer: {
                     email: cleanEmail,
                     identification: (identificationType && identificationNumber)
                         ? { type: identificationType, number: identificationNumber }
                         : undefined,
                 },
-                external_reference: externalReference,
-            },
-            requestOptions: { idempotencyKey: crypto.randomUUID() },
+                transactions: {
+                    payments: [{
+                        amount: amountStr,
+                        payment_method: {
+                            id: paymentMethodId,
+                            type: 'credit_card',
+                            token,
+                            installments: Number(installments) || 1,
+                        },
+                    }],
+                },
+            }),
         });
+        const result = await mpRes.json();
 
-        if (result.status === 'approved') {
-            await applyApprovedPaymentIfNew(result);
+        if (!mpRes.ok) {
+            console.error('[MP] Error creando pago directo (Orders API):', mpRes.status, JSON.stringify(result));
+            const detail = result?.errors?.[0]?.details?.[0] || result?.errors?.[0]?.message;
+            res.status(502).json({ success: false, error: detail ? `No se pudo procesar el pago (${detail}).` : 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
+            return;
+        }
+
+        // Diagnostico temporal: primera vez que se usa la Orders API en esta
+        // integracion -- se deja el resultado crudo logueado para terminar
+        // de confirmar el shape real contra pagos de verdad (aprobados y
+        // rechazados) antes de simplificar este log.
+        console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(result));
+
+        const orderPayment = result?.transactions?.payments?.[0];
+        const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        if (approved) {
+            await applyApprovedPaymentIfNew({
+                licenseId: req.license.id,
+                planType,
+                diceTier,
+                mpPaymentId: orderPayment?.id || result.id,
+            });
         }
 
         res.json({
             success: true,
-            status: result.status,
-            statusDetail: result.status_detail,
-            paymentId: result.id,
+            status: approved ? 'approved' : (orderPayment?.status || result.status || 'unknown'),
+            statusDetail: orderPayment?.status_detail || result.status_detail,
+            paymentId: orderPayment?.id || result.id,
         });
     } catch (err) {
         console.error('[MP] Error creando pago directo:', err.message);

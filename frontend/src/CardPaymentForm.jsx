@@ -4,11 +4,26 @@ import { loadMercadoPagoSdk } from './mercadopagoSdk';
 
 const BRICK_CONTAINER_ID = 'card-payment-brick-container';
 
-// Mensajes de rechazo mapeados por status_detail — MercadoPago devuelve un
-// código puntual (ver la tabla de tarjetas de prueba: SECU/FUND/CALL/etc.),
-// mostrar el motivo real en vez de un genérico "no se pudo pagar" ayuda a
-// que el streamer sepa si el problema es de su tarjeta o hay que reintentar.
+// Mensajes de rechazo mapeados por status_detail. El backend cobra via la
+// Orders API (Checkout API) -- su status_detail usa nombres mas cortos que
+// la vieja Payments API (confirmado en vivo: un pago aprobado dio
+// status_detail "accredited", sin el prefijo cc_ de la API vieja) -- se
+// dejan ademas las claves con prefijo cc_rejected_* por si alguna vez
+// coinciden, pero la lista corta (sin prefijo) es la prioritaria para esta
+// integracion. Si aparece un status_detail nuevo no mapeado aca, el
+// backend ya deja el pago crudo logueado (ver "Resultado crudo de POST
+// /v1/orders" en los logs) para poder agregarlo con el codigo real.
 const DECLINE_REASONS = {
+  insufficient_amount: 'Fondos insuficientes.',
+  invalid_security_code: 'El código de seguridad (CVV) es incorrecto.',
+  invalid_esc: 'El código de seguridad (CVV) es incorrecto.',
+  expired_card: 'La tarjeta está vencida.',
+  invalid_date: 'La fecha de vencimiento es incorrecta.',
+  call_for_authorize: 'Tu banco requiere que autorices este pago directamente con ellos.',
+  card_disabled: 'Esta tarjeta está deshabilitada. Contacta a tu banco.',
+  duplicated_payment: 'Ya se realizó un pago con estos mismos datos.',
+  high_risk: 'El pago fue rechazado por un control de seguridad.',
+  max_attempts: 'Alcanzaste el límite de intentos con esta tarjeta.',
   cc_rejected_insufficient_amount: 'Fondos insuficientes.',
   cc_rejected_bad_filled_security_code: 'El código de seguridad (CVV) es incorrecto.',
   cc_rejected_bad_filled_date: 'La fecha de vencimiento es incorrecta.',

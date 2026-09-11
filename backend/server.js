@@ -140,6 +140,20 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // substring en vez de una lista fija de valores conocidos, para cubrir
 // variantes que no hemos visto todavia sin tener que ir agregandolas a
 // mano cada vez que aparece una nueva.
+// Separa un nombre completo en first_name/last_name -- pedido explicito
+// de MercadoPago (checklist de calidad de integracion, "Apellido del
+// comprador"): mandar payer.last_name reduce rechazos del motor
+// antifraude. Si solo viene una palabra, se usa igual como apellido (un
+// last_name vacio es peor que uno repetido: preferimos mandar 'Juan'/
+// 'Juan' antes que 'Juan'/'' cuando el comprador puso un solo nombre).
+function splitFullName(fullName) {
+    const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return { firstName: undefined, lastName: undefined };
+    const parts = clean.split(' ');
+    const firstName = parts[0];
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+    return { firstName, lastName };
+}
 function normalizeCardBrand(paymentMethodId) {
     const raw = String(paymentMethodId || '').toLowerCase();
     if (raw.includes('amex')) return 'amex';
@@ -686,7 +700,7 @@ app.get('/api/pricing', (req, res) => {
 });
 
 app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email } = req.body || {};
+    const { planType, diceTier, email, fullName } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
@@ -714,6 +728,8 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
     const titleParts = [];
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
+    const itemTitle = `TikTokEvents - ${titleParts.join(' + ')}`;
+    const { firstName, lastName } = splitFullName(fullName);
 
     try {
         const preference = new Preference(getMpClient());
@@ -721,19 +737,29 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
             body: {
                 items: [{
                     id: externalReference,
-                    title: `TikTokEvents - ${titleParts.join(' + ')}`,
+                    title: itemTitle,
+                    // Pedido explícito de MercadoPago (checklist de calidad,
+                    // "Description del item"): baja el riesgo de rechazo por
+                    // el motor antifraude.
+                    description: itemTitle,
                     quantity: 1,
                     currency_id: 'MXN',
                     unit_price: amountCents / 100,
                 }],
                 external_reference: externalReference,
-                payer: { email: cleanEmail },
+                payer: { email: cleanEmail, first_name: firstName, last_name: lastName },
                 back_urls: {
                     success: `${FRONTEND_URL}/?payment=success`,
                     pending: `${FRONTEND_URL}/?payment=pending`,
                     failure: `${FRONTEND_URL}/?payment=failure`,
                 },
                 auto_return: 'approved',
+                // Pedido explícito de MercadoPago (checklist de calidad,
+                // "Respuesta binaria"): evita que un pago quede en 'pending'
+                // ambiguo -- fuerza un approved/rejected inmediato, que es
+                // justo el criterio que ya usa el webhook (solo 'approved'
+                // aplica la compra).
+                binary_mode: true,
                 // A propósito SIN notification_url acá: MercadoPago
                 // documenta que la URL configurada al crear una preferencia
                 // TIENE PRIORIDAD sobre la configurada en el dashboard
@@ -884,7 +910,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 // ese endpoint roto) -- a este endpoint solo llega el token, nunca el
 // numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
+    const { planType, diceTier, email, fullName, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -936,6 +962,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     if (normalizedPaymentMethodId !== paymentMethodId) {
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
+    const { firstName, lastName } = splitFullName(fullName);
 
     try {
         const amountStr = (amountCents / 100).toFixed(2);
@@ -954,6 +981,8 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 description: `TikTokEvents - ${titleParts.join(' + ')}`,
                 payer: {
                     email: cleanEmail,
+                    first_name: firstName,
+                    last_name: lastName,
                     identification: (identificationType && identificationNumber)
                         ? { type: identificationType, number: identificationNumber }
                         : undefined,

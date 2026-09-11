@@ -88,6 +88,11 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, onS
               planType,
               diceTier,
               email,
+              // Pedido explicito de MercadoPago (checklist de calidad,
+              // "Apellido del comprador"): reusa el nombre del titular que
+              // el propio Brick ya pide para la tarjeta, en vez de agregar
+              // un campo nuevo solo para esto.
+              fullName: formData.cardholderName,
               token: formData.token,
               payment_method_id: formData.payment_method_id,
               installments: formData.installments,

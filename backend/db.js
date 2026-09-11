@@ -10,6 +10,7 @@
 // existente.
 // ==========================================
 const { Pool, types } = require('pg');
+const tokenCrypto = require('./tokenCrypto');
 
 // BIGINT (OID 20) viene como STRING por defecto en node-postgres — es una
 // protección genérica del driver contra enteros que no entran en un
@@ -304,10 +305,21 @@ async function deleteLicense(id) {
 // ==========================================
 // SPOTIFY (una cuenta por licencia — ver la tabla spotify_accounts arriba)
 // ==========================================
+// Pedido explicito de una revision de seguridad: access_token/
+// refresh_token se guardan cifrados (ver tokenCrypto.js) -- se descifran
+// aca, en el UNICO lugar que lee esta tabla, para que el resto del
+// backend (spotify.js/tenant.js) siga trabajando con el token en texto
+// plano como siempre, sin tener que saber nada de cifrado.
 async function getSpotifyAccount(licenseId) {
     await ready;
     const { rows } = await pool.query('SELECT * FROM spotify_accounts WHERE license_id = $1', [licenseId]);
-    return rows[0];
+    const row = rows[0];
+    if (!row) return row;
+    return {
+        ...row,
+        access_token: tokenCrypto.decrypt(row.access_token),
+        refresh_token: tokenCrypto.decrypt(row.refresh_token),
+    };
 }
 
 // Se usa tanto para la primera conexión (con spotifyUserId/displayName)
@@ -325,7 +337,7 @@ async function upsertSpotifyAccount(licenseId, { accessToken, refreshToken, expi
             spotify_user_id = EXCLUDED.spotify_user_id,
             display_name = EXCLUDED.display_name,
             connected_at = EXCLUDED.connected_at
-    `, [licenseId, accessToken, refreshToken, expiresAt, spotifyUserId || null, displayName || null, Date.now()]);
+    `, [licenseId, tokenCrypto.encrypt(accessToken), tokenCrypto.encrypt(refreshToken), expiresAt, spotifyUserId || null, displayName || null, Date.now()]);
 }
 
 // Refresh silencioso de un access_token vencido (ver spotify.getValidAccessToken)
@@ -333,7 +345,7 @@ async function upsertSpotifyAccount(licenseId, { accessToken, refreshToken, expi
 // refresh, y pisarlo con undefined invalidaría la cuenta conectada.
 async function updateSpotifyTokens(licenseId, { accessToken, expiresAt }) {
     await ready;
-    await pool.query('UPDATE spotify_accounts SET access_token = $1, expires_at = $2 WHERE license_id = $3', [accessToken, expiresAt, licenseId]);
+    await pool.query('UPDATE spotify_accounts SET access_token = $1, expires_at = $2 WHERE license_id = $3', [tokenCrypto.encrypt(accessToken), expiresAt, licenseId]);
 }
 
 async function deleteSpotifyAccount(licenseId) {

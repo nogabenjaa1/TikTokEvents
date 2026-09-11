@@ -154,6 +154,23 @@ function splitFullName(fullName) {
     const lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
     return { firstName, lastName };
 }
+// Bug de seguridad real encontrado y corregido: los logs de
+// /api/payments/charge (tanto el de exito como el de error) mandaban el
+// JSON crudo de la respuesta de MercadoPago tal cual a Render, que
+// incluye transactions.payments[].payment_method.token -- el token de
+// tarjeta tokenizado (de un solo uso, pero igual un dato sensible que no
+// deberia quedar en texto plano en logs). Se redacta antes de loguear.
+function redactOrderTokens(orderResult) {
+    try {
+        const clone = JSON.parse(JSON.stringify(orderResult));
+        clone?.transactions?.payments?.forEach((p) => {
+            if (p?.payment_method?.token) p.payment_method.token = '[REDACTADO]';
+        });
+        return clone;
+    } catch {
+        return orderResult;
+    }
+}
 function normalizeCardBrand(paymentMethodId) {
     const raw = String(paymentMethodId || '').toLowerCase();
     if (raw.includes('amex')) return 'amex';
@@ -1003,7 +1020,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         const result = await mpRes.json();
 
         if (!mpRes.ok) {
-            console.error('[MP] Error creando pago directo (Orders API):', mpRes.status, JSON.stringify(result));
+            console.error('[MP] Error creando pago directo (Orders API):', mpRes.status, JSON.stringify(redactOrderTokens(result)));
             const detail = result?.errors?.[0]?.details?.[0] || result?.errors?.[0]?.message;
             res.status(502).json({ success: false, error: detail ? `No se pudo procesar el pago (${detail}).` : 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
             return;
@@ -1013,7 +1030,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         // integracion -- se deja el resultado crudo logueado para terminar
         // de confirmar el shape real contra pagos de verdad (aprobados y
         // rechazados) antes de simplificar este log.
-        console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(result));
+        console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(redactOrderTokens(result)));
 
         const orderPayment = result?.transactions?.payments?.[0];
         const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');

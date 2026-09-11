@@ -650,7 +650,7 @@ app.get('/api/pricing', (req, res) => {
 });
 
 app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier } = req.body || {};
+    const { planType, diceTier, email } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
@@ -659,6 +659,14 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
     }
     if (!planType && !diceTier) {
         return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    }
+    // Pedido explícito de MercadoPago (mitiga el rechazo "por motivos de
+    // seguridad" del motor antifraude en México): la preferencia SIEMPRE
+    // debe llevar payer.email -- nunca se confía en que el front lo mande
+    // bien formado, se revalida acá igual que planType/diceTier.
+    const cleanEmail = typeof email === 'string' ? email.trim() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Ingresa un correo válido para continuar con el pago' });
     }
 
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
@@ -683,6 +691,7 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
                     unit_price: amountCents / 100,
                 }],
                 external_reference: externalReference,
+                payer: { email: cleanEmail },
                 back_urls: {
                     success: `${FRONTEND_URL}/?payment=success`,
                     pending: `${FRONTEND_URL}/?payment=pending`,
@@ -704,7 +713,7 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
 // x-signature contra MP_WEBHOOK_SECRET, documentada acá:
 // https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
 app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
-    const secret = process.env.MP_WEBHOOK_SECRET;
+    const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
     const dataId = req.query['data.id'] || req.query['id'];

@@ -26,8 +26,17 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function Membership({ session, onSessionUpdate }) {
   const [alias, setAlias] = useState('');
+  // Pedido explicito de MercadoPago (mitiga el rechazo "por motivos de
+  // seguridad" del motor antifraude): mandar SIEMPRE un email de pagador en
+  // la preferencia, aunque el streamer ya tenga sesion -- hoy no se guarda
+  // en ningun lado, solo viaja a MP en el momento de comprar (ver
+  // handleBuy). Si mas adelante se quiere precargarlo o usarlo para
+  // recibos, habria que persistirlo en licenses, pero eso es aparte.
+  const [email, setEmail] = useState('');
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   const [error, setError] = useState('');
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
@@ -113,6 +122,11 @@ export default function Membership({ session, onSessionUpdate }) {
   const handleBuy = async (planType) => {
     if (loadingTarget || !planType) return;
     setError('');
+    const cleanEmail = email.trim();
+    if (!EMAIL_RE.test(cleanEmail)) {
+      setError('Ingresa un correo válido para continuar con el pago.');
+      return;
+    }
     setLoadingTarget(planType);
     try {
       const ok = await ensureSession();
@@ -120,7 +134,7 @@ export default function Membership({ session, onSessionUpdate }) {
       const res = await fetch(`${backendUrl()}/api/payments/create-preference`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ planType }),
+        body: JSON.stringify({ planType, email: cleanEmail }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo iniciar el pago');
@@ -208,6 +222,12 @@ export default function Membership({ session, onSessionUpdate }) {
           <p className="text-[9px] text-gray-500 mt-1">Se usa para crear tu cuenta y va incluido en tu clave (alias-plan-hash).</p>
         </div>
       )}
+
+      <div className="w-full max-w-2xl">
+        <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, MercadoPago lo pide para procesarlo)</label>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
+          className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+      </div>
 
       <div className="w-full max-w-2xl">
         <p className="theme-label text-[10px] mb-3">Elige tu plan</p>

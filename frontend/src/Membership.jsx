@@ -3,11 +3,18 @@ import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession,
 import CardPaymentForm from './CardPaymentForm';
 
 const PLANS = [
-  { id: 'month', label: 'Mensual', usd: '6.99', mxn: 126, period: '/ mes' },
-  { id: 'annual', label: 'Anual', usd: '59.99', mxn: 1080, period: '/ año', savingsChip: 'AHORRAS MX$430' },
-  { id: 'lifetime', label: 'Lifetime', usd: '99.99', mxn: 1800, period: 'pago único' },
+  { id: 'month', label: 'Mensual', mxn: 126, period: '/ mes' },
+  { id: 'annual', label: 'Anual', mxn: 1080, period: '/ año', savingsChip: 'AHORRAS MX$430' },
+  { id: 'lifetime', label: 'Lifetime', mxn: 1800, period: 'pago único' },
 ];
 const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
+// Referencia aproximada MXN por USD -- pedido explicito: que la
+// referencia en dolares que ve el streamer se recalcule sola en cuanto el
+// admin cambie el precio en MXN desde el panel, en vez de quedar como un
+// texto fijo desincronizado. Es solo informativa (MXN sigue siendo la
+// unica moneda que de verdad cobra MercadoPago, ver pricing.js) -- si el
+// tipo de cambio real se mueve mucho, alcanza con ajustar este numero.
+const MXN_PER_USD = 18;
 
 const PLAN_LABELS = { day: '1 día', week: '1 semana', month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', trial: 'Prueba (7 días)' };
 // El WIN BONUS de Color Says dejó de venderse como addon PRO/VIP (pedido
@@ -315,8 +322,15 @@ export default function Membership({ session, onSessionUpdate }) {
                   <p className="text-xs font-black uppercase tracking-widest">{plan.label}</p>
                   {plan.savingsChip && <span className="theme-chip text-[9px] font-black whitespace-nowrap">{plan.savingsChip}</span>}
                 </div>
-                <p className="text-2xl font-black">MX${(livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn).toLocaleString('es-MX')}</p>
-                <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${plan.usd}</p>
+                {(() => {
+                  const mxnPrice = livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn;
+                  return (
+                    <>
+                      <p className="text-2xl font-black">MX${mxnPrice.toLocaleString('es-MX')}</p>
+                      <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${(mxnPrice / MXN_PER_USD).toFixed(2)}</p>
+                    </>
+                  );
+                })()}
                 {plan.id === 'lifetime' && (
                   <p className="text-[9px] text-gray-500 leading-snug mt-2">{LIFETIME_LEGEND}</p>
                 )}

@@ -82,7 +82,7 @@ const TAPTAP_SETTLE_MS = 1500;
 // el MISMO regalo varias veces seguidas como envíos separados (sin ser un
 // combo nativo de TikTok) — sin este margen, cada envío dispararía su
 // propia alerta apilada encima de la anterior. Mismo mecanismo de
-// "asentamiento" que TAPTAP_SETTLE_MS (ver processGiftAlert/
+// "asentamiento" que TAPTAP_SETTLE_MS (ver processAlertTrigger/
 // settleAlertCombo): cada envío nuevo del mismo regalo por la misma
 // persona reinicia la cuenta regresiva y suma al total, y recién cuando
 // pasan ALERT_COMBO_SETTLE_MS sin un envío nuevo se dispara UNA sola
@@ -403,7 +403,7 @@ class Tenant {
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
         // Combos en curso sin asentar todavía (ver ALERT_COMBO_SETTLE_MS /
-        // processGiftAlert/settleAlertCombo) — { [username:giftName]: { alert, count, timer } }.
+        // processAlertTrigger/settleAlertCombo) — { [username:triggerKey]: { alert, count, timer } }.
         this.pendingAlertCombos = {};
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
@@ -672,6 +672,7 @@ class Tenant {
             this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
             this.tiktokConnection.on('social', (data) => this.handleSocialEvent(data));
+            this.tiktokConnection.on('emote', (data) => this.handleEmoteEvent(data));
             this.tiktokConnection.on('error', ({ info, exception } = {}) => {
                 const message = exception?.message || info || 'Error interno del conector';
                 console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
@@ -829,7 +830,7 @@ class Tenant {
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
         this.processGiftExtensible(event);
-        this.processGiftAlert(event);
+        this.processAlertTrigger({ username: event.username, key: event.giftName, repeatCount: event.repeatCount });
     }
 
     // ==========================================
@@ -873,24 +874,28 @@ class Tenant {
     // termine el combo NATIVO de TikTok, pero un espectador puede además
     // mandar el mismo regalo varias veces seguidas como envíos SEPARADOS
     // (sin ser un combo de TikTok) — acá se agrupan esos también, por
-    // persona+regalo, con el mismo mecanismo de asentamiento que Top
+    // persona+disparador, con el mismo mecanismo de asentamiento que Top
     // Tap-Tap (ver ALERT_COMBO_SETTLE_MS/settleAlertCombo): nunca se
-    // apilan dos alertas del mismo regalo+persona, se combinan en una
-    // sola con el total.
-    processGiftAlert({ username, giftName, repeatCount }) {
-        if (!giftName) return;
-        const alert = this.alertConfigs[giftName.toLowerCase()];
+    // apilan dos alertas del mismo disparador+persona, se combinan en una
+    // sola con el total. `key` es el nombre del regalo para triggerType
+    // 'gift', o 'follow'/'share'/'sticker' para los demas (ver
+    // handleSocialEvent/handleEmoteEvent mas abajo y NON_GIFT_TRIGGER_TYPES
+    // en server.js) -- mismo mapa `alertConfigs`, sin distinguir el tipo,
+    // porque un regalo real de TikTok jamas se llama literal "follow".
+    processAlertTrigger({ username, key: triggerKey, repeatCount }) {
+        if (!triggerKey) return;
+        const alert = this.alertConfigs[triggerKey.toLowerCase()];
         if (!alert) return;
-        const key = `${username || ''}:${giftName.toLowerCase()}`;
+        const comboKey = `${username || ''}:${triggerKey.toLowerCase()}`;
         const units = Math.max(1, repeatCount || 1);
-        const pending = this.pendingAlertCombos[key];
+        const pending = this.pendingAlertCombos[comboKey];
         if (pending) {
             pending.count += units;
             clearTimeout(pending.timer);
         } else {
-            this.pendingAlertCombos[key] = { alert, count: units, timer: null };
+            this.pendingAlertCombos[comboKey] = { alert, count: units, timer: null };
         }
-        this.pendingAlertCombos[key].timer = setTimeout(() => this.settleAlertCombo(key), ALERT_COMBO_SETTLE_MS);
+        this.pendingAlertCombos[comboKey].timer = setTimeout(() => this.settleAlertCombo(comboKey), ALERT_COMBO_SETTLE_MS);
     }
 
     // El combo terminó (silencio de ALERT_COMBO_SETTLE_MS): recién acá se
@@ -949,8 +954,35 @@ class Tenant {
     // 'social' directo en vez de confiar en el 'follow' derivado.
     handleSocialEvent(data) {
         if (!data?.uniqueId) return;
-        if (String(data.action) !== '1') return; // no es un follow (ej. share)
-        this.processFollowExtensible();
+        const action = String(data.action);
+        if (action === '1') {
+            this.processFollowExtensible();
+            this.processAlertTrigger({ username: data.uniqueId, key: 'follow', repeatCount: 1 });
+            return;
+        }
+        // 'share': a diferencia de 'follow' (confirmado en vivo con casos
+        // reales, ver el comentario de arriba), NUNCA se confirmo el action
+        // real de un share porque no hubo forma de provocar uno en vivo
+        // durante el desarrollo de esto. '2' es la mejor suposicion (TikTok
+        // suele numerar estos action codes secuencialmente y follow es
+        // '1') -- el log de abajo deja cualquier action no reconocido bien
+        // visible en Render para poder confirmar/corregir esto con datos
+        // reales la primera vez que alguien comparta el vivo de verdad.
+        if (action === '2') {
+            this.processAlertTrigger({ username: data.uniqueId, key: 'share', repeatCount: 1 });
+            return;
+        }
+        console.log(`[${this.licenseId}] [SOCIAL] action no reconocido (no es follow ni el '2' asumido para share):`, action, { shareType: data.shareType, scene: data.scene });
+    }
+
+    handleEmoteEvent(data) {
+        if (!data?.uniqueId) return;
+        const emotes = Array.isArray(data.emoteList) ? data.emoteList : [];
+        const isFanClubSticker = emotes.some((emote) => (
+            emote?.emoteType === 2 || emote?.emoteScene === 2 || emote?.rewardCondition === 2
+        ));
+        if (!isFanClubSticker) return;
+        this.processAlertTrigger({ username: data.uniqueId, key: 'sticker', repeatCount: 1 });
     }
 
     // Reenviamos únicamente los datos necesarios para que el panel decida

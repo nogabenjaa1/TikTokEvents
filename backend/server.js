@@ -625,10 +625,22 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 });
 
 // ==========================================
-// ALERTAS DE REGALOS: qué recurso (imagen/gif/video/audio) se reproduce en
-// el overlay al llegar un regalo puntual — ver tenant.js (processGiftAlert)
-// para el disparo en vivo y storage.js para dónde vive el archivo.
+// ALERTAS: qué recurso (imagen/gif/video/audio) se reproduce en el
+// overlay al llegar un disparador puntual -- un regalo especifico,
+// seguimiento, compartida, o sticker personalizado del club de fans (los
+// tres ultimos son pedido explicito: "aplica lo de los seguimientos
+// tambien para las alertas normales") -- ver tenant.js
+// (processAlertTrigger) para el disparo en vivo y storage.js para dónde
+// vive el archivo. Un audio SIN imagen/video (media_type='audio') es lo
+// que arma una alerta puramente sonora -- no hace falta un sistema
+// aparte, ya lo soporta este mismo mecanismo (ver AlertVisual en
+// Overlay.jsx).
 // ==========================================
+// Disparadores que no son un regalo puntual -- gift_name guarda esta
+// misma clave fija para esos casos (ver el comentario de la tabla en
+// db.js). 'gift' usa el nombre real del regalo elegido en el panel.
+const NON_GIFT_TRIGGER_TYPES = ['follow', 'share', 'sticker'];
+const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
 // de golpe"; 'bounce' es exclusivo de entrada (no tiene mucho sentido
@@ -641,6 +653,7 @@ function serializeAlert(row) {
         id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
         mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
+        triggerType: row.trigger_type || 'gift',
     };
 }
 
@@ -654,8 +667,18 @@ app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
 // del mismo form.
 app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.single('media'), async (req, res) => {
     const { giftName, durationMs, position, entranceAnim, exitAnim } = req.body || {};
-    if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
-        return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
+    const triggerType = VALID_TRIGGER_TYPES.includes(req.body?.triggerType) ? req.body.triggerType : 'gift';
+    // Para 'gift' la clave es el nombre real elegido en el panel; los demas
+    // disparadores usan su propio nombre fijo como clave (nunca chocan con
+    // un regalo real de TikTok, que jamas se llamaria literal "follow").
+    let triggerKey;
+    if (triggerType === 'gift') {
+        if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
+            return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
+        }
+        triggerKey = giftName.trim();
+    } else {
+        triggerKey = triggerType;
     }
     if (!req.file) {
         return res.status(400).json({ success: false, error: 'Falta el archivo de la alerta' });
@@ -670,11 +693,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
     const finalExitAnim = EXIT_ANIMS.includes(exitAnim) ? exitAnim : 'fade';
 
     try {
-        // Si ya había una alerta para este regalo, borra su archivo viejo del
-        // storage antes de subir el nuevo — sin esto quedarían archivos
+        // Si ya había una alerta para este disparador, borra su archivo viejo
+        // del storage antes de subir el nuevo — sin esto quedarían archivos
         // huérfanos en el bucket cada vez que el streamer cambia una alerta.
         const existing = (await db.listAlertConfigs(req.license.id))
-            .find((row) => row.gift_name.toLowerCase() === giftName.trim().toLowerCase());
+            .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
         if (existing) await storage.deleteFile(existing.media_path);
 
         const id = crypto.randomUUID();
@@ -683,11 +706,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
         const mediaUrl = await storage.uploadFile(mediaPath, req.file.buffer, req.file.mimetype);
 
         const row = await db.upsertAlertConfig({
-            id, licenseId: req.license.id, giftName: giftName.trim(),
+            id, licenseId: req.license.id, giftName: triggerKey,
             mediaUrl, mediaPath, mediaType, durationMs: finalDuration, position: finalPosition,
-            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim,
+            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType,
         });
-        // Mantiene al día el cache en memoria que usa processGiftAlert —
+        // Mantiene al día el cache en memoria que usa processAlertTrigger —
         // sin esto, la alerta recién guardada no dispararía hasta el
         // próximo reinicio del server (o de este Tenant en memoria).
         getOrCreateTenant(req.license.id, req.license.license_type).setAlertConfig(row.gift_name, serializeAlert(row));

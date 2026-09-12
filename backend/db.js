@@ -168,6 +168,7 @@ const ready = pool.query(`
   // este campo) nunca lo configuró.
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS entrance_anim TEXT NOT NULL DEFAULT 'fade'`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'gift'`))
   // Precios editables desde el panel de Licencias (pedido explicito:
   // "Modificacion manual de precios de licencias desde el panel de
   // administracion") -- una fila por plan que el admin haya tocado; un plan
@@ -371,11 +372,11 @@ async function getAlertConfig(id) {
 // Un solo alert por (licencia, regalo) — volver a guardar para el mismo
 // regalo reemplaza el anterior (el caller ya se encargó de borrar el
 // archivo viejo del storage antes de llamar acá, ver server.js).
-async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim, exitAnim }) {
+async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim, exitAnim, triggerType }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, entrance_anim, exit_anim, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, entrance_anim, exit_anim, trigger_type, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             media_url = EXCLUDED.media_url,
@@ -385,8 +386,9 @@ async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath,
             position = EXCLUDED.position,
             entrance_anim = EXCLUDED.entrance_anim,
             exit_anim = EXCLUDED.exit_anim,
+            trigger_type = EXCLUDED.trigger_type,
             created_at = EXCLUDED.created_at
-    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', Date.now()]);
+    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', Date.now()]);
     return getAlertConfig(id);
 }
 

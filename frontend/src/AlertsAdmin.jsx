@@ -10,6 +10,18 @@ const POSITIONS = [
   { id: 'right', label: 'Derecha' },
 ];
 
+// Mismos 4 valores que VALID_TRIGGER_TYPES en server.js. 'gift' pide elegir
+// un regalo de la lista (como siempre); los otros 3 no -- disparan solo
+// con la clave fija que ya conoce el backend (ver processAlertTrigger en
+// tenant.js).
+const TRIGGER_TYPES = [
+  { id: 'gift', label: 'Regalo', icon: '🎁' },
+  { id: 'follow', label: 'Seguimiento', icon: '👣' },
+  { id: 'share', label: 'Compartida', icon: '🔗' },
+  { id: 'sticker', label: 'Sticker de club de fans', icon: '🎫' },
+];
+const TRIGGER_LABELS = Object.fromEntries(TRIGGER_TYPES.map((t) => [t.id, t.label]));
+
 // Mismas listas que ENTRANCE_ANIMS/EXIT_ANIMS en server.js — 'bounce' es
 // exclusivo de entrada (ver comentario ahí). 'none' = sin animación,
 // aparece/desaparece de golpe.
@@ -103,20 +115,23 @@ function LivePreview({ draftAlert }) {
 }
 
 // ─────────────────────────────────────────────
-// ALERTAS DE REGALOS — panel de administración
-// Cada regalo puede tener a lo sumo UNA alerta asignada (imagen/gif/video/
-// audio). El archivo se sube directo a Supabase Storage (ver
+// ALERTAS — panel de administración
+// Cada disparador (un regalo puntual, seguimiento, compartida, o sticker
+// de club de fans) puede tener a lo sumo UNA alerta asignada (imagen/gif/
+// video/audio -- un audio solo, sin imagen/video, es una alerta puramente
+// de sonido). El archivo se sube directo a Supabase Storage (ver
 // backend/storage.js) — acá solo se arma el formulario y se manda por
 // multipart/form-data; nunca pasa por localStorage ni por el socket
 // (subir un archivo grande por socket.io sería mucho más frágil que un
 // POST normal con su propio manejo de progreso/errores).
-// El DISPARO en vivo de la alerta (cuando llega el regalo de verdad) sí va
-// por socket — ver AlertOverlay en Overlay.jsx / alert_triggered en
+// El DISPARO en vivo de la alerta (cuando pasa de verdad) sí va por
+// socket — ver AlertOverlay en Overlay.jsx / alert_triggered en
 // tenant.js —, esto de acá es solo la configuración.
 // ─────────────────────────────────────────────
 export default function AlertsAdmin({ giftsList }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
   const [isDropOpen, setIsDropOpen] = useState(false);
   const [file, setFile] = useState(null);
@@ -193,17 +208,18 @@ export default function AlertsAdmin({ giftsList }) {
 
   useEffect(() => { fetchAlerts(); }, []);
 
-  const alertForGift = (giftName) => alerts.find((a) => a.giftName.toLowerCase() === giftName.toLowerCase());
+  const alertForTrigger = (triggerKey) => alerts.find((a) => a.giftName.toLowerCase() === triggerKey.toLowerCase());
 
   const save = async () => {
-    if (!selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
+    if (triggerType === 'gift' && !selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
     if (!file) return setError('Elige un archivo (imagen, gif, video o audio).');
     setError('');
     setSaving(true);
     try {
       const form = new FormData();
       form.append('media', file);
-      form.append('giftName', selectedGift.name);
+      form.append('triggerType', triggerType);
+      if (triggerType === 'gift') form.append('giftName', selectedGift.name);
       form.append('durationMs', String(Math.round(duration * 1000)));
       form.append('position', position);
       form.append('entranceAnim', entranceAnim);
@@ -221,14 +237,14 @@ export default function AlertsAdmin({ giftsList }) {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('¿Borrar esta alerta? El regalo dejará de disparar nada hasta que asignes una nueva.')) return;
+    if (!window.confirm('¿Borrar esta alerta? Ese disparador dejará de reproducir nada hasta que asignes una nueva.')) return;
     await fetch(`${backendUrl()}/api/alerts/${id}`, { method: 'DELETE', headers: authHeaders() });
     await fetchAlerts();
   };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔔 Alertas de regalos</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔔 Alertas</p>
 
       <div className="theme-surface w-full max-w-md p-6 relative">
         <div className="flex items-center gap-3 mb-6">
@@ -236,12 +252,28 @@ export default function AlertsAdmin({ giftsList }) {
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">NUEVA ALERTA</h1>
         </div>
 
-        {giftsList.length === 0 ? (
+        <div className="mb-4">
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">DISPARADOR</label>
+          <div className="flex gap-2 flex-wrap">
+            {TRIGGER_TYPES.map((t) => (
+              <button key={t.id} type="button" onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); }}
+                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+          {triggerType !== 'gift' && alertForTrigger(triggerType) && (
+            <p className="text-[10px] text-gray-500 mt-2">Ya tienes una alerta para "{TRIGGER_LABELS[triggerType]}" -- guardar de nuevo la reemplaza.</p>
+          )}
+        </div>
+
+        {triggerType === 'gift' && giftsList.length === 0 ? (
           <p className="text-[11px] text-gray-500 leading-snug">
             Conecta un usuario de TikTok en la barra de arriba para cargar la lista de regalos disponibles.
           </p>
         ) : (
           <>
+            {triggerType === 'gift' && (
             <div className="mb-4 relative z-20">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
               <div
@@ -252,7 +284,7 @@ export default function AlertsAdmin({ giftsList }) {
                   <div className="flex items-center gap-3">
                     <img src={selectedGift.icon} className="w-6 h-6" />
                     <span className="text-sm">{selectedGift.name}</span>
-                    {alertForGift(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
+                    {alertForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
                   </div>
                 ) : (
                   <span className="text-gray-500 text-sm">Elige un regalo...</span>
@@ -268,12 +300,13 @@ export default function AlertsAdmin({ giftsList }) {
                         <img src={gift.icon} className="w-6 h-6" />
                         <span className="text-sm">{gift.name}</span>
                       </div>
-                      {alertForGift(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
+                      {alertForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
                     </div>
                   ))}
                 </div>
               )}
             </div>
+            )}
 
             <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">📁 ARCHIVO</label>
@@ -361,7 +394,7 @@ export default function AlertsAdmin({ giftsList }) {
               <div key={alert.id} className="theme-input flex items-center gap-3 px-3 py-2">
                 <span className="text-lg flex-shrink-0">{MEDIA_TYPE_ICON[alert.mediaType] || '📎'}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{alert.giftName}</p>
+                  <p className="text-sm font-bold text-white truncate">{alert.triggerType && alert.triggerType !== 'gift' ? TRIGGER_LABELS[alert.triggerType] || alert.giftName : alert.giftName}</p>
                   <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
                 </div>
                 <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">

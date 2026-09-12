@@ -13,6 +13,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "ffmpeg-static": "^5.2.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mercadopago": "^3.6.0",
@@ -21,6 +22,7 @@
     "socket.io": "^4.8.3",
     "tiktok-live-connector": "^2.1.1-beta1",
     "tiktok-live-connector-v1": "npm:tiktok-live-connector@1.2.3",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "yt-dlp-exec": "^1.0.2"
   }
 }

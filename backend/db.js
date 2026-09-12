@@ -197,6 +197,27 @@ const ready = pool.query(`
       changed_by TEXT NOT NULL,
       changed_at BIGINT NOT NULL
     )
+  `))
+  // Downloader (ver downloader.js): un archivo descargado (video/audio de
+  // TikTok/YouTube/etc, vía yt-dlp) por fila, subido al bucket
+  // 'downloader-files' de Supabase Storage (ver storage.js). expires_at =
+  // created_at + DOWNLOADER_TTL_MS -- lo usa tanto la barrida periódica
+  // (setInterval en server.js) como la limpieza perezosa al listar (ver
+  // listDownloaderFiles), así un archivo viejo desaparece aunque el
+  // streamer nunca vuelva a abrir el panel.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS downloader_files (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      source_url TEXT NOT NULL,
+      title TEXT,
+      format TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_url TEXT NOT NULL,
+      file_size_bytes BIGINT,
+      created_at BIGINT NOT NULL,
+      expires_at BIGINT NOT NULL
+    )
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
@@ -501,10 +522,56 @@ async function getPricingHistory(limit = 50) {
     return rows;
 }
 
+// ==========================================
+// DOWNLOADER (ver la tabla downloader_files arriba)
+// ==========================================
+async function insertDownloaderFile({ id, licenseId, sourceUrl, title, format, filePath, fileUrl, fileSizeBytes, createdAt, expiresAt }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO downloader_files (id, license_id, source_url, title, format, file_path, file_url, file_size_bytes, created_at, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [id, licenseId, sourceUrl, title || null, format, filePath, fileUrl, fileSizeBytes || null, createdAt, expiresAt]);
+}
+
+async function getDownloaderFile(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM downloader_files WHERE id = $1', [id]);
+    return rows[0];
+}
+
+// Limpieza perezosa: cada vez que el streamer abre/refresca su lista, de
+// paso se borran (fila + archivo del bucket, ver server.js) los suyos que
+// ya vencieron -- así la lista que ve nunca muestra un archivo caducado,
+// sin depender únicamente de la barrida periódica global.
+async function listDownloaderFiles(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM downloader_files WHERE license_id = $1 ORDER BY created_at DESC', [licenseId]);
+    return rows;
+}
+
+// Barrida global (setInterval en server.js, cada DOWNLOADER_CLEANUP_INTERVAL_MS):
+// todas las filas de CUALQUIER licencia ya vencidas, para borrar su archivo
+// del storage antes de borrar la fila (ver downloader.cleanupExpiredFiles).
+async function listExpiredDownloaderFiles(now = Date.now()) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM downloader_files WHERE expires_at <= $1', [now]);
+    return rows;
+}
+
+async function deleteDownloaderFile(id, licenseId = null) {
+    await ready;
+    if (licenseId) {
+        await pool.query('DELETE FROM downloader_files WHERE id = $1 AND license_id = $2', [id, licenseId]);
+    } else {
+        await pool.query('DELETE FROM downloader_files WHERE id = $1', [id]);
+    }
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,
+    insertDownloaderFile, getDownloaderFile, listDownloaderFiles, listExpiredDownloaderFiles, deleteDownloaderFile,
 };

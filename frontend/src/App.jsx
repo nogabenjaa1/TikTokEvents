@@ -6,6 +6,7 @@ import Roulette from './Roulette';
 import Extensible from './Extensible';
 import Spotify from './Spotify';
 import ColorSays from './Colorsays';
+import Downloader from './Downloader';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
@@ -29,6 +30,7 @@ const SECTIONS = [
   { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
   { id: 'events',  label: 'TikTokEvents', icon: '🎉' },
   { id: 'color',   label: 'ColorDice',    icon: '🎲' },
+  { id: 'downloader', label: 'Downloader', icon: '⬇️' },
   { id: 'theme',   label: 'Tema',         icon: '🎨' },
   { id: 'membership', label: 'Membresía', icon: '💳' },
 ];
@@ -844,6 +846,16 @@ export default function App() {
             (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
             los ads dentro del propio componente — ver Colorsays.jsx. */}
         {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} winBonusUnlocked={!!session?.diceWinBonusUnlocked} socket={socket} isGuest={!session} />}
+        {/* Downloader (TikTok/YouTube/+1000 sitios, ver backend/downloader.js):
+            requiere sesión igual que Spotify/TTS/etc — no es de acceso libre
+            como Color Says. */}
+        {sidebarMode === 'downloader' && (
+          needsAccess('downloader') ? (
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar el Downloader." />
+          ) : (
+            <Downloader />
+          )
+        )}
         {sidebarMode === 'theme' && <ThemeSwitcher />}
         {/* A diferencia de king/zub/elim/tts, Membership NO pide sesión para
             verse: los planes y precios son públicos, y recién pide un alias

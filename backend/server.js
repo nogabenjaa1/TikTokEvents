@@ -64,6 +64,7 @@ const auth = require('./auth');
 const pricing = require('./pricing');
 const spotify = require('./spotify');
 const storage = require('./storage');
+const downloader = require('./downloader');
 const Tenant = require('./tenant');
 
 // Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
@@ -182,6 +183,7 @@ function normalizeCardBrand(paymentMethodId) {
 // configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
 // plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
 storage.ensureBucket().catch((err) => console.error('[Storage] No se pudo verificar el bucket de alertas al arrancar:', err.message));
+storage.ensureBucket(downloader.DOWNLOADER_BUCKET).catch((err) => console.error('[Storage] No se pudo verificar el bucket del Downloader al arrancar:', err.message));
 
 const app = express();
 // Render (y cualquier host detrás de un proxy/balanceador) manda el IP real
@@ -234,6 +236,10 @@ const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardH
 // TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
 const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+// El Downloader corre yt-dlp de verdad (CPU + ancho de banda + el proxy
+// pago de TikTok si está configurado) — mucho más estricto que
+// generalLimiter para que no se pueda usar como proxy de descargas masivas.
+const downloadLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 // Más generoso que el resto: a este lo llama MercadoPago server-to-server,
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
@@ -733,6 +739,70 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
 });
 
 // ==========================================
+// DOWNLOADER: TikTok/YouTube/+1000 sitios vía yt-dlp (ver downloader.js) —
+// herramienta más para streamers, sin relación con la lógica de eventos de
+// TikTok en vivo. Cada archivo generado se sube a Supabase Storage con un
+// TTL de 2hs (downloader.DOWNLOADER_TTL_MS); se limpia tanto perezosamente
+// acá (cada GET /api/downloader/files) como con la barrida periódica de
+// más abajo (setInterval), para que nunca se acumulen sin que nadie
+// refresque el panel.
+// ==========================================
+function serializeDownloaderFile(row) {
+    return {
+        id: row.id, sourceUrl: row.source_url, title: row.title, format: row.format,
+        fileUrl: row.file_url, fileSizeBytes: row.file_size_bytes,
+        createdAt: row.created_at, expiresAt: row.expires_at,
+    };
+}
+
+app.post('/api/downloader/info', auth.requireAuth, downloadLimiter, async (req, res) => {
+    try {
+        const info = await downloader.fetchInfo(req.body?.url);
+        res.json({ success: true, ...info });
+    } catch (err) {
+        res.status(400).json({ success: false, error: `No se pudo leer el link. Detalle: ${err.shortMessage || err.message}` });
+    }
+});
+
+app.post('/api/downloader', auth.requireAuth, downloadLimiter, async (req, res) => {
+    const { url, format, quality } = req.body || {};
+    try {
+        const jobId = await downloader.startDownload({ licenseId: req.license.id, url, format, quality });
+        res.json({ success: true, jobId });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/downloader/status/:jobId', auth.requireAuth, generalLimiter, (req, res) => {
+    const job = downloader.getJob(req.params.jobId);
+    if (!job || job.licenseId !== req.license.id) {
+        return res.status(404).json({ success: false, error: 'Job no encontrado' });
+    }
+    const { licenseId, ...publicJob } = job;
+    res.json({ success: true, ...publicJob });
+});
+
+app.get('/api/downloader/files', auth.requireAuth, generalLimiter, async (req, res) => {
+    const rows = await db.listDownloaderFiles(req.license.id);
+    const now = Date.now();
+    const fresh = rows.filter((row) => row.expires_at > now);
+    const stale = rows.filter((row) => row.expires_at <= now);
+    if (stale.length) downloader.cleanupExpiredFiles(stale).catch((err) => console.error('[Downloader] Limpieza perezosa falló:', err.message));
+    res.json({ success: true, files: fresh.map(serializeDownloaderFile) });
+});
+
+app.delete('/api/downloader/files/:id', auth.requireAuth, generalLimiter, async (req, res) => {
+    const row = await db.getDownloaderFile(req.params.id);
+    if (!row || row.license_id !== req.license.id) {
+        return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+    await storage.deleteFile(row.file_path, downloader.DOWNLOADER_BUCKET);
+    await db.deleteDownloaderFile(row.id, req.license.id);
+    res.json({ success: true });
+});
+
+// ==========================================
 // PAGOS: MercadoPago Checkout API + Orders API — autoservicio total. El
 // monto SIEMPRE se calcula acá desde pricing.js a partir de planType/
 // diceTier; nunca se confía en un precio que mande el cliente. Body de
@@ -1121,6 +1191,14 @@ app.use((req, res) => {
 // sigue con los precios default de PLAN_PRICES_CENTS en vez de no levantar
 // -- el admin puede volver a guardar el precio despues para reintentar.
 pricing.loadPriceOverrides().catch(err => console.error('[PRICING] No se pudieron cargar los overrides de precio al arrancar:', err.message));
+
+// Barrida periódica del Downloader (ver downloader.js): además de la
+// limpieza perezosa en GET /api/downloader/files, esto asegura el límite
+// de 2hs aunque el streamer nunca vuelva a abrir el panel a refrescar.
+const DOWNLOADER_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+setInterval(() => {
+    downloader.cleanupExpiredFiles().catch(err => console.error('[Downloader] Barrida periódica falló:', err.message));
+}, DOWNLOADER_CLEANUP_INTERVAL_MS);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

@@ -18,6 +18,14 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/rest\/v1\/?$/, 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKET = 'alert-media';
 
+// El Downloader (ver downloader.js) usa un bucket propio ('downloader-files')
+// en vez de reusar 'alert-media' -- son archivos de vida corta (se borran
+// solos a las 2hs, ver DOWNLOADER_TTL_MS) que no tiene sentido mezclar con
+// los recursos de las Alertas, que el streamer configura para que duren.
+// Por eso ensureBucket/uploadFile/deleteFile ahora reciben el bucket como
+// parámetro opcional en vez de tenerlo fijo -- default BUCKET para no tocar
+// ninguno de los callers ya existentes de Alertas.
+
 function assertConfigured() {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
         throw new Error('Falta configurar SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY en las variables de entorno');
@@ -44,24 +52,24 @@ function authHeaders(extra = {}) {
 // string tipo "15MB" (mandar el formato equivocado hace fallar la creación
 // del bucket entero) — el límite de 15MB ya lo aplica multer del lado de
 // Express (ver server.js), así que este campo es redundante.
-async function ensureBucket() {
+async function ensureBucket(bucket = BUCKET) {
     console.log('[Storage] SUPABASE_URL configurada:', !!SUPABASE_URL, '| SUPABASE_SERVICE_ROLE_KEY configurada:', !!SUPABASE_SERVICE_ROLE_KEY);
     assertConfigured();
     const res = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true }),
+        body: JSON.stringify({ id: bucket, name: bucket, public: true }),
     });
     if (res.ok) {
-        console.log(`[Storage] Bucket "${BUCKET}" listo.`);
+        console.log(`[Storage] Bucket "${bucket}" listo.`);
         return;
     }
     const text = await res.text();
     if (res.status === 400 && /already exists/i.test(text)) {
-        console.log(`[Storage] Bucket "${BUCKET}" ya existía — todo bien.`);
+        console.log(`[Storage] Bucket "${bucket}" ya existía — todo bien.`);
         return;
     }
-    console.error(`[Storage] No se pudo crear/verificar el bucket "${BUCKET}" — status ${res.status}:`, text);
+    console.error(`[Storage] No se pudo crear/verificar el bucket "${bucket}" — status ${res.status}:`, text);
 }
 
 // `path` incluye la licencia como prefijo (ver server.js) para que dos
@@ -69,29 +77,29 @@ async function ensureBucket() {
 // pública directa — el bucket es público (`public: true` arriba) porque
 // estos archivos los tiene que poder cargar el overlay de OBS sin ningún
 // tipo de auth de por medio.
-async function uploadFile(path, buffer, contentType) {
+async function uploadFile(path, buffer, contentType, bucket = BUCKET) {
     assertConfigured();
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'true' }),
         body: buffer,
     });
     if (!res.ok) {
         const text = await res.text();
-        console.error(`[Storage] Upload a "${path}" falló — status ${res.status}:`, text);
+        console.error(`[Storage] Upload a "${bucket}/${path}" falló — status ${res.status}:`, text);
         throw new Error(`Supabase Storage upload falló (${res.status}): ${text}`);
     }
-    console.log(`[Storage] Subido OK: ${path}`);
-    return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+    console.log(`[Storage] Subido OK: ${bucket}/${path}`);
+    return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
 
 // Best-effort: si falla (archivo ya borrado a mano, etc.) no bloquea el
 // borrado de la fila en la base — un archivo huérfano en el bucket no
 // rompe nada, solo ocupa espacio.
-async function deleteFile(path) {
+async function deleteFile(path, bucket = BUCKET) {
     assertConfigured();
     try {
-        await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
+        await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
             method: 'DELETE',
             headers: authHeaders(),
         });

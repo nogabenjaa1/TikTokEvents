@@ -27,14 +27,15 @@ const DICE_TIER_LABELS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'A
 
 const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizaciones estándar. Funciones o servicios con costos operativos especiales —como IA, voces premium, servidores o integraciones de pago— podrán ofrecerse por separado.';
 
-// Pantalla de autoservicio de pago (MercadoPago Checkout Pro). Funciona con
-// o sin sesión: sin sesión se ven los planes igual (precio público) pero
-// hace falta un alias antes de pagar — se usa para crear la cuenta en el
-// mismo paso (ver handleBuy), igual que la prueba gratis de Login.jsx.
+// Pantalla de autoservicio de pago (Checkout API + Card Payment Brick).
+// Funciona con o sin sesión: sin sesión se ven los planes igual (precio
+// público) pero hace falta un alias antes de pagar — se usa para crear la
+// cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
+// Login.jsx. El formato de correo lo valida el backend (ver
+// /api/payments/charge), no hace falta duplicar esa regex acá.
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Recuerda correo/direccion de pago en este navegador (localStorage) para
 // que el streamer no los reescriba en cada compra -- son datos de
@@ -170,11 +171,6 @@ export default function Membership({ session, onSessionUpdate }) {
   const handleBuy = async (planType) => {
     if (loadingTarget || !planType) return;
     setError('');
-    const cleanEmail = email.trim();
-    if (!EMAIL_RE.test(cleanEmail)) {
-      setError('Ingresa un correo válido para continuar con el pago.');
-      return;
-    }
     setLoadingTarget(planType);
     try {
       const ok = await ensureSession();
@@ -277,35 +273,41 @@ export default function Membership({ session, onSessionUpdate }) {
         </div>
       )}
 
-      <div className="w-full max-w-2xl">
-        <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, MercadoPago lo pide para procesarlo)</label>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
-          className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-      </div>
-
-      <div className="w-full max-w-2xl">
-        <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
-        <div className="flex gap-2">
-          <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
-            className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-          <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
-            className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-          <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
-            className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-        </div>
-      </div>
-
       {payingPlan && (
-        <CardPaymentForm
-          planType={payingPlan}
-          amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
-          email={email.trim()}
-          zipCode={zipCode.trim()}
-          streetName={streetName.trim()}
-          streetNumber={streetNumber.trim()}
-          onSuccess={handlePaymentSuccess}
-          onCancel={() => setPayingPlan(null)}
-        />
+        <>
+          {/* Pedido explicito: estos campos solo estorban para quien ya
+              tiene una licencia y solo entro a ver su plan (admin, key
+              paga, etc.) -- se piden apenas aca, una vez que ya eligio
+              un plan y esta por pagar. */}
+          <div className="w-full max-w-2xl">
+            <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, MercadoPago lo pide para procesarlo)</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
+              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          </div>
+
+          <div className="w-full max-w-2xl">
+            <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
+            <div className="flex gap-2">
+              <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
+                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
+                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
+                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            </div>
+          </div>
+
+          <CardPaymentForm
+            planType={payingPlan}
+            amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+            email={email.trim()}
+            zipCode={zipCode.trim()}
+            streetName={streetName.trim()}
+            streetNumber={streetNumber.trim()}
+            onSuccess={handlePaymentSuccess}
+            onCancel={() => setPayingPlan(null)}
+          />
+        </>
       )}
 
       {!payingPlan && (

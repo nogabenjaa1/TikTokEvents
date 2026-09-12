@@ -29,22 +29,48 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 // después de crear la cuenta y/o de volver de un pago.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Recuerda correo/direccion de pago en este navegador (localStorage) para
+// que el streamer no los reescriba en cada compra -- son datos de
+// contacto/envio, no de la tarjeta, asi que no hay problema en guardarlos
+// tal cual del lado del cliente. Falla en silencio (modo privado, storage
+// bloqueado, etc.): en ese caso simplemente no se precarga nada.
+const BILLING_INFO_KEY = 'tte_billing_info';
+function loadBillingInfo() {
+  try {
+    const raw = localStorage.getItem(BILLING_INFO_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function saveBillingInfo(info) {
+  try {
+    localStorage.setItem(BILLING_INFO_KEY, JSON.stringify(info));
+  } catch {
+    // localStorage no disponible -- se sigue funcionando, solo no se recuerda
+  }
+}
+
 export default function Membership({ session, onSessionUpdate }) {
   const [alias, setAlias] = useState('');
   // Pedido explicito de MercadoPago (mitiga el rechazo "por motivos de
   // seguridad" del motor antifraude): mandar SIEMPRE un email de pagador en
-  // la preferencia, aunque el streamer ya tenga sesion -- hoy no se guarda
-  // en ningun lado, solo viaja a MP en el momento de comprar (ver
-  // handleBuy). Si mas adelante se quiere precargarlo o usarlo para
-  // recibos, habria que persistirlo en licenses, pero eso es aparte.
-  const [email, setEmail] = useState('');
+  // la preferencia, aunque el streamer ya tenga sesion. Se precarga desde
+  // localStorage (ver loadBillingInfo) para no pedirlo de nuevo en cada
+  // compra en el mismo navegador.
+  const [email, setEmail] = useState(() => loadBillingInfo().email || '');
   // Pedido explicito de MercadoPago (checklist de calidad de
   // integracion, "Dirección del comprador"): opcional para el
   // streamer -- solo se manda si completa las 3 partes juntas (ver
   // CardPaymentForm.jsx). Ayuda a bajar rechazos del motor antifraude.
-  const [zipCode, setZipCode] = useState('');
-  const [streetName, setStreetName] = useState('');
-  const [streetNumber, setStreetNumber] = useState('');
+  // Tambien se precarga desde localStorage, mismo criterio que el email.
+  const [zipCode, setZipCode] = useState(() => loadBillingInfo().zipCode || '');
+  const [streetName, setStreetName] = useState(() => loadBillingInfo().streetName || '');
+  const [streetNumber, setStreetNumber] = useState(() => loadBillingInfo().streetNumber || '');
+
+  useEffect(() => {
+    saveBillingInfo({ email, zipCode, streetName, streetNumber });
+  }, [email, zipCode, streetName, streetNumber]);
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   // Plan que se esta pagando ahora mismo con el formulario embebido (Card
   // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al

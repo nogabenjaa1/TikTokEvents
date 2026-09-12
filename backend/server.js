@@ -748,8 +748,18 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // de un genérico "no coincide", que ayuda muchísimo a diagnosticar la
     // próxima vez que esto falle (secreto vencido vs. header ausente vs.
     // timestamp fuera de rango, etc.).
+    //
+    // OJO: MercadoPago documenta que si data.id es alfanumerico (como los
+    // ID de 'order', ej. "ORD01M29...") hay que pasarlo en MINUSCULAS al
+    // armar el manifest de la firma -- los ID de 'payment' son siempre
+    // numericos asi que ahi nunca importo, pero para 'order' rompia la
+    // validacion 100% de las veces (confirmado en logs de produccion: TODAS
+    // las notificaciones de tipo order daban SignatureMismatch). El SDK NO
+    // lo hace por su cuenta, hay que bajarlo a minuscula ANTES de llamar a
+    // validate() -- pero solo para la firma: el dataId ORIGINAL (con su
+    // mayuscula real) es el que hay que usar despues para el GET a MP.
     try {
-        WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId, secret });
+        WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId: String(dataId).toLowerCase(), secret });
     } catch (err) {
         const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
         console.error('[MP] Webhook con firma inválida — descartado', { reason, dataId, xRequestId, secretLength: secret.length });

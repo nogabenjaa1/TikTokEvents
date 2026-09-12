@@ -55,7 +55,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { MercadoPagoConfig, Preference, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const { MercadoPagoConfig, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 
 const multer = require('multer');
 
@@ -87,10 +87,9 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .filter(Boolean);
 const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
-// URL propia (no las de MercadoPago) para armar la preferencia de pago: a
-// dónde vuelve el streamer después de pagar (el dominio de Vercel en
-// producción). A dónde manda la notificación NO se define acá a propósito
-// (ver el comentario en create-preference más abajo, en notification_url).
+// URL propia (no las de MercadoPago) -- la usan los redirects de Spotify
+// para volver al dominio correcto (Vercel en producción) despues de
+// conectar/desconectar una cuenta.
 const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://localhost:5173').replace(/\/$/, '');
 
 // Se crea perezosamente (no al levantar el server) para que el resto de la
@@ -127,8 +126,7 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // Etiqueta que va en el medio de la key legible (alias-etiqueta-hash, ver
 // auth.generateLabeledKey) cuando se compra ese plan.
 const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
-// Compartido entre create-preference y el cobro directo (charge) -- una
-// sola fuente de verdad para el formato de email valido.
+// Formato de email valido para el cobro directo (charge).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // El Card Payment Brick a veces devuelve un payment_method_id mas
@@ -712,123 +710,21 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
 });
 
 // ==========================================
-// PAGOS: MercadoPago Checkout Pro — autoservicio total. El monto SIEMPRE se
-// calcula acá desde pricing.js a partir de planType/diceTier; nunca se
-// confía en un precio que mande el cliente.
+// PAGOS: MercadoPago Checkout API + Orders API — autoservicio total. El
+// monto SIEMPRE se calcula acá desde pricing.js a partir de planType/
+// diceTier; nunca se confía en un precio que mande el cliente. Body de
+// /api/payments/charge (mas abajo): { planType?: 'month'|'annual'|
+// 'lifetime', diceTier?: 'pro'|'vip' } — al menos uno de los dos (compra
+// de "solo addon" sin renovar el plan, o renovación de plan sin tocar el
+// addon, son ambas válidas).
 // ==========================================
 
-// Crea la preferencia de pago para la licencia del usuario logueado. Body:
-// { planType?: 'month'|'annual'|'lifetime', diceTier?: 'pro'|'vip' } — al
-// menos uno de los dos (compra de "solo addon" sin renovar el plan, o
-// renovación de plan sin tocar el addon, son ambas válidas).
 // Precios vigentes de los 3 planes (override del admin si existe, default
 // de pricing.js si no) -- publica a proposito, sin auth: la vitrina de
 // Membership.jsx la necesita ANTES de que exista una sesion (ver el
 // comentario de "Anonymous purchase flow" en Membership.jsx).
 app.get('/api/pricing', (req, res) => {
     res.json({ success: true, prices: pricing.getAllPlanPricesCents() });
-});
-
-app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber } = req.body || {};
-    if (planType !== undefined && !pricing.isValidPlan(planType)) {
-        return res.status(400).json({ success: false, error: 'Plan inválido' });
-    }
-    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
-        return res.status(400).json({ success: false, error: 'Addon inválido' });
-    }
-    if (!planType && !diceTier) {
-        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
-    }
-    // Pedido explícito de MercadoPago (mitiga el rechazo "por motivos de
-    // seguridad" del motor antifraude en México): la preferencia SIEMPRE
-    // debe llevar payer.email -- nunca se confía en que el front lo mande
-    // bien formado, se revalida acá igual que planType/diceTier.
-    const cleanEmail = typeof email === 'string' ? email.trim() : '';
-    if (!EMAIL_RE.test(cleanEmail)) {
-        return res.status(400).json({ success: false, error: 'Ingresa un correo válido para continuar con el pago' });
-    }
-
-    const amountCents = pricing.computeAmountCents({ planType, diceTier });
-    // external_reference es lo único en lo que el webhook confía para saber
-    // qué licencia tocar y qué se compró — viene de req.license.id (la
-    // licencia del token, no de nada que mande el body), así un cliente no
-    // puede pedir una preferencia para la licencia de otro.
-    const externalReference = `${req.license.id}:${planType || '-'}:${diceTier || '-'}`;
-    const titleParts = [];
-    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
-    if (diceTier) titleParts.push(diceTier.toUpperCase());
-    const itemTitle = `TikTokEvents - ${titleParts.join(' + ')}`;
-    const { firstName, lastName } = splitFullName(fullName);
-    // Pedido explícito de MercadoPago (checklist de calidad, "Dirección
-    // del comprador"): opcional para el streamer (no se bloquea la compra
-    // si no la completa), pero si vienen las 3 partes se manda -- MP dice
-    // que cuanto más completo el objeto payer, menor la probabilidad de
-    // rechazo por su motor antifraude.
-    const address = (zipCode && streetName && streetNumber)
-        ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
-        : undefined;
-
-    try {
-        const preference = new Preference(getMpClient());
-        const result = await preference.create({
-            body: {
-                items: [{
-                    id: externalReference,
-                    title: itemTitle,
-                    // Pedido explícito de MercadoPago (checklist de calidad,
-                    // "Description del item"): baja el riesgo de rechazo por
-                    // el motor antifraude.
-                    description: itemTitle,
-                    quantity: 1,
-                    currency_id: 'MXN',
-                    unit_price: amountCents / 100,
-                }],
-                external_reference: externalReference,
-                payer: { email: cleanEmail, first_name: firstName, last_name: lastName, address },
-                // Pedido explícito de MercadoPago (checklist de calidad,
-                // "Descripción-Resumen de tarjeta"): lo que ve el
-                // comprador en el resumen de su tarjeta -- ayuda a que
-                // reconozca el cargo y no lo desconozca/impugne como
-                // fraude ante su banco.
-                statement_descriptor: 'TIKTOKEVENTS',
-                // Pedido explícito de MercadoPago (checklist de calidad,
-                // "Máximo de cuotas"): sin esto, MP ofrece hasta 18 cuotas
-                // por default -- no tiene sentido para un plan de $10-
-                // $1800 MXN, y agrega complejidad/fricción sin motivo.
-                payment_methods: { installments: 1 },
-                back_urls: {
-                    success: `${FRONTEND_URL}/?payment=success`,
-                    pending: `${FRONTEND_URL}/?payment=pending`,
-                    failure: `${FRONTEND_URL}/?payment=failure`,
-                },
-                auto_return: 'approved',
-                // Pedido explícito de MercadoPago (checklist de calidad,
-                // "Respuesta binaria"): evita que un pago quede en 'pending'
-                // ambiguo -- fuerza un approved/rejected inmediato, que es
-                // justo el criterio que ya usa el webhook (solo 'approved'
-                // aplica la compra).
-                binary_mode: true,
-                // A propósito SIN notification_url acá: MercadoPago
-                // documenta que la URL configurada al crear una preferencia
-                // TIENE PRIORIDAD sobre la configurada en el dashboard
-                // ("Tus integraciones" > Webhooks), y esa vía alternativa
-                // no queda documentada con el mismo esquema de firma
-                // (x-signature/HMAC) que sí aplica al método del dashboard
-                // -- verificado en producción: una notificación de PRUEBA
-                // disparada desde el dashboard SÍ validó bien contra
-                // MP_WEBHOOK_SECRET, mientras que las de compras reales
-                // (que sí pisaban esta URL acá) daban SignatureMismatch
-                // siempre. Dejar que MP use la URL del dashboard para TODO
-                // evita ese canal separado. Requiere que la URL configurada
-                // ahí sea exactamente la URL de este backend + /api/payments/webhook.
-            },
-        });
-        res.json({ success: true, checkoutUrl: result.init_point });
-    } catch (err) {
-        console.error('[MP] Error creando preferencia:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
-    }
 });
 
 // Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
@@ -979,17 +875,18 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 }
 
 // ==========================================
-// COBRO DIRECTO (Checkout API + Card Payment Brick) -- alternativa a
-// create-preference/redirect mientras el checkout hosteado de MercadoPago
-// tiene un bug confirmado del lado de ellos (challenge-orchestrator nunca
-// resuelve por un CORS mal configurado en mercadolibre.com/jms/lgz/
-// background/automation, asi que el boton "Pagar" de SU pagina nunca se
-// habilita -- reproducido en dos navegadores distintos, con y sin cuenta de
-// MP). Aca el comprador nunca sale de este sitio: el Card Payment Brick
-// tokeniza la tarjeta en un iframe de MercadoPago (mismo mecanismo que ya
-// usa CardVerifyForm.jsx para verificar tarjetas sin cobrar, que nunca toco
-// ese endpoint roto) -- a este endpoint solo llega el token, nunca el
-// numero de tarjeta real.
+// COBRO DIRECTO (Checkout API + Card Payment Brick) -- unico camino de
+// cobro de la plataforma (el checkout hosteado de MercadoPago via
+// Preference API tenia un bug confirmado del lado de ellos --
+// challenge-orchestrator nunca resolvia por un CORS mal configurado en
+// mercadolibre.com/jms/lgz/background/automation, asi que el boton
+// "Pagar" de SU pagina nunca se habilitaba -- reproducido en dos
+// navegadores distintos, con y sin cuenta de MP -- asi que se elimino ese
+// endpoint en vez de mantenerlo muerto). Aca el comprador nunca sale de
+// este sitio: el Card Payment Brick tokeniza la tarjeta en un iframe de
+// MercadoPago (mismo mecanismo que ya usa CardVerifyForm.jsx para
+// verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
+// nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
     const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
@@ -1012,9 +909,8 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         return res.status(400).json({ success: false, error: 'Falta el medio de pago' });
     }
 
-    // El monto SIEMPRE se calcula aca desde pricing.js -- igual que
-    // create-preference, nunca se confia en un transaction_amount que
-    // pueda venir del formData del Brick.
+    // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
+    // un transaction_amount que pueda venir del formData del Brick.
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
     // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
     // acepta ese caracter en external_reference (confirmado probando:
@@ -1051,8 +947,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
     const { firstName, lastName } = splitFullName(fullName);
-    // Mismo criterio que create-preference: opcional, se manda solo si
-    // vienen las 3 partes juntas.
+    // Opcional: se manda solo si vienen las 3 partes juntas.
     const address = (zipCode && streetName && streetNumber)
         ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
         : undefined;
@@ -1089,8 +984,8 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                             type: cardType,
                             token,
                             installments: Number(installments) || 1,
-                            // Mismo pedido de MercadoPago que en
-                            // create-preference ("Descripción-Resumen de
+                            // Pedido explicito de MercadoPago (checklist
+                            // de calidad, "Descripción-Resumen de
                             // tarjeta") -- confirmado que la Orders API
                             // acepta este campo acá adentro de
                             // payment_method (no a nivel order).

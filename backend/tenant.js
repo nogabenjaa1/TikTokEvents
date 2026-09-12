@@ -878,7 +878,7 @@ class Tenant {
     // Tap-Tap (ver ALERT_COMBO_SETTLE_MS/settleAlertCombo): nunca se
     // apilan dos alertas del mismo disparador+persona, se combinan en una
     // sola con el total. `key` es el nombre del regalo para triggerType
-    // 'gift', o 'follow'/'share'/'sticker' para los demas (ver
+    // 'gift', o 'follow'/'sticker' para los demas (ver
     // handleSocialEvent/handleEmoteEvent mas abajo y NON_GIFT_TRIGGER_TYPES
     // en server.js) -- mismo mapa `alertConfigs`, sin distinguir el tipo,
     // porque un regalo real de TikTok jamas se llama literal "follow".
@@ -954,25 +954,9 @@ class Tenant {
     // 'social' directo en vez de confiar en el 'follow' derivado.
     handleSocialEvent(data) {
         if (!data?.uniqueId) return;
-        const action = String(data.action);
-        if (action === '1') {
-            this.processFollowExtensible();
-            this.processAlertTrigger({ username: data.uniqueId, key: 'follow', repeatCount: 1 });
-            return;
-        }
-        // 'share': a diferencia de 'follow' (confirmado en vivo con casos
-        // reales, ver el comentario de arriba), NUNCA se confirmo el action
-        // real de un share porque no hubo forma de provocar uno en vivo
-        // durante el desarrollo de esto. '2' es la mejor suposicion (TikTok
-        // suele numerar estos action codes secuencialmente y follow es
-        // '1') -- el log de abajo deja cualquier action no reconocido bien
-        // visible en Render para poder confirmar/corregir esto con datos
-        // reales la primera vez que alguien comparta el vivo de verdad.
-        if (action === '2') {
-            this.processAlertTrigger({ username: data.uniqueId, key: 'share', repeatCount: 1 });
-            return;
-        }
-        console.log(`[${this.licenseId}] [SOCIAL] action no reconocido (no es follow ni el '2' asumido para share):`, action, { shareType: data.shareType, scene: data.scene });
+        if (String(data.action) !== '1') return; // no es un follow (ej. share -- no soportado, ver el comentario de arriba)
+        this.processFollowExtensible();
+        this.processAlertTrigger({ username: data.uniqueId, key: 'follow', repeatCount: 1 });
     }
 
     handleEmoteEvent(data) {

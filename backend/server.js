@@ -627,8 +627,8 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 // ==========================================
 // ALERTAS: qué recurso (imagen/gif/video/audio) se reproduce en el
 // overlay al llegar un disparador puntual -- un regalo especifico,
-// seguimiento, compartida, o sticker personalizado del club de fans (los
-// tres ultimos son pedido explicito: "aplica lo de los seguimientos
+// seguimiento, o sticker personalizado del club de fans (los dos
+// ultimos son pedido explicito: "aplica lo de los seguimientos
 // tambien para las alertas normales") -- ver tenant.js
 // (processAlertTrigger) para el disparo en vivo y storage.js para dónde
 // vive el archivo. Un audio SIN imagen/video (media_type='audio') es lo
@@ -639,7 +639,7 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 // Disparadores que no son un regalo puntual -- gift_name guarda esta
 // misma clave fija para esos casos (ver el comentario de la tabla en
 // db.js). 'gift' usa el nombre real del regalo elegido en el panel.
-const NON_GIFT_TRIGGER_TYPES = ['follow', 'share', 'sticker'];
+const NON_GIFT_TRIGGER_TYPES = ['follow', 'sticker'];
 const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece

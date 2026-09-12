@@ -17,7 +17,6 @@ const POSITIONS = [
 const TRIGGER_TYPES = [
   { id: 'gift', label: 'Regalo', icon: '🎁' },
   { id: 'follow', label: 'Seguimiento', icon: '👣' },
-  { id: 'share', label: 'Compartida', icon: '🔗' },
   { id: 'sticker', label: 'Sticker de club de fans', icon: '🎫' },
 ];
 const TRIGGER_LABELS = Object.fromEntries(TRIGGER_TYPES.map((t) => [t.id, t.label]));
@@ -116,7 +115,7 @@ function LivePreview({ draftAlert }) {
 
 // ─────────────────────────────────────────────
 // ALERTAS — panel de administración
-// Cada disparador (un regalo puntual, seguimiento, compartida, o sticker
+// Cada disparador (un regalo puntual, seguimiento, o sticker
 // de club de fans) puede tener a lo sumo UNA alerta asignada (imagen/gif/
 // video/audio -- un audio solo, sin imagen/video, es una alerta puramente
 // de sonido). El archivo se sube directo a Supabase Storage (ver

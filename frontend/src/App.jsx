@@ -6,6 +6,7 @@ import Roulette from './Roulette';
 import Extensible from './Extensible';
 import Spotify from './Spotify';
 import ColorSays from './Colorsays';
+import Downloader from './Downloader';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
@@ -29,6 +30,7 @@ const SECTIONS = [
   { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
   { id: 'events',  label: 'TikTokEvents', icon: '🎉' },
   { id: 'color',   label: 'ColorDice',    icon: '🎲' },
+  { id: 'downloader', label: 'Downloader', icon: '⬇️' },
   { id: 'theme',   label: 'Tema',         icon: '🎨' },
   { id: 'membership', label: 'Membresía', icon: '💳' },
 ];
@@ -617,6 +619,10 @@ export default function App() {
   // (licencia paga o prueba gratis) — sin ella se muestra el login
   // embebido con la opción de prueba gratis en el panel principal.
   const needsAccess = (modeId) => !session && !FREE_MODES.includes(modeId);
+  // Downloader es beneficio exclusivo de planes pagos -- mismo criterio
+  // que auth.requirePaidPlan en el backend (que es quien de verdad lo
+  // hace cumplir; esto solo evita mostrar la herramienta de entrada).
+  const needsPaidPlan = !session?.isAdmin && session?.licenseType === 'trial';
 
   const onLoggedIn = () => { setKickedOutMessage(''); setSession(loadSession()); };
 
@@ -844,6 +850,25 @@ export default function App() {
             (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
             los ads dentro del propio componente — ver Colorsays.jsx. */}
         {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} winBonusUnlocked={!!session?.diceWinBonusUnlocked} socket={socket} isGuest={!session} />}
+        {sidebarMode === 'downloader' && (
+          needsAccess('downloader') ? (
+            <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia para usar el Downloader." />
+          ) : needsPaidPlan ? (
+            <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-4">
+              <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">⬇️ Downloader</p>
+              <div className="theme-surface w-full max-w-md p-6 text-center flex flex-col gap-3">
+                <p className="text-sm font-bold">Esta herramienta es exclusiva de planes pagos</p>
+                <p className="text-[11px] text-gray-500 leading-snug">Tu prueba gratis no incluye el Downloader — mejora tu plan para descargar videos de YouTube y TikTok sin marca de agua.</p>
+                <button type="button" onClick={() => setSidebarMode('membership')}
+                  className="theme-btn-primary w-full py-3 rounded-xl font-black uppercase tracking-widest text-xs mt-2">
+                  Ver planes
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Downloader />
+          )
+        )}
         {sidebarMode === 'theme' && <ThemeSwitcher />}
         {/* A diferencia de king/zub/elim/tts, Membership NO pide sesión para
             verse: los planes y precios son públicos, y recién pide un alias

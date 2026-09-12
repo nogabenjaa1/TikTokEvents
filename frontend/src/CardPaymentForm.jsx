@@ -72,6 +72,11 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
 
     bricksBuilder.create('cardPayment', BRICK_CONTAINER_ID, {
       initialization: { amount, payer: { email } },
+      // Pedido explicito de MercadoPago (checklist de calidad, "Maximo de
+      // cuotas"): create-preference ya lo limitaba, pero el camino que de
+      // verdad se usa hoy es este Brick -- sin esto seguia ofreciendo hasta
+      // 18 cuotas para pagos de $10-$1800 MXN.
+      customization: { paymentMethods: { maxInstallments: 1 } },
       callbacks: {
         onReady: () => {},
         onError: (error) => {

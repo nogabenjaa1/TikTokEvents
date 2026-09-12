@@ -865,34 +865,66 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
 
-    if (req.query.type !== 'payment' && req.body?.type !== 'payment') return;
+    // 'payment': notificaciones del flujo viejo por Preference/Checkout Pro.
+    // 'order': notificaciones del cobro directo (Card Payment Brick /
+    // Checkout API, ver /api/payments/charge) cuando esta cuenta lo procesa
+    // async (capture_mode "automatic_async", el default) -- sin esta rama,
+    // un pago que MP tarda en confirmar nunca actualizaba la licencia,
+    // aunque al comprador SI se le haya cobrado.
+    const topic = req.query.type || req.body?.type;
+    if (topic !== 'payment' && topic !== 'order') return;
 
     try {
-        const payment = new Payment(getMpClient());
-        const paymentData = await payment.get({ id: dataId });
-        if (paymentData.status === 'approved') {
-            const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-            const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-            const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
-            await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
+        if (topic === 'payment') {
+            const payment = new Payment(getMpClient());
+            const paymentData = await payment.get({ id: dataId });
+            if (paymentData.status === 'approved') {
+                const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
+                const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
+                const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
+                await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
+            }
+            return;
         }
+
+        // topic === 'order': no se confia en el body de la notificacion --
+        // se pide el estado real con un GET, igual de paranoico que el
+        // camino de 'payment' de arriba (que tampoco confia en el payload).
+        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
+            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
+        });
+        const order = await orderRes.json();
+        if (!orderRes.ok) {
+            console.error('[MP] Webhook de order: no se pudo consultar la orden', dataId, orderRes.status);
+            return;
+        }
+        const orderPayment = order?.transactions?.payments?.[0];
+        const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        if (!approved) return;
+        // Separador '_' a proposito (ver donde se arma external_reference en
+        // /api/payments/charge): licenseId es un UUID con '-' adentro, asi
+        // que '_' es el unico separador que se puede partir sin ambiguedad.
+        const [licenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
+        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
+        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
+        await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
     } catch (err) {
         console.error('[MP] Error procesando webhook:', err.message);
     }
 });
 
 // Aplica una compra ya APROBADA por MercadoPago a la licencia
-// correspondiente -- compartido entre el webhook (pagos via preferencia/
-// Checkout Pro, que parsea su propio external_reference antes de llamar
-// esto) y el cobro directo de /api/payments/charge (Card Payment Brick/
-// Checkout API, que ya conoce licenseId/planType/diceTier de su propio
-// request y no necesita parsear nada de vuelta -- la Orders API de Checkout
-// API ademas NO acepta ':' en external_reference, a diferencia de
-// Preference, asi que cada camino arma ese campo con su propia regla y acá
-// solo se reciben los valores ya resueltos). Idempotente via el UNIQUE de
-// payments.mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con
-// el mismo pago (ej. el webhook llega DESPUES de que el cobro directo ya lo
-// aplico al toque) no aplica el cambio dos veces.
+// correspondiente -- tres llamadores, cada uno resuelve licenseId/
+// planType/diceTier a su manera antes de llamar esto: el webhook tipo
+// 'payment' (Preference/Checkout Pro) y el webhook tipo 'order' (cobro
+// directo async) parsean su propio external_reference con reglas
+// distintas (':' vs '_', ver donde se arma cada uno), mientras que
+// /api/payments/charge ya conoce esos valores de su propio request y no
+// necesita parsear nada. Idempotente via el UNIQUE de payments.
+// mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con el
+// mismo pago (ej. el webhook de 'order' llega DESPUES de que
+// /api/payments/charge ya lo aplico al toque) no aplica el cambio dos
+// veces.
 async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId }) {
     if (!licenseId || (!planType && !diceTier)) {
         console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
@@ -986,10 +1018,17 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
     // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
     // acepta ese caracter en external_reference (confirmado probando:
-    // "'$.external_reference' - does not match pattern"). No hace falta que
-    // sea parseable de vuelta: applyApprovedPaymentIfNew se llama mas abajo
-    // con licenseId/planType/diceTier que YA tenemos en este scope.
-    const externalReference = `${req.license.id}-${planType || 'none'}-${diceTier || 'none'}-${Date.now()}`;
+    // "'$.external_reference' - does not match pattern"). Se usa '_' como
+    // separador (no '-') porque licenseId es un UUID que YA trae '-'
+    // adentro -- con '_' el webhook de notificaciones tipo "order" (ver mas
+    // abajo) puede hacer external_reference.split('_') y recuperar
+    // licenseId/planType/diceTier sin ambiguedad. Esto importa porque esta
+    // cuenta usa capture_mode "automatic_async" por default: la mayoria de
+    // los pagos se resuelven al toque (este mismo endpoint ya aplica el
+    // plan en ese caso), pero cuando MP tarda mas en confirmar, el UNICO
+    // aviso de que se aprobo llega despues via ese webhook, no en esta
+    // respuesta.
+    const externalReference = `${req.license.id}_${planType || 'none'}_${diceTier || 'none'}_${Date.now()}`;
     const titleParts = [];
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
@@ -1078,6 +1117,13 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 
         const orderPayment = result?.transactions?.payments?.[0];
         const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        // "processing"/"action_required" son estados async reales de la
+        // Orders API (ver doc oficial) -- se traducen a 'pending' para que
+        // el frontend (que ya sabe mostrar "pago pendiente" para ese valor,
+        // ver CardPaymentForm.jsx) no los confunda con un rechazo. Si la
+        // confirmacion final llega, la aplica el webhook de tipo "order" de
+        // mas abajo, no esta respuesta.
+        const isPending = !approved && (result.status === 'processing' || result.status === 'action_required');
         if (approved) {
             await applyApprovedPaymentIfNew({
                 licenseId: req.license.id,
@@ -1089,7 +1135,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 
         res.json({
             success: true,
-            status: approved ? 'approved' : (orderPayment?.status || result.status || 'unknown'),
+            status: approved ? 'approved' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
             statusDetail: orderPayment?.status_detail || result.status_detail,
             paymentId: orderPayment?.id || result.id,
         });

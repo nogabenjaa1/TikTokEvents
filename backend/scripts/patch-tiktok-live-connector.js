@@ -40,6 +40,19 @@ const REPLACEMENTS = [
         to: 'webcastObject.emotes = (webcastObject.emoteList || []).map((emote) => ({',
     },
     {
+        // Pedido explicito: el TTS tiene que poder distinguir un emote de
+        // chat que es un sticker EXCLUSIVO del club de fans (mismo criterio
+        // que ya usa handleEmoteEvent en tenant.js para la alerta de
+        // 'sticker': emoteType/emoteScene/rewardCondition === 2, los
+        // valores reales "FANS"/"FANS_CLUB" del protobuf de
+        // tiktok-live-proto/v3). Sin este parche, esos 3 campos se pierden
+        // en la simplificacion de WebcastChatMessage.emotes -- solo deja
+        // emoteId/emoteImageUrl/placeInComment.
+        label: 'WebcastChatMessage.emotes (agrega emoteType/emoteScene/rewardCondition)',
+        froms: ['placeInComment: emote.placeInComment\n\t\t\t\t}));'],
+        to: 'placeInComment: emote.placeInComment,\n\t\t\t\t\temoteType: emote.emote?.emoteType,\n\t\t\t\t\temoteScene: emote.emote?.emoteScene,\n\t\t\t\t\trewardCondition: emote.emote?.rewardCondition\n\t\t\t\t}));',
+    },
+    {
         label: 'getTopViewerAttributes',
         froms: ['function getTopViewerAttributes(topViewers) {\n\treturn topViewers.map((viewer) => {'],
         to: 'function getTopViewerAttributes(topViewers) {\n\treturn (topViewers || []).map((viewer) => {',

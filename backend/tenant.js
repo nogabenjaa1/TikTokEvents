@@ -60,6 +60,21 @@ function pickDefaultManualAvatar() {
 // Este timeout propio convierte ese cuelgue en un error real y visible.
 const TIKTOK_CONNECT_TIMEOUT_MS = 20000;
 
+// Reporte real: la conexión se queda "zombie" -- el objeto de
+// WebcastPushConnection nunca dispara 'disconnected' (así que
+// liveConnected sigue en true y el panel se ve "conectado"), pero TikTok
+// dejó de empujar mensajes de verdad (chat/regalos/likes se cortan en
+// silencio). Pasa con cualquier scraper de WebSocket sobre servicios que
+// no siempre mandan un close frame limpio -- un corte de red, un timeout
+// del lado de TikTok, etc. 'rawData' (ver ensureTikTokConnection) se
+// dispara para CUALQUIER mensaje que llegue, incluyendo los muy
+// frecuentes de conteo de espectadores -- si pasan WATCHDOG_TIMEOUT_MS
+// sin ni uno solo, se asume que la conexión está muerta de verdad y se
+// fuerza una reconexión, aunque el objeto de conexión diga que sigue
+// viva.
+const WATCHDOG_CHECK_INTERVAL_MS = 30000;
+const WATCHDOG_TIMEOUT_MS = 120000;
+
 class TikTokConnectTimeoutError extends Error {
     constructor() {
         super(`La conexión no respondió en ${TIKTOK_CONNECT_TIMEOUT_MS / 1000}s`);
@@ -465,6 +480,9 @@ class Tenant {
         // abajo). Se resetea a false en disconnectTikTok (conexión nueva de
         // cero) y en cuanto se confirma el próximo `live_connected`.
         this.wasEverConnected = false;
+        // Ver el comentario de WATCHDOG_TIMEOUT_MS mas arriba.
+        this.lastTikTokMessageAt = null;
+        this.watchdogInterval = null;
     }
 
     // Broadcast scopeado: reemplaza los antiguos io.emit(...) globales.
@@ -481,6 +499,7 @@ class Tenant {
 
     disconnectTikTok() {
         if (this.retryTimeout) { clearTimeout(this.retryTimeout); this.retryTimeout = null; }
+        if (this.watchdogInterval) { clearInterval(this.watchdogInterval); this.watchdogInterval = null; }
         if (this.tiktokConnection) {
             this.tiktokConnection.removeAllListeners();
             this.tiktokConnection.disconnect();
@@ -516,6 +535,24 @@ class Tenant {
 
     maybeDisconnectTikTok() {
         if (!this.anyContestNeedsConnection()) this.disconnectTikTok();
+    }
+
+    // Corre cada WATCHDOG_CHECK_INTERVAL_MS mientras dure una conexion
+    // (arrancado/detenido junto con ella, ver ensureTikTokConnection/
+    // disconnectTikTok). `username` se pasa explicito (no se lee
+    // this.currentTikTokUsername directo) para que un watchdog viejo de
+    // una conexion ya reemplazada nunca actue sobre la nueva -- el chequeo
+    // de mas abajo lo confirma de todos modos, pero esto deja la intencion
+    // clara.
+    checkTikTokWatchdog(username) {
+        if (!this.liveConnected || this.currentTikTokUsername !== username) return;
+        const silentForMs = Date.now() - (this.lastTikTokMessageAt || 0);
+        if (silentForMs < WATCHDOG_TIMEOUT_MS) return;
+        console.warn(`[${this.licenseId}] [TIKTOK] 🧟 Sin mensajes hace ${Math.round(silentForMs / 1000)}s pese a seguir "conectado" -- se fuerza una reconexión.`);
+        this.liveConnected = false;
+        if (this.watchdogInterval) { clearInterval(this.watchdogInterval); this.watchdogInterval = null; }
+        this.broadcast.emit('live_disconnected');
+        this.scheduleReconnect(username);
     }
 
     // Bug crítico corregido a propósito (pedido explícito): cuando el LIVE
@@ -673,6 +710,9 @@ class Tenant {
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
             this.tiktokConnection.on('social', (data) => this.handleSocialEvent(data));
             this.tiktokConnection.on('emote', (data) => this.handleEmoteEvent(data));
+            // Cualquier mensaje (no solo los que procesamos) cuenta como
+            // señal de vida -- ver WATCHDOG_TIMEOUT_MS.
+            this.tiktokConnection.on('rawData', () => { this.lastTikTokMessageAt = Date.now(); });
             this.tiktokConnection.on('error', ({ info, exception } = {}) => {
                 const message = exception?.message || info || 'Error interno del conector';
                 console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
@@ -722,6 +762,9 @@ class Tenant {
             this.liveConnected = true;
             this.wasEverConnected = true;
             this.connectingPromise = null;
+            this.lastTikTokMessageAt = Date.now();
+            if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+            this.watchdogInterval = setInterval(() => this.checkTikTokWatchdog(username), WATCHDOG_CHECK_INTERVAL_MS);
             this.broadcast.emit('live_connected', username);
         }).catch(err => {
             console.error(`[${this.licenseId}] [TIKTOK] ❌ Error: ${err.message}`);
@@ -984,10 +1027,23 @@ class Tenant {
         const badgeText = badges.map((badge) => [badge.type, badge.name, badge.url].filter(Boolean).join(' ')).join(' ').toLowerCase();
         const identity = data.userIdentity || {};
 
+        // Pedido explícito, tras agregar el disparador de alerta 'sticker'
+        // (ver handleEmoteEvent): un sticker EXCLUSIVO del club de fans
+        // mandado dentro del chat viene como un emote embebido en este
+        // mismo mensaje -- mismo criterio que ahí (emoteType/emoteScene/
+        // rewardCondition === 2, los valores reales "FANS"/"FANS_CLUB" del
+        // protobuf) para que el TTS no intente leer el texto/placeholder
+        // que TikTok manda junto con el sticker. Requiere el parche de
+        // WebcastChatMessage.emotes en patch-tiktok-live-connector.js (sin
+        // él, `data.emotes` nunca trae estos 3 campos).
+        const hasFanClubEmote = Array.isArray(data.emotes) && data.emotes.some((e) => (
+            e?.emoteType === 2 || e?.emoteScene === 2 || e?.rewardCondition === 2
+        ));
+
         // Comandos (!play, etc.) nunca van al TTS — pedido explícito. Se
         // filtran ACÁ (no en el panel) para que ni siquiera crucen el
         // socket como candidato a leerse en voz alta.
-        if (!comment.startsWith('!')) {
+        if (!comment.startsWith('!') && !hasFanClubEmote) {
             this.broadcast.emit('tts_chat_message', {
                 id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
                 username: data.nickname || data.uniqueId || 'Usuario',

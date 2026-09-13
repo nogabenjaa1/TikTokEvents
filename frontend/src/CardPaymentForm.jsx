@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
-import { loadMercadoPagoSdk } from './mercadopagoSdk';
+import { loadMercadoPagoSdk, loadMercadoPagoSecurityScript } from './mercadopagoSdk';
 
 const BRICK_CONTAINER_ID = 'card-payment-brick-container';
 
@@ -72,6 +72,10 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
     loadMercadoPagoSdk()
       .then(() => { if (!cancelled) setSdkState('ready'); })
       .catch(() => { if (!cancelled) setSdkState('error'); });
+    // Best-effort: si un bloqueador de anuncios/privacidad frena este
+    // script (le pasa a veces a la propia telemetria de MP, ver consola),
+    // el pago debe poder seguir igual, solo sin device id.
+    loadMercadoPagoSecurityScript().catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -120,6 +124,12 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
               payment_method_id: formData.payment_method_id,
               installments: formData.installments,
               issuer_id: formData.issuer_id,
+              // Pedido explicito de MercadoPago (checklist de calidad,
+              // "Identificador del dispositivo"): se lee recién aquí
+              // (no antes) para dar tiempo a que security.js ya haya
+              // corrido. undefined si el script no cargo (bloqueador, red
+              // lenta) -- el backend lo manda solo si vino.
+              deviceId: window.MP_DEVICE_SESSION_ID,
               identificationType: formData.payer?.identification?.type,
               identificationNumber: formData.payer?.identification?.number,
             }),

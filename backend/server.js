@@ -929,7 +929,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 // verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
+    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -1001,6 +1001,15 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${getMpAccessToken()}`,
                 'X-Idempotency-Key': crypto.randomUUID(),
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Identificador del dispositivo"): sin este header el
+                // motor antifraude tiene mucha menos señal y rechaza mucho
+                // mas seguido por "high_risk" (confirmado: TODOS los cobros
+                // reales hasta ahora venian sin esto y caian en high_risk).
+                // Puede faltar (bloqueador de anuncios, script que no
+                // cargo a tiempo) -- en ese caso simplemente no se manda,
+                // MP sigue evaluando con el resto de la señal disponible.
+                ...(deviceId ? { 'X-meli-session-id': String(deviceId) } : {}),
             },
             body: JSON.stringify({
                 type: 'online',

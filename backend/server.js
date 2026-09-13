@@ -1038,6 +1038,22 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 total_amount: amountStr,
                 external_reference: externalReference,
                 description: `TikTokEvents - ${titleParts.join(' + ')}`,
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Precio unitario del producto" / "Cantidad de productos" /
+                // "Nombre del producto" / "Categoría del producto"): un solo
+                // item que representa la compra completa (plan y/o addon
+                // juntos, si se compran a la vez) -- unit_price = el mismo
+                // monto que ya se cobra en total_amount/transactions, asi
+                // que la suma siempre cuadra sin tener que descomponer el
+                // precio de pricing.js en partes. "services" porque esto es
+                // una suscripcion digital, no un producto fisico.
+                items: [{
+                    title: titleParts.join(' + ') || 'TikTokEvents',
+                    description: `Suscripción TikTokEvents - ${titleParts.join(' + ')}`,
+                    category_id: 'services',
+                    quantity: 1,
+                    unit_price: amountStr,
+                }],
                 payer: {
                     email: cleanEmail,
                     first_name: firstName,
@@ -1046,6 +1062,20 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                     identification: (identificationType && identificationNumber)
                         ? { type: identificationType, number: identificationNumber }
                         : undefined,
+                },
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Fecha de registro del pagador"): la fecha en que se creo
+                // la licencia es lo mas parecido que tenemos a "cuando se
+                // registro en el sitio". OJO: a diferencia de la vieja
+                // Payments API (que anida esto en additional_info.payer.
+                // registration_date), la Orders API usa una clave PLANA con
+                // el punto literal adentro del nombre -- probado en vivo
+                // contra el sandbox: additional_info:{payer:{...}} lo
+                // rechaza con "additionalProperties 'payer' not allowed",
+                // additional_info:{"payer.registration_date":...} sí lo
+                // acepta.
+                additional_info: {
+                    'payer.registration_date': new Date(req.license.created_at).toISOString(),
                 },
                 transactions: {
                     payments: [{

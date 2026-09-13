@@ -14,6 +14,13 @@ const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000; // 3 días
 // reales de administración de la plataforma.
 const DICE_TIERS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'Admin' };
 
+// Precios editables (pedido explicito: "Modificacion manual de precios de
+// licencias desde el panel de administracion") -- a proposito SOLO los 3
+// planes de venta autoservicio (Mensual/Anual/Lifetime, ver backend/pricing.js
+// PLAN_PRICES_CENTS); los addons de Color Says quedan afuera del pedido.
+const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
+const MIN_PRICE_MXN = 1; // piso pedido explicitamente: 1 peso
+
 const STATUS_FILTERS = [
   { id: 'all',      label: 'Todas' },
   { id: 'active',   label: 'Activas' },
@@ -57,7 +64,27 @@ function ToastStack({ toasts }) {
 // Panel de administración de licencias — solo visible si la sesión actual
 // tiene isAdmin (hoy, la única es notbenjaa1). No confundir con
 // AdminPanel.jsx, que es el panel de juego de Rey del Trono.
-export default function LicenseManager() {
+//
+// Bug real corregido: el mensaje "Tu sesión ya no es válida" podía aparecer
+// acá mientras el resto del sitio (el socket, ya conectado y autenticado de
+// antes) seguía andando normal — no porque la sesión NO se hubiera
+// invalidado de verdad, sino porque cada acción de este panel es un fetch
+// HTTP nuevo que revalida el token contra la DB en cada llamada (ver
+// requireAuth en backend/auth.js), mientras que un socket YA conectado
+// nunca se re-valida a sí mismo entre eventos — así que un cambio de
+// session_id que ocurre DESPUÉS de conectar el socket (otro login con la
+// misma licencia, incluso en otra pestaña/dispositivo) recién se nota acá,
+// en el próximo fetch, no en el socket. Dos cambios:
+//  1. `onSessionInvalid` (ver App.jsx) engancha esto al MISMO flujo limpio
+//     de "te desconectaron" que ya usa el socket (`session_replaced`) —
+//     antes esto solo dejaba un cartel de error suelto en este panel, con
+//     el resto de la app fingiendo que todo seguía bien.
+//  2. La carga inicial reintenta UNA vez ante un 401 antes de asumir que la
+//     sesión de verdad se invalidó — cubre el caso de un cambio de
+//     session_id que todavía no terminó de propagarse (p. ej. justo después
+//     de loguearse desde otro lado) en vez de mostrar el cartel por un hipo
+//     de un instante.
+export default function LicenseManager({ onSessionInvalid }) {
   const [licenses, setLicenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -75,6 +102,16 @@ export default function LicenseManager() {
   const [extendType, setExtendType] = useState('week');
   const [extendDiceTier, setExtendDiceTier] = useState('regular');
 
+  // Precios de licencias -- separado del CRUD de licencias de arriba a
+  // proposito: son dos conceptos distintos (una licencia puntual vs. lo que
+  // cuesta cada plan para TODOS), aunque compartan el mismo panel de admin.
+  const [prices, setPrices] = useState(null); // { month, annual, lifetime } en centavos
+  const [priceInputs, setPriceInputs] = useState({});
+  const [savingPlan, setSavingPlan] = useState(null);
+  const [priceHistory, setPriceHistory] = useState(null); // null = nunca se pidio
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const pushToast = useCallback((message, type = 'success') => {
     const id = Date.now() + Math.random();
@@ -82,11 +119,30 @@ export default function LicenseManager() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
 
-  const fetchLicenses = useCallback(async () => {
+  // Único punto que decide qué hacer con un 401: reintentar (posible hipo
+  // transitorio) o reportar "sesión inválida de verdad" hacia arriba — lo
+  // usan tanto la carga inicial como cada acción de mutación de más abajo.
+  const handleUnauthorized = useCallback(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    onSessionInvalid?.(data.error || 'Tu sesión ya no es válida. Inicia sesión de nuevo.');
+  }, [onSessionInvalid]);
+
+  const fetchLicenses = useCallback(async (isRetry = false) => {
     setLoading(true);
     setError('');
     try {
       const res = await fetch(`${backendUrl()}/api/licenses`, { headers: authHeaders() });
+      if (res.status === 401) {
+        if (!isRetry) {
+          // Ver el comentario grande del componente: puede ser un cambio de
+          // session_id que todavía no terminó de propagarse — se reintenta
+          // una vez antes de asumir que de verdad hay que volver a loguearse.
+          await new Promise(r => setTimeout(r, 800));
+          return fetchLicenses(true);
+        }
+        await handleUnauthorized(res);
+        return;
+      }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudieron cargar las licencias');
       setLicenses(data.licenses);
@@ -95,9 +151,69 @@ export default function LicenseManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleUnauthorized]);
 
   useEffect(() => { fetchLicenses(); }, [fetchLicenses]);
+
+  // Publica a proposito (mismo endpoint que usa la vitrina de Membership.jsx)
+  // -- no hace falta authHeaders acá, pero no molesta tenerlos: si mas
+  // adelante este endpoint pidiera auth, seguiria andando sin tocar esto.
+  const fetchPrices = useCallback(async () => {
+    try {
+      const res = await fetch(`${backendUrl()}/api/pricing`);
+      const data = await res.json();
+      if (data.success) {
+        setPrices(data.prices);
+        setPriceInputs(Object.fromEntries(Object.entries(data.prices).map(([k, cents]) => [k, (cents / 100).toString()])));
+      }
+    } catch { /* el panel sigue funcionando sin precios cargados */ }
+  }, []);
+
+  useEffect(() => { fetchPrices(); }, [fetchPrices]);
+
+  const savePrice = async (planType) => {
+    const pesos = parseFloat(priceInputs[planType]);
+    if (!Number.isFinite(pesos) || pesos < MIN_PRICE_MXN) {
+      pushToast(`El precio mínimo es de ${MIN_PRICE_MXN.toFixed(2)} MXN`, 'error');
+      return;
+    }
+    const amountCents = Math.round(pesos * 100);
+    setSavingPlan(planType);
+    try {
+      const res = await fetch(`${backendUrl()}/api/admin/pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ planType, amountCents }),
+      });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo guardar el precio');
+      pushToast(`Precio de ${PRICING_PLAN_LABELS[planType]} actualizado`);
+      fetchPrices();
+      if (historyOpen) fetchHistory();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    } finally {
+      setSavingPlan(null);
+    }
+  };
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`${backendUrl()}/api/admin/pricing/history`, { headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (data.success) setPriceHistory(data.history);
+    } catch { /* el historial es informativo, no bloquea nada si falla */ }
+    finally { setHistoryLoading(false); }
+  }, [handleUnauthorized]);
+
+  const toggleHistory = () => {
+    const opening = !historyOpen;
+    setHistoryOpen(opening);
+    if (opening && priceHistory === null) fetchHistory();
+  };
 
   const createLicense = async (e) => {
     e.preventDefault();
@@ -110,6 +226,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ username: username.trim(), licenseType, diceTier }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo crear la licencia');
       setNewKey({ key: data.key, username: data.license.username });
@@ -126,6 +243,7 @@ export default function LicenseManager() {
     if (!window.confirm('¿Revocar esta licencia? El usuario perderá el acceso de inmediato.')) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${id}/revoke`, { method: 'POST', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo revocar');
       pushToast('Licencia revocada');
@@ -142,6 +260,7 @@ export default function LicenseManager() {
     if (!window.confirm(`¿Eliminar para siempre la licencia de @${lic.username}? Esto no se puede deshacer.`)) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo eliminar');
       pushToast('Licencia eliminada');
@@ -158,6 +277,7 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ licenseType: extendType, diceTier: extendDiceTier }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo extender');
       pushToast('Licencia actualizada');
@@ -179,9 +299,31 @@ export default function LicenseManager() {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ enabled: turningOn }),
       });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
       pushToast(turningOn ? 'Licencia convertida en multi-dispositivo' : 'Multi-dispositivo desactivado');
+      fetchLicenses();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
+  // Excepción manual al WIN BONUS de Color Says (dejó de venderse por
+  // dice_tier, ver Colorsays.jsx/db.js) — se prende/apaga por licencia
+  // puntual, independiente de qué dice_tier tenga.
+  const toggleWinBonus = async (lic) => {
+    const turningOn = !lic.diceWinBonusUnlocked;
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/win-bonus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ enabled: turningOn }),
+      });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
+      pushToast(turningOn ? 'Win Bonus activado para esta licencia' : 'Win Bonus desactivado para esta licencia');
       fetchLicenses();
     } catch (err) {
       pushToast(err.message, 'error');
@@ -265,6 +407,57 @@ export default function LicenseManager() {
         </button>
       </form>
 
+      {/* Precios de licencias -- pedido explicito: "Modificacion manual de
+          precios de licencias desde el panel de administracion". Mismo
+          patron visual que el formulario de "Crear licencia" de arriba. */}
+      <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
+        <p className="theme-label text-xs uppercase tracking-widest font-semibold">Precios de licencias</p>
+        {prices === null ? (
+          <p className="text-gray-600 text-sm italic">Cargando precios...</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {Object.keys(PRICING_PLAN_LABELS).map((planType) => (
+              <div key={planType} className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-300 w-16 shrink-0">{PRICING_PLAN_LABELS[planType]}</span>
+                <span className="text-[11px] text-gray-500 shrink-0">MX$</span>
+                <input
+                  type="number" min={MIN_PRICE_MXN} step="0.01"
+                  value={priceInputs[planType] ?? ''}
+                  onChange={e => setPriceInputs(p => ({ ...p, [planType]: e.target.value }))}
+                  className="theme-input flex-1 p-2 outline-none text-sm"
+                />
+                <button
+                  onClick={() => savePrice(planType)}
+                  disabled={savingPlan === planType || priceInputs[planType] === (prices[planType] / 100).toString()}
+                  className="theme-btn-primary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingPlan === planType ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            ))}
+            <p className="text-[9px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
+            <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start mt-1">
+              {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
+            </button>
+            {historyOpen && (
+              <div className="theme-input p-2 mt-1 flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {historyLoading ? (
+                  <p className="text-[10px] text-gray-500 italic">Cargando historial...</p>
+                ) : !priceHistory || priceHistory.length === 0 ? (
+                  <p className="text-[10px] text-gray-500 italic">Todavía no hay cambios registrados.</p>
+                ) : priceHistory.map(h => (
+                  <p key={h.id} className="text-[10px] text-gray-400">
+                    {fmtDate(h.changedAt)} · {PRICING_PLAN_LABELS[h.planType] || h.planType} · @{h.changedBy} ·{' '}
+                    {h.oldAmountCents != null && <>MX${(h.oldAmountCents / 100).toLocaleString('es-MX')} → </>}
+                    MX${(h.newAmountCents / 100).toLocaleString('es-MX')}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
 
       {/* Resumen + filtros */}
@@ -307,6 +500,7 @@ export default function LicenseManager() {
                 <span className="font-bold text-gray-100">
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
                   {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">🔓 MULTI-DISPOSITIVO</span>}
+                  {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">🎲 WIN BONUS</span>}
                 </span>
                 <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${status.className}`}>{status.label}</span>
               </div>
@@ -332,6 +526,11 @@ export default function LicenseManager() {
                 {!lic.revoked && (
                   <button onClick={() => toggleMultiDevice(lic)} className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 underline">
                     {lic.multiDevice ? 'Quitar multi-dispositivo' : 'Hacer multi-dispositivo'}
+                  </button>
+                )}
+                {!lic.revoked && (
+                  <button onClick={() => toggleWinBonus(lic)} className="text-[10px] font-bold text-pink-400 hover:text-pink-300 underline">
+                    {lic.diceWinBonusUnlocked ? 'Quitar Win Bonus' : 'Dar Win Bonus'}
                   </button>
                 )}
                 {!lic.isAdmin && (

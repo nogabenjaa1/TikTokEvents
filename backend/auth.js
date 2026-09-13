@@ -78,6 +78,20 @@ function verifySession(token) {
     return jwt.verify(token, JWT_SECRET); // lanza si es inválido/expiró
 }
 
+// El `state` del OAuth de Spotify (ver /api/spotify/connect y /callback en
+// server.js): viaja por una redirección de navegador de ida y vuelta por
+// afuera de nuestro dominio, así que no puede llevar la licencia en claro
+// (cualquiera podría armar un callback falso apuntando a otra licencia) —
+// va firmada y vence rápido (5 min alcanza de sobra para el ida-y-vuelta
+// real a accounts.spotify.com).
+function signSpotifyState(licenseId) {
+    return jwt.sign({ licenseId }, JWT_SECRET, { expiresIn: '5m' });
+}
+
+function verifySpotifyState(state) {
+    return jwt.verify(state, JWT_SECRET).licenseId; // lanza si es inválido/expiró
+}
+
 // Re-valida contra la DB (no solo la firma del JWT): cubre licencia
 // revocada/expirada Y sesión reemplazada por otro dispositivo. `reason`
 // permite distinguir "te desconectaron de otro lado" de "licencia inválida"
@@ -120,7 +134,7 @@ async function requireAuth(req, res, next) {
             // licencia se usó desde otro dispositivo — no sabemos cuál sin
             // guardar más historial, así que el mensaje queda neutral.
             const message = reason === 'session_replaced'
-                ? 'Tu sesión ya no es válida. Iniciá sesión de nuevo.'
+                ? 'Tu sesión ya no es válida. Inicia sesión de nuevo.'
                 : 'Licencia inválida, revocada o expirada';
             return res.status(401).json({ success: false, error: message });
         }
@@ -136,6 +150,7 @@ function requireAdmin(req, res, next) {
     if (!req.isAdmin) return res.status(403).json({ success: false, error: 'Requiere licencia de administrador' });
     next();
 }
+
 
 // ── Middleware Socket.io ───────────────────────────────────
 // Acepta DOS formas de autenticar en el handshake:
@@ -175,6 +190,6 @@ async function socketAuthMiddleware(socket, next) {
 
 module.exports = {
     generateLicenseKey, hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
-    generateSessionId, signSession, verifySession, checkTokenStatus, resolveFromToken, resolveFromRawKey,
+    generateSessionId, signSession, verifySession, signSpotifyState, verifySpotifyState, checkTokenStatus, resolveFromToken, resolveFromRawKey,
     requireAuth, requireAdmin, socketAuthMiddleware,
 };

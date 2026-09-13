@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -130,7 +132,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               {timerLabel}
             </p>
             <p className={`text-4xl font-black tabular-nums transition-colors ${timerColorClass}`}>
-              {state.timeLeft}<span className="text-lg text-gray-600">s</span>
+              {formatMMSS(state.timeLeft)}
             </p>
           </div>
         </div>
@@ -184,6 +186,9 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo cuenta si su valor en monedas alcanza a este (acumulando varios seguidos, máximo 10s entre uno y otro) — sin importar por cuánto se pase, siempre cuenta como una sola vez.
+              </p>
             </div>
 
             {/* Selector Insta-Win */}
@@ -226,28 +231,25 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
+              </p>
             </div>
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO BASE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
-                </label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{mainTime}s</span>
-              </div>
-              <input type="range" min="5" max="120" step="5" value={mainTime} onChange={e => setMainTime(Number(e.target.value))} />
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
+                TIEMPO BASE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
+              </label>
+              <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
             <div className="mb-6">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE SNIPE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
-                </label>
-                <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{snipeTime}s</span>
-              </div>
-              <input type="range" min="1" max="30" step="1" value={snipeTime} onChange={e => setSnipeTime(Number(e.target.value))} />
+              <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold block mb-1">
+                TIEMPO DE SNIPE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
+              </label>
+              <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
 
             {/* Botones */}
@@ -288,7 +290,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="king" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

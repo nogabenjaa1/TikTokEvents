@@ -1,6 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
-import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
+import { rollFair, rollWithPairBias } from './diceBias';
+import RewardedAdGate from './RewardedAdGate';
+import InterstitialAd from './InterstitialAd';
+import AdBanner from './AdBanner';
+import NativeAdBanner from './NativeAdBanner';
+import { getBankedRemainingMs, addBankedHour, formatBankedDuration } from './adBank';
+import { GUEST_BANK_CAP_MS, GUEST_INTERSTITIAL_INTERVAL_MS } from './adConfig';
 
 const MIN_DICE = 1;
 const MAX_DICE = 6;
@@ -91,8 +97,6 @@ function WinBonusToggle({ checked, onChange }) {
   );
 }
 
-// PRO paga por una ventaja fija y simple (PRO_WIN_BONUS, en ./diceBias);
-// VIP y Admin además pueden elegir la intensidad con el slider.
 const DEFAULT_WIN_BONUS_PCT = 50;
 
 // De acceso libre: funciona sin sesión ni conexión al backend, la lógica de
@@ -103,31 +107,32 @@ const DEFAULT_WIN_BONUS_PCT = 50;
 // overlay escuchando del otro lado.
 //
 // `tier` (regular/pro/vip/admin — ver dice_tier en la licencia, backend)
-// define la ventaja en el juego: Trial y Regular siempre tiran limpio
-// (rollFair, en igualdad de condiciones entre ellos); PRO puede activar un
-// WIN BONUS fijo y bajo; VIP tiene el mismo interruptor pero además elige
-// la intensidad (0-100%) con un slider; Admin tiene TODOS los beneficios —
-// el mismo WIN BONUS con slider que VIP (arranca activado al máximo, para
-// no cambiarle el comportamiento de siempre a quien ya lo tenía) MÁS el
-// panel de Modo Seguro (asegurar/bloquear un color puntual), exclusivo
-// suyo. Ojo, `tier === 'admin'` es un nivel de Color Says que se le puede
-// vender a cualquier licencia paga, NO es lo mismo que session.isAdmin
-// (que sigue siendo exclusivo del panel de administración de licencias).
-// El selector de cantidad de dados es una función disponible para todos.
-export default function ColorSays({ tier = 'regular', socket = null }) {
+// solo define el panel de Modo Seguro (exclusivo de Admin). El WIN BONUS
+// dejó de venderse/otorgarse automático por dice_tier (pedido explícito:
+// la dinámica debe ser transparente para streamers y espectadores) —
+// ahora es una excepción manual por licencia (`winBonusUnlocked`, ver
+// dice_win_bonus_unlocked en la licencia/backend), que un admin prende
+// desde el panel de Licencias para UN streamer puntual. Admin (dice_tier
+// 'admin') sigue teniendo el bonus SIEMPRE, sin depender de ese flag — es
+// quien "conserva todas las opciones". Ojo, `tier === 'admin'` es un nivel
+// de Color Says que se le puede vender a cualquier licencia paga, NO es lo
+// mismo que session.isAdmin (que sigue siendo exclusivo del panel de
+// administración de licencias). El selector de cantidad de dados es una
+// función disponible para todos.
+export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, socket = null, isGuest = false }) {
   const isAdmin = tier === 'admin';
-  const hasWinBonus = tier === 'pro' || tier === 'vip' || isAdmin;
-  const winBonusHasSlider = tier === 'vip' || isAdmin; // PRO: solo on/off, intensidad fija
+  const hasWinBonus = isAdmin || winBonusUnlocked;
   const [diceCount, setDiceCount]   = useState(DEFAULT_DICE);
   const [diceResult, setDiceResult] = useState(() => Array(DEFAULT_DICE).fill(null));
   const [rolling, setRolling]       = useState(false);
   const [history, setHistory]       = useState([]);
   const tickIntervalRef             = useRef(null);
 
-  // WIN BONUS: PRO solo lo prende/apaga (intensidad fija, ver
-  // PRO_WIN_BONUS); VIP y Admin además eligen el % con el slider. Admin
-  // arranca con el bonus activado al máximo (100%) para preservar el
-  // comportamiento de siempre; el resto arranca apagado.
+  // WIN BONUS: quien lo tiene (isAdmin, siempre; o winBonusUnlocked, la
+  // excepción manual de un admin para un streamer puntual) elige el % con
+  // el slider — ya no hay distinción PRO/VIP de intensidad fija, es todo o
+  // nada. Admin arranca con el bonus activado al máximo (100%) para
+  // preservar el comportamiento de siempre; una excepción manual arranca apagada.
   const [winBonusEnabled, setWinBonusEnabled] = useState(() => isAdmin);
   const [winBonusPct, setWinBonusPct]         = useState(() => isAdmin ? 100 : DEFAULT_WIN_BONUS_PCT);
   const [winBonusHidden, setWinBonusHidden]   = useState(false);
@@ -142,6 +147,45 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
   // a propósito (arranca visible siempre), así nunca queda "oculto sin
   // querer" en la próxima sesión sin que el dueño se dé cuenta.
   const [safeModeHidden, setSafeModeHidden] = useState(false);
+
+  // Invitado (sin sesión): banco de horas sin ads en localStorage (ver
+  // adBank.js). Mientras no haya banco activo, se interrumpe el juego cada
+  // GUEST_INTERSTITIAL_INTERVAL_MS con un anuncio; mirar el Smartlink de
+  // RewardedAdGate suma 1h al banco, hasta un tope de 48h acumuladas.
+  const [bankedRemainingMs, setBankedRemainingMs] = useState(() => (isGuest ? getBankedRemainingMs() : 0));
+  const [rewardGateOpen, setRewardGateOpen]       = useState(false);
+  const [guestAdOpen, setGuestAdOpen]             = useState(false);
+  const bankedActive = isGuest && bankedRemainingMs > 0;
+
+  useEffect(() => {
+    if (!isGuest) return;
+    const id = setInterval(() => setBankedRemainingMs(getBankedRemainingMs()), 1000);
+    return () => clearInterval(id);
+  }, [isGuest]);
+
+  // AdSense (Auto ads) se inserta donde Google decide en TODA la página, no
+  // solo acá dentro, y el script vive fijo en index.html (lo necesita el
+  // rastreador de AdSense para verificar el sitio, ver ese archivo) — por
+  // eso <body> arranca CON tkc-ads-suppressed puesto por defecto (oculto en
+  // cualquier otra pantalla) y esto solo lo saca mientras el invitado sea
+  // elegible, restaurando el default seguro al salir de Color Says.
+  useEffect(() => {
+    const eligible = isGuest && !bankedActive;
+    document.body.classList.toggle('tkc-ads-suppressed', !eligible);
+    return () => document.body.classList.add('tkc-ads-suppressed');
+  }, [isGuest, bankedActive]);
+
+  useEffect(() => {
+    if (!isGuest || bankedActive) return;
+    const id = setInterval(() => setGuestAdOpen(true), GUEST_INTERSTITIAL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isGuest, bankedActive]);
+
+  const claimBankedHour = () => {
+    const newBankedUntil = addBankedHour();
+    setBankedRemainingMs(Math.max(0, newBankedUntil - Date.now()));
+    setRewardGateOpen(false);
+  };
 
   const stopTicking = useCallback(() => {
     if (tickIntervalRef.current) { clearInterval(tickIntervalRef.current); tickIntervalRef.current = null; }
@@ -178,10 +222,9 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
     if (isAdmin && safeModeAction !== 'none' && safeModeColor !== null) {
       results = rollForSafeMode(diceCount, safeModeColor, safeModeAction);
     } else if (hasWinBonus && winBonusEnabled) {
-      const chance = winBonusHasSlider ? winBonusPct / 100 : PRO_WIN_BONUS;
-      results = rollWithPairBias(diceCount, chance);
+      results = rollWithPairBias(diceCount, winBonusPct / 100);
     } else {
-      results = rollFair(diceCount); // Trial/Regular, o PRO/VIP/Admin con el WIN BONUS apagado
+      results = rollFair(diceCount); // sin el bono (default) o con el bono apagado
     }
 
     const allSame = diceCount > 1 && results.every(r => r === results[0]);
@@ -197,7 +240,7 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
-  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusHasSlider, winBonusEnabled, winBonusPct]);
+  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
 
   const doRollInternal = useCallback(() => {
     setRolling(true);
@@ -277,6 +320,42 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
         )}
       </div>
 
+      {/* Banner fijo debajo del historial: ingreso pasivo constante para el
+          invitado sin banco activo, aparte del interstitial de cada 15 min
+          (ver useEffect de guestAdOpen más arriba). Zona propia (ver
+          AdBanner.jsx/AdIframeBanner.jsx), así que puede seguir mostrado
+          mientras el interstitial está abierto sin pisarse — solo se apaga
+          en cuanto hay banco activo. */}
+      {isGuest && (
+        <>
+          <AdBanner active={!bankedActive} />
+          <NativeAdBanner active={!bankedActive} />
+        </>
+      )}
+
+      {/* Invitado sin sesión: banco de horas sin ads. En desktop (md:) va en
+          el mismo lugar que el panel de WIN BONUS (top-48) — nunca se pisan
+          porque un invitado siempre tiene tier 'regular' (sin WIN BONUS ni
+          Modo Seguro). En mobile no hay espacio libre a la derecha para
+          flotar, así que queda en el flujo normal debajo del resto. */}
+      {isGuest && (
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-56 p-3">
+          <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1">Modo invitado</p>
+          <p className="text-[10px] text-gray-500 leading-snug mb-2">
+            {bankedActive
+              ? `Sin anuncios por ${formatBankedDuration(bankedRemainingMs)} más.`
+              : 'Vas a ver anuncios cada tanto mientras juegas.'}
+          </p>
+          <button
+            onClick={() => setRewardGateOpen(true)}
+            disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
+            className="theme-btn-secondary w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Ver anuncio: +1h sin anuncios
+          </button>
+        </div>
+      )}
+
       {/* Botones de pánico: líneas casi invisibles pegadas al borde derecho,
           una por panel — a propósito sin ícono, texto ni tooltip, nada que
           delate que ahí hay un control si alguien comparte pantalla
@@ -297,19 +376,17 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
         />
       )}
 
-      {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro —
-          va arriba de ese panel. PRO solo prende/apaga un sesgo fijo y
-          bajo; VIP y Admin además eligen la intensidad con el slider. */}
+      {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro — va
+          arriba de ese panel. Solo visible para Admin o para una excepción
+          manual habilitada por un admin (ver winBonusUnlocked). */}
       {hasWinBonus && !winBonusHidden && (
-        <div className="theme-surface fixed top-48 right-4 w-52 p-3">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-52 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
           </div>
-          <p className="text-[9px] text-gray-500 leading-snug">
-            {winBonusHasSlider ? 'Sesgo ajustable a favor de sacar pares.' : 'Sesgo leve a favor de sacar pares.'}
-          </p>
-          {winBonusHasSlider && winBonusEnabled && (
+          <p className="text-[9px] text-gray-500 leading-snug">Sesgo ajustable a favor de sacar pares.</p>
+          {winBonusEnabled && (
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
                 <label className="theme-label text-[9px] uppercase tracking-widest font-semibold">Intensidad</label>
@@ -324,7 +401,7 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
       {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
-        <div className="theme-surface fixed top-80 right-4 w-60 p-4">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-80 md:right-4 md:w-60 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
@@ -359,6 +436,23 @@ export default function ColorSays({ tier = 'regular', socket = null }) {
             {safeModeAction === 'block' && safeModeColor !== null && <>🔒 Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
           </p>
         </div>
+      )}
+
+      {isGuest && (
+        <>
+          <RewardedAdGate
+            open={rewardGateOpen}
+            onClaim={claimBankedHour}
+            onCancel={() => setRewardGateOpen(false)}
+            title="Suma 1 hora sin anuncios"
+            description="Mira un anuncio corto y juega 1 hora sin interrupciones. Se acumula hasta 48 horas."
+          />
+          <InterstitialAd
+            open={guestAdOpen}
+            onDone={() => setGuestAdOpen(false)}
+            title="Un mensaje de nuestros sponsors"
+          />
+        </>
       )}
     </div>
   );

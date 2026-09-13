@@ -31,9 +31,13 @@ export function getOverlayKeyFromUrl() {
 }
 
 // Qué pantalla mostrar dentro del overlay: 'games' (Rey del Trono/
-// Zubastinis/Eliminación, el overlay de siempre) o 'colors' (el overlay
-// horizontal de Color Says, ver DiceOverlay.jsx). Se agrega como
-// ?screen=colors a la URL normal de overlay, nunca reemplaza a `key`.
+// Zubastinis/Eliminación/Ruleta, el overlay de siempre), 'colors' (el
+// overlay horizontal de Color Says, ver DiceOverlay.jsx), 'taptap' (ranking
+// de likes), 'gifter' (ranking de regalos), 'musicqueue' (cola de canciones
+// pedidas con !play, ver SpotifyQueueOverlay) o 'extensible' (contador
+// horizontal que crece con follows/regalos, ver ExtensibleOverlay en
+// Overlay.jsx) — se agrega como ?screen=... a la URL normal de overlay,
+// nunca reemplaza a `key`.
 export function getOverlayScreen() {
   return new URLSearchParams(window.location.search).get('screen') || 'games';
 }
@@ -43,13 +47,13 @@ export function getOverlayScreen() {
 // mismo frontend, nunca del backend) + la license key cruda guardada en la
 // sesión al loguearse. Devuelve null si la sesión no la tiene guardada
 // (p. ej. quedó de un login anterior a que existiera este campo).
-// `screen`: 'games' (por defecto, Rey del Trono/Zubastinis/Eliminación) o
-// 'colors' (overlay horizontal de dados, ver DiceOverlay.jsx).
+// `screen`: 'games' (por defecto), 'colors', 'taptap' o 'gifter' — ver
+// getOverlayScreen más arriba.
 export function buildOverlayUrl(screen = 'games') {
   const session = loadSession();
   if (!session?.licenseKey) return null;
   const base = `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
-  return screen === 'colors' ? `${base}&screen=colors` : base;
+  return screen === 'games' ? base : `${base}&screen=${screen}`;
 }
 
 // Si el frontend y el backend viven en orígenes distintos (p. ej. frontend
@@ -97,11 +101,14 @@ export async function loginWithKey(key) {
 
 // Prueba gratis de 7 días: solo pide un alias (texto libre, no se valida
 // contra TikTok) y devuelve sesión ya lista, igual que loginWithKey.
-export async function requestFreeTrial(alias) {
+// `cardToken` es opcional — la vía alternativa a ver anuncios (ver
+// CardVerifyForm.jsx): el backend lo verifica contra MercadoPago sin
+// cobrar ni guardar nada, ver server.js.
+export async function requestFreeTrial(alias, cardToken) {
   const res = await fetch(`${backendUrl()}/api/free-trial`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias }),
+    body: JSON.stringify({ alias, cardToken }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'No se pudo crear la prueba gratis');

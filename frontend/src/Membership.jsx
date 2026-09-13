@@ -1,116 +1,134 @@
 import React, { useState, useEffect } from 'react';
-import { Die } from './colorsData';
-import { rollFair, rollWithPairBias, PRO_WIN_BONUS } from './diceBias';
-import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession } from './auth';
+import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import CardPaymentForm from './CardPaymentForm';
 
 const PLANS = [
-  { id: 'month', label: 'Mensual', usd: '6.99', mxn: 126, period: '/ mes' },
-  { id: 'annual', label: 'Anual', usd: '59.99', mxn: 1080, period: '/ año', savingsChip: 'AHORRAS MX$430' },
-  { id: 'lifetime', label: 'Lifetime', usd: '99.99', mxn: 1800, period: 'pago único' },
+  { id: 'month', label: 'Mensual', mxn: 126, period: '/ mes' },
+  { id: 'annual', label: 'Anual', mxn: 1080, period: '/ año', savingsChip: 'AHORRAS MX$430' },
+  { id: 'lifetime', label: 'Lifetime', mxn: 1800, period: 'pago único' },
 ];
 const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
-
-// rank: para nunca ofrecer un downgrade y para calcular qué addons mostrar
-// según lo que ya tiene la licencia (ver DICE_RANK más abajo).
-const ADDONS = [
-  {
-    id: 'pro', label: 'PRO', usd: '1', mxn: 18, rank: 1, demoBias: PRO_WIN_BONUS,
-    desc: 'Activa un sesgo fijo y discreto a favor de sacar pares. Tú prendes o apagas el interruptor cuando quieras — intensidad fija, no ajustable.',
-  },
-  {
-    id: 'vip', label: 'VIP', usd: '3', mxn: 54, rank: 2, demoBias: 0.7,
-    desc: 'El mismo interruptor que PRO, pero con un slider de intensidad de 0% a 100% — tú eliges qué tan marcado se nota el sesgo.',
-  },
-];
+// Referencia aproximada MXN por USD -- pedido explicito: que la
+// referencia en dolares que ve el streamer se recalcule sola en cuanto el
+// admin cambie el precio en MXN desde el panel, en vez de quedar como un
+// texto fijo desincronizado. Es solo informativa (MXN sigue siendo la
+// unica moneda que de verdad cobra MercadoPago, ver pricing.js) -- si el
+// tipo de cambio real se mueve mucho, alcanza con ajustar este numero.
+const MXN_PER_USD = 18;
 
 const PLAN_LABELS = { day: '1 día', week: '1 semana', month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', trial: 'Prueba (7 días)' };
+// El WIN BONUS de Color Says dejó de venderse como addon PRO/VIP (pedido
+// explícito: la dinámica debe ser transparente por default) — ahora es una
+// excepción manual que un admin prende por licencia puntual desde el panel
+// de Licencias, nunca algo que se compre acá. `DICE_TIER_LABELS` se
+// mantiene solo para mostrar el nivel actual en el resumen de abajo — el
+// nivel en sí ya no tiene una vitrina de compra.
 const DICE_TIER_LABELS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'Admin' };
-const DICE_RANK = { regular: 0, pro: 1, vip: 2, admin: 3 };
 
 const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizaciones estándar. Funciones o servicios con costos operativos especiales —como IA, voces premium, servidores o integraciones de pago— podrán ofrecerse por separado.';
 
-// Evidencia real, no una animación inventada: se simulan tiradas de verdad
-// con la misma función que usa el juego (rollFair/rollWithPairBias, ver
-// ./diceBias) y se cuenta cuántas salieron con algún par — así el % que se
-// muestra en la comparativa antes/después es el que realmente le tocaría al
-// streamer, no un número de marketing.
-function samplePairRate(rollFn, trials = 300) {
-  let pairs = 0;
-  for (let i = 0; i < trials; i++) {
-    const seen = new Set();
-    for (const v of rollFn()) {
-      if (seen.has(v)) { pairs++; break; }
-      seen.add(v);
-    }
-  }
-  return Math.round((pairs / trials) * 100);
-}
-
-function AddonPreview({ addon }) {
-  const [fairRoll, setFairRoll] = useState(() => rollFair(4));
-  const [biasRoll, setBiasRoll] = useState(() => rollWithPairBias(4, addon.demoBias));
-  const [stats] = useState(() => ({
-    fair: samplePairRate(() => rollFair(4)),
-    biased: samplePairRate(() => rollWithPairBias(4, addon.demoBias)),
-  }));
-
-  const reroll = () => {
-    setFairRoll(rollFair(4));
-    setBiasRoll(rollWithPairBias(4, addon.demoBias));
-  };
-
-  // Radio fijo y moderado a propósito, NO var(--surface-radius) — es una
-  // excepción pedida por el dueño del producto: esta caja compara dos
-  // grupos de 4 dados lado a lado y necesita leerse como panel de datos
-  // ordenado, no como una píldora (que en Kawaii/Cute aprieta el contenido
-  // hacia el centro y hace que los 8 dados se vean como un solo bloque).
-  // El fondo sigue el token del material (var(--surface-bg-alt)); solo la
-  // forma queda fija.
-  return (
-    <div className="w-full p-4" style={{ background: 'var(--surface-bg-alt)', borderRadius: '14px' }}>
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <div className="text-center">
-          <p className="theme-label text-[9px] mb-3">Sin sesgo</p>
-          <div className="flex justify-center gap-2 flex-wrap">
-            {fairRoll.map((c, i) => <Die key={i} colorIdx={c} rolling={false} size="w-9 h-9 text-lg" />)}
-          </div>
-        </div>
-        <div className="self-stretch w-px" style={{ background: 'var(--surface-border-color)' }} />
-        <div className="text-center">
-          <p className="theme-label text-[9px] mb-3 theme-accent-text">Con {addon.label}</p>
-          <div className="flex justify-center gap-2 flex-wrap">
-            {biasRoll.map((c, i) => <Die key={i} colorIdx={c} rolling={false} size="w-9 h-9 text-lg" />)}
-          </div>
-        </div>
-      </div>
-      <button type="button" onClick={reroll}
-        className="theme-btn-secondary w-full mt-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest">
-        Tirar de nuevo
-      </button>
-      <p className="text-[9px] text-gray-500 mt-3 leading-snug text-center">
-        En 300 tiradas simuladas de 4 dados: <span className="text-gray-400 font-bold">{stats.fair}%</span> salió con algún
-        par sin sesgo, vs. <span className="theme-accent-text font-bold">{stats.biased}%</span> con {addon.label}.
-      </p>
-    </div>
-  );
-}
-
-// Pantalla de autoservicio de pago (MercadoPago Checkout Pro). Funciona con
-// o sin sesión: sin sesión se ven los planes igual (precio público) pero
-// hace falta un alias antes de pagar — se usa para crear la cuenta en el
-// mismo paso (ver handleBuy), igual que la prueba gratis de Login.jsx.
+// Pantalla de autoservicio de pago (Checkout API + Card Payment Brick).
+// Funciona con o sin sesión: sin sesión se ven los planes igual (precio
+// público) pero hace falta un alias antes de pagar — se usa para crear la
+// cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
+// Login.jsx. El formato de correo lo valida el backend (ver
+// /api/payments/charge), no hace falta duplicar esa regex acá.
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
+
+// Recuerda correo/direccion de pago en este navegador (localStorage) para
+// que el streamer no los reescriba en cada compra -- son datos de
+// contacto/envio, no de la tarjeta, asi que no hay problema en guardarlos
+// tal cual del lado del cliente. Falla en silencio (modo privado, storage
+// bloqueado, etc.): en ese caso simplemente no se precarga nada.
+const BILLING_INFO_KEY = 'tte_billing_info';
+function loadBillingInfo() {
+  try {
+    const raw = localStorage.getItem(BILLING_INFO_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function saveBillingInfo(info) {
+  try {
+    localStorage.setItem(BILLING_INFO_KEY, JSON.stringify(info));
+  } catch {
+    // localStorage no disponible -- se sigue funcionando, solo no se recuerda
+  }
+}
+
 export default function Membership({ session, onSessionUpdate }) {
   const [alias, setAlias] = useState('');
-  const [selectedAddon, setSelectedAddon] = useState(null); // null | 'pro' | 'vip'
-  const [previewOpen, setPreviewOpen] = useState(null);
-  const [loadingTarget, setLoadingTarget] = useState(null); // null | 'addon' | planId
+  // Pedido explicito de MercadoPago (mitiga el rechazo "por motivos de
+  // seguridad" del motor antifraude): mandar SIEMPRE un email de pagador en
+  // la preferencia, aunque el streamer ya tenga sesion. Se precarga desde
+  // localStorage (ver loadBillingInfo) para no pedirlo de nuevo en cada
+  // compra en el mismo navegador.
+  const [email, setEmail] = useState(() => loadBillingInfo().email || '');
+  // Pedido explicito de MercadoPago (checklist de calidad de
+  // integracion, "Dirección del comprador"): opcional para el
+  // streamer -- solo se manda si completa las 3 partes juntas (ver
+  // CardPaymentForm.jsx). Ayuda a bajar rechazos del motor antifraude.
+  // Tambien se precarga desde localStorage, mismo criterio que el email.
+  const [zipCode, setZipCode] = useState(() => loadBillingInfo().zipCode || '');
+  const [streetName, setStreetName] = useState(() => loadBillingInfo().streetName || '');
+  const [streetNumber, setStreetNumber] = useState(() => loadBillingInfo().streetNumber || '');
+
+  useEffect(() => {
+    saveBillingInfo({ email, zipCode, streetName, streetNumber });
+  }, [email, zipCode, streetName, streetNumber]);
+  const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
+  // Plan que se esta pagando ahora mismo con el formulario embebido (Card
+  // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
+  // redirect a mercadopago.com.mx/checkout/ mientras esa pagina hosteada
+  // tenga el bug confirmado del challenge-orchestrator (ver el chat: el
+  // boton "Pagar" de MP nunca se habilita, reproducido en dos navegadores
+  // distintos). El comprador nunca sale de este sitio con este camino.
+  const [payingPlan, setPayingPlan] = useState(null);
   const [error, setError] = useState('');
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
+
+  // Precios vigentes desde el backend (pueden diferir de los defaults de
+  // PLANS de abajo si el admin los edito desde el panel de Licencias, ver
+  // GET /api/pricing) -- null mientras no llego la respuesta, ahi se usa el
+  // default como fallback para no dejar la vitrina en blanco un instante.
+  const [livePrices, setLivePrices] = useState(null);
+  useEffect(() => {
+    fetch(`${backendUrl()}/api/pricing`)
+      .then(res => res.json())
+      .then(data => { if (data.success) setLivePrices(data.prices); })
+      .catch(() => {}); // sin precios en vivo, se sigue viendo el default
+  }, []);
+
+  // Ingresar con una clave que ya tienes (admin, prueba gratis guardada de
+  // antes, etc.) sin tener que entrar a un panel de juego bloqueado primero
+  // — antes esta era la única forma de loguearse: el Login embebido que
+  // aparece dentro de Rey del Trono/Zubastinis/etc. cuando no hay sesión.
+  const [loginKey, setLoginKey] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const submitLogin = async (e) => {
+    e.preventDefault();
+    if (!loginKey.trim() || loginLoading) return;
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const trimmedKey = loginKey.trim();
+      const { token, license } = await loginWithKey(trimmedKey);
+      saveSession({ token, licenseKey: trimmedKey, ...license });
+      onSessionUpdate?.({ token, licenseKey: trimmedKey, ...license });
+      setLoginKey('');
+    } catch (err) {
+      setLoginError(err.message || 'Licencia inválida, revocada o expirada');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!banner) return;
@@ -125,9 +143,6 @@ export default function Membership({ session, onSessionUpdate }) {
   }, [banner, onSessionUpdate]);
 
   const currentPlanRank = PLAN_RANK[session?.licenseType] ?? -1;
-  const currentDiceRank = DICE_RANK[session?.diceTier] ?? 0;
-  const visibleAddons = ADDONS.filter(a => a.rank > currentDiceRank);
-  const previewAddon = ADDONS.find(a => a.id === previewOpen);
 
   const copyRevealedKey = () => {
     navigator.clipboard.writeText(revealedKey);
@@ -154,28 +169,31 @@ export default function Membership({ session, onSessionUpdate }) {
   };
 
   const handleBuy = async (planType) => {
-    if (loadingTarget) return;
-    if (!planType && !selectedAddon) return;
+    if (loadingTarget || !planType) return;
     setError('');
-    setLoadingTarget(planType || 'addon');
+    setLoadingTarget(planType);
     try {
       const ok = await ensureSession();
-      if (!ok) { setLoadingTarget(null); return; }
-      const res = await fetch(`${backendUrl()}/api/payments/create-preference`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ planType: planType || undefined, diceTier: selectedAddon || undefined }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo iniciar el pago');
-      window.location.href = data.checkoutUrl;
+      if (!ok) return;
+      setPayingPlan(planType);
     } catch (err) {
       setError(err.message);
+    } finally {
       setLoadingTarget(null);
     }
   };
 
-  const selectedAddonData = ADDONS.find(a => a.id === selectedAddon);
+  // Se llama cuando /api/payments/charge confirma un pago aprobado -- mismo
+  // flujo que ya usaba el banner de exito del redirect (refrescar la sesion
+  // y mostrar la clave rotada si el plan nuevo genero una).
+  const handlePaymentSuccess = async () => {
+    setPayingPlan(null);
+    setBanner('success');
+    const updated = await refreshSession();
+    if (!updated) return;
+    onSessionUpdate?.(updated);
+    if (updated.revealedKey) setRevealedKey(updated.revealedKey);
+  };
 
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
@@ -232,14 +250,67 @@ export default function Membership({ session, onSessionUpdate }) {
       )}
 
       {!session && (
+        <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="theme-label block text-[10px] mb-2">¿Ya tienes una clave? Ingrésala aquí</label>
+            <input value={loginKey} onChange={e => setLoginKey(e.target.value)} placeholder="Pega tu clave de licencia"
+              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          </div>
+          <button type="submit" disabled={loginLoading || !loginKey.trim()}
+            className="theme-btn-primary px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+            {loginLoading ? 'Verificando...' : 'Entrar'}
+          </button>
+          {loginError && <p className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
+        </form>
+      )}
+
+      {!session && (
         <div className="w-full max-w-2xl">
-          <label className="theme-label block text-[10px] mb-2">Alias para tu licencia (obligatorio)</label>
+          <label className="theme-label block text-[10px] mb-2">¿Nueva? Elige un alias para tu licencia (obligatorio para comprar o probar gratis)</label>
           <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Elige un alias"
             className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           <p className="text-[9px] text-gray-500 mt-1">Se usa para crear tu cuenta y va incluido en tu clave (alias-plan-hash).</p>
         </div>
       )}
 
+      {payingPlan && (
+        <>
+          {/* Pedido explicito: estos campos solo estorban para quien ya
+              tiene una licencia y solo entro a ver su plan (admin, key
+              paga, etc.) -- se piden apenas aca, una vez que ya eligio
+              un plan y esta por pagar. */}
+          <div className="w-full max-w-2xl">
+            <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, MercadoPago lo pide para procesarlo)</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
+              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          </div>
+
+          <div className="w-full max-w-2xl">
+            <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
+            <div className="flex gap-2">
+              <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
+                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
+                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
+                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            </div>
+          </div>
+
+          <CardPaymentForm
+            planType={payingPlan}
+            amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+            email={email.trim()}
+            zipCode={zipCode.trim()}
+            streetName={streetName.trim()}
+            streetNumber={streetNumber.trim()}
+            onSuccess={handlePaymentSuccess}
+            onCancel={() => setPayingPlan(null)}
+          />
+        </>
+      )}
+
+      {!payingPlan && (
       <div className="w-full max-w-2xl">
         <p className="theme-label text-[10px] mb-3">Elige tu plan</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -253,8 +324,15 @@ export default function Membership({ session, onSessionUpdate }) {
                   <p className="text-xs font-black uppercase tracking-widest">{plan.label}</p>
                   {plan.savingsChip && <span className="theme-chip text-[9px] font-black whitespace-nowrap">{plan.savingsChip}</span>}
                 </div>
-                <p className="text-2xl font-black">MX${plan.mxn.toLocaleString('es-MX')}</p>
-                <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${plan.usd}</p>
+                {(() => {
+                  const mxnPrice = livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn;
+                  return (
+                    <>
+                      <p className="text-2xl font-black">MX${mxnPrice.toLocaleString('es-MX')}</p>
+                      <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${(mxnPrice / MXN_PER_USD).toFixed(2)}</p>
+                    </>
+                  );
+                })()}
                 {plan.id === 'lifetime' && (
                   <p className="text-[9px] text-gray-500 leading-snug mt-2">{LIFETIME_LEGEND}</p>
                 )}
@@ -264,7 +342,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 ) : rank > currentPlanRank ? (
                   <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
                     className="theme-btn-primary w-full mt-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                    {loadingTarget === plan.id ? 'Redirigiendo...' : buttonLabel}
+                    {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
                   </button>
                 ) : null}
               </div>
@@ -272,48 +350,6 @@ export default function Membership({ session, onSessionUpdate }) {
           })}
         </div>
       </div>
-
-      {visibleAddons.length > 0 && (
-        <div className="w-full max-w-2xl">
-          <p className="theme-label text-[10px] mb-3">Addons opcionales — Color Says</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {visibleAddons.map(addon => (
-              <div key={addon.id} className={['theme-surface p-4', selectedAddon === addon.id ? 'theme-surface-featured' : ''].join(' ')}>
-                <div className="flex items-center justify-between mb-2 gap-2">
-                  <p className="text-xs font-black uppercase tracking-widest">{addon.label}</p>
-                  <p className="text-sm font-black whitespace-nowrap">+MX${addon.mxn} <span className="text-[9px] text-gray-500 font-normal">(US${addon.usd})</span></p>
-                </div>
-                <p className="text-[10px] text-gray-500 leading-snug mb-3">{addon.desc}</p>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setSelectedAddon(id => id === addon.id ? null : addon.id)}
-                    className={[selectedAddon === addon.id ? 'theme-btn-primary' : 'theme-btn-secondary', 'flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest'].join(' ')}>
-                    {selectedAddon === addon.id ? 'Seleccionado ✓' : 'Quiero este'}
-                  </button>
-                  <button type="button" onClick={() => setPreviewOpen(id => id === addon.id ? null : addon.id)}
-                    className="theme-btn-secondary flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest">
-                    {previewOpen === addon.id ? 'Ocultar preview' : 'Ver preview'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          {/* Fuera de la grilla de 2 columnas a propósito: adentro de una
-              tarjeta angosta, 8 dados (4 sin sesgo + 4 con addon) uno al
-              lado del otro se veían amontonados. Acá abajo tiene todo el
-              ancho de la pantalla para respirar. */}
-          {previewAddon && (
-            <div className="mt-3">
-              <p className="theme-label text-[9px] mb-2">Preview — {previewAddon.label}</p>
-              <AddonPreview addon={previewAddon} />
-            </div>
-          )}
-          {selectedAddonData && (
-            <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(undefined)}
-              className="theme-btn-primary w-full mt-3 px-12 py-4 rounded-xl font-black tracking-widest uppercase text-sm transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
-              {loadingTarget === 'addon' ? 'REDIRIGIENDO A MERCADOPAGO...' : `PAGAR MX$${selectedAddonData.mxn} — SOLO ${selectedAddonData.label}`}
-            </button>
-          )}
-        </div>
       )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}

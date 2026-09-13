@@ -1,21 +1,83 @@
 require('dotenv').config({ quiet: true });
 
+// Bug conocido de tiktok-live-connector (legacy.js, getTopViewerAttributes):
+// al normalizar CUALQUIER WebcastRoomUserSeqMessage (estadísticas de
+// viewers, las manda TikTok solo cada tanto mientras alguien está en vivo)
+// hace `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
+// chicas/nuevas llega undefined y explota. Pasa DENTRO de un emit síncrono
+// disparado por el propio WebSocket interno de la librería, así que no hay
+// forma de envolverlo en un try/catch desde nuestro código (no es un
+// listener nuestro el que revienta). Sin este handler, esa excepción no
+// atrapada tira abajo TODO el proceso — afecta a todas las licencias
+// conectadas en ese momento, no solo a la que recibió el mensaje. Nunca
+// escuchamos el evento 'roomUser' ni usamos esos datos, así que perder ese
+// mensaje puntual no afecta ningún juego — es estrictamente mejor que un
+// reinicio completo del backend.
+process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT EXCEPTION] El proceso siguió vivo — no se reinició. Detalle:', err);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED REJECTION]', reason);
+});
+
+// Redundante a propósito con el `postinstall` de package.json: en al menos
+// un deploy de Render el parche de npm install no llegó a tomar efecto
+// (se seguía viendo el crash de getTopViewerAttributes con el server ya
+// arriba, señal de que node_modules venía de una caché de Render restaurada
+// sin volver a correr el postinstall) — así que también se aplica acá,
+// síncrono, ANTES de requerir tiktok-live-connector por primera vez. Es
+// idempotente y no fatal (ver el script), así que correrlo dos veces por
+// deploy no tiene costo real.
+try {
+    require('./scripts/patch-tiktok-live-connector.js');
+} catch (err) {
+    console.error('[patch-tiktok-live-connector] Falló al aplicar el parche en el arranque:', err.message);
+}
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
-const { WebcastPushConnection } = require('tiktok-live-connector');
+// Ver comentario equivalente en tenant.js: WebcastPushConnection vive en el
+// subpath '/legacy' en esta versión de la librería, no en el paquete raíz.
+const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
+// El catálogo de regalos (para el selector del panel) usa a propósito la
+// versión 1.2.3 vieja de la librería, instalada aparte con un alias en
+// package.json (tiktok-live-connector-v1) — su getAvailableGifts() pega un
+// endpoint público de TikTok que NO necesita firma de Euler Stream, a
+// diferencia de fetchAvailableGifts() en la v2, que sí y quedó bloqueada
+// detrás de un plan pago (ver /api/setup/:username más abajo). La conexión
+// LIVE de verdad sigue siendo la v2 de arriba, sin tocar.
+const { WebcastPushConnection: WebcastPushConnectionV1 } = require('tiktok-live-connector-v1');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
+const { MercadoPagoConfig, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+
+const multer = require('multer');
 
 const db = require('./db');
 const auth = require('./auth');
 const pricing = require('./pricing');
+const spotify = require('./spotify');
+const storage = require('./storage');
 const Tenant = require('./tenant');
+const downloader = require('./downloader');
+
+// Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
+// nunca tocan disco: van directo de la request a Supabase Storage (ver
+// storage.js). 15MB alcanza de sobra para un clip corto de alerta; frenar
+// acá evita cargar archivos gigantes enteros en RAM antes de subirlos.
+const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const ALERT_MEDIA_TYPES = {
+    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
+    'image/gif': 'gif',
+    'video/mp4': 'video', 'video/webm': 'video',
+    'audio/mpeg': 'audio', 'audio/wav': 'audio', 'audio/mp3': 'audio', 'audio/ogg': 'audio',
+};
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
 // un dominio propio). Con un solo valor, cors/socket.io lo tratan igual
@@ -26,19 +88,33 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .filter(Boolean);
 const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
-// URLs propias (no las de MercadoPago) para armar la preferencia de pago:
-// a dónde manda la notificación (BACKEND_URL) y a dónde vuelve el streamer
-// después de pagar (FRONTEND_URL, el dominio de Vercel en producción).
-const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+// URL propia (no las de MercadoPago) -- la usan los redirects de Spotify
+// para volver al dominio correcto (Vercel en producción) despues de
+// conectar/desconectar una cuenta.
 const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://localhost:5173').replace(/\/$/, '');
 
 // Se crea perezosamente (no al levantar el server) para que el resto de la
 // app siga funcionando aunque todavía no se haya cargado MP_ACCESS_TOKEN —
 // solo las rutas de pago fallan hasta que se configure.
+// Interruptor MP_TEST_MODE (pedido explícito, para probar compras con
+// las tarjetas de prueba de MP sin arriesgar el Access Token real): en vez
+// de pisar MP_ACCESS_TOKEN con el de prueba en Render (fácil de olvidar
+// devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
+// dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
+// producción queda intacto todo el tiempo, listo para volver apagando el
+// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial) y
+// Payment.get() del webhook: ambos pasan por este mismo getMpClient(), así
+// que activar el flag los pone en modo prueba a los tres a la vez.
+function getMpAccessToken() {
+    const testMode = process.env.MP_TEST_MODE === 'true';
+    const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
+    const accessToken = process.env[envVar];
+    if (!accessToken) throw new Error(`Falta ${envVar} en las variables de entorno`);
+    return accessToken;
+}
+
 function getMpClient() {
-    const accessToken = process.env.MP_ACCESS_TOKEN;
-    if (!accessToken) throw new Error('Falta MP_ACCESS_TOKEN en las variables de entorno');
-    return new MercadoPagoConfig({ accessToken });
+    return new MercadoPagoConfig({ accessToken: getMpAccessToken() });
 }
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
@@ -51,8 +127,81 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // Etiqueta que va en el medio de la key legible (alias-etiqueta-hash, ver
 // auth.generateLabeledKey) cuando se compra ese plan.
 const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
+// Formato de email valido para el cobro directo (charge).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// El Card Payment Brick a veces devuelve un payment_method_id mas
+// especifico que la marca generica (ej. "debmaster" para debito
+// Mastercard de ciertos bancos/fintechs como Nubank) aunque el logo
+// mostrado sea el generico -- bug real encontrado en produccion: la
+// Orders API (a diferencia de la vieja Payments API) solo acepta
+// amex/master/visa en payment_method.id, y rechaza cualquier otra cosa
+// con "value must be one of amex, master, visa". Se normaliza por
+// substring en vez de una lista fija de valores conocidos, para cubrir
+// variantes que no hemos visto todavia sin tener que ir agregandolas a
+// mano cada vez que aparece una nueva.
+// Separa un nombre completo en first_name/last_name -- pedido explicito
+// de MercadoPago (checklist de calidad de integracion, "Apellido del
+// comprador"): mandar payer.last_name reduce rechazos del motor
+// antifraude. Si solo viene una palabra, se usa igual como apellido (un
+// last_name vacio es peor que uno repetido: preferimos mandar 'Juan'/
+// 'Juan' antes que 'Juan'/'' cuando el comprador puso un solo nombre).
+function splitFullName(fullName) {
+    const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return { firstName: undefined, lastName: undefined };
+    const parts = clean.split(' ');
+    const firstName = parts[0];
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+    return { firstName, lastName };
+}
+// Bug de seguridad real encontrado y corregido: los logs de
+// /api/payments/charge (tanto el de exito como el de error) mandaban el
+// JSON crudo de la respuesta de MercadoPago tal cual a Render, que
+// incluye transactions.payments[].payment_method.token -- el token de
+// tarjeta tokenizado (de un solo uso, pero igual un dato sensible que no
+// deberia quedar en texto plano en logs). Se redacta antes de loguear.
+function redactOrderTokens(orderResult) {
+    try {
+        const clone = JSON.parse(JSON.stringify(orderResult));
+        clone?.transactions?.payments?.forEach((p) => {
+            if (p?.payment_method?.token) p.payment_method.token = '[REDACTADO]';
+        });
+        return clone;
+    } catch {
+        return orderResult;
+    }
+}
+function normalizeCardBrand(paymentMethodId) {
+    const raw = String(paymentMethodId || '').toLowerCase();
+    if (raw.includes('amex')) return 'amex';
+    if (raw.includes('master')) return 'master';
+    if (raw.includes('visa')) return 'visa';
+    return paymentMethodId;
+}
+
+// No bloqueante a propósito (igual que MP_ACCESS_TOKEN): si todavía no se
+// configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
+// plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
+storage.ensureBucket().catch((err) => console.error('[Storage] No se pudo verificar el bucket de alertas al arrancar:', err.message));
 
 const app = express();
+// Render (y cualquier host detrás de un proxy/balanceador) manda el IP real
+// del cliente en X-Forwarded-For — sin esto, express-rate-limit no confía
+// en ese header y tira ERR_ERL_UNEXPECTED_X_FORWARDED_FOR en cada request
+// a una ruta con rate limit (login, free-trial, admin, pagos, etc.).
+app.set('trust proxy', 1);
+// Cabeceras de seguridad estandar (X-Frame-Options, X-Content-Type-
+// Options, Strict-Transport-Security, Referrer-Policy, quita X-Powered-
+// By, etc.) -- pedido explicito de una revision de seguridad del sitio.
+// A proposito SIN Content-Security-Policy ni Cross-Origin-Embedder-
+// Policy: el sitio carga Google AdSense, Adsterra y el SDK de
+// MercadoPago (que a su vez carga reCAPTCHA) desde muchisimos dominios
+// de terceros -- una CSP mal armada podria romper en silencio los
+// anuncios (ingresos) o el cobro con tarjeta (lo mas critico del sitio,
+// recien estabilizado) sin que se note hasta que alguien reporte el
+// problema. Si se quiere una CSP real, hay que armarla con tiempo y
+// probar cada integracion de terceros a mano, no activarla a ciegas.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json());
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -90,6 +239,13 @@ const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHe
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
 const webhookLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+// Downloader: /info y /start son acciones puntuales (parecido a
+// paymentLimiter) -- pesadas para el server (yt-dlp + ffmpeg), asi que
+// mas estrictas. /status en cambio se poll-ea cada ~1s DESDE EL MISMO
+// job mientras dura una descarga (puede tardar minutos) -- necesita un
+// limite mucho mas generoso o un solo job largo lo agotaria solo.
+const downloaderActionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+const downloaderStatusLimiter = rateLimit({ windowMs: 60 * 1000, max: 240, standardHeaders: true, legacyHeaders: false });
 
 // Un solo dispositivo activo por licencia: al loguearse, se desconectan de
 // inmediato los sockets del PANEL DE CONTROL (auth vía JWT) que hubiera
@@ -137,6 +293,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
     });
 });
@@ -151,13 +308,35 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 // tener que copiar/pegar la key generada.
 // ==========================================
 app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
-    const { alias } = req.body || {};
+    const { alias, cardToken } = req.body || {};
     if (!alias || typeof alias !== 'string' || !alias.trim()) {
         return res.status(400).json({ success: false, error: 'Falta un alias' });
     }
     const cleanAlias = alias.trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
     if (!cleanAlias) {
         return res.status(400).json({ success: false, error: 'Alias inválido — usa letras, números, "_" o "-"' });
+    }
+
+    // Vía alternativa al anuncio: en vez de mirar un video, verificar una
+    // tarjeta real. A propósito NO se guarda ni se cobra nada — el único
+    // objetivo es subir el costo de fabricar pruebas gratis en cadena con
+    // datos inventados. El token es de un solo uso y ya viene de
+    // MercadoPago (tokenizado en el navegador vía Secure Fields, ver
+    // CardVerifyForm.jsx); acá solo se le pregunta a MercadoPago si ese
+    // token es real y pasa el chequeo de Luhn antes de dejarlo pasar.
+    if (cardToken !== undefined) {
+        if (typeof cardToken !== 'string' || !cardToken.trim()) {
+            return res.status(400).json({ success: false, error: 'Token de tarjeta inválido' });
+        }
+        try {
+            const tokenInfo = await new CardToken(getMpClient()).get({ id: cardToken.trim() });
+            if (!tokenInfo.luhn_validation || tokenInfo.status !== 'active') {
+                return res.status(400).json({ success: false, error: 'La tarjeta no pasó la validación. Verifica los datos e intenta de nuevo.' });
+            }
+        } catch (err) {
+            console.error('[MP] Error verificando card token para prueba gratis:', err.message);
+            return res.status(400).json({ success: false, error: 'No se pudo verificar la tarjeta. Intenta de nuevo.' });
+        }
     }
 
     const key = `${cleanAlias.toLowerCase()}-FREE7DAY-${crypto.randomBytes(9).toString('base64url')}`;
@@ -186,6 +365,7 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
             isAdmin: false,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
     });
 });
@@ -215,6 +395,7 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) =
             isAdmin: !!row.is_admin,
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
+            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         },
         newKey: row.pending_key_reveal || undefined,
     });
@@ -240,11 +421,13 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asyn
         kingStarts: row.king_starts,
         zubStarts: row.zub_starts,
         elimStarts: row.elim_starts,
+        rouletteStarts: row.roulette_starts,
         lastActiveAt: row.last_active_at,
         multiDevice: !!row.multi_device,
         trialAlias: row.trial_alias,
         trialConnectedUsername: row.trial_connected_username,
         diceTier: row.dice_tier,
+        diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
     }));
     res.json({ success: true, licenses });
 });
@@ -304,6 +487,19 @@ app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, 
     res.json({ success: true });
 });
 
+// Excepción manual al WIN BONUS de Color Says (pedido explícito: dejó de
+// venderse/otorgarse automático por dice_tier — por default TODA licencia
+// paga tira limpio, sin importar el nivel que compró). Un admin la prende
+// acá para UNA licencia puntual; dice_tier='admin' sigue teniendo el bonus
+// siempre, sin depender de este flag (ver Colorsays.jsx).
+app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const { enabled } = req.body || {};
+    await db.setWinBonusUnlocked(row.id, !!enabled);
+    res.json({ success: true });
+});
+
 // Cambia el tipo/duración de una licencia existente (ej. convertir una
 // prueba gratis en una licencia paga sin generar una key nueva). Reusa
 // auth.computeExpiresAt igual que la creación, calculando desde ahora.
@@ -337,63 +533,229 @@ app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimite
 });
 
 // ==========================================
-// PAGOS: MercadoPago Checkout Pro — autoservicio total. El monto SIEMPRE se
-// calcula acá desde pricing.js a partir de planType/diceTier; nunca se
-// confía en un precio que mande el cliente.
+// PRECIOS DE LICENCIAS (pedido explicito: "Modificacion manual de precios de
+// licencias desde el panel de administracion") -- solo admin puede editar
+// (auth.requireAdmin), el precio vigente se sirve por separado en
+// GET /api/pricing (publico, ver la seccion de PAGOS mas abajo) para que la
+// vitrina de compra y este panel lean siempre el mismo numero.
 // ==========================================
-
-// Crea la preferencia de pago para la licencia del usuario logueado. Body:
-// { planType?: 'month'|'annual'|'lifetime', diceTier?: 'pro'|'vip' } — al
-// menos uno de los dos (compra de "solo addon" sin renovar el plan, o
-// renovación de plan sin tocar el addon, son ambas válidas).
-app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier } = req.body || {};
-    if (planType !== undefined && !pricing.isValidPlan(planType)) {
+app.post('/api/admin/pricing', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const { planType, amountCents } = req.body || {};
+    if (!pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
-    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
-        return res.status(400).json({ success: false, error: 'Addon inválido' });
+    if (!Number.isInteger(amountCents) || amountCents < pricing.MIN_PLAN_PRICE_CENTS) {
+        return res.status(400).json({ success: false, error: `El precio mínimo es de ${(pricing.MIN_PLAN_PRICE_CENTS / 100).toFixed(2)} MXN` });
     }
-    if (!planType && !diceTier) {
-        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    try {
+        const { oldAmountCents } = await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
+        res.json({ success: true, planType, oldAmountCents, newAmountCents: amountCents });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
     }
+});
 
-    const amountCents = pricing.computeAmountCents({ planType, diceTier });
-    // external_reference es lo único en lo que el webhook confía para saber
-    // qué licencia tocar y qué se compró — viene de req.license.id (la
-    // licencia del token, no de nada que mande el body), así un cliente no
-    // puede pedir una preferencia para la licencia de otro.
-    const externalReference = `${req.license.id}:${planType || '-'}:${diceTier || '-'}`;
-    const titleParts = [];
-    if (planType) titleParts.push({ month: 'Plan Mensual', annual: 'Plan Anual', lifetime: 'Plan Lifetime' }[planType]);
-    if (diceTier) titleParts.push(`Color Says ${diceTier.toUpperCase()}`);
+app.get('/api/admin/pricing/history', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const rows = await db.getPricingHistory();
+    res.json({
+        success: true,
+        history: rows.map(r => ({
+            id: r.id,
+            planType: r.plan_type,
+            oldAmountCents: r.old_amount_cents,
+            newAmountCents: r.new_amount_cents,
+            changedBy: r.changed_by,
+            changedAt: r.changed_at,
+        })),
+    });
+});
+
+// ==========================================
+// SPOTIFY: cada licencia conecta SU PROPIA cuenta por OAuth (Authorization
+// Code Flow) para que !play en el chat le agregue canciones a SU cola —
+// ver spotify.js para las restricciones reales (Premium + dispositivo
+// activo) y tenant.js (processPlayCommand/requestSpotifySong) para el
+// comando en sí.
+// ==========================================
+
+// Devuelve la URL de Spotify a la que el panel redirige (window.location.href
+// del lado del cliente) — el `state` lleva la licencia firmada porque el
+// callback de más abajo no tiene el header Authorization disponible (es
+// Spotify quien redirige al navegador, no un fetch nuestro).
+app.get('/api/spotify/connect', auth.requireAuth, generalLimiter, (req, res) => {
+    try {
+        const state = auth.signSpotifyState(req.license.id);
+        res.json({ success: true, authUrl: spotify.getAuthUrl(state) });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Spotify redirige ACÁ (no al frontend) después de que el streamer autoriza
+// o rechaza — de un solo uso, sin sesión propia: todo lo que necesitamos
+// (a qué licencia pertenece) viene firmado en `state`.
+app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
+    const { code, state, error } = req.query;
+    if (error || !code || !state) {
+        return res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+    let licenseId;
+    try {
+        licenseId = auth.verifySpotifyState(state);
+    } catch {
+        return res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+    try {
+        const tokens = await spotify.exchangeCodeForTokens(code);
+        const me = await spotify.getMe(tokens.access_token);
+        await db.upsertSpotifyAccount(licenseId, {
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            expiresAt: Date.now() + tokens.expires_in * 1000,
+            spotifyUserId: me.id,
+            displayName: me.display_name || me.id,
+        });
+        res.redirect(`${FRONTEND_URL}/?spotify=connected`);
+    } catch (err) {
+        console.error('[Spotify] Error en el callback de OAuth:', err.message);
+        res.redirect(`${FRONTEND_URL}/?spotify=error`);
+    }
+});
+
+app.get('/api/spotify/status', auth.requireAuth, generalLimiter, async (req, res) => {
+    const account = await db.getSpotifyAccount(req.license.id);
+    res.json({ success: true, connected: !!account, displayName: account?.display_name || null });
+});
+
+app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req, res) => {
+    await db.deleteSpotifyAccount(req.license.id);
+    res.json({ success: true });
+});
+
+// ==========================================
+// ALERTAS: qué recurso (imagen/gif/video/audio) se reproduce en el
+// overlay al llegar un disparador puntual -- un regalo especifico,
+// seguimiento, o sticker personalizado del club de fans (los dos
+// ultimos son pedido explicito: "aplica lo de los seguimientos
+// tambien para las alertas normales") -- ver tenant.js
+// (processAlertTrigger) para el disparo en vivo y storage.js para dónde
+// vive el archivo. Un audio SIN imagen/video (media_type='audio') es lo
+// que arma una alerta puramente sonora -- no hace falta un sistema
+// aparte, ya lo soporta este mismo mecanismo (ver AlertVisual en
+// Overlay.jsx).
+// ==========================================
+// Disparadores que no son un regalo puntual -- gift_name guarda esta
+// misma clave fija para esos casos (ver el comentario de la tabla en
+// db.js). 'gift' usa el nombre real del regalo elegido en el panel.
+const NON_GIFT_TRIGGER_TYPES = ['follow', 'sticker'];
+const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
+// Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
+// AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
+// de golpe"; 'bounce' es exclusivo de entrada (no tiene mucho sentido
+// como salida, ver Overlay.jsx).
+const ENTRANCE_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom', 'bounce'];
+const EXIT_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom'];
+
+function serializeAlert(row) {
+    return {
+        id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
+        mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+        entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
+        triggerType: row.trigger_type || 'gift',
+    };
+}
+
+app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
+    const alerts = await db.listAlertConfigs(req.license.id);
+    res.json({ success: true, alerts: alerts.map(serializeAlert) });
+});
+
+// multipart/form-data: `media` es el archivo, `giftName`/`durationMs`/
+// `position`/`entranceAnim`/`exitAnim` van como campos de texto normales
+// del mismo form.
+app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.single('media'), async (req, res) => {
+    const { giftName, durationMs, position, entranceAnim, exitAnim } = req.body || {};
+    const triggerType = VALID_TRIGGER_TYPES.includes(req.body?.triggerType) ? req.body.triggerType : 'gift';
+    // Para 'gift' la clave es el nombre real elegido en el panel; los demas
+    // disparadores usan su propio nombre fijo como clave (nunca chocan con
+    // un regalo real de TikTok, que jamas se llamaria literal "follow").
+    let triggerKey;
+    if (triggerType === 'gift') {
+        if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
+            return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
+        }
+        triggerKey = giftName.trim();
+    } else {
+        triggerKey = triggerType;
+    }
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Falta el archivo de la alerta' });
+    }
+    const mediaType = ALERT_MEDIA_TYPES[req.file.mimetype];
+    if (!mediaType) {
+        return res.status(400).json({ success: false, error: `Formato no soportado: ${req.file.mimetype}` });
+    }
+    const finalPosition = ['center', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'center';
+    const finalDuration = Math.max(1000, Math.min(15000, Number(durationMs) || 5000));
+    const finalEntranceAnim = ENTRANCE_ANIMS.includes(entranceAnim) ? entranceAnim : 'fade';
+    const finalExitAnim = EXIT_ANIMS.includes(exitAnim) ? exitAnim : 'fade';
 
     try {
-        const preference = new Preference(getMpClient());
-        const result = await preference.create({
-            body: {
-                items: [{
-                    id: externalReference,
-                    title: `TikTok Concurso — ${titleParts.join(' + ')}`,
-                    quantity: 1,
-                    currency_id: 'MXN',
-                    unit_price: amountCents / 100,
-                }],
-                external_reference: externalReference,
-                back_urls: {
-                    success: `${FRONTEND_URL}/?payment=success`,
-                    pending: `${FRONTEND_URL}/?payment=pending`,
-                    failure: `${FRONTEND_URL}/?payment=failure`,
-                },
-                auto_return: 'approved',
-                notification_url: `${BACKEND_URL}/api/payments/webhook`,
-            },
+        // Si ya había una alerta para este disparador, borra su archivo viejo
+        // del storage antes de subir el nuevo — sin esto quedarían archivos
+        // huérfanos en el bucket cada vez que el streamer cambia una alerta.
+        const existing = (await db.listAlertConfigs(req.license.id))
+            .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
+        if (existing) await storage.deleteFile(existing.media_path);
+
+        const id = crypto.randomUUID();
+        const ext = (req.file.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+        const mediaPath = `${req.license.id}/${id}${ext}`;
+        const mediaUrl = await storage.uploadFile(mediaPath, req.file.buffer, req.file.mimetype);
+
+        const row = await db.upsertAlertConfig({
+            id, licenseId: req.license.id, giftName: triggerKey,
+            mediaUrl, mediaPath, mediaType, durationMs: finalDuration, position: finalPosition,
+            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType,
         });
-        res.json({ success: true, checkoutUrl: result.init_point });
+        // Mantiene al día el cache en memoria que usa processAlertTrigger —
+        // sin esto, la alerta recién guardada no dispararía hasta el
+        // próximo reinicio del server (o de este Tenant en memoria).
+        getOrCreateTenant(req.license.id, req.license.license_type).setAlertConfig(row.gift_name, serializeAlert(row));
+        res.json({ success: true, alert: serializeAlert(row) });
     } catch (err) {
-        console.error('[MP] Error creando preferencia:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
+        console.error('[Alertas] Error subiendo la alerta:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudo guardar la alerta — revisa que Supabase Storage esté configurado.' });
     }
+});
+
+app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res) => {
+    const row = await db.getAlertConfig(req.params.id);
+    if (!row || row.license_id !== req.license.id) {
+        return res.status(404).json({ success: false, error: 'Alerta no encontrada' });
+    }
+    await storage.deleteFile(row.media_path);
+    await db.deleteAlertConfig(row.id, req.license.id);
+    getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(row.gift_name);
+    res.json({ success: true });
+});
+
+// ==========================================
+// PAGOS: MercadoPago Checkout API + Orders API — autoservicio total. El
+// monto SIEMPRE se calcula acá desde pricing.js a partir de planType/
+// diceTier; nunca se confía en un precio que mande el cliente. Body de
+// /api/payments/charge (mas abajo): { planType?: 'month'|'annual'|
+// 'lifetime', diceTier?: 'pro'|'vip' } — al menos uno de los dos (compra
+// de "solo addon" sin renovar el plan, o renovación de plan sin tocar el
+// addon, son ambas válidas).
+// ==========================================
+
+// Precios vigentes de los 3 planes (override del admin si existe, default
+// de pricing.js si no) -- publica a proposito, sin auth: la vitrina de
+// Membership.jsx la necesita ANTES de que exista una sesion (ver el
+// comentario de "Anonymous purchase flow" en Membership.jsx).
+app.get('/api/pricing', (req, res) => {
+    res.json({ success: true, prices: pricing.getAllPlanPricesCents() });
 });
 
 // Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
@@ -401,24 +763,37 @@ app.post('/api/payments/create-preference', auth.requireAuth, paymentLimiter, as
 // x-signature contra MP_WEBHOOK_SECRET, documentada acá:
 // https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
 app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
-    const secret = process.env.MP_WEBHOOK_SECRET;
+    const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
     const dataId = req.query['data.id'] || req.query['id'];
 
-    if (!secret || !xSignature || !xRequestId || !dataId) {
+    if (!secret || !dataId) {
         return res.sendStatus(400);
     }
 
-    const sigParts = String(xSignature).split(',').reduce((acc, part) => {
-        const [key, value] = part.split('=');
-        if (key && value) acc[key.trim()] = value.trim();
-        return acc;
-    }, {});
-    const manifest = `id:${String(dataId).toLowerCase()};request-id:${xRequestId};ts:${sigParts.ts};`;
-    const expectedHash = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
-    if (!sigParts.v1 || expectedHash !== sigParts.v1) {
-        console.error('[MP] Webhook con firma inválida — descartado');
+    // Validador OFICIAL del SDK (mercadopago >= 3.x lo trae de fábrica) en
+    // vez del HMAC armado a mano que había acá antes -- mismo algoritmo
+    // (verificado byte a byte contra la implementación manual), pero de
+    // paso da un motivo puntual de rechazo (SignatureFailureReason) en vez
+    // de un genérico "no coincide", que ayuda muchísimo a diagnosticar la
+    // próxima vez que esto falle (secreto vencido vs. header ausente vs.
+    // timestamp fuera de rango, etc.).
+    //
+    // OJO: MercadoPago documenta que si data.id es alfanumerico (como los
+    // ID de 'order', ej. "ORD01M29...") hay que pasarlo en MINUSCULAS al
+    // armar el manifest de la firma -- los ID de 'payment' son siempre
+    // numericos asi que ahi nunca importo, pero para 'order' rompia la
+    // validacion 100% de las veces (confirmado en logs de produccion: TODAS
+    // las notificaciones de tipo order daban SignatureMismatch). El SDK NO
+    // lo hace por su cuenta, hay que bajarlo a minuscula ANTES de llamar a
+    // validate() -- pero solo para la firma: el dataId ORIGINAL (con su
+    // mayuscula real) es el que hay que usar despues para el GET a MP.
+    try {
+        WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId: String(dataId).toLowerCase(), secret });
+    } catch (err) {
+        const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
+        console.error('[MP] Webhook con firma inválida — descartado', { reason, dataId, xRequestId, secretLength: secret.length });
         return res.sendStatus(401);
     }
 
@@ -427,81 +802,282 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
 
-    if (req.query.type !== 'payment' && req.body?.type !== 'payment') return;
+    // 'payment': notificaciones del flujo viejo por Preference/Checkout Pro.
+    // 'order': notificaciones del cobro directo (Card Payment Brick /
+    // Checkout API, ver /api/payments/charge) cuando esta cuenta lo procesa
+    // async (capture_mode "automatic_async", el default) -- sin esta rama,
+    // un pago que MP tarda en confirmar nunca actualizaba la licencia,
+    // aunque al comprador SI se le haya cobrado.
+    const topic = req.query.type || req.body?.type;
+    if (topic !== 'payment' && topic !== 'order') return;
 
     try {
-        const payment = new Payment(getMpClient());
-        const paymentData = await payment.get({ id: dataId });
-        if (paymentData.status !== 'approved') return;
-
-        const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-        const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-        const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
-        if (!licenseId || (!planType && !diceTier)) {
-            console.error('[MP] Webhook con external_reference inválido:', paymentData.external_reference);
+        if (topic === 'payment') {
+            const payment = new Payment(getMpClient());
+            const paymentData = await payment.get({ id: dataId });
+            if (paymentData.status === 'approved') {
+                const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
+                const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
+                const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
+                await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
+            }
             return;
         }
 
-        // El UNIQUE sobre mp_payment_id hace esto idempotente: si ya vimos
-        // este pago (reintento de notificación), insertPaymentIfNew devuelve
-        // false y no se vuelve a aplicar nada.
-        const isNew = await db.insertPaymentIfNew({
-            id: crypto.randomUUID(),
-            licenseId,
-            mpPaymentId: String(paymentData.id),
-            planType: planType || null,
-            diceTier: diceTier || null,
-            amountCents: pricing.computeAmountCents({ planType, diceTier }),
-            status: paymentData.status,
-            createdAt: Date.now(),
+        // topic === 'order': no se confia en el body de la notificacion --
+        // se pide el estado real con un GET, igual de paranoico que el
+        // camino de 'payment' de arriba (que tampoco confia en el payload).
+        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
+            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
         });
-        if (!isNew) return;
-
-        const license = await db.findById(licenseId);
-        if (!license) {
-            console.error('[MP] Webhook para una licencia inexistente:', licenseId);
+        const order = await orderRes.json();
+        if (!orderRes.ok) {
+            console.error('[MP] Webhook de order: no se pudo consultar la orden', dataId, orderRes.status);
             return;
         }
-
-        const update = {};
-        if (planType) {
-            update.licenseType = planType;
-            // Si venía de una prueba gratis con días sin usar, esos días se
-            // suman arriba del plan nuevo en vez de perderse — pedido
-            // explícito para que pasar de trial a pago no se sienta como
-            // "perder lo que ya tenía". No aplica a lifetime (no vence).
-            const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
-                ? (license.expires_at - Date.now())
-                : 0;
-            const baseExpiresAt = auth.computeExpiresAt(planType);
-            update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
-
-            // Rota la key para que el prefijo refleje el plan nuevo
-            // (alias-MONTHLY-hash, etc. — pedido explícito, ver
-            // auth.generateLabeledKey). Mismo id/sesión: solo cambia la key
-            // en sí, así que cualquier sesión ya abierta sigue funcionando,
-            // pero la URL del overlay vieja (que lleva la key vieja
-            // incrustada) deja de servir — pending_key_reveal es lo que le
-            // permite al frontend mostrarle la key nueva la próxima vez que
-            // llama a /api/auth/verify, para que la actualice en OBS.
-            const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
-            update.keyHash = auth.hashKey(newRawKey);
-            update.keyPrefix = auth.keyPrefix(newRawKey);
-            update.pendingKeyReveal = newRawKey;
-        }
-        if (diceTier) {
-            // Nunca degradar: si ya tenía VIP y compra PRO por error/de nuevo,
-            // se queda con VIP.
-            const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
-            const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
-            if (newRank > currentRank) update.diceTier = diceTier;
-        }
-        if (Object.keys(update).length > 0) {
-            await db.applyPurchase(licenseId, update);
-            console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
-        }
+        const orderPayment = order?.transactions?.payments?.[0];
+        const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        if (!approved) return;
+        // Separador '_' a proposito (ver donde se arma external_reference en
+        // /api/payments/charge): licenseId es un UUID con '-' adentro, asi
+        // que '_' es el unico separador que se puede partir sin ambiguedad.
+        const [licenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
+        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
+        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
+        await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
     } catch (err) {
         console.error('[MP] Error procesando webhook:', err.message);
+    }
+});
+
+// Aplica una compra ya APROBADA por MercadoPago a la licencia
+// correspondiente -- tres llamadores, cada uno resuelve licenseId/
+// planType/diceTier a su manera antes de llamar esto: el webhook tipo
+// 'payment' (Preference/Checkout Pro) y el webhook tipo 'order' (cobro
+// directo async) parsean su propio external_reference con reglas
+// distintas (':' vs '_', ver donde se arma cada uno), mientras que
+// /api/payments/charge ya conoce esos valores de su propio request y no
+// necesita parsear nada. Idempotente via el UNIQUE de payments.
+// mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con el
+// mismo pago (ej. el webhook de 'order' llega DESPUES de que
+// /api/payments/charge ya lo aplico al toque) no aplica el cambio dos
+// veces.
+async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId }) {
+    if (!licenseId || (!planType && !diceTier)) {
+        console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
+        return { applied: false };
+    }
+
+    // El UNIQUE sobre mp_payment_id hace esto idempotente: si ya vimos este
+    // pago (reintento de webhook, o el cobro directo ya lo aplico antes),
+    // insertPaymentIfNew devuelve false y no se vuelve a aplicar nada.
+    const isNew = await db.insertPaymentIfNew({
+        id: crypto.randomUUID(),
+        licenseId,
+        mpPaymentId: String(mpPaymentId),
+        planType: planType || null,
+        diceTier: diceTier || null,
+        amountCents: pricing.computeAmountCents({ planType, diceTier }),
+        status: 'approved',
+        createdAt: Date.now(),
+    });
+    if (!isNew) return { applied: false, alreadyProcessed: true };
+
+    const license = await db.findById(licenseId);
+    if (!license) {
+        console.error('[MP] Pago para una licencia inexistente:', licenseId);
+        return { applied: false };
+    }
+
+    const update = {};
+    if (planType) {
+        update.licenseType = planType;
+        const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
+            ? (license.expires_at - Date.now())
+            : 0;
+        const baseExpiresAt = auth.computeExpiresAt(planType);
+        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
+
+        const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
+        update.keyHash = auth.hashKey(newRawKey);
+        update.keyPrefix = auth.keyPrefix(newRawKey);
+        update.pendingKeyReveal = newRawKey;
+    }
+    if (diceTier) {
+        const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
+        const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
+        if (newRank > currentRank) update.diceTier = diceTier;
+    }
+    if (Object.keys(update).length > 0) {
+        await db.applyPurchase(licenseId, update);
+        console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+    }
+    return { applied: true, licenseId };
+}
+
+// ==========================================
+// COBRO DIRECTO (Checkout API + Card Payment Brick) -- unico camino de
+// cobro de la plataforma (el checkout hosteado de MercadoPago via
+// Preference API tenia un bug confirmado del lado de ellos --
+// challenge-orchestrator nunca resolvia por un CORS mal configurado en
+// mercadolibre.com/jms/lgz/background/automation, asi que el boton
+// "Pagar" de SU pagina nunca se habilitaba -- reproducido en dos
+// navegadores distintos, con y sin cuenta de MP -- asi que se elimino ese
+// endpoint en vez de mantenerlo muerto). Aca el comprador nunca sale de
+// este sitio: el Card Payment Brick tokeniza la tarjeta en un iframe de
+// MercadoPago (mismo mecanismo que ya usa CardVerifyForm.jsx para
+// verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
+// nunca el numero de tarjeta real.
+app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
+    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
+    if (planType !== undefined && !pricing.isValidPlan(planType)) {
+        return res.status(400).json({ success: false, error: 'Plan invalido' });
+    }
+    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Addon invalido' });
+    }
+    if (!planType && !diceTier) {
+        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    }
+    const cleanEmail = typeof email === 'string' ? email.trim() : '';
+    if (!EMAIL_RE.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
+    }
+    if (!token || typeof token !== 'string') {
+        return res.status(400).json({ success: false, error: 'Falta el token de la tarjeta' });
+    }
+    if (!paymentMethodId || typeof paymentMethodId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Falta el medio de pago' });
+    }
+
+    // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
+    // un transaction_amount que pueda venir del formData del Brick.
+    const amountCents = pricing.computeAmountCents({ planType, diceTier });
+    // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
+    // acepta ese caracter en external_reference (confirmado probando:
+    // "'$.external_reference' - does not match pattern"). Se usa '_' como
+    // separador (no '-') porque licenseId es un UUID que YA trae '-'
+    // adentro -- con '_' el webhook de notificaciones tipo "order" (ver mas
+    // abajo) puede hacer external_reference.split('_') y recuperar
+    // licenseId/planType/diceTier sin ambiguedad. Esto importa porque esta
+    // cuenta usa capture_mode "automatic_async" por default: la mayoria de
+    // los pagos se resuelven al toque (este mismo endpoint ya aplica el
+    // plan en ese caso), pero cuando MP tarda mas en confirmar, el UNICO
+    // aviso de que se aprobo llega despues via ese webhook, no en esta
+    // respuesta.
+    const externalReference = `${req.license.id}_${planType || 'none'}_${diceTier || 'none'}_${Date.now()}`;
+    const titleParts = [];
+    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
+    if (diceTier) titleParts.push(diceTier.toUpperCase());
+
+    // El prefijo "deb" (debmaster/debvisa) indica una tarjeta de DEBITO.
+    // Confirmado en logs de produccion, en ese orden:
+    // 1) mandando siempre credit_card + id normalizado a la marca generica
+    //    ('master') -> 422 generico "Unprocessable Entity" para una
+    //    tarjeta de debito real (Nubank).
+    // 2) corrigiendo el type a 'debit_card' pero SIN dejar de normalizar
+    //    el id a 'master' -> 400 "value must be one of 'debmaster',
+    //    'debvisa'" -- para debito el id CORRECTO es justamente el que
+    //    normalizeCardBrand le sacaba el prefijo. O sea: normalizar la
+    //    marca solo aplica a credito; a debito hay que dejar el id
+    //    original tal cual vino del Brick.
+    const isDebit = String(paymentMethodId || '').toLowerCase().startsWith('deb');
+    const cardType = isDebit ? 'debit_card' : 'credit_card';
+    const normalizedPaymentMethodId = isDebit ? paymentMethodId : normalizeCardBrand(paymentMethodId);
+    if (normalizedPaymentMethodId !== paymentMethodId) {
+        console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
+    }
+    const { firstName, lastName } = splitFullName(fullName);
+    // Opcional: se manda solo si vienen las 3 partes juntas.
+    const address = (zipCode && streetName && streetNumber)
+        ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
+        : undefined;
+
+    try {
+        const amountStr = (amountCents / 100).toFixed(2);
+        const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getMpAccessToken()}`,
+                'X-Idempotency-Key': crypto.randomUUID(),
+            },
+            body: JSON.stringify({
+                type: 'online',
+                processing_mode: 'automatic',
+                total_amount: amountStr,
+                external_reference: externalReference,
+                description: `TikTokEvents - ${titleParts.join(' + ')}`,
+                payer: {
+                    email: cleanEmail,
+                    first_name: firstName,
+                    last_name: lastName,
+                    address,
+                    identification: (identificationType && identificationNumber)
+                        ? { type: identificationType, number: identificationNumber }
+                        : undefined,
+                },
+                transactions: {
+                    payments: [{
+                        amount: amountStr,
+                        payment_method: {
+                            id: normalizedPaymentMethodId,
+                            type: cardType,
+                            token,
+                            installments: Number(installments) || 1,
+                            // Pedido explicito de MercadoPago (checklist
+                            // de calidad, "Descripción-Resumen de
+                            // tarjeta") -- confirmado que la Orders API
+                            // acepta este campo acá adentro de
+                            // payment_method (no a nivel order).
+                            statement_descriptor: 'TIKTOKEVENTS',
+                        },
+                    }],
+                },
+            }),
+        });
+        const result = await mpRes.json();
+
+        if (!mpRes.ok) {
+            console.error('[MP] Error creando pago directo (Orders API):', mpRes.status, JSON.stringify(redactOrderTokens(result)));
+            const detail = result?.errors?.[0]?.details?.[0] || result?.errors?.[0]?.message;
+            res.status(502).json({ success: false, error: detail ? `No se pudo procesar el pago (${detail}).` : 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
+            return;
+        }
+
+        // Diagnostico temporal: primera vez que se usa la Orders API en esta
+        // integracion -- se deja el resultado crudo logueado para terminar
+        // de confirmar el shape real contra pagos de verdad (aprobados y
+        // rechazados) antes de simplificar este log.
+        console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(redactOrderTokens(result)));
+
+        const orderPayment = result?.transactions?.payments?.[0];
+        const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        // "processing"/"action_required" son estados async reales de la
+        // Orders API (ver doc oficial) -- se traducen a 'pending' para que
+        // el frontend (que ya sabe mostrar "pago pendiente" para ese valor,
+        // ver CardPaymentForm.jsx) no los confunda con un rechazo. Si la
+        // confirmacion final llega, la aplica el webhook de tipo "order" de
+        // mas abajo, no esta respuesta.
+        const isPending = !approved && (result.status === 'processing' || result.status === 'action_required');
+        if (approved) {
+            await applyApprovedPaymentIfNew({
+                licenseId: req.license.id,
+                planType,
+                diceTier,
+                mpPaymentId: orderPayment?.id || result.id,
+            });
+        }
+
+        res.json({
+            success: true,
+            status: approved ? 'approved' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
+            statusDetail: orderPayment?.status_detail || result.status_detail,
+            paymentId: orderPayment?.id || result.id,
+        });
+    } catch (err) {
+        console.error('[MP] Error creando pago directo:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
     }
 });
 
@@ -511,8 +1087,9 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
     try {
         const username = req.params.username;
-        const tempConn = new WebcastPushConnection(username);
-        const gifts = await tempConn.fetchAvailableGifts();
+        // v1 a propósito acá — ver comentario del import de arriba.
+        const tempConn = new WebcastPushConnectionV1(username);
+        const gifts = await tempConn.getAvailableGifts();
         const validGifts = gifts
             .filter(g => g.name && g.image?.url_list?.[0])
             .map(g => ({
@@ -523,6 +1100,62 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
     } catch (error) {
         res.json({ success: false });
     }
+});
+
+// ==========================================
+// DOWNLOADER: descarga videos de YouTube/TikTok (sin marca de agua) --
+// disponible para cualquier sesión válida, incluida la prueba gratis
+// (pedido explícito). Puerto del proyecto standalone YTDownloader ya
+// probado, adaptado acá multi-tenant (ver downloader.js) -- cada job
+// vive scopeado a la licencia que lo creó, y status/file verifican esa
+// pertenencia antes de responder nada.
+// ==========================================
+const DOWNLOADER_FORMATS = ['mp4', 'mp3'];
+function sanitizeDownloaderQuality(quality, fmt) {
+    if (fmt === 'mp3') return ['320', '192', '128'].includes(quality) ? quality : '192';
+    return quality === 'best' || /^\d{2,4}$/.test(quality) ? quality : 'best';
+}
+
+app.post('/api/downloader/info', auth.requireAuth, downloaderActionLimiter, async (req, res) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (!url) return res.status(400).json({ success: false, error: 'URL requerida' });
+    try {
+        const info = await downloader.getVideoInfo(url);
+        res.json({ success: true, ...info });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/downloader/start', auth.requireAuth, downloaderActionLimiter, (req, res) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (!url) return res.status(400).json({ success: false, error: 'URL requerida' });
+    const fmt = DOWNLOADER_FORMATS.includes(req.body?.format) ? req.body.format : 'mp4';
+    const quality = sanitizeDownloaderQuality(req.body?.quality, fmt);
+    try {
+        const jobId = downloader.startDownload({ licenseId: req.license.id, url, fmt, quality });
+        res.json({ success: true, job_id: jobId });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/downloader/status/:jobId', auth.requireAuth, downloaderStatusLimiter, (req, res) => {
+    const job = downloader.getJob(req.params.jobId);
+    if (!job || job.licenseId !== req.license.id) return res.status(404).json({ success: false, error: 'Job no encontrado' });
+    res.json({ status: job.status, percent: job.percent, speed: job.speed, eta: job.eta, filename: job.filename, title: job.title, error: job.error });
+});
+
+// Sirve por jobId (nunca por nombre de archivo crudo, a diferencia del
+// proyecto standalone de un solo usuario) -- así ningún licenciatario
+// puede adivinar/pedir el archivo de otro: la pertenencia se resuelve acá
+// contra el job, no confiando en nada que mande el cliente.
+app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, res) => {
+    const job = downloader.getJob(req.params.jobId);
+    if (!job || job.licenseId !== req.license.id || job.status !== 'done' || !job.filePath) {
+        return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+    res.download(job.filePath, job.filename);
 });
 
 // ==========================================
@@ -546,6 +1179,12 @@ app.use((req, res) => {
     if (fs.existsSync(FRONTEND_INDEX)) return res.sendFile(FRONTEND_INDEX);
     res.status(404).json({ success: false, error: 'No encontrado. Este backend solo expone la API; el frontend se sirve por separado.' });
 });
+
+// Fire-and-forget (mismo criterio que otros catch silenciosos de arranque
+// en este archivo): si Supabase esta caido justo al arrancar, el proceso
+// sigue con los precios default de PLAN_PRICES_CENTS en vez de no levantar
+// -- el admin puede volver a guardar el precio despues para reintentar.
+pricing.loadPriceOverrides().catch(err => console.error('[PRICING] No se pudieron cargar los overrides de precio al arrancar:', err.message));
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

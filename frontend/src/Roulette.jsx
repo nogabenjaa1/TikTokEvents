@@ -1,0 +1,381 @@
+import React, { useState, useEffect, useRef } from 'react';
+import PrizeEditor from './PrizeEditor';
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
+
+// Los bloques de entradas se van achicando a medida que hay más gente, para
+// que el recuadro siga cabiendo todo el elenco — mismo criterio que
+// Eliminación (ver sizeFor en Elimination.jsx).
+function sizeFor(count) {
+  if (count <= 8)  return { box: 'w-16 h-16', text: 'text-[9px]', emoji: 'text-2xl' };
+  if (count <= 16) return { box: 'w-12 h-12', text: 'text-[8px]', emoji: 'text-lg'  };
+  if (count <= 30) return { box: 'w-9 h-9',   text: 'text-[7px]', emoji: 'text-sm'  };
+  return               { box: 'w-7 h-7',   text: 'text-[6px]', emoji: 'text-xs'  };
+}
+
+function EntryBlock({ e, size }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5" title={e.username}>
+      <img src={e.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
+      <span className={`${size.text} text-gray-300 max-w-[56px] truncate`}>@{e.username}</span>
+    </div>
+  );
+}
+
+const WINNER_RULE_LABELS = { first: 'Primero en salir', last: 'Último en quedar', position: 'Número específico' };
+const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', result: 'RESULTADO' };
+
+// ─────────────────────────────────────────────
+// RULETA
+// Sorteo por comentario (Modo Chat: comentar una palabra clave) o por
+// regalo (Modo Gift: mandar un regalo específico,
+// cada uno suma una entrada — mismo mecanismo de slots que Eliminación).
+// Se abre una ventana de tiempo para entrar; al vencer, el giro arranca
+// SOLO (no hay botón manual): baraja todas las entradas al azar y revela
+// eliminaciones una por una, más lento cerca del final, hasta la posición
+// ganadora configurada (primero / último / un número específico).
+// La conexión TikTok (username/connectionStatus/giftsList) viene
+// normalizada desde App.jsx, compartida con los demás módulos.
+// ─────────────────────────────────────────────
+export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
+  const [entryMode, setEntryMode]         = useState('chat');
+  const [keyword, setKeyword]             = useState('participo');
+  const [entryWindowSec, setEntryWindowSec] = useState(300);
+  const [selectedGift, setSelectedGift]   = useState(null);
+  const [isDropOpen, setIsDropOpen]       = useState(false);
+  const [winnerRule, setWinnerRule]       = useState('first');
+  const [winnerPosition, setWinnerPosition] = useState(1);
+  // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
+  // fases de selección/resultado a la mitad, eliminationsPerRound agrupa
+  // varias eliminaciones por paso del sorteo. Sin lockedMode a propósito
+  // (pedido explícito, se sacó del panel): en Ruleta las entradas YA solo
+  // se aceptan mientras se está "uniendo" gente, tanto en Chat como en
+  // Gift — no hay nada que un toggle pudiera cambiar de verdad.
+  const [fastMode, setFastMode]           = useState(false);
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
+  const [manualUsername, setManualUsername] = useState('');
+  const [manualCount, setManualCount]       = useState(1);
+
+  useEffect(() => {
+    setSelectedGift(giftsList.find(g => g.coins > 0) || null);
+  }, [giftsList]);
+
+  // Compartido por Iniciar/Reiniciar/la actualización en vivo — así los
+  // tres mandan siempre exactamente los mismos campos, en el mismo formato.
+  const buildConfig = () => ({
+    tiktokUsername: username,
+    entryMode,
+    keyword: keyword.trim(),
+    entryWindowSec: Math.max(30, Math.round(entryWindowSec)),
+    targetGiftName: entryMode === 'gift' ? selectedGift?.name || '' : '',
+    targetGiftIcon: entryMode === 'gift' ? selectedGift?.icon || '' : '',
+    targetGiftCoins: entryMode === 'gift' ? selectedGift?.coins || 0 : 0,
+    winnerRule,
+    winnerPosition: Math.max(1, Math.round(winnerPosition)),
+    fastMode, eliminationsPerRound,
+  });
+
+  const addManualEntry = () => {
+    const uname = manualUsername.trim().replace(/^@/, '');
+    if (!uname) return;
+    socket.emit('roulette_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
+    setManualUsername('');
+    setManualCount(1);
+  };
+
+  const startRoulette = () => {
+    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (entryMode === 'chat' && !keyword.trim()) return alert('¡Escribe la palabra clave para participar!');
+    if (entryMode === 'gift' && !selectedGift) return alert('¡Elige el regalo para participar!');
+    socket.emit('start_roulette', buildConfig());
+  };
+
+  const stopRoulette    = () => socket.emit('stop_roulette');
+  // Solo pausa la cuenta de "tiempo para entrar" — el giro en sí no se
+  // pausa (el botón queda deshabilitado mientras mode === 'spinning', ver JSX).
+  const togglePause     = () => socket.emit(state.paused ? 'resume_roulette' : 'pause_roulette');
+  // Manda los ajustes actuales — así, si cambiaste la palabra clave, el
+  // tiempo de entrada o la posición ganadora antes de reiniciar, la ronda
+  // nueva arranca YA con esos valores, sin tener que pasar por Stop +
+  // Iniciar de cero para que se reflejen.
+  const restartRoulette = () => socket.emit('restart_roulette', buildConfig());
+
+  // Mientras se están uniendo participantes (antes de que el giro arranque
+  // y quede comprometido con el shuffle), cualquier cambio en los ajustes
+  // se manda en vivo — mismo patrón que ya usan Rey del Trono/Zubastinis/
+  // Eliminación. OJO: además del guard de "recién activado" (evita mandar
+  // doble pisando al start_roulette que ya emitió los mismos datos), hace
+  // falta el de "recién montado" (isMounted) — sin él, cada vez que el
+  // streamer cambia de pestaña y vuelve a Ruleta, este efecto corre de
+  // nuevo con los valores LOCALES por defecto (keyword 'participo',
+  // entryWindowSec 300, etc.) y los manda de una, pisando en vivo la
+  // configuración real de una ronda que ya estaba activa — esto es lo que
+  // rompía correr Ruleta en simultáneo con otro modo (Extensible, por
+  // ejemplo): con solo pasar por su pestaña sin tocar nada, la ronda de
+  // Ruleta quedaba reseteada a los valores por defecto del panel.
+  const isMounted = useRef(false);
+  const justActivated = useRef(state.isActive);
+  useEffect(() => {
+    const activeJustChanged = justActivated.current !== state.isActive;
+    justActivated.current = state.isActive;
+    if (!isMounted.current) { isMounted.current = true; return; }
+    if (activeJustChanged) return;
+    if (state.isActive && state.mode === 'joining') socket.emit('update_roulette_settings', buildConfig());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound, state.isActive, state.mode]);
+
+  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
+  const entries = state.entries || [];
+  const size = sizeFor(entries.length);
+  const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
+
+  return (
+    <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
+
+      {/* Preview */}
+      <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
+        {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
+
+        <div className="flex justify-between items-center relative z-10 mb-3">
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎡 RULETA</p>
+          {state.mode !== 'idle' && (
+            <div className="text-right">
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
+              {state.mode === 'joining' && (
+                <p className="text-3xl font-black tabular-nums text-white">
+                  {formatMMSS(state.timeLeft || 0)}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {(state.lastEliminatedList || []).length > 0 && (state.mode === 'spinning' || state.mode === 'result') && (
+          <div className="flex flex-col gap-1.5 mb-3 relative z-10">
+            {state.lastEliminatedList.map((e, i) => (
+              <div key={e.username + i} className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2">
+                <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
+                <span className="text-xs font-bold text-red-300">💀 @{e.username} quedó fuera</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {state.mode === 'finished' ? (
+          <p className="relative z-10 text-center text-sm font-black text-yellow-300">
+            {state.winner ? `👑 GANADOR: @${state.winner.username}` : 'SIN GANADOR — nadie participó'}
+          </p>
+        ) : entries.length > 0 ? (
+          <div className="flex flex-wrap gap-2 justify-center relative z-10 max-h-52 overflow-y-auto">
+            {entries.map(e => <EntryBlock key={e.id} e={e} size={size} />)}
+          </div>
+        ) : (
+          <p className="text-gray-600 text-sm italic font-medium relative z-10">Nadie se ha unido todavía...</p>
+        )}
+
+        {entries.length > 0 && state.mode !== 'finished' && (
+          <p className="text-[10px] text-gray-500 text-center mt-2 relative z-10">{entries.length} entrada{entries.length === 1 ? '' : 's'}</p>
+        )}
+      </div>
+
+      {/* Settings */}
+      <div className="theme-surface w-full max-w-md p-8 relative">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="theme-accent-bg w-3 h-8 rounded-full" />
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
+        </div>
+
+        <div className="space-y-5">
+          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+
+            {/* Modo de entrada */}
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">CÓMO SE CONSIGUE UNA ENTRADA</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEntryMode('chat')}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${entryMode === 'chat' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  💬 Modo Chat
+                </button>
+                <button type="button" onClick={() => setEntryMode('gift')}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${entryMode === 'gift' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  🎁 Modo Gift
+                </button>
+              </div>
+            </div>
+
+            {entryMode === 'chat' ? (
+              <div className="mb-4">
+                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💬 PALABRA CLAVE</label>
+                <input
+                  value={keyword} onChange={e => setKeyword(e.target.value)}
+                  placeholder="ej: participo"
+                  className="theme-input w-full p-3 text-sm outline-none"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">Cualquier comentario que la contenga cuenta — no hace falta que sea exacto.</p>
+              </div>
+            ) : (
+              <div className="mb-4 relative z-20">
+                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO PARA PARTICIPAR</label>
+                <div
+                  onClick={() => setIsDropOpen(!isDropOpen)}
+                  className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
+                >
+                  {selectedGift ? (
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-3">
+                        <img src={selectedGift.icon} className="w-6 h-6" />
+                        <span className="text-sm">{selectedGift.name}</span>
+                      </div>
+                      <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md">{selectedGift.coins} 🪙</span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-500 text-sm">Esperando...</span>
+                  )}
+                </div>
+                {isDropOpen && (
+                  <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
+                    {giftsList.filter(g => g.coins > 0).map((gift, i) => (
+                      <div key={`r-${gift.id}-${i}`}
+                        onClick={() => { setSelectedGift(gift); setIsDropOpen(false); }}
+                        className="p-2 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] cursor-pointer flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img src={gift.icon} className="w-6 h-6" />
+                          <span className="text-sm">{gift.name}</span>
+                        </div>
+                        <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                  Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
+                </p>
+              </div>
+            )}
+
+            {/* Ventana de entrada */}
+            <div className="mb-4">
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
+                TIEMPO PARA ENTRAR {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              </label>
+              <TimeInput seconds={entryWindowSec} onChange={setEntryWindowSec} />
+              <p className="text-[10px] text-gray-500 mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
+            </div>
+
+            {/* Cuántas caen por paso del sorteo */}
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💀 ELIMINADAS POR PASO</label>
+              <input
+                type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
+                onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
+                className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
+              />
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántas entradas se sacan de una en cada paso del sorteo (nunca incluye a la ganadora).</p>
+            </div>
+
+            {/* Fast Mode (sin Locked Mode a propósito: en Ruleta las entradas
+                SIEMPRE se cierran al arrancar el giro, tanto en Chat como en
+                Gift — no hay nada que un toggle pudiera cambiar de verdad). */}
+            <div className="mb-6">
+              <button type="button" onClick={() => setFastMode(f => !f)}
+                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                title="Reduce las animaciones de giro/resultado a la mitad (1s en vez de 2s)">
+                ⚡ Fast Mode
+              </button>
+            </div>
+
+            {/* Entrada manual (admin): suma entradas a mano a un usuario
+                existente o nuevo, sin depender de un regalo o comentario
+                real — cuenta exactamente igual que una entrada por regalo.
+                Solo mientras la ventana de entrada sigue abierta: una vez
+                que arranca el giro, el orden ya quedó barajado y fijo. */}
+            <div className="mb-6 pt-4 border-t border-white/10">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">➕ AGREGAR ENTRADA MANUAL</label>
+              <div className="flex gap-2">
+                <input
+                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
+                  placeholder="usuario"
+                  className="theme-input flex-1 p-2 text-sm outline-none"
+                />
+                <input
+                  type="number" min="1" value={manualCount}
+                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
+                  className="theme-input w-16 p-2 text-center text-sm outline-none"
+                />
+                <button type="button" onClick={addManualEntry}
+                  disabled={!state.isActive || state.mode !== 'joining' || !manualUsername.trim()}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  Agregar
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo/comentario. Solo mientras está abierta la ventana de entrada.</p>
+            </div>
+
+            {/* Regla de ganador */}
+            <div className="mb-6">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">POSICIÓN GANADORA</label>
+              <div className="flex gap-2 mb-2">
+                {Object.entries(WINNER_RULE_LABELS).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => setWinnerRule(value)}
+                    className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${winnerRule === value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {winnerRule === 'position' && (
+                <input
+                  type="number" min="1"
+                  value={winnerPosition}
+                  onChange={e => setWinnerPosition(Math.max(1, Number(e.target.value) || 1))}
+                  placeholder="ej: 24"
+                  className="theme-input w-full p-2 text-sm outline-none"
+                />
+              )}
+              <p className="text-[10px] text-gray-500 mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-4">
+              {!state.isActive ? (
+                <button
+                  onClick={startRoulette}
+                  disabled={connectionStatus !== 'connected'}
+                  className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={togglePause}
+                    disabled={state.mode !== 'joining'}
+                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                  </button>
+                  <button
+                    onClick={restartRoulette}
+                    disabled={state.mode === 'spinning'}
+                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    REINICIAR ⟲
+                  </button>
+                </>
+              )}
+              <button
+                onClick={stopRoulette}
+                className="theme-btn-danger px-6 py-4 font-bold transition-all"
+              >
+                ⏹
+              </button>
+            </div>
+          </div>
+
+          {/* Premio: fuera del bloque isLocked a propósito — se puede
+              configurar antes de tener la conexión live confirmada. */}
+          <PrizeEditor socket={socket} prize={prize} />
+        </div>
+      </div>
+    </div>
+  );
+}

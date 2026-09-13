@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -97,7 +99,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
           <div className="text-right ml-auto">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerLabel}</p>
             <p className={`text-3xl font-black tabular-nums transition-colors ${timerColorClass}`}>
-              {state.timeLeft || 0}<span className="text-base text-gray-600">s</span>
+              {formatMMSS(state.timeLeft || 0)}
             </p>
           </div>
         </div>
@@ -136,35 +138,26 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
-                </label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{mainTime}s</span>
-              </div>
-              <input type="range" min="15" max="600" step="15" value={mainTime} onChange={e => setMainTime(Number(e.target.value))} />
+              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
+                TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              </label>
+              <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
             <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
-                </label>
-                <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{snipeTime}s</span>
-              </div>
-              <input type="range" min="5" max="120" step="5" value={snipeTime} onChange={e => setSnipeTime(Number(e.target.value))} />
+              <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold block mb-1">
+                TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              </label>
+              <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
 
             {/* Tiebreak Time */}
             <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold">
-                  TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
-                </label>
-                <span className="text-amber-200 font-bold bg-amber-900/50 px-2 rounded text-xs">{tiebreakTime}s</span>
-              </div>
-              <input type="range" min="5" max="120" step="5" value={tiebreakTime} onChange={e => setTiebreakTime(Number(e.target.value))} />
+              <label className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold block mb-1">
+                TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              </label>
+              <TimeInput seconds={tiebreakTime} onChange={setTiebreakTime} />
             </div>
 
             {/* Minimum */}
@@ -221,7 +214,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="zub" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

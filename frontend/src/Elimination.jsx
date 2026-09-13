@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PrizeEditor from './PrizeEditor';
+import TimeInput from './TimeInput';
+import { formatMMSS } from './timeFormat';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -31,6 +33,7 @@ function ParticipantBlock({ p, size }) {
 const MODE_LABEL = {
   joining:   'TIEMPO PARA UNIRSE',
   revealing: 'SORTEANDO...',
+  result:    'RESULTADO',
   rejoin:    'TIEMPO DE REINGRESO',
 };
 
@@ -51,8 +54,17 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [selectedInstaWin, setSelectedInstaWin] = useState(NO_INSTA_WIN);
   const [baseTime, setBaseTime]                 = useState(60);
   const [rejoinTime, setRejoinTime]             = useState(20);
+  // fastMode: fases de selección/resultado de 1s en vez de 2s.
+  // eliminationsPerRound: cuántos slots caen por ronda de sorteo (antes
+  // siempre 1). lockedMode: solo entra gente durante la ventana inicial de
+  // unirse, nadie se suma ya arrancada la dinámica (ni en "rejoin").
+  const [fastMode, setFastMode]                 = useState(false);
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
+  const [lockedMode, setLockedMode]             = useState(false);
   const [isDropOpen, setIsDropOpen]             = useState(false);
   const [isInstaDropOpen, setIsInstaDropOpen]   = useState(false);
+  const [manualUsername, setManualUsername]     = useState('');
+  const [manualCount, setManualCount]           = useState(1);
 
   useEffect(() => {
     setSelectedGift(giftsList.find(g => g.coins > 0) || null);
@@ -80,10 +92,10 @@ export default function Elimination({ state, socket, username, connectionStatus,
         instaWinGiftName:  selectedInstaWin.coins > 0 ? selectedInstaWin.name  : '',
         instaWinGiftIcon:  selectedInstaWin.coins > 0 ? selectedInstaWin.icon  : '',
         instaWinGiftCoins: selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0,
-        baseTime, rejoinTime,
+        baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode,
       });
     }
-  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, state.isActive]);
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, state.isActive]);
 
   const startElimination = () => {
     if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
@@ -96,13 +108,32 @@ export default function Elimination({ state, socket, username, connectionStatus,
       instaWinGiftName:  selectedInstaWin.coins > 0 ? selectedInstaWin.name  : '',
       instaWinGiftIcon:  selectedInstaWin.coins > 0 ? selectedInstaWin.icon  : '',
       instaWinGiftCoins: selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0,
-      baseTime, rejoinTime,
+      baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode,
     });
   };
 
   const stopElimination    = () => socket.emit('stop_elimination');
   const restartElimination = () => socket.emit('restart_elimination');
   const togglePause        = () => socket.emit(state.paused ? 'resume_elimination' : 'pause_elimination');
+
+  // Suma entradas a mano a un usuario existente o nuevo, sin depender de un
+  // regalo real — cuenta exactamente igual que una entrada por regalo
+  // (mismo array de slots que usa el sorteo, ver processGiftElim/
+  // elim_add_manual_entry en tenant.js).
+  const addManualEntry = () => {
+    const uname = manualUsername.trim().replace(/^@/, '');
+    if (!uname) return;
+    socket.emit('elim_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
+    setManualUsername('');
+    setManualCount(1);
+  };
+
+  // Pedido explícito: una vez arrancada la ronda con Locked Mode activado,
+  // no se puede desactivar hasta Detener/Reiniciar — el toggle queda
+  // deshabilitado visualmente en ese caso. Prender sí se puede en cualquier
+  // momento (el backend además lo refuerza con el mismo criterio, ver
+  // update_elim_settings).
+  const lockedModeLocked = state.isActive && lockedMode;
 
   // Los ajustes se pueden tocar mientras se confirma el username o la
   // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
@@ -132,17 +163,21 @@ export default function Elimination({ state, socket, username, connectionStatus,
           <div className="text-right">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
             <p className={`text-3xl font-black tabular-nums transition-colors ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500' : 'text-white'}`}>
-              {state.timeLeft || 0}<span className="text-base text-gray-600">s</span>
+              {formatMMSS(state.timeLeft || 0)}
             </p>
           </div>
         </div>
 
-        {state.lastEliminated && state.mode !== 'idle' && (
-          <div className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 mb-3 relative z-10">
-            <img src={state.lastEliminated.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
-            <span className="text-xs font-bold text-red-300">
-              💀 @{state.lastEliminated.username} {state.lastEliminated.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
-            </span>
+        {(state.lastEliminatedList || []).length > 0 && state.mode !== 'idle' && (
+          <div className="flex flex-col gap-1.5 mb-3 relative z-10">
+            {state.lastEliminatedList.map((e, i) => (
+              <div key={e.username + i} className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2">
+                <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
+                <span className="text-xs font-bold text-red-300">
+                  💀 @{e.username} {e.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -226,6 +261,9 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
+              </p>
             </div>
 
             {/* Selector Insta-Win */}
@@ -268,28 +306,82 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   ))}
                 </div>
               )}
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
+              </p>
             </div>
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO PARA UNIRSE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de unirse actual: se aplica en la próxima ronda">(próx. ronda)</span>}
+                  TIEMPO PARA UNIRSE {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{baseTime}s</span>
               </div>
-              <input type="range" min="15" max="300" step="15" value={baseTime} onChange={e => setBaseTime(Number(e.target.value))} />
+              <TimeInput seconds={baseTime} onChange={setBaseTime} />
             </div>
 
             {/* Rejoin Time */}
-            <div className="mb-6">
+            <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
                 <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE REINGRESO {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta la ventana de reingreso actual: se aplica en la próxima eliminación">(próx. ronda)</span>}
+                  TIEMPO DE REINGRESO {state.isActive && state.mode === 'rejoin' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
                 </label>
-                <span className="text-red-200 font-bold bg-red-900/50 px-2 rounded text-xs">{rejoinTime}s</span>
               </div>
-              <input type="range" min="5" max="120" step="5" value={rejoinTime} onChange={e => setRejoinTime(Number(e.target.value))} />
+              <TimeInput seconds={rejoinTime} onChange={setRejoinTime} />
+            </div>
+
+            {/* Cuántos caen por ronda */}
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💀 ELIMINADOS POR RONDA</label>
+              <input
+                type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
+                onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
+                className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
+              />
+              <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántos participantes se eliminan de una en cada sorteo (siempre deja al menos 1 en pie).</p>
+            </div>
+
+            {/* Fast Mode / Locked Mode */}
+            <div className="flex gap-3 mb-6">
+              <button type="button" onClick={() => setFastMode(f => !f)}
+                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                title="Reduce las animaciones de sorteo/resultado a la mitad (1s en vez de 2s)">
+                ⚡ Fast Mode
+              </button>
+              <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)}
+                disabled={lockedModeLocked}
+                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'} ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                title={lockedModeLocked ? 'No se puede desactivar hasta Detener o Reiniciar la ronda' : 'Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después'}>
+                🔒 Locked Mode
+              </button>
+            </div>
+
+            {/* Entrada manual (admin): suma entradas a mano a un usuario
+                existente o nuevo, sin depender de un regalo real — cuenta
+                exactamente igual que una entrada por regalo (afecta vidas,
+                insta-win, etc.). A propósito ignora Locked Mode: es una
+                acción explícita del admin, no una entrada automática. */}
+            <div className="mb-6 pt-4 border-t border-white/10">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">➕ AGREGAR ENTRADA MANUAL</label>
+              <div className="flex gap-2">
+                <input
+                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
+                  placeholder="usuario"
+                  className="theme-input flex-1 p-2 text-sm outline-none"
+                />
+                <input
+                  type="number" min="1" value={manualCount}
+                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
+                  className="theme-input w-16 p-2 text-center text-sm outline-none"
+                />
+                <button type="button" onClick={addManualEntry}
+                  disabled={!state.isActive || state.mode === 'finished' || !manualUsername.trim()}
+                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  Agregar
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
 
             {/* Botones */}
@@ -330,7 +422,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
           {/* Premio: fuera del bloque isLocked a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} app="elim" prize={prize} />
+          <PrizeEditor socket={socket} prize={prize} />
         </div>
       </div>
     </div>

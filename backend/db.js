@@ -9,7 +9,20 @@
 // ver backend/migrate-to-supabase.js para pasar los datos de una DB SQLite
 // existente.
 // ==========================================
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+const tokenCrypto = require('./tokenCrypto');
+
+// BIGINT (OID 20) viene como STRING por defecto en node-postgres — es una
+// protección genérica del driver contra enteros que no entran en un
+// Number sin perder precisión. Acá todas las columnas BIGINT son
+// timestamps epoch en ms (created_at, expires_at, last_login_at,
+// last_active_at), muy por debajo de Number.MAX_SAFE_INTEGER, así que
+// convertirlas a número es seguro. Sin esto, `new Date(row.expires_at)` en
+// el frontend daba "Invalid Date": un string numérico como "1788219753914"
+// se interpreta como una fecha con formato inválido, no como epoch — a
+// diferencia de comparaciones como `<=` que sí coercionan el string a
+// número solas y por eso el bug pasó desapercibido en otros lados.
+types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -45,6 +58,7 @@ const ready = pool.query(`
     king_starts INTEGER NOT NULL DEFAULT 0,
     zub_starts INTEGER NOT NULL DEFAULT 0,
     elim_starts INTEGER NOT NULL DEFAULT 0,
+    roulette_starts INTEGER NOT NULL DEFAULT 0,
     last_active_at BIGINT,
     session_id TEXT,
     multi_device BOOLEAN NOT NULL DEFAULT FALSE
@@ -56,6 +70,7 @@ const ready = pool.query(`
   // necesitar el chequeo manual que hacía la versión vieja en SQLite.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_alias TEXT`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_connected_username TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS roulette_starts INTEGER NOT NULL DEFAULT 0`))
   // dice_tier: nivel de Color Says (regular/pro/vip/admin) — a propósito
   // SEPARADO de is_admin. is_admin sigue siendo exclusivamente "administra
   // la plataforma" (panel de Licencias, endpoints /api/licenses); dice_tier
@@ -79,6 +94,14 @@ const ready = pool.query(`
   // la devuelve y la borra la primera vez que el frontend vuelve a
   // preguntar — de ahí "reveal" en el nombre, es de un solo uso.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS pending_key_reveal TEXT`))
+  // El WIN BONUS de Color Says dejó de ser algo que un dice_tier pago
+  // otorga automáticamente (pedido explícito: la dinámica debe ser
+  // transparente por default para streamers y espectadores). Ahora es una
+  // excepción manual: un admin la prende para UNA licencia puntual desde el
+  // panel de Licencias (ver /api/licenses/:id/win-bonus), sin importar su
+  // dice_tier. Admin (dice_tier='admin') sigue teniendo el bonus siempre,
+  // resuelto en el frontend, no acá.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS dice_win_bonus_unlocked BOOLEAN NOT NULL DEFAULT FALSE`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -102,6 +125,77 @@ const ready = pool.query(`
       amount_cents INTEGER NOT NULL,
       status TEXT NOT NULL,
       created_at BIGINT NOT NULL
+    )
+  `))
+  // Una cuenta de Spotify por licencia (multi-tenant, como TikTok): cada
+  // streamer conecta LA SUYA por OAuth (ver /api/spotify/connect en
+  // server.js) para que el comando !play del chat agregue canciones a SU
+  // cola. access_token se refresca solo (ver spotify.getValidAccessToken)
+  // y se persiste acá junto con el nuevo expires_at; refresh_token no
+  // vence salvo que el streamer revoque el acceso desde Spotify.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS spotify_accounts (
+      license_id TEXT PRIMARY KEY REFERENCES licenses(id),
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      spotify_user_id TEXT,
+      display_name TEXT,
+      connected_at BIGINT NOT NULL
+    )
+  `))
+  // Alertas de regalos: qué recurso (imagen/gif/video/audio, ver storage.js)
+  // se reproduce en el overlay al llegar un regalo puntual. Un solo alert
+  // por (licencia, regalo) — UNIQUE habilita el upsert desde el panel sin
+  // tener que buscar primero si ya existía uno para ese regalo.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_configs (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      gift_name TEXT NOT NULL,
+      media_url TEXT NOT NULL,
+      media_path TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL DEFAULT 5000,
+      position TEXT NOT NULL DEFAULT 'center',
+      created_at BIGINT NOT NULL,
+      UNIQUE(license_id, gift_name)
+    )
+  `))
+  // Animación de entrada/salida de la alerta (ver ANIMATION_PRESETS en
+  // AlertsAdmin.jsx/Overlay.jsx) — 'fade' de default porque es la que
+  // menos desentona si una alerta vieja (guardada antes de que existiera
+  // este campo) nunca lo configuró.
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS entrance_anim TEXT NOT NULL DEFAULT 'fade'`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'gift'`))
+  // Precios editables desde el panel de Licencias (pedido explicito:
+  // "Modificacion manual de precios de licencias desde el panel de
+  // administracion") -- una fila por plan que el admin haya tocado; un plan
+  // SIN fila aca sigue usando el default de PLAN_PRICES_CENTS en
+  // backend/pricing.js. amount_cents en vez de un decimal en pesos por el
+  // mismo criterio que `payments.amount_cents`: nunca representar dinero en
+  // coma flotante.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS pricing_overrides (
+      plan_type TEXT PRIMARY KEY,
+      amount_cents INTEGER NOT NULL,
+      updated_at BIGINT NOT NULL,
+      updated_by TEXT NOT NULL
+    )
+  `))
+  // Auditoria de cada cambio de precio (pedido explicito, seccion "Historial
+  // de cambios"): a diferencia de pricing_overrides (que solo guarda el
+  // valor VIGENTE de cada plan), esta tabla nunca se pisa -- cada fila es un
+  // cambio puntual, para poder ver quien bajo el precio a $1 y cuando.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS pricing_history (
+      id TEXT PRIMARY KEY,
+      plan_type TEXT NOT NULL,
+      old_amount_cents INTEGER,
+      new_amount_cents INTEGER NOT NULL,
+      changed_by TEXT NOT NULL,
+      changed_at BIGINT NOT NULL
     )
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
@@ -162,7 +256,15 @@ async function setMultiDevice(id, enabled) {
     return findById(id);
 }
 
-const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts'];
+// Excepción manual del WIN BONUS de Color Says para una licencia puntual —
+// ver comentario de la migración de dice_win_bonus_unlocked más arriba.
+async function setWinBonusUnlocked(id, enabled) {
+    await ready;
+    await pool.query('UPDATE licenses SET dice_win_bonus_unlocked = $1 WHERE id = $2', [!!enabled, id]);
+    return findById(id);
+}
+
+const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
 
 async function incrementUsage(id, field) {
     if (!USAGE_FIELDS.includes(field)) throw new Error('Campo de uso inválido: ' + field);
@@ -199,6 +301,100 @@ async function claimTrialConnection(id, targetUsername) {
 async function deleteLicense(id) {
     await ready;
     await pool.query('DELETE FROM licenses WHERE id = $1', [id]);
+}
+
+// ==========================================
+// SPOTIFY (una cuenta por licencia — ver la tabla spotify_accounts arriba)
+// ==========================================
+// Pedido explicito de una revision de seguridad: access_token/
+// refresh_token se guardan cifrados (ver tokenCrypto.js) -- se descifran
+// aca, en el UNICO lugar que lee esta tabla, para que el resto del
+// backend (spotify.js/tenant.js) siga trabajando con el token en texto
+// plano como siempre, sin tener que saber nada de cifrado.
+async function getSpotifyAccount(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+    const row = rows[0];
+    if (!row) return row;
+    return {
+        ...row,
+        access_token: tokenCrypto.decrypt(row.access_token),
+        refresh_token: tokenCrypto.decrypt(row.refresh_token),
+    };
+}
+
+// Se usa tanto para la primera conexión (con spotifyUserId/displayName)
+// como para reconectar después de desconectar — siempre reemplaza la fila
+// entera, a diferencia de updateSpotifyTokens (que solo toca los tokens).
+async function upsertSpotifyAccount(licenseId, { accessToken, refreshToken, expiresAt, spotifyUserId, displayName }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO spotify_accounts (license_id, access_token, refresh_token, expires_at, spotify_user_id, display_name, connected_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (license_id) DO UPDATE SET
+            access_token = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            expires_at = EXCLUDED.expires_at,
+            spotify_user_id = EXCLUDED.spotify_user_id,
+            display_name = EXCLUDED.display_name,
+            connected_at = EXCLUDED.connected_at
+    `, [licenseId, tokenCrypto.encrypt(accessToken), tokenCrypto.encrypt(refreshToken), expiresAt, spotifyUserId || null, displayName || null, Date.now()]);
+}
+
+// Refresh silencioso de un access_token vencido (ver spotify.getValidAccessToken)
+// — a propósito NO toca refresh_token: Spotify no manda uno nuevo en cada
+// refresh, y pisarlo con undefined invalidaría la cuenta conectada.
+async function updateSpotifyTokens(licenseId, { accessToken, expiresAt }) {
+    await ready;
+    await pool.query('UPDATE spotify_accounts SET access_token = $1, expires_at = $2 WHERE license_id = $3', [tokenCrypto.encrypt(accessToken), expiresAt, licenseId]);
+}
+
+async function deleteSpotifyAccount(licenseId) {
+    await ready;
+    await pool.query('DELETE FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+}
+
+// ==========================================
+// ALERTAS DE REGALOS (ver la tabla alert_configs arriba)
+// ==========================================
+async function listAlertConfigs(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM alert_configs WHERE license_id = $1 ORDER BY gift_name ASC', [licenseId]);
+    return rows;
+}
+
+async function getAlertConfig(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM alert_configs WHERE id = $1', [id]);
+    return rows[0];
+}
+
+// Un solo alert por (licencia, regalo) — volver a guardar para el mismo
+// regalo reemplaza el anterior (el caller ya se encargó de borrar el
+// archivo viejo del storage antes de llamar acá, ver server.js).
+async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim, exitAnim, triggerType }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, entrance_anim, exit_anim, trigger_type, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (license_id, gift_name) DO UPDATE SET
+            id = EXCLUDED.id,
+            media_url = EXCLUDED.media_url,
+            media_path = EXCLUDED.media_path,
+            media_type = EXCLUDED.media_type,
+            duration_ms = EXCLUDED.duration_ms,
+            position = EXCLUDED.position,
+            entrance_anim = EXCLUDED.entrance_anim,
+            exit_anim = EXCLUDED.exit_anim,
+            trigger_type = EXCLUDED.trigger_type,
+            created_at = EXCLUDED.created_at
+    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', Date.now()]);
+    return getAlertConfig(id);
+}
+
+async function deleteAlertConfig(id, licenseId) {
+    await ready;
+    await pool.query('DELETE FROM alert_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
 }
 
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
@@ -267,7 +463,48 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Devuelve un mapa { [plan_type]: amount_cents } -- solo los planes que el
+// admin haya sobreescrito alguna vez, ver el comentario de la tabla arriba.
+async function getPricingOverrides() {
+    await ready;
+    const { rows } = await pool.query('SELECT plan_type, amount_cents FROM pricing_overrides');
+    const map = {};
+    rows.forEach(r => { map[r.plan_type] = r.amount_cents; });
+    return map;
+}
+
+// Upsert del precio vigente + una fila de historial en la misma llamada --
+// no hace falta una transaccion explicita: si el INSERT de historial
+// fallara, preferimos que el UPSERT del precio vigente (lo unico que de
+// verdad afecta lo que se cobra) haya quedado aplicado antes que perder
+// ambos por un rollback sobre una tabla puramente de auditoria.
+async function setPricingOverride(planType, amountCents, updatedBy) {
+    await ready;
+    const now = Date.now();
+    const { rows: prevRows } = await pool.query('SELECT amount_cents FROM pricing_overrides WHERE plan_type = $1', [planType]);
+    const oldAmountCents = prevRows.length > 0 ? prevRows[0].amount_cents : null;
+    await pool.query(`
+        INSERT INTO pricing_overrides (plan_type, amount_cents, updated_at, updated_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (plan_type) DO UPDATE SET amount_cents = $2, updated_at = $3, updated_by = $4
+    `, [planType, amountCents, now, updatedBy]);
+    await pool.query(`
+        INSERT INTO pricing_history (id, plan_type, old_amount_cents, new_amount_cents, changed_by, changed_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+    `, [require('crypto').randomUUID(), planType, oldAmountCents, amountCents, updatedBy, now]);
+    return { oldAmountCents };
+}
+
+async function getPricingHistory(limit = 50) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM pricing_history ORDER BY changed_at DESC LIMIT $1', [limit]);
+    return rows;
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
-    claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
+    listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
+    getPricingOverrides, setPricingOverride, getPricingHistory,
 };

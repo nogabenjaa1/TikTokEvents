@@ -53,12 +53,12 @@ input[type=range]::-webkit-slider-thumb {
   transition: transform 0.1s;
 }
 input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
-/* currentColor = la tinta legible de cada material (blanco en Default/Minimal,
-   --ink-kawaii/--ink-cute en Kawaii/Cute vía la herencia del bloque de
-   material) — así el track siempre contrasta contra su propio fondo sin
-   tener que condicionar el color por material a mano. var(--surface-border-color)
-   estaba pensado para bordes sutiles (1.2:1 de contraste en Default: invisible
-   como track), no para un control interactivo. */
+/* currentColor = la tinta legible de cada material (blanco en Default,
+   --ink-cute en Cute vía la herencia del bloque de material) — así el
+   track siempre contrasta contra su propio fondo sin tener que condicionar
+   el color por material a mano. var(--surface-border-color) estaba pensado
+   para bordes sutiles (1.2:1 de contraste en Default: invisible como
+   track), no para un control interactivo. */
 input[type=range]::-webkit-slider-runnable-track {
   width: 100%; height: 8px; cursor: pointer;
   background: color-mix(in oklch, currentColor 30%, transparent); border-radius: 10px;
@@ -76,7 +76,9 @@ input[type=range]::-moz-range-thumb {
 
 /* ==========================================
    SISTEMA DE TEMAS
-   4 estilos (forma/material) x 4 acentos (color), combinables.
+   2 estilos (forma/material: Clásico/Cute) x acento (color: Morado/Azul/
+   Rosa, o "Personalizado" con cualquier color vía --accent inline, ver
+   accentStyleVars en ThemeContext.jsx), combinables.
    Todo vive bajo .themed-app — el Overlay de OBS nunca lleva esta
    clase, así que jamás cambia de aspecto sin importar el tema elegido.
    ========================================== */
@@ -89,6 +91,71 @@ input[type=range]::-moz-range-thumb {
 }
 /* El contenido real siempre por encima de cualquier capa decorativa ::before que use algún material a futuro. */
 .themed-app > * { position: relative; z-index: 1; }
+
+/* Alertas de regalos (ver AlertVisual en Overlay.jsx): esta regla de acá
+   arriba pisaba el `position: fixed` de la alerta por ser un hijo directo
+   de `.themed-app` — misma especificidad (0,1,0) y sin !important de
+   ningún lado, así que ganaba por orden de declaración, y la alerta
+   quedaba con `position: relative` de verdad. Sin `fixed`, un `inset-0`
+   no hace nada útil sobre un elemento que sigue fluyendo normal, así que
+   "Centro" terminaba viéndose arriba de todo (la caja, del alto de la
+   imagen, insertada al principio del flujo). `!important` para ganar la
+   pelea sin depender del orden de declaración. */
+.tkc-alert-viewport {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+}
+/* Vista previa en vivo del panel de alertas (ver AlertsAdmin.jsx): mismo
+   componente `AlertVisual`, pero acá la "pantalla completa" es la propia
+   cajita chica de la miniatura (el caller la deja `position: relative`),
+   no el viewport real del navegador. */
+.tkc-alert-viewport.tkc-alert-embedded {
+  position: absolute !important;
+  z-index: 1 !important;
+}
+
+/* Animaciones de entrada/salida de alertas (ver ANIMATION_IN_OPTIONS/
+   ANIMATION_OUT_OPTIONS en AlertsAdmin.jsx) — se aplican al contenido de
+   adentro de `.tkc-alert-viewport`, nunca al contenedor de posicionamiento
+   en sí (que siempre tiene que quedarse fijo/quieto). Duración fija
+   (ANIM_DURATION_MS en Overlay.jsx) para que el JS que coordina las fases
+   (entering/visible/exiting) y el CSS nunca queden desincronizados. */
+@keyframes tkc-alert-in-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tkc-alert-out-fade { from { opacity: 1; } to { opacity: 0; } }
+@keyframes tkc-alert-in-slide-up { from { opacity: 0; transform: translateY(50px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tkc-alert-out-slide-up { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-50px); } }
+@keyframes tkc-alert-in-slide-down { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tkc-alert-out-slide-down { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(50px); } }
+@keyframes tkc-alert-in-zoom { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes tkc-alert-out-zoom { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.4); } }
+@keyframes tkc-alert-in-bounce {
+  0% { opacity: 0; transform: scale(0.3); }
+  60% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.tkc-alert-anim-in-fade { animation: tkc-alert-in-fade 400ms ease-out both; }
+.tkc-alert-anim-out-fade { animation: tkc-alert-out-fade 400ms ease-in both; }
+.tkc-alert-anim-in-slide-up { animation: tkc-alert-in-slide-up 400ms ease-out both; }
+.tkc-alert-anim-out-slide-up { animation: tkc-alert-out-slide-up 400ms ease-in both; }
+.tkc-alert-anim-in-slide-down { animation: tkc-alert-in-slide-down 400ms ease-out both; }
+.tkc-alert-anim-out-slide-down { animation: tkc-alert-out-slide-down 400ms ease-in both; }
+.tkc-alert-anim-in-zoom { animation: tkc-alert-in-zoom 400ms ease-out both; }
+.tkc-alert-anim-out-zoom { animation: tkc-alert-out-zoom 400ms ease-in both; }
+.tkc-alert-anim-in-bounce { animation: tkc-alert-in-bounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Overlays angostos que se componen sobre la escena real de OBS (Top
+   Tap-Tap, Top Gifter, Modo Extensible) — a diferencia del overlay de
+   juegos/Colores (pensados para llenar casi todo el recorte con su propia
+   tarjeta), acá SOLO debe verse el recuadro, con todo lo demás
+   transparente. `body` tiene un `background-color` sólido fijo más abajo
+   y `.themed-app` el suyo propio (`--page-bg`, temático) — ambos se anulan
+   con esta clase, que App.jsx prende/apaga en el <body> solo mientras el
+   overlay activo es uno de estos tres (ver el useEffect de overlayMode).
+   Sin esto se veía un rectángulo sólido del color del tema tapando media
+   escena en vez de dejar pasar la cámara/juego de fondo. */
+body.tkc-overlay-transparent { background-color: transparent; }
+body.tkc-overlay-transparent .themed-app { background: transparent; }
 /* Transiciones suaves al cambiar de tema: las superficies, sidebar, inputs
    y botones interpolan color/sombra/borde sin cortes abruptos. */
 .theme-surface,
@@ -108,18 +175,20 @@ input[type=range]::-moz-range-thumb {
 
 /* ---- Estilos ---- */
 /* El fondo (página y superficies) lleva un tinte real del acento elegido —
-   no un violeta fijo disfrazado de "neutro". Con 4 acentos posibles, un
-   fondo que no cambia hace que morado/azul/rosa/verde se sientan casi
-   iguales fuera de los botones; el tinte es lo que hace que elegir un
-   acento cambie la sensación de TODA la pantalla, no solo de un detalle.
-   Se construye con sintaxis de color relativo — oklch(from var(--accent) L C h)
-   — en vez de color-mix() hacia un neutro: mezclar SIEMPRE diluye tanto la
-   luminosidad como el croma en proporción al % mezclado, y el croma nativo
-   de cada acento en OKLCH no es igual (rosa y verde parten más "flojos" que
-   morado/azul), así que un mismo % de mezcla los deja menos saturados. Acá
-   se toma SOLO el matiz (h) del acento y se fija una luminosidad/croma
-   parejos para los 4 — así los 4 acentos quedan igual de intensos en el
-   fondo, no solo con el matiz correcto. */
+   no un violeta fijo disfrazado de "neutro". Con varios acentos posibles
+   (morado/azul/rosa, o cualquier color personalizado), un fondo que no
+   cambia hace que se sientan casi iguales fuera de los botones; el tinte
+   es lo que hace que elegir un acento cambie la sensación de TODA la
+   pantalla, no solo de un detalle. Se construye con sintaxis de color
+   relativo — oklch(from var(--accent) L C h) — en vez de color-mix() hacia
+   un neutro: mezclar SIEMPRE diluye tanto la luminosidad como el croma en
+   proporción al % mezclado, y el croma nativo de cada acento en OKLCH no
+   es igual (rosa parte más "flojo" que morado/azul, y un color
+   personalizado puede partir de cualquier lado), así que un mismo % de
+   mezcla los deja con saturación pareja. Acá se toma SOLO el matiz (h) del
+   acento y se fija una luminosidad/croma
+   parejos para cualquiera — así todos los acentos quedan igual de
+   intensos en el fondo, no solo con el matiz correcto. */
 .themed-app[data-theme-style="default"] {
   --page-bg: oklch(from var(--accent) 0.72 0.09 h);
   --surface-bg: oklch(from var(--accent) 0.8 0.1 h);
@@ -131,9 +200,9 @@ input[type=range]::-moz-range-thumb {
   --surface-shadow: 0 0 50px color-mix(in oklch,var(--accent) 22%, transparent);
   --surface-blur: none;
   --ink-default: #2E2136;
-  /* Mismo motivo que Kawaii/Cute (ver esos bloques): fondo pastel claro de
-     punta a punta, así que el blanco/gris global del resto del sistema
-     necesita este fallback para no quedar ilegible. */
+  /* Mismo motivo que Cute (ver ese bloque): fondo pastel claro de punta a
+     punta, así que el blanco/gris global del resto del sistema necesita
+     este fallback para no quedar ilegible. */
   color: var(--ink-default);
 }
 .themed-app[data-theme-style="default"] .text-white,
@@ -166,241 +235,9 @@ input[type=range]::-moz-range-thumb {
 }
 
 /* ==========================================================
-   KAWAII — "almohada de peluche en la cabina, iluminada de acento"
-   Reemplaza a Glassmorfismo. Base pastel/esponjosa: radios ultra
-   redondeados (rounded-3xl/rounded-full), sombras profundas y difuminadas
-   con el color del acento, un brillo diagonal interior que simula relieve
-   "inflado" (squishy) y texto OSCURO sobre los rellenos pastel llenos
-   (botón primario, chips), porque blanco sobre un pastel claro no tiene
-   contraste. Hoy comparte la misma familia de color pastel que el resto
-   del sistema (Default/Minimal/Cute) — lo que distingue a Kawaii es la
-   forma (radio extremo, relleno pastel lleno en cada control, brillo
-   inflado), no la luz.
-   ========================================================== */
-.themed-app[data-theme-style="kawaii"] {
-  --page-bg: oklch(from var(--accent) 0.72 0.09 h);
-  --surface-bg: oklch(from var(--accent) 0.8 0.1 h);
-  --surface-bg-alt: oklch(from var(--accent) 0.76 0.08 h);
-  --surface-border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-  --surface-border: 1px solid var(--surface-border-color);
-  --surface-radius: 2rem;
-  --surface-radius-sm: 1.5rem;
-  --surface-shadow: 0 20px 40px -14px oklch(from var(--accent) 0.4 0.13 h / 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.6);
-  --surface-blur: none;
-  /* El relleno de botón/chip queda más vívido que la superficie (menos
-     mezclado hacia blanco) para que siga leyéndose como "lo interactivo"
-     sobre un fondo que ahora también es pastel. */
-  --accent-pastel: oklch(from var(--accent) 0.6 0.15 h);
-  --ink-kawaii: #2E2136;
-  /* Fondo claro de punta a punta: cualquier texto que NO tenga una clase
-     Tailwind de color explícita (y por eso hereda el blanco global del
-     body, en vez de matchear una de las reglas .text-white/.text-gray-*
-     de abajo) necesita este fallback — si no, queda blanco sobre pastel
-     claro e ilegible (el bug real detrás de "cajas blancas" como el input
-     de nivel mínimo en TTS Chat). */
-  color: var(--ink-kawaii);
-  font-weight: 600;
-}
-/* Pastel de verdad = fondo CLARO, así que el texto blanco/gris del resto
-   del sistema (hardcodeado en los componentes, pensado para fondo oscuro)
-   se vuelve ilegible acá. En vez de reescribir cada componente, se
-   sobreescriben las utilidades de Tailwind más usadas para texto dentro
-   del scope de Kawaii — con !important porque hace falta ganarle a la capa
-   de utilities de Tailwind de forma explícita e inequívoca, no depender de
-   un detalle de cascada. Los colores de estado (rojo/ámbar/esmeralda) NO se
-   tocan: viven sobre su propia isla oscura (badge con fondo propio), así
-   que siguen con buen contraste sin importar el fondo general. */
-.themed-app[data-theme-style="kawaii"] .text-white,
-.themed-app[data-theme-style="kawaii"] .text-gray-100,
-.themed-app[data-theme-style="kawaii"] .text-gray-200,
-.themed-app[data-theme-style="kawaii"] .text-gray-300,
-.themed-app[data-theme-style="kawaii"] .text-gray-400,
-.themed-app[data-theme-style="kawaii"] .text-gray-500,
-.themed-app[data-theme-style="kawaii"] .text-gray-600 {
-  color: var(--ink-kawaii) !important;
-}
-.themed-app[data-theme-style="kawaii"] .placeholder-gray-600::placeholder {
-  color: color-mix(in oklch, var(--ink-kawaii) 55%, transparent);
-}
-/* Brillo diagonal interior — la fuente del efecto "inflado/squishy", igual
-   en tarjetas y en el dock. Nunca en theme-die-frame (overlay de OBS): ahí
-   la prioridad es que el texto del juego se lea limpio. */
-.themed-app[data-theme-style="kawaii"] .theme-surface,
-.themed-app[data-theme-style="kawaii"] .theme-surface-featured,
-.themed-app[data-theme-style="kawaii"] .theme-sidebar {
-  background-image: linear-gradient(155deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 50%);
-}
-.themed-app[data-theme-style="kawaii"] .theme-sidebar {
-  margin: 0.75rem 0 0.75rem 0.75rem;
-  border-radius: 1.75rem;
-  gap: 0.6rem;
-}
-/* .theme-heading/.theme-label/.theme-accent-text usan por defecto un tinte
-   CLARO del acento (pensado para fondo oscuro) — sobre el pastel de Kawaii
-   necesitan un tono rico y oscuro del mismo acento para seguir "sintiéndose
-   de marca" sin perder contraste. */
-.themed-app[data-theme-style="kawaii"] .theme-heading,
-.themed-app[data-theme-style="kawaii"] .theme-label,
-.themed-app[data-theme-style="kawaii"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.42 0.16 h);
-}
-.themed-app[data-theme-style="kawaii"] .theme-heading { font-weight: 700; }
-.themed-app[data-theme-style="kawaii"] .theme-input { border-radius: 999px; }
-.themed-app[data-theme-style="kawaii"] .theme-input:focus {
-  border-color: var(--accent-pastel);
-  box-shadow: 0 0 0 5px color-mix(in oklch,var(--accent) 22%, transparent);
-}
-/* Botón primario: relleno pastel lleno de verdad (no un tinte sutil), con
-   brillo superior + sombra difuminada del acento para el efecto gomita
-   inflada. Texto oscuro: es la única forma de tener contraste real sobre
-   un pastel claro sin tocar el color de texto del resto del sistema. */
-.themed-app[data-theme-style="kawaii"] .theme-btn-primary {
-  border-radius: 999px;
-  background: linear-gradient(145deg, var(--accent-pastel), color-mix(in oklch,var(--accent-2) 55%, white));
-  color: var(--ink-kawaii);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.5), 0 10px 22px color-mix(in oklch,var(--accent) 35%, transparent);
-  transition: transform 0.15s ease, filter 0.15s ease;
-}
-.themed-app[data-theme-style="kawaii"] .theme-btn-primary:hover { transform: translateY(-2px); }
-.themed-app[data-theme-style="kawaii"] .theme-btn-primary:active { transform: scale(0.96); }
-.themed-app[data-theme-style="kawaii"] .theme-btn-secondary {
-  border-radius: 999px;
-  border-color: var(--accent-pastel);
-  background: color-mix(in oklch, var(--accent-pastel) 30%, var(--surface-bg));
-  color: var(--ink-kawaii);
-}
-.themed-app[data-theme-style="kawaii"] .theme-chip {
-  border-radius: 999px;
-  background: var(--accent-pastel);
-  color: var(--ink-kawaii);
-}
-.themed-app[data-theme-style="kawaii"] .theme-nav-btn {
-  border-radius: 1.75rem !important;
-  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-}
-.themed-app[data-theme-style="kawaii"] .theme-nav-btn:hover { transform: translateY(-2px); }
-.themed-app[data-theme-style="kawaii"] .theme-nav-btn-active {
-  box-shadow: 0 0 16px color-mix(in oklch,var(--accent) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  border-color: var(--accent-pastel);
-}
-
-/* ==========================================================
-   MINIMALISTA — "editorial silenciosa"
-   Sin cajas: los paneles pierden fondo/borde y se estructuran con una sola
-   barra vertical de acento a la izquierda (como un blockquote). El nav
-   deja de ser una grilla de íconos en cajas y pasa a ser una lista de
-   texto con un indicador de línea, no de relleno. Cero sombras/degradés,
-   tipografía fina y espaciada.
-   ========================================================== */
-.themed-app[data-theme-style="minimal"] {
-  --page-bg: oklch(from var(--accent) 0.72 0.09 h);
-  --surface-bg: transparent;
-  --surface-bg-alt: oklch(from var(--accent) 0.76 0.08 h);
-  --surface-border-color: color-mix(in oklch, var(--accent) 45%, transparent);
-  --surface-border: none;
-  --surface-radius: 0px;
-  --surface-radius-sm: 0px;
-  --surface-shadow: none;
-  --surface-blur: none;
-  font-weight: 300;
-  letter-spacing: 0.01em;
-  --ink-minimal: #2E2136;
-  /* Mismo motivo que Kawaii/Cute/Default: fondo pastel claro de punta a
-     punta, el blanco/gris global del resto del sistema necesita este
-     fallback para no quedar ilegible. */
-  color: var(--ink-minimal);
-}
-.themed-app[data-theme-style="minimal"] .text-white,
-.themed-app[data-theme-style="minimal"] .text-gray-100,
-.themed-app[data-theme-style="minimal"] .text-gray-200,
-.themed-app[data-theme-style="minimal"] .text-gray-300,
-.themed-app[data-theme-style="minimal"] .text-gray-400,
-.themed-app[data-theme-style="minimal"] .text-gray-500,
-.themed-app[data-theme-style="minimal"] .text-gray-600 {
-  color: var(--ink-minimal) !important;
-}
-.themed-app[data-theme-style="minimal"] .placeholder-gray-600::placeholder {
-  color: color-mix(in oklch, var(--ink-minimal) 55%, transparent);
-}
-.themed-app[data-theme-style="minimal"] .theme-surface,
-.themed-app[data-theme-style="minimal"] .theme-surface-featured {
-  border: none;
-  border-left: 2px solid var(--surface-border-color);
-  border-radius: 0;
-  background: transparent;
-  padding-left: 1.75rem;
-}
-.themed-app[data-theme-style="minimal"] .theme-surface-featured { border-left-color: var(--accent); }
-.themed-app[data-theme-style="minimal"] .theme-heading,
-.themed-app[data-theme-style="minimal"] .theme-label,
-.themed-app[data-theme-style="minimal"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.42 0.16 h);
-}
-.themed-app[data-theme-style="minimal"] .theme-heading {
-  font-weight: 500;
-  letter-spacing: 0.03em;
-}
-.themed-app[data-theme-style="minimal"] .theme-input {
-  border: none;
-  border-bottom: 1px solid var(--surface-border-color);
-  border-radius: 0;
-  background: transparent;
-  padding-left: 0;
-}
-.themed-app[data-theme-style="minimal"] .theme-input:focus { border-bottom-color: var(--accent); }
-/* Botón outline fino en vez de bloque sólido: refinado, sin degradés.
-   Color de texto: --accent-soft (variable global, pensada para fondo
-   oscuro) queda ilegible sobre el fondo pastel de acá — se reemplaza por
-   el mismo tono oscuro del acento que usa theme-heading. */
-.themed-app[data-theme-style="minimal"] .theme-btn-primary {
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: oklch(from var(--accent) 0.42 0.16 h);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-}
-.themed-app[data-theme-style="minimal"] .theme-btn-primary:hover {
-  background: color-mix(in oklch,var(--accent) 12%, transparent);
-  filter: none;
-}
-.themed-app[data-theme-style="minimal"] .theme-btn-secondary {
-  background: transparent;
-  border: 1px solid var(--surface-border-color);
-  color: oklch(from var(--accent) 0.42 0.16 h);
-}
-.themed-app[data-theme-style="minimal"] .theme-chip {
-  background: transparent;
-  color: oklch(from var(--accent) 0.42 0.16 h);
-  padding: 0;
-}
-/* Sidebar: lista de texto, sin fondo propio, solo una línea divisoria fina. */
-.themed-app[data-theme-style="minimal"] .theme-sidebar {
-  background: transparent;
-  border-right: 1px solid var(--surface-border-color);
-  box-shadow: none;
-  backdrop-filter: none;
-  gap: 0.25rem;
-}
-.themed-app[data-theme-style="minimal"] .theme-nav-btn {
-  width: 56px !important;
-  height: auto !important;
-  padding: 0.6rem 0 !important;
-  border-radius: 0 !important;
-  border: none;
-  border-left: 2px solid transparent;
-}
-.themed-app[data-theme-style="minimal"] .theme-nav-btn:hover { background: transparent; border-left-color: var(--surface-border-color); }
-.themed-app[data-theme-style="minimal"] .theme-nav-btn-active {
-  background: transparent;
-  border-left: 2px solid var(--accent);
-}
-
-/* ==========================================================
    CUTE — "washi-tape sticker book"
-   Pastel claro de verdad, igual de luminoso que Kawaii — la diferencia de
-   carácter viene de la forma y la textura, no de la oscuridad: borde
-   punteado tipo washi-tape/sticker (silueta que ningún otro material usa),
-   radios grandes pero no extremos (Kawaii es más "inflado"/redondo), sombra
+   Pastel claro de verdad: borde punteado tipo washi-tape/sticker (silueta
+   que ningún otro material usa), radios grandes pero no extremos, sombra
    difusa con el tono del acento (glow de algodón de azúcar) y una textura
    de puntitos sutil en las superficies grandes.
    ========================================================== */
@@ -415,15 +252,14 @@ input[type=range]::-moz-range-thumb {
   --surface-shadow: 0 14px 32px -10px oklch(from var(--accent) 0.42 0.12 h / 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   --surface-blur: none;
   --ink-cute: #2A1B2E;
-  /* Ver el mismo comentario en el bloque Kawaii: fallback de color heredado
-     para texto sin clase Tailwind explícita. */
+  /* Fallback de color heredado para texto sin clase Tailwind explícita. */
   color: var(--ink-cute);
   font-weight: 500;
 }
-/* Pastel de verdad = fondo CLARO; mismo criterio que Kawaii: se
-   sobreescribe el texto blanco/gris hardcodeado del resto del sistema
-   dentro del scope de Cute. Los colores de estado siguen intactos porque
-   viven en su propia isla de fondo oscuro (el badge), no sobre --surface-bg. */
+/* Pastel de verdad = fondo CLARO: se sobreescribe el texto blanco/gris
+   hardcodeado del resto del sistema dentro del scope de Cute. Los colores
+   de estado siguen intactos porque viven en su propia isla de fondo oscuro
+   (el badge), no sobre --surface-bg. */
 .themed-app[data-theme-style="cute"] .text-white,
 .themed-app[data-theme-style="cute"] .text-gray-100,
 .themed-app[data-theme-style="cute"] .text-gray-200,
@@ -501,7 +337,18 @@ input[type=range]::-moz-range-thumb {
 .themed-app[data-accent="purple"] { --accent: #7C3AED; --accent-2: #6366F1; --accent-soft: #A78BFA; }
 .themed-app[data-accent="blue"]   { --accent: #3B82F6; --accent-2: #06B6D4; --accent-soft: #93C5FD; }
 .themed-app[data-accent="pink"]   { --accent: #EC4899; --accent-2: #FB7185; --accent-soft: #F9A8D4; }
-.themed-app[data-accent="green"]  { --accent: #10B981; --accent-2: #34D399; --accent-soft: #6EE7B7; }
+/* "Personalizado": a diferencia de los 3 de arriba, acá no hay una terna
+   fija de colores — `--accent` lo inyecta el streamer como variable CSS
+   inline (ver accentStyleVars en ThemeContext.jsx, y cada lugar que pinta
+   un overlay/pantalla con `data-accent="custom"`). `--accent-2`/
+   `--accent-soft` sí se derivan acá con la MISMA técnica de color relativo
+   que usa el resto del sistema (oklch(from ...)), así que cualquier color
+   que elija queda con un segundo tono y un tono suave coherentes, sin
+   tener que calcularlos a mano por streamer. */
+.themed-app[data-accent="custom"] {
+  --accent-2: oklch(from var(--accent) 0.65 0.18 h);
+  --accent-soft: oklch(from var(--accent) 0.78 0.1 h);
+}
 
 /* ---- Utilidades que consumen las variables ---- */
 .theme-surface {
@@ -571,7 +418,7 @@ input[type=range]::-moz-range-thumb {
 /* Botones de acción de estado (restart/stop en los juegos) — mismo criterio
    que los badges de estado: color fijo (no sigue el acento), pero la base
    SÍ tiene que ser var(--surface-bg-alt) para no quedar como una caja
-   oscura fija flotando sobre un material pastel claro (Kawaii/Cute). */
+   oscura fija flotando sobre un material pastel claro (Cute). */
 .theme-btn-warning {
   background: color-mix(in oklch, #F59E0B 14%, var(--surface-bg-alt));
   border: 1px solid color-mix(in oklch, #F59E0B 45%, transparent);
@@ -660,4 +507,103 @@ input[type=range]::-moz-range-thumb {
 }
 .animate-pop {
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ==========================================
+   PERSONALIZACIÓN DE OVERLAYS: color de usuario "arcoíris"
+   (ver getUsernameOverride en overlayCustomization.js) — el degradado se
+   mueve por debajo de un texto con color transparente + background-clip,
+   así el propio texto queda "pintado" con el arcoíris en movimiento.
+   ========================================== */
+@keyframes tkc-rainbow-move {
+  from { background-position: 0% 0; }
+  to   { background-position: 400% 0; }
+}
+
+/* Personalización de overlays: color de nombre de usuario "personalizado" o
+   "arcoíris" (ver getUsernameOverride en overlayCustomization.js). Tienen
+   que ir como CLASE con !important, no como `style` inline — las reglas de
+   arriba (".themed-app[data-theme-style=...] .text-white" etc, buscar
+   "!important") fuerzan el color de esas clases de Tailwind según el skin, y
+   le ganan a cualquier `color` inline sin !important sin importar la
+   especificidad. MISMA especificidad que esas reglas: `.themed-app` +
+   `[data-theme-style]` + una clase (0,3,0) — ojo, no alcanza con
+   `[data-theme-style] .clase` solo (0,2,0), pierde el empate de todos
+   modos — declaradas AL FINAL del archivo para ganar el desempate. */
+.themed-app[data-theme-style] .tkc-username-custom {
+  color: var(--tkc-username-color, inherit) !important;
+}
+/* OJO #1: `background-image` (NO el shorthand `background`) — `background: X
+   !important` resetea TODOS los sub-valores del shorthand (background-size
+   incluido) a su valor inicial con el MISMO !important, lo que le ganaba a
+   la línea de abajo y dejaba el degradado en su tamaño natural (sin margen
+   para desplazarse) — por eso la animación corría pero no se veía ningún
+   movimiento, solo colores estáticos.
+   OJO #2 (bug real encontrado con medición de tiempo real, no solo mirando
+   el computed style): con `background-clip: text`, Chromium/CEF NO
+   repinta el degradado en cada frame de la animación de
+   `background-position` a menos que el elemento esté promovido a su
+   propia capa de composición — `getAnimations()` marcaba "running" y el
+   tiempo de la animación SÍ avanzaba, pero `background-position` se
+   quedaba clavado en 0% para siempre (confirmado comparando su valor en
+   dos momentos reales separados por >1s). `will-change: background-position`
+   fuerza esa promoción y el repintado real frame a frame — el fondo
+   "normal" (sin background-clip:text, ver rainbowBackgroundStyle en
+   overlayCustomization.js) nunca tuvo este problema porque no usa
+   background-clip. */
+.themed-app[data-theme-style] .tkc-username-rainbow {
+  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
+  background-size: 400% 100% !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+  will-change: background-position;
+  animation: tkc-rainbow-move 3s linear infinite;
+}
+/* "Color sólido del tema" para texto/username — mismo tono que ya usan
+   theme-label/theme-accent-text (--accent-soft), como opción explícita
+   dentro de la personalización en vez de tener que elegir "Personalizado"
+   y adivinar el hex del acento activo. */
+.themed-app[data-theme-style] .tkc-username-theme {
+  color: var(--accent-soft) !important;
+}
+/* Degradado ESTÁTICO de dos colores propios (a diferencia del arcoíris,
+   que es fijo y animado) — mismas variables `--tkc-username-from/to` que
+   alimenta getUsernameOverride, mismo truco de background-clip:text. */
+.themed-app[data-theme-style] .tkc-username-gradient {
+  background-image: linear-gradient(90deg, var(--tkc-username-from, #7C3AED), var(--tkc-username-to, #3B82F6)) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+
+/* ==========================================
+   ADS: banco de horas del invitado (Color Says)
+   ========================================== */
+/* Google Auto ads no tiene una API para "apagarse" — una vez que insertó
+   un anuncio en la página no hay forma soportada de sacarlo por JS. Se
+   oculta por CSS en cuanto el invitado reclama horas sin ads (ver
+   Colorsays.jsx; el script en sí vive fijo en index.html). */
+.tkc-ads-suppressed .adsbygoogle,
+.tkc-ads-suppressed ins.adsbygoogle {
+  display: none !important;
+}
+
+/* ==========================================
+   MOBILE: barras superiores a sangre completa
+   ========================================== */
+/* TikTokLoginBar y el rail de navegación (App.jsx) están pensados como
+   tarjetas/cajas flotantes en desktop — con bordes redondeados eso se ve
+   bien porque flotan sobre espacio libre. En mobile pasan a ocupar el
+   ancho completo apiladas una sobre otra (ver el flex-col del contenedor
+   en App.jsx), y esos mismos bordes redondeados dejan ver triangulitos del
+   fondo en cada esquina, como si las secciones no encajaran entre sí. Se
+   sacan los bordes/márgenes solo en mobile; a partir de md: no se toca
+   nada (Cute sí le da margen y radio propios al sidebar ahí, y eso se
+   mantiene intacto en desktop). */
+@media (max-width: 767px) {
+  .tkc-mobile-flush {
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
 }

@@ -10,6 +10,12 @@ backend/.env
 backend/data/
 frontend/.env
 
+# Downloader: binario de yt-dlp descargado por scripts/download-ytdlp.js
+# (postinstall) y caché de videos descargados -- ninguno de los dos es
+# código fuente, y el segundo puede tener archivos de video reales.
+backend/bin/
+backend/downloads/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

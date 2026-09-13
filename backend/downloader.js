@@ -1,7 +1,7 @@
 // ==========================================
 // DOWNLOADER: descarga videos de YouTube/TikTok (sin marca de agua) vía
-// yt-dlp -- herramienta exclusiva de planes pagos (ver auth.requirePaidPlan
-// en server.js). Puerto Node de la lógica ya probada en el proyecto
+// yt-dlp -- disponible para cualquier sesión válida, incluida la prueba
+// gratis (pedido explícito). Puerto Node de la lógica ya probada en el proyecto
 // standalone YTDownloader (mismos formatos/calidad/proxy anti-ban para
 // TikTok), adaptada acá para ser multi-tenant: cada licencia solo puede
 // ver/descargar sus propios jobs (ver ownership checks en server.js).

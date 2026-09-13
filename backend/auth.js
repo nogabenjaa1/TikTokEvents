@@ -151,15 +151,6 @@ function requireAdmin(req, res, next) {
     next();
 }
 
-// Pedido explicito: el Downloader es un beneficio exclusivo de planes
-// pagos (month/annual/lifetime), NO de la prueba gratis -- a diferencia
-// de requireAuth (que acepta cualquier sesion valida), esto ademas exige
-// que license_type no sea 'trial'. Admin siempre pasa, igual que
-// requireAdmin.
-function requirePaidPlan(req, res, next) {
-    if (req.isAdmin || req.license?.license_type !== 'trial') return next();
-    res.status(403).json({ success: false, error: 'Esta función es exclusiva de planes pagos. Mejora tu plan en Membresía.' });
-}
 
 // ── Middleware Socket.io ───────────────────────────────────
 // Acepta DOS formas de autenticar en el handshake:
@@ -200,5 +191,5 @@ async function socketAuthMiddleware(socket, next) {
 module.exports = {
     generateLicenseKey, hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
     generateSessionId, signSession, verifySession, signSpotifyState, verifySpotifyState, checkTokenStatus, resolveFromToken, resolveFromRawKey,
-    requireAuth, requireAdmin, requirePaidPlan, socketAuthMiddleware,
+    requireAuth, requireAdmin, socketAuthMiddleware,
 };

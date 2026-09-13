@@ -22,9 +22,9 @@ const STATUS_LABELS = {
 // componentes/clases de tema de este panel (theme-surface/theme-input/
 // theme-btn-primary) en vez de su CSS bespoke original, para que se vea
 // igual de "de la casa" que Alertas o Membresía.
-// Exclusivo de planes pagos: el gateo real (rechazar prueba gratis) vive
-// en el backend (auth.requirePaidPlan) -- App.jsx ya evita mostrar este
-// componente sin un plan pago, pero el backend nunca confía solo en eso.
+// Disponible para cualquier sesión válida (incluida la prueba gratis,
+// pedido explícito) -- App.jsx solo evita mostrar este componente sin
+// sesión, el backend (auth.requireAuth) es quien de verdad lo exige.
 // ─────────────────────────────────────────────
 export default function Downloader() {
   const [plat, setPlat] = useState('yt');

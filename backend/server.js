@@ -1104,8 +1104,8 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
 
 // ==========================================
 // DOWNLOADER: descarga videos de YouTube/TikTok (sin marca de agua) --
-// exclusivo de planes pagos (auth.requirePaidPlan, pedido explícito: NO
-// para prueba gratis). Puerto del proyecto standalone YTDownloader ya
+// disponible para cualquier sesión válida, incluida la prueba gratis
+// (pedido explícito). Puerto del proyecto standalone YTDownloader ya
 // probado, adaptado acá multi-tenant (ver downloader.js) -- cada job
 // vive scopeado a la licencia que lo creó, y status/file verifican esa
 // pertenencia antes de responder nada.
@@ -1116,7 +1116,7 @@ function sanitizeDownloaderQuality(quality, fmt) {
     return quality === 'best' || /^\d{2,4}$/.test(quality) ? quality : 'best';
 }
 
-app.post('/api/downloader/info', auth.requireAuth, auth.requirePaidPlan, downloaderActionLimiter, async (req, res) => {
+app.post('/api/downloader/info', auth.requireAuth, downloaderActionLimiter, async (req, res) => {
     const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
     if (!url) return res.status(400).json({ success: false, error: 'URL requerida' });
     try {
@@ -1127,7 +1127,7 @@ app.post('/api/downloader/info', auth.requireAuth, auth.requirePaidPlan, downloa
     }
 });
 
-app.post('/api/downloader/start', auth.requireAuth, auth.requirePaidPlan, downloaderActionLimiter, (req, res) => {
+app.post('/api/downloader/start', auth.requireAuth, downloaderActionLimiter, (req, res) => {
     const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
     if (!url) return res.status(400).json({ success: false, error: 'URL requerida' });
     const fmt = DOWNLOADER_FORMATS.includes(req.body?.format) ? req.body.format : 'mp4';
@@ -1140,7 +1140,7 @@ app.post('/api/downloader/start', auth.requireAuth, auth.requirePaidPlan, downlo
     }
 });
 
-app.get('/api/downloader/status/:jobId', auth.requireAuth, auth.requirePaidPlan, downloaderStatusLimiter, (req, res) => {
+app.get('/api/downloader/status/:jobId', auth.requireAuth, downloaderStatusLimiter, (req, res) => {
     const job = downloader.getJob(req.params.jobId);
     if (!job || job.licenseId !== req.license.id) return res.status(404).json({ success: false, error: 'Job no encontrado' });
     res.json({ status: job.status, percent: job.percent, speed: job.speed, eta: job.eta, filename: job.filename, title: job.title, error: job.error });
@@ -1150,7 +1150,7 @@ app.get('/api/downloader/status/:jobId', auth.requireAuth, auth.requirePaidPlan,
 // proyecto standalone de un solo usuario) -- así ningún licenciatario
 // puede adivinar/pedir el archivo de otro: la pertenencia se resuelve acá
 // contra el job, no confiando en nada que mande el cliente.
-app.get('/api/downloader/file/:jobId', auth.requireAuth, auth.requirePaidPlan, generalLimiter, (req, res) => {
+app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, res) => {
     const job = downloader.getJob(req.params.jobId);
     if (!job || job.licenseId !== req.license.id || job.status !== 'done' || !job.filePath) {
         return res.status(404).json({ success: false, error: 'Archivo no encontrado' });

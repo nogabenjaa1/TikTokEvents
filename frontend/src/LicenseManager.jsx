@@ -41,20 +41,23 @@ function fmtDate(ms) {
   return ms ? new Date(ms).toLocaleString() : '—';
 }
 
-// Toasts con los tokens de tema (theme-surface + borde de color fijo según
+// Toasts con los tokens de tema (theme-surface + color de texto fijo según
 // el tipo) — mismo criterio que los badges de estado: el color es fijo
 // (verde éxito / rojo error), no sigue el acento, pero el fondo sí respeta
-// el material activo en vez de quedar un cuadro oscuro fijo.
+// el material activo en vez de quedar un cuadro oscuro fijo. Un ícono
+// (en vez del borde lateral grueso de antes) distingue éxito/error de forma
+// más sutil.
 function ToastStack({ toasts }) {
   if (toasts.length === 0) return null;
   return (
     <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 w-72">
       {toasts.map(t => (
         <div key={t.id} className={[
-          'theme-surface px-4 py-3 text-xs font-bold shadow-lg border-l-4',
-          t.type === 'error' ? 'border-l-red-500 text-red-700' : 'border-l-emerald-500 text-emerald-700',
+          'theme-surface px-4 py-3 text-xs font-bold shadow-lg flex items-center gap-2',
+          t.type === 'error' ? 'text-red-700' : 'text-emerald-700',
         ].join(' ')}>
-          {t.message}
+          <span>{t.type === 'error' ? '⚠️' : '✅'}</span>
+          <span>{t.message}</span>
         </div>
       ))}
     </div>

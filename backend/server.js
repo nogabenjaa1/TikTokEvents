@@ -139,20 +139,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // substring en vez de una lista fija de valores conocidos, para cubrir
 // variantes que no hemos visto todavia sin tener que ir agregandolas a
 // mano cada vez que aparece una nueva.
-// Separa un nombre completo en first_name/last_name -- pedido explicito
-// de MercadoPago (checklist de calidad de integracion, "Apellido del
-// comprador"): mandar payer.last_name reduce rechazos del motor
-// antifraude. Si solo viene una palabra, se usa igual como apellido (un
-// last_name vacio es peor que uno repetido: preferimos mandar 'Juan'/
-// 'Juan' antes que 'Juan'/'' cuando el comprador puso un solo nombre).
-function splitFullName(fullName) {
-    const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
-    if (!clean) return { firstName: undefined, lastName: undefined };
-    const parts = clean.split(' ');
-    const firstName = parts[0];
-    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
-    return { firstName, lastName };
-}
 // Bug de seguridad real encontrado y corregido: los logs de
 // /api/payments/charge (tanto el de exito como el de error) mandaban el
 // JSON crudo de la respuesta de MercadoPago tal cual a Render, que
@@ -965,7 +951,7 @@ function evaluateOrderStatus(order) {
 // verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId } = req.body || {};
+    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -978,6 +964,11 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     const cleanEmail = typeof email === 'string' ? email.trim() : '';
     if (!EMAIL_RE.test(cleanEmail)) {
         return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
+    }
+    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : '';
+    const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
+    if (!firstName || !lastName) {
+        return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
     }
     if (!token || typeof token !== 'string') {
         return res.status(400).json({ success: false, error: 'Falta el token de la tarjeta' });
@@ -1023,24 +1014,17 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     if (normalizedPaymentMethodId !== paymentMethodId) {
         console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
     }
-    const { firstName, lastName } = splitFullName(fullName);
     // Opcional: se manda solo si vienen las 3 partes juntas.
     const address = (zipCode && streetName && streetNumber)
         ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
         : undefined;
 
-    // Diagnostico temporal: el checklist de calidad de MercadoPago sigue
-    // marcando "Nombre/Apellido del comprador" y "Fecha de registro del
-    // pagador" como pendientes pese a que el codigo ya los manda -- y la
-    // respuesta de la Orders API NUNCA los hace eco (ni aprobado ni
-    // rechazado), asi que no hay forma de confirmarlo mirando la respuesta.
-    // Este log deja ver, en cada intento real, si de verdad llegaron
-    // completos desde el Brick (ej. el streamer dejo vacio el nombre del
-    // titular) antes de asumir que es solo demora del dashboard en
-    // re-puntuar.
+    // Diagnostico temporal: la respuesta de la Orders API nunca hace eco
+    // de additional_info/payer (ni aprobado ni rechazado), asi que no hay
+    // forma de confirmar desde ahi si de verdad llegan completos. Ya no
+    // aplica a firstName/lastName (validados arriba, siempre llegan si el
+    // request pasa de ahi) pero sigue siendo util para deviceId/address.
     console.log('[MP] Datos del comprador para esta orden:', {
-        hasFirstName: !!firstName,
-        hasLastName: !!lastName,
         hasAddress: !!address,
         hasDeviceId: !!deviceId,
     });

@@ -47,7 +47,7 @@ function friendlyDeclineMessage(statusDetail) {
 // hosteado de MP) el redirect de create-preference. El Brick tokeniza la
 // tarjeta en un iframe de MercadoPago; acá nunca se ve el número real, solo
 // el token + payment_method_id que arma en su callback onSubmit.
-export default function CardPaymentForm({ planType, diceTier, amount, email, zipCode, streetName, streetNumber, onSuccess, onCancel }) {
+export default function CardPaymentForm({ planType, diceTier, amount, email, firstName, lastName, zipCode, streetName, streetNumber, onSuccess, onCancel }) {
   const [sdkState, setSdkState] = useState('loading'); // loading | ready | error | no-key
   const [submitError, setSubmitError] = useState('');
   const [pending, setPending] = useState(false);
@@ -62,9 +62,9 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
   // y el backend rechazaba con "correo invalido" pese a que en pantalla
   // ya se veia el correo correcto). Este ref se actualiza en cada render
   // para que onSubmit siempre lea el valor mas reciente.
-  const latestRef = useRef({ planType, diceTier, email, zipCode, streetName, streetNumber });
+  const latestRef = useRef({ planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber });
   useEffect(() => {
-    latestRef.current = { planType, diceTier, email, zipCode, streetName, streetNumber };
+    latestRef.current = { planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber };
   });
   // Challenge 3DS (checklist de calidad de MP, "Protocolo de seguridad
   // 3DS"): cuando MercadoPago quiere una segunda verificacion con el banco
@@ -177,14 +177,17 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
               planType: current.planType,
               diceTier: current.diceTier,
               email: current.email,
+              // Pedido explicito de MercadoPago (checklist de calidad,
+              // "Nombre/Apellido del comprador"): campos propios (ver
+              // Membership.jsx), en vez de partir formData.cardholderName
+              // (el nombre del titular que pide el Brick para la tarjeta,
+              // que puede no coincidir o venir incompleto -- ej. sin
+              // apellido).
+              firstName: current.firstName,
+              lastName: current.lastName,
               zipCode: current.zipCode,
               streetName: current.streetName,
               streetNumber: current.streetNumber,
-              // Pedido explicito de MercadoPago (checklist de calidad,
-              // "Apellido del comprador"): reusa el nombre del titular que
-              // el propio Brick ya pide para la tarjeta, en vez de agregar
-              // un campo nuevo solo para esto.
-              fullName: formData.cardholderName,
               token: formData.token,
               payment_method_id: formData.payment_method_id,
               installments: formData.installments,

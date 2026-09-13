@@ -55,7 +55,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { MercadoPagoConfig, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const { MercadoPagoConfig, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 
 const multer = require('multer');
 
@@ -102,9 +102,8 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://loc
 // devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
 // dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
 // producción queda intacto todo el tiempo, listo para volver apagando el
-// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial) y
-// Payment.get() del webhook: ambos pasan por este mismo getMpClient(), así
-// que activar el flag los pone en modo prueba a los tres a la vez.
+// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial), que
+// pasa por este mismo getMpClient().
 function getMpAccessToken() {
     const testMode = process.env.MP_TEST_MODE === 'true';
     const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
@@ -806,31 +805,22 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
 
-    // 'payment': notificaciones del flujo viejo por Preference/Checkout Pro.
-    // 'order': notificaciones del cobro directo (Card Payment Brick /
-    // Checkout API, ver /api/payments/charge) cuando esta cuenta lo procesa
-    // async (capture_mode "automatic_async", el default) -- sin esta rama,
-    // un pago que MP tarda en confirmar nunca actualizaba la licencia,
-    // aunque al comprador SI se le haya cobrado.
+    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
+    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
+    // camino que cree una Preference/Checkout Pro (se eliminó ese endpoint
+    // muerto hace un tiempo), así que el único tópico real que puede llegar
+    // es 'order'. Se descarta cualquier otro explícitamente en vez de
+    // dejarlo pasar en silencio, para que quede claro en el log si algún
+    // día MercadoPago manda algo inesperado en esta cuenta.
     const topic = req.query.type || req.body?.type;
-    if (topic !== 'payment' && topic !== 'order') return;
+    if (topic !== 'order') {
+        console.log('[MP] Webhook con tópico no soportado (esta integración es solo Orders API) — descartado:', topic);
+        return;
+    }
 
     try {
-        if (topic === 'payment') {
-            const payment = new Payment(getMpClient());
-            const paymentData = await payment.get({ id: dataId });
-            if (paymentData.status === 'approved') {
-                const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-                const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-                const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
-                await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
-            }
-            return;
-        }
-
-        // topic === 'order': no se confia en el body de la notificacion --
-        // se pide el estado real con un GET, igual de paranoico que el
-        // camino de 'payment' de arriba (que tampoco confia en el payload).
+        // No se confia en el body de la notificacion -- se pide el estado
+        // real con un GET.
         const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
             headers: { Authorization: `Bearer ${getMpAccessToken()}` },
         });
@@ -839,8 +829,7 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
             console.error('[MP] Webhook de order: no se pudo consultar la orden', dataId, orderRes.status);
             return;
         }
-        const orderPayment = order?.transactions?.payments?.[0];
-        const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        const { orderPayment, approved } = evaluateOrderStatus(order);
         if (!approved) return;
         // Separador '_' a proposito (ver donde se arma external_reference en
         // /api/payments/charge): licenseId es un UUID con '-' adentro, asi
@@ -855,11 +844,10 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 });
 
 // Aplica una compra ya APROBADA por MercadoPago a la licencia
-// correspondiente -- tres llamadores, cada uno resuelve licenseId/
-// planType/diceTier a su manera antes de llamar esto: el webhook tipo
-// 'payment' (Preference/Checkout Pro) y el webhook tipo 'order' (cobro
-// directo async) parsean su propio external_reference con reglas
-// distintas (':' vs '_', ver donde se arma cada uno), mientras que
+// correspondiente -- tres llamadores: el webhook de tópico 'order' y el
+// polling de /api/payments/orders/:orderId/status (post-challenge 3DS)
+// parsean licenseId/planType/diceTier de external_reference (separador
+// '_', ver donde se arma en /api/payments/charge), mientras que
 // /api/payments/charge ya conoce esos valores de su propio request y no
 // necesita parsear nada. Idempotente via el UNIQUE de payments.
 // mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con el

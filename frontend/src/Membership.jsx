@@ -8,6 +8,10 @@ const PLANS = [
   { id: 'lifetime', label: 'Lifetime', mxn: 1800, period: 'pago único' },
 ];
 const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
+// Chequeo minimo de formato -- solo para decidir cuando ya hay un correo
+// utilizable con el que crear el Card Payment Brick (ver mas abajo); el
+// backend sigue siendo quien de verdad valida el formato antes de cobrar.
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // Referencia aproximada MXN por USD -- pedido explicito: que la
 // referencia en dolares que ve el streamer se recalcule sola en cuanto el
 // admin cambie el precio en MXN desde el panel, en vez de quedar como un
@@ -31,8 +35,13 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 // Funciona con o sin sesión: sin sesión se ven los planes igual (precio
 // público) pero hace falta un alias antes de pagar — se usa para crear la
 // cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
-// Login.jsx. El formato de correo lo valida el backend (ver
-// /api/payments/charge), no hace falta duplicar esa regex acá.
+// Login.jsx. El formato final lo sigue validando el backend antes de
+// cobrar (ver /api/payments/charge); EMAIL_RE de acá solo decide cuándo ya
+// hay un correo usable para crear el Card Payment Brick (ver más abajo:
+// crearlo antes, con el campo vacío, hacía que el propio Brick mostrara su
+// propio input de correo duplicado, y ese quedaba clavado con el valor
+// vacío de aquel momento aunque el streamer después completara el de
+// arriba).
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
@@ -297,16 +306,20 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           </div>
 
-          <CardPaymentForm
-            planType={payingPlan}
-            amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
-            email={email.trim()}
-            zipCode={zipCode.trim()}
-            streetName={streetName.trim()}
-            streetNumber={streetNumber.trim()}
-            onSuccess={handlePaymentSuccess}
-            onCancel={() => setPayingPlan(null)}
-          />
+          {EMAIL_RE.test(email.trim()) ? (
+            <CardPaymentForm
+              planType={payingPlan}
+              amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+              email={email.trim()}
+              zipCode={zipCode.trim()}
+              streetName={streetName.trim()}
+              streetNumber={streetNumber.trim()}
+              onSuccess={handlePaymentSuccess}
+              onCancel={() => setPayingPlan(null)}
+            />
+          ) : (
+            <p className="text-[10px] text-gray-500">Escribe un correo válido arriba para continuar con el pago.</p>
+          )}
         </>
       )}
 

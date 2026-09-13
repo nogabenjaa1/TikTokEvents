@@ -102,6 +102,12 @@ export default function LicenseManager({ onSessionInvalid }) {
   const [extendType, setExtendType] = useState('week');
   const [extendDiceTier, setExtendDiceTier] = useState('regular');
 
+  // Selección para eliminar en bloque (pedido explícito: evitar revocar +
+  // eliminar licencia por licencia una por una). Un Set de ids, filtrado
+  // por lo que el filtro/búsqueda actual muestra -- ver filteredLicenses.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // Precios de licencias -- separado del CRUD de licencias de arriba a
   // proposito: son dos conceptos distintos (una licencia puntual vs. lo que
   // cuesta cada plan para TODOS), aunque compartan el mismo panel de admin.
@@ -253,20 +259,61 @@ export default function LicenseManager({ onSessionInvalid }) {
     }
   };
 
-  // Borrado real de la fila (a diferencia de revocar). El backend ya
-  // rechaza borrar una licencia todavía activa, pero se confirma igual acá
-  // para no depender solo de esa barrera.
+  // Borrado real de la fila (a diferencia de revocar). Pedido explícito:
+  // un solo paso -- si la licencia todavía está activa, el backend ahora
+  // la revoca automáticamente antes de borrarla (ya no hace falta
+  // revocarla a mano primero).
   const deleteLicenseRow = async (lic) => {
-    if (!window.confirm(`¿Eliminar para siempre la licencia de @${lic.username}? Esto no se puede deshacer.`)) return;
+    if (!window.confirm(`¿Eliminar para siempre la licencia de @${lic.username}? Esto no se puede deshacer.${lic.revoked ? '' : ' Se revoca automáticamente antes de borrarla.'}`)) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}`, { method: 'DELETE', headers: authHeaders() });
       if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo eliminar');
       pushToast('Licencia eliminada');
+      setSelectedIds(prev => { if (!prev.has(lic.id)) return prev; const next = new Set(prev); next.delete(lic.id); return next; });
       fetchLicenses();
     } catch (err) {
       pushToast(err.message, 'error');
+    }
+  };
+
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // Eliminación en bloque -- misma idea que deleteLicenseRow (revoca
+  // automático si hace falta), pero en un solo request para toda la
+  // selección en vez de N llamadas.
+  const bulkDeleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`¿Eliminar para siempre ${ids.length} licencia(s)? Esto no se puede deshacer. Las que sigan activas se revocan automáticamente antes de borrarlas.`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo eliminar el lote');
+      pushToast(
+        data.skipped > 0
+          ? `${data.deleted} licencia(s) eliminada(s), ${data.skipped} omitida(s)`
+          : `${data.deleted} licencia(s) eliminada(s)`
+      );
+      setSelectedIds(new Set());
+      fetchLicenses();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -352,6 +399,10 @@ export default function LicenseManager({ onSessionInvalid }) {
       return true;
     });
   }, [licenses, search, statusFilter]);
+
+  // Nunca se puede eliminar una licencia admin -- ver el mismo criterio en
+  // el backend (/api/licenses/:id, /api/licenses/bulk-delete).
+  const selectableLicenses = useMemo(() => filteredLicenses.filter(l => !l.isAdmin), [filteredLicenses]);
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
@@ -481,6 +532,28 @@ export default function LicenseManager({ onSessionInvalid }) {
             {STATUS_FILTERS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
         </div>
+        {/* Eliminar en bloque -- pedido explícito: evitar revocar +
+            eliminar licencia por licencia una por una. */}
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectableLicenses.length > 0 && selectableLicenses.every(l => selectedIds.has(l.id))}
+              onChange={e => setSelectedIds(e.target.checked ? new Set(selectableLicenses.map(l => l.id)) : new Set())}
+              disabled={selectableLicenses.length === 0}
+            />
+            Seleccionar todas (visibles)
+          </label>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={bulkDeleteSelected}
+              disabled={bulkDeleting}
+              className="text-[10px] font-bold text-red-400 hover:text-red-300 underline disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {bulkDeleting ? 'Eliminando...' : `Eliminar seleccionadas (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Listado */}
@@ -493,11 +566,18 @@ export default function LicenseManager({ onSessionInvalid }) {
           </p>
         ) : filteredLicenses.map(lic => {
           const status = statusOf(lic);
-          const deletable = lic.revoked || status.id === 'expired';
           return (
             <div key={lic.id} className="theme-surface p-4 flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-100">
+                <span className="font-bold text-gray-100 flex items-center gap-2">
+                  {!lic.isAdmin && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(lic.id)}
+                      onChange={() => toggleSelected(lic.id)}
+                      className="shrink-0"
+                    />
+                  )}
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
                   {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">🔓 MULTI-DISPOSITIVO</span>}
                   {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">🎲 WIN BONUS</span>}
@@ -542,7 +622,7 @@ export default function LicenseManager({ onSessionInvalid }) {
                     Extender
                   </button>
                 )}
-                {deletable && !lic.isAdmin && (
+                {!lic.isAdmin && (
                   <button onClick={() => deleteLicenseRow(lic)} className="text-[10px] font-bold text-gray-400 hover:text-red-400 underline">
                     Eliminar
                   </button>

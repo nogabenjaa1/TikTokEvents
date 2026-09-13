@@ -521,18 +521,45 @@ app.post('/api/licenses/:id/extend', auth.requireAuth, auth.requireAdmin, adminL
 });
 
 // Borrado real de la DB — a diferencia de "revocar" (que solo marca la
-// fila y la conserva). Solo se permite sobre licencias ya revocadas o
-// expiradas: es una barrera para no borrar sin querer una licencia paga
-// activa (si se quiere borrar una activa, primero hay que revocarla).
+// fila y la conserva). Pedido explicito: que "Eliminar" sea un solo paso
+// para el admin (antes exigia revocar aparte primero) -- si la licencia
+// todavia esta activa, la revoca acá mismo antes de borrarla, en vez de
+// devolver un error pidiendo que se revoque a mano.
 app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
-    const stillActive = !row.revoked && (row.expires_at === null || row.expires_at > Date.now());
-    if (stillActive) {
-        return res.status(400).json({ success: false, error: 'Revoca la licencia antes de eliminarla' });
-    }
+    if (row.is_admin) return res.status(400).json({ success: false, error: 'No se puede eliminar una licencia admin' });
+    if (!row.revoked) await db.revoke(row.id);
     await db.deleteLicense(row.id);
     res.json({ success: true });
+});
+
+// Eliminacion en bloque (pedido explicito: evitar revocar+eliminar
+// licencia por licencia una por una). Mismo criterio que el borrado
+// individual de arriba (auto-revoca si hace falta, nunca toca admins) --
+// un solo request en vez de N, así el adminLimiter no se agota con listas
+// grandes. Sigue de largo con las demás si una puntual falla, en vez de
+// abortar todo el lote.
+app.post('/api/licenses/bulk-delete', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(id => typeof id === 'string' && id))] : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, error: 'No se seleccionó ninguna licencia' });
+
+    let deleted = 0;
+    const skipped = [];
+    for (const id of ids) {
+        try {
+            const row = await db.findById(id);
+            if (!row) { skipped.push(id); continue; }
+            if (row.is_admin) { skipped.push(id); continue; }
+            if (!row.revoked) await db.revoke(row.id);
+            await db.deleteLicense(row.id);
+            deleted++;
+        } catch (err) {
+            console.error('[licenses] Error eliminando en bloque', id, err.message);
+            skipped.push(id);
+        }
+    }
+    res.json({ success: true, deleted, skipped: skipped.length });
 });
 
 // ==========================================

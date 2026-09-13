@@ -66,6 +66,71 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
   useEffect(() => {
     latestRef.current = { planType, diceTier, email, zipCode, streetName, streetNumber };
   });
+  // Challenge 3DS (checklist de calidad de MP, "Protocolo de seguridad
+  // 3DS"): cuando MercadoPago quiere una segunda verificacion con el banco
+  // en vez de aprobar/rechazar de una, /api/payments/charge devuelve una
+  // URL para mostrar en un iframe. resolve/reject del Promise de onSubmit
+  // quedan guardados acá (no se puede volver a llamar onSubmit para
+  // recuperarlos) hasta que el challenge termine y se confirme el status
+  // real -- ver pollOrderStatus mas abajo.
+  const [challenge, setChallenge] = useState(null); // { url, orderId } | null
+  const challengeCallbacksRef = useRef(null);
+
+  function settle(data, resolve, reject) {
+    setPending(false);
+    if (!data.success) {
+      setSubmitError(data.error || 'No se pudo procesar el pago.');
+      reject();
+      return;
+    }
+    if (data.status !== 'approved') {
+      setSubmitError(
+        data.status === 'in_process' || data.status === 'pending'
+          ? 'Tu pago quedó pendiente de confirmación — te avisamos apenas se confirme.'
+          : friendlyDeclineMessage(data.statusDetail)
+      );
+      reject();
+      return;
+    }
+    onSuccess?.(data);
+    resolve();
+  }
+
+  // El propio doc de MercadoPago aclara que el mensaje "COMPLETE" del
+  // iframe solo avisa que el challenge terminó, no que el pago ya tiene
+  // status final -- hay que insistir un rato consultando la orden real.
+  function pollOrderStatus(orderId, resolve, reject, attempt = 0) {
+    fetch(`${backendUrl()}/api/payments/orders/${orderId}/status`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && (data.status === 'pending' || data.status === 'challenge_required') && attempt < 15) {
+          setTimeout(() => pollOrderStatus(orderId, resolve, reject, attempt + 1), 2000);
+          return;
+        }
+        settle(data, resolve, reject);
+      })
+      .catch(() => {
+        if (attempt < 15) {
+          setTimeout(() => pollOrderStatus(orderId, resolve, reject, attempt + 1), 2000);
+        } else {
+          settle({ success: false, error: 'No se pudo confirmar el estado del pago.' }, resolve, reject);
+        }
+      });
+  }
+
+  useEffect(() => {
+    if (!challenge) return;
+    function handleChallengeMessage(event) {
+      if (event.data?.status !== 'COMPLETE') return;
+      const callbacks = challengeCallbacksRef.current;
+      setChallenge(null);
+      if (!callbacks) return;
+      pollOrderStatus(challenge.orderId, callbacks.resolve, callbacks.reject);
+    }
+    window.addEventListener('message', handleChallengeMessage);
+    return () => window.removeEventListener('message', handleChallengeMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,23 +201,14 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
           })
             .then(res => res.json())
             .then(data => {
-              setPending(false);
-              if (!data.success) {
-                setSubmitError(data.error || 'No se pudo procesar el pago.');
-                reject();
+              if (data.success && data.status === 'challenge_required' && data.challengeUrl && data.orderId) {
+                // Sigue "procesando" (pending se queda en true) -- ahora el
+                // comprador tiene que confirmar con su banco en el iframe.
+                challengeCallbacksRef.current = { resolve, reject };
+                setChallenge({ url: data.challengeUrl, orderId: data.orderId });
                 return;
               }
-              if (data.status !== 'approved') {
-                setSubmitError(
-                  data.status === 'in_process' || data.status === 'pending'
-                    ? 'Tu pago quedó pendiente de confirmación — te avisamos apenas se confirme.'
-                    : friendlyDeclineMessage(data.statusDetail)
-                );
-                reject();
-                return;
-              }
-              onSuccess?.(data);
-              resolve();
+              settle(data, resolve, reject);
             })
             .catch(() => {
               setPending(false);
@@ -207,6 +263,32 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
       <p className="text-[9px] text-gray-500 text-center flex items-center justify-center gap-1">
         🔒 Pago 100% seguro procesado por <strong>Mercado Pago</strong>
       </p>
+      {challenge && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="theme-surface w-full max-w-md p-4 flex flex-col gap-3">
+            <p className="theme-label text-xs uppercase tracking-widest font-semibold text-center">
+              Verificación adicional de tu banco
+            </p>
+            <p className="text-[10px] text-gray-500 text-center">
+              Tu banco pide un paso extra para confirmar que eres tú. No cierres esta ventana.
+            </p>
+            <iframe src={challenge.url} title="Verificación de seguridad" className="w-full h-[420px] rounded-lg border-0" />
+            <button
+              type="button"
+              onClick={() => {
+                const callbacks = challengeCallbacksRef.current;
+                setChallenge(null);
+                setPending(false);
+                setSubmitError('Verificación cancelada. Puedes intentar de nuevo.');
+                callbacks?.reject();
+              }}
+              className="theme-btn-secondary w-full py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all"
+            >
+              Cancelar verificación
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

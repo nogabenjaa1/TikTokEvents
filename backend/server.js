@@ -235,6 +235,10 @@ const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardH
 // TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
 const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+// Mas generoso: el frontend hace polling corto de esto mientras el
+// comprador completa el challenge 3DS en su banco (ver
+// /api/payments/orders/:orderId/status).
+const paymentStatusLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
 // Más generoso que el resto: a este lo llama MercadoPago server-to-server,
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
@@ -915,6 +919,23 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
     return { applied: true, licenseId };
 }
 
+// Interpreta el estado real de una orden de la Orders API -- compartido
+// entre el cobro directo y el polling de status despues de un challenge
+// 3DS (ver mas abajo), asi ambos caminos coinciden en como distinguir
+// aprobado / rechazado / pendiente-async / pendiente-challenge.
+function evaluateOrderStatus(order) {
+    const orderPayment = order?.transactions?.payments?.[0];
+    const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+    const challengeUrl = orderPayment?.payment_method?.transaction_security?.url;
+    const isChallenge = !approved && orderPayment?.status_detail === 'pending_challenge' && !!challengeUrl;
+    // "processing"/"action_required" son estados async reales de la Orders
+    // API (ver doc oficial) -- se traducen a 'pending' para que el frontend
+    // (que ya sabe mostrar "pago pendiente", ver CardPaymentForm.jsx) no los
+    // confunda con un rechazo.
+    const isPending = !approved && !isChallenge && (order.status === 'processing' || order.status === 'action_required');
+    return { orderPayment, approved, isChallenge, challengeUrl, isPending };
+}
+
 // ==========================================
 // COBRO DIRECTO (Checkout API + Card Payment Brick) -- unico camino de
 // cobro de la plataforma (el checkout hosteado de MercadoPago via
@@ -1043,6 +1064,27 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                         },
                     }],
                 },
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Protocolo de seguridad 3DS"): sin esto la Orders API
+                // nunca ofrece un challenge 3DS -- solo puede aprobar o
+                // rechazar de una, y confirmado en logs de produccion que
+                // ante cualquier señal de riesgo elegia rechazar (high_risk)
+                // en vez de pedir una segunda verificacion con el banco.
+                // "on_fraud_risk" deja que MP decida caso por caso si pedir
+                // el challenge; "required" en liability_shift es el unico
+                // valor que acepta la API y traslada la responsabilidad del
+                // fraude a la red de la tarjeta cuando el challenge se
+                // completa bien. Si toca challenge, la orden vuelve con
+                // status "action_required"/"pending_challenge" (ver mas
+                // abajo) en vez de aprobada o rechazada de una.
+                config: {
+                    online: {
+                        transaction_security: {
+                            validation: 'on_fraud_risk',
+                            liability_shift: 'required',
+                        },
+                    },
+                },
             }),
         });
         const result = await mpRes.json();
@@ -1060,15 +1102,10 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         // rechazados) antes de simplificar este log.
         console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(redactOrderTokens(result)));
 
-        const orderPayment = result?.transactions?.payments?.[0];
-        const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
-        // "processing"/"action_required" son estados async reales de la
-        // Orders API (ver doc oficial) -- se traducen a 'pending' para que
-        // el frontend (que ya sabe mostrar "pago pendiente" para ese valor,
-        // ver CardPaymentForm.jsx) no los confunda con un rechazo. Si la
-        // confirmacion final llega, la aplica el webhook de tipo "order" de
-        // mas abajo, no esta respuesta.
-        const isPending = !approved && (result.status === 'processing' || result.status === 'action_required');
+        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(result);
+        // Si la confirmacion final llega despues (async o post-challenge),
+        // la aplica el webhook de tipo "order" de mas abajo (o el polling
+        // de /api/payments/orders/:orderId/status), no esta respuesta.
         if (approved) {
             await applyApprovedPaymentIfNew({
                 licenseId: req.license.id,
@@ -1080,13 +1117,56 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 
         res.json({
             success: true,
-            status: approved ? 'approved' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
+            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
             statusDetail: orderPayment?.status_detail || result.status_detail,
             paymentId: orderPayment?.id || result.id,
+            orderId: result.id,
+            challengeUrl: isChallenge ? challengeUrl : undefined,
         });
     } catch (err) {
         console.error('[MP] Error creando pago directo:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+// El frontend llama esto en loop corto (ver CardPaymentForm.jsx) mientras
+// el comprador completa el challenge 3DS en el iframe de su banco -- el
+// propio doc de MercadoPago aclara que el evento del iframe solo avisa que
+// el challenge termino, no que el pago ya tiene status final, asi que hay
+// que volver a consultar la orden para saberlo de verdad. Nunca se confia
+// en el orderId a ciegas: se verifica que la orden sea de ESTA licencia
+// (mismo external_reference que arma /api/payments/charge) antes de
+// devolver nada.
+app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${orderId}`, {
+            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
+        });
+        const order = await orderRes.json();
+        if (!orderRes.ok) {
+            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
+        }
+        const [ownerLicenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
+        if (ownerLicenseId !== req.license.id) {
+            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
+        }
+        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
+        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
+
+        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(order);
+        if (approved) {
+            await applyApprovedPaymentIfNew({ licenseId: ownerLicenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
+        }
+        res.json({
+            success: true,
+            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || order.status || 'unknown'),
+            statusDetail: orderPayment?.status_detail || order.status_detail,
+            challengeUrl: isChallenge ? challengeUrl : undefined,
+        });
+    } catch (err) {
+        console.error('[MP] Error consultando status de orden:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo consultar el estado del pago.' });
     }
 });
 

@@ -52,6 +52,20 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
   const [submitError, setSubmitError] = useState('');
   const [pending, setPending] = useState(false);
   const controllerRef = useRef(null);
+  // El Brick se crea una sola vez (ver el useEffect de mas abajo, que solo
+  // depende de sdkState) y su callback onSubmit queda fijo desde ese
+  // momento -- si onSubmit cerrara directo sobre email/zipCode/etc. como
+  // props, seguiria mandando para siempre el valor que tenian en el
+  // instante exacto en que se creo el Brick, aunque el streamer despues
+  // edite el correo o la direccion en los inputs de arriba (bug real: el
+  // streamer terminaba pagando con el correo vacio de antes de escribir,
+  // y el backend rechazaba con "correo invalido" pese a que en pantalla
+  // ya se veia el correo correcto). Este ref se actualiza en cada render
+  // para que onSubmit siempre lea el valor mas reciente.
+  const latestRef = useRef({ planType, diceTier, email, zipCode, streetName, streetNumber });
+  useEffect(() => {
+    latestRef.current = { planType, diceTier, email, zipCode, streetName, streetNumber };
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -84,18 +98,19 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, zip
           setSubmitError('No se pudo cargar el formulario de pago. Intenta de nuevo.');
         },
         onSubmit: (formData) => new Promise((resolve, reject) => {
+          const current = latestRef.current;
           setSubmitError('');
           setPending(true);
           fetch(`${backendUrl()}/api/payments/charge`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeaders() },
             body: JSON.stringify({
-              planType,
-              diceTier,
-              email,
-              zipCode,
-              streetName,
-              streetNumber,
+              planType: current.planType,
+              diceTier: current.diceTier,
+              email: current.email,
+              zipCode: current.zipCode,
+              streetName: current.streetName,
+              streetNumber: current.streetNumber,
               // Pedido explicito de MercadoPago (checklist de calidad,
               // "Apellido del comprador"): reusa el nombre del titular que
               // el propio Brick ya pide para la tarjeta, en vez de agregar

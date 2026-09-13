@@ -1029,6 +1029,22 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
         : undefined;
 
+    // Diagnostico temporal: el checklist de calidad de MercadoPago sigue
+    // marcando "Nombre/Apellido del comprador" y "Fecha de registro del
+    // pagador" como pendientes pese a que el codigo ya los manda -- y la
+    // respuesta de la Orders API NUNCA los hace eco (ni aprobado ni
+    // rechazado), asi que no hay forma de confirmarlo mirando la respuesta.
+    // Este log deja ver, en cada intento real, si de verdad llegaron
+    // completos desde el Brick (ej. el streamer dejo vacio el nombre del
+    // titular) antes de asumir que es solo demora del dashboard en
+    // re-puntuar.
+    console.log('[MP] Datos del comprador para esta orden:', {
+        hasFirstName: !!firstName,
+        hasLastName: !!lastName,
+        hasAddress: !!address,
+        hasDeviceId: !!deviceId,
+    });
+
     try {
         const amountStr = (amountCents / 100).toFixed(2);
         const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {

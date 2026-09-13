@@ -55,7 +55,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { MercadoPagoConfig, Payment, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const { MercadoPagoConfig, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 
 const multer = require('multer');
 
@@ -102,9 +102,8 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://loc
 // devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
 // dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
 // producción queda intacto todo el tiempo, listo para volver apagando el
-// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial) y
-// Payment.get() del webhook: ambos pasan por este mismo getMpClient(), así
-// que activar el flag los pone en modo prueba a los tres a la vez.
+// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial), que
+// pasa por este mismo getMpClient().
 function getMpAccessToken() {
     const testMode = process.env.MP_TEST_MODE === 'true';
     const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
@@ -235,6 +234,10 @@ const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardH
 // TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
 const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+// Mas generoso: el frontend hace polling corto de esto mientras el
+// comprador completa el challenge 3DS en su banco (ver
+// /api/payments/orders/:orderId/status).
+const paymentStatusLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
 // Más generoso que el resto: a este lo llama MercadoPago server-to-server,
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
@@ -802,31 +805,22 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
 
-    // 'payment': notificaciones del flujo viejo por Preference/Checkout Pro.
-    // 'order': notificaciones del cobro directo (Card Payment Brick /
-    // Checkout API, ver /api/payments/charge) cuando esta cuenta lo procesa
-    // async (capture_mode "automatic_async", el default) -- sin esta rama,
-    // un pago que MP tarda en confirmar nunca actualizaba la licencia,
-    // aunque al comprador SI se le haya cobrado.
+    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
+    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
+    // camino que cree una Preference/Checkout Pro (se eliminó ese endpoint
+    // muerto hace un tiempo), así que el único tópico real que puede llegar
+    // es 'order'. Se descarta cualquier otro explícitamente en vez de
+    // dejarlo pasar en silencio, para que quede claro en el log si algún
+    // día MercadoPago manda algo inesperado en esta cuenta.
     const topic = req.query.type || req.body?.type;
-    if (topic !== 'payment' && topic !== 'order') return;
+    if (topic !== 'order') {
+        console.log('[MP] Webhook con tópico no soportado (esta integración es solo Orders API) — descartado:', topic);
+        return;
+    }
 
     try {
-        if (topic === 'payment') {
-            const payment = new Payment(getMpClient());
-            const paymentData = await payment.get({ id: dataId });
-            if (paymentData.status === 'approved') {
-                const [licenseId, planTypeRaw, diceTierRaw] = String(paymentData.external_reference || '').split(':');
-                const planType = planTypeRaw && planTypeRaw !== '-' ? planTypeRaw : undefined;
-                const diceTier = diceTierRaw && diceTierRaw !== '-' ? diceTierRaw : undefined;
-                await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: paymentData.id });
-            }
-            return;
-        }
-
-        // topic === 'order': no se confia en el body de la notificacion --
-        // se pide el estado real con un GET, igual de paranoico que el
-        // camino de 'payment' de arriba (que tampoco confia en el payload).
+        // No se confia en el body de la notificacion -- se pide el estado
+        // real con un GET.
         const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
             headers: { Authorization: `Bearer ${getMpAccessToken()}` },
         });
@@ -835,8 +829,7 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
             console.error('[MP] Webhook de order: no se pudo consultar la orden', dataId, orderRes.status);
             return;
         }
-        const orderPayment = order?.transactions?.payments?.[0];
-        const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+        const { orderPayment, approved } = evaluateOrderStatus(order);
         if (!approved) return;
         // Separador '_' a proposito (ver donde se arma external_reference en
         // /api/payments/charge): licenseId es un UUID con '-' adentro, asi
@@ -851,11 +844,10 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 });
 
 // Aplica una compra ya APROBADA por MercadoPago a la licencia
-// correspondiente -- tres llamadores, cada uno resuelve licenseId/
-// planType/diceTier a su manera antes de llamar esto: el webhook tipo
-// 'payment' (Preference/Checkout Pro) y el webhook tipo 'order' (cobro
-// directo async) parsean su propio external_reference con reglas
-// distintas (':' vs '_', ver donde se arma cada uno), mientras que
+// correspondiente -- tres llamadores: el webhook de tópico 'order' y el
+// polling de /api/payments/orders/:orderId/status (post-challenge 3DS)
+// parsean licenseId/planType/diceTier de external_reference (separador
+// '_', ver donde se arma en /api/payments/charge), mientras que
 // /api/payments/charge ya conoce esos valores de su propio request y no
 // necesita parsear nada. Idempotente via el UNIQUE de payments.
 // mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con el
@@ -915,6 +907,23 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
     return { applied: true, licenseId };
 }
 
+// Interpreta el estado real de una orden de la Orders API -- compartido
+// entre el cobro directo y el polling de status despues de un challenge
+// 3DS (ver mas abajo), asi ambos caminos coinciden en como distinguir
+// aprobado / rechazado / pendiente-async / pendiente-challenge.
+function evaluateOrderStatus(order) {
+    const orderPayment = order?.transactions?.payments?.[0];
+    const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
+    const challengeUrl = orderPayment?.payment_method?.transaction_security?.url;
+    const isChallenge = !approved && orderPayment?.status_detail === 'pending_challenge' && !!challengeUrl;
+    // "processing"/"action_required" son estados async reales de la Orders
+    // API (ver doc oficial) -- se traducen a 'pending' para que el frontend
+    // (que ya sabe mostrar "pago pendiente", ver CardPaymentForm.jsx) no los
+    // confunda con un rechazo.
+    const isPending = !approved && !isChallenge && (order.status === 'processing' || order.status === 'action_required');
+    return { orderPayment, approved, isChallenge, challengeUrl, isPending };
+}
+
 // ==========================================
 // COBRO DIRECTO (Checkout API + Card Payment Brick) -- unico camino de
 // cobro de la plataforma (el checkout hosteado de MercadoPago via
@@ -929,7 +938,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 // verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber } = req.body || {};
+    const { planType, diceTier, email, fullName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -1001,6 +1010,15 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${getMpAccessToken()}`,
                 'X-Idempotency-Key': crypto.randomUUID(),
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Identificador del dispositivo"): sin este header el
+                // motor antifraude tiene mucha menos señal y rechaza mucho
+                // mas seguido por "high_risk" (confirmado: TODOS los cobros
+                // reales hasta ahora venian sin esto y caian en high_risk).
+                // Puede faltar (bloqueador de anuncios, script que no
+                // cargo a tiempo) -- en ese caso simplemente no se manda,
+                // MP sigue evaluando con el resto de la señal disponible.
+                ...(deviceId ? { 'X-meli-session-id': String(deviceId) } : {}),
             },
             body: JSON.stringify({
                 type: 'online',
@@ -1008,6 +1026,22 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 total_amount: amountStr,
                 external_reference: externalReference,
                 description: `TikTokEvents - ${titleParts.join(' + ')}`,
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Precio unitario del producto" / "Cantidad de productos" /
+                // "Nombre del producto" / "Categoría del producto"): un solo
+                // item que representa la compra completa (plan y/o addon
+                // juntos, si se compran a la vez) -- unit_price = el mismo
+                // monto que ya se cobra en total_amount/transactions, asi
+                // que la suma siempre cuadra sin tener que descomponer el
+                // precio de pricing.js en partes. "services" porque esto es
+                // una suscripcion digital, no un producto fisico.
+                items: [{
+                    title: titleParts.join(' + ') || 'TikTokEvents',
+                    description: `Suscripción TikTokEvents - ${titleParts.join(' + ')}`,
+                    category_id: 'services',
+                    quantity: 1,
+                    unit_price: amountStr,
+                }],
                 payer: {
                     email: cleanEmail,
                     first_name: firstName,
@@ -1016,6 +1050,20 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                     identification: (identificationType && identificationNumber)
                         ? { type: identificationType, number: identificationNumber }
                         : undefined,
+                },
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Fecha de registro del pagador"): la fecha en que se creo
+                // la licencia es lo mas parecido que tenemos a "cuando se
+                // registro en el sitio". OJO: a diferencia de la vieja
+                // Payments API (que anida esto en additional_info.payer.
+                // registration_date), la Orders API usa una clave PLANA con
+                // el punto literal adentro del nombre -- probado en vivo
+                // contra el sandbox: additional_info:{payer:{...}} lo
+                // rechaza con "additionalProperties 'payer' not allowed",
+                // additional_info:{"payer.registration_date":...} sí lo
+                // acepta.
+                additional_info: {
+                    'payer.registration_date': new Date(req.license.created_at).toISOString(),
                 },
                 transactions: {
                     payments: [{
@@ -1034,6 +1082,27 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                         },
                     }],
                 },
+                // Pedido explicito de MercadoPago (checklist de calidad,
+                // "Protocolo de seguridad 3DS"): sin esto la Orders API
+                // nunca ofrece un challenge 3DS -- solo puede aprobar o
+                // rechazar de una, y confirmado en logs de produccion que
+                // ante cualquier señal de riesgo elegia rechazar (high_risk)
+                // en vez de pedir una segunda verificacion con el banco.
+                // "on_fraud_risk" deja que MP decida caso por caso si pedir
+                // el challenge; "required" en liability_shift es el unico
+                // valor que acepta la API y traslada la responsabilidad del
+                // fraude a la red de la tarjeta cuando el challenge se
+                // completa bien. Si toca challenge, la orden vuelve con
+                // status "action_required"/"pending_challenge" (ver mas
+                // abajo) en vez de aprobada o rechazada de una.
+                config: {
+                    online: {
+                        transaction_security: {
+                            validation: 'on_fraud_risk',
+                            liability_shift: 'required',
+                        },
+                    },
+                },
             }),
         });
         const result = await mpRes.json();
@@ -1051,15 +1120,10 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
         // rechazados) antes de simplificar este log.
         console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(redactOrderTokens(result)));
 
-        const orderPayment = result?.transactions?.payments?.[0];
-        const approved = result.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
-        // "processing"/"action_required" son estados async reales de la
-        // Orders API (ver doc oficial) -- se traducen a 'pending' para que
-        // el frontend (que ya sabe mostrar "pago pendiente" para ese valor,
-        // ver CardPaymentForm.jsx) no los confunda con un rechazo. Si la
-        // confirmacion final llega, la aplica el webhook de tipo "order" de
-        // mas abajo, no esta respuesta.
-        const isPending = !approved && (result.status === 'processing' || result.status === 'action_required');
+        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(result);
+        // Si la confirmacion final llega despues (async o post-challenge),
+        // la aplica el webhook de tipo "order" de mas abajo (o el polling
+        // de /api/payments/orders/:orderId/status), no esta respuesta.
         if (approved) {
             await applyApprovedPaymentIfNew({
                 licenseId: req.license.id,
@@ -1071,13 +1135,56 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 
         res.json({
             success: true,
-            status: approved ? 'approved' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
+            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
             statusDetail: orderPayment?.status_detail || result.status_detail,
             paymentId: orderPayment?.id || result.id,
+            orderId: result.id,
+            challengeUrl: isChallenge ? challengeUrl : undefined,
         });
     } catch (err) {
         console.error('[MP] Error creando pago directo:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+// El frontend llama esto en loop corto (ver CardPaymentForm.jsx) mientras
+// el comprador completa el challenge 3DS en el iframe de su banco -- el
+// propio doc de MercadoPago aclara que el evento del iframe solo avisa que
+// el challenge termino, no que el pago ya tiene status final, asi que hay
+// que volver a consultar la orden para saberlo de verdad. Nunca se confia
+// en el orderId a ciegas: se verifica que la orden sea de ESTA licencia
+// (mismo external_reference que arma /api/payments/charge) antes de
+// devolver nada.
+app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${orderId}`, {
+            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
+        });
+        const order = await orderRes.json();
+        if (!orderRes.ok) {
+            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
+        }
+        const [ownerLicenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
+        if (ownerLicenseId !== req.license.id) {
+            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
+        }
+        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
+        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
+
+        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(order);
+        if (approved) {
+            await applyApprovedPaymentIfNew({ licenseId: ownerLicenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
+        }
+        res.json({
+            success: true,
+            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || order.status || 'unknown'),
+            statusDetail: orderPayment?.status_detail || order.status_detail,
+            challengeUrl: isChallenge ? challengeUrl : undefined,
+        });
+    } catch (err) {
+        console.error('[MP] Error consultando status de orden:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo consultar el estado del pago.' });
     }
 });
 

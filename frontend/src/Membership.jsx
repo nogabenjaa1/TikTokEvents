@@ -76,6 +76,15 @@ export default function Membership({ session, onSessionUpdate }) {
   // localStorage (ver loadBillingInfo) para no pedirlo de nuevo en cada
   // compra en el mismo navegador.
   const [email, setEmail] = useState(() => loadBillingInfo().email || '');
+  // Pedido explicito de MercadoPago (checklist de calidad, "Nombre/Apellido
+  // del comprador"): antes se sacaban partiendo el nombre del titular que
+  // ya pide el propio Card Payment Brick (formData.cardholderName), pero
+  // eso deja el resultado a como el streamer haya escrito ESE campo (a
+  // veces solo un nombre, sin apellido) -- pedirlos acá aparte, igual que
+  // el correo, asegura que los dos campos que MercadoPago quiere lleguen
+  // siempre completos.
+  const [firstName, setFirstName] = useState(() => loadBillingInfo().firstName || '');
+  const [lastName, setLastName] = useState(() => loadBillingInfo().lastName || '');
   // Pedido explicito de MercadoPago (checklist de calidad de
   // integracion, "Dirección del comprador"): opcional para el
   // streamer -- solo se manda si completa las 3 partes juntas (ver
@@ -86,8 +95,8 @@ export default function Membership({ session, onSessionUpdate }) {
   const [streetNumber, setStreetNumber] = useState(() => loadBillingInfo().streetNumber || '');
 
   useEffect(() => {
-    saveBillingInfo({ email, zipCode, streetName, streetNumber });
-  }, [email, zipCode, streetName, streetNumber]);
+    saveBillingInfo({ email, firstName, lastName, zipCode, streetName, streetNumber });
+  }, [email, firstName, lastName, zipCode, streetName, streetNumber]);
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   // Plan que se esta pagando ahora mismo con el formulario embebido (Card
   // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
@@ -295,6 +304,16 @@ export default function Membership({ session, onSessionUpdate }) {
           </div>
 
           <div className="w-full max-w-2xl">
+            <label className="theme-label block text-[10px] mb-2">Nombre y apellido (obligatorio, MercadoPago lo pide para procesar el pago)</label>
+            <div className="flex gap-2">
+              <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Nombre"
+                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Apellido"
+                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            </div>
+          </div>
+
+          <div className="w-full max-w-2xl">
             <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
             <div className="flex gap-2">
               <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
@@ -306,11 +325,13 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           </div>
 
-          {EMAIL_RE.test(email.trim()) ? (
+          {EMAIL_RE.test(email.trim()) && firstName.trim() && lastName.trim() ? (
             <CardPaymentForm
               planType={payingPlan}
               amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
               email={email.trim()}
+              firstName={firstName.trim()}
+              lastName={lastName.trim()}
               zipCode={zipCode.trim()}
               streetName={streetName.trim()}
               streetNumber={streetNumber.trim()}
@@ -318,7 +339,7 @@ export default function Membership({ session, onSessionUpdate }) {
               onCancel={() => setPayingPlan(null)}
             />
           ) : (
-            <p className="text-[10px] text-gray-500">Escribe un correo válido arriba para continuar con el pago.</p>
+            <p className="text-[10px] text-gray-500">Completa correo, nombre y apellido arriba para continuar con el pago.</p>
           )}
         </>
       )}

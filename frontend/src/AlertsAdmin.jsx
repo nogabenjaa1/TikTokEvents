@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
-import { AlertVisual, AlertOverlay, ANIM_DURATION_MS } from './Overlay';
+import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
@@ -81,10 +81,6 @@ function fileVisualType(file) {
 const STAGE_W = 960;
 const STAGE_H = 540;
 const STAGE_SCALE = 0.32;
-// Cajita de confirmación "en vivo" (ver LiveConfirmationBox más abajo) —
-// mismo mecanismo de escenario, pero más chica: solo necesita confirmar
-// que algo se disparó, no servir de vista previa de diseño.
-const LIVE_SCALE = 0.15;
 
 // Vista previa en vivo: se actualiza SOLA en cuanto cambia el archivo, la
 // duración, la posición o las animaciones — pedido explícito de que no
@@ -124,25 +120,6 @@ function LivePreview({ draftAlert, customize }) {
             <p className="text-gray-500 text-sm italic" style={{ transform: `scale(${1 / STAGE_SCALE})` }}>Agrega un recurso o un texto para ver la vista previa</p>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Confirmación "en vivo" — pedido explícito: el streamer no tenía forma de
-// saber si una alerta real se disparó bien (los espectadores la
-// escuchaban/veían en OBS, pero él no). Esta cajita fija, chica, en la
-// esquina del panel, planta el MISMO <AlertOverlay> que corre en OBS,
-// escuchando el mismo evento 'alert_triggered' por el mismo socket — así
-// el streamer ve/escucha exactamente lo mismo que sus espectadores, en su
-// propio navegador. Nunca toca el audio de OBS ni ninguna fuente que
-// vaya al stream, así que jamás se duplica del lado de los espectadores.
-function LiveConfirmationBox({ socket, customize }) {
-  return (
-    <div className="fixed bottom-4 right-4 z-[90] rounded-xl overflow-hidden shadow-2xl border-2 pointer-events-none" style={{ borderColor: 'var(--accent)', width: STAGE_W * LIVE_SCALE, height: STAGE_H * LIVE_SCALE, background: 'rgba(10,6,20,0.85)' }}>
-      <p className="absolute top-1 left-1.5 right-1.5 text-[7px] font-black uppercase tracking-widest text-white/60 z-10 leading-tight">🔔 En vivo — solo tú lo ves</p>
-      <div className="relative" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${LIVE_SCALE})`, transformOrigin: 'top left' }}>
-        <AlertOverlay socket={socket} customize={customize} embedded />
       </div>
     </div>
   );
@@ -639,8 +616,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta.</p>
         )}
       </div>
-
-      <LiveConfirmationBox socket={socket} customize={customization} />
 
       {savedPreview && (
         <>

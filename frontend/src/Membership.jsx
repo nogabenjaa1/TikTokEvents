@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import CardPaymentForm from './CardPaymentForm';
+import StripePaymentForm from './StripePaymentForm';
 
 const PLANS = [
   { id: 'month', label: 'Mensual', mxn: 126, period: '/ mes' },
@@ -105,6 +106,10 @@ export default function Membership({ session, onSessionUpdate }) {
   // boton "Pagar" de MP nunca se habilita, reproducido en dos navegadores
   // distintos). El comprador nunca sale de este sitio con este camino.
   const [payingPlan, setPayingPlan] = useState(null);
+  // Pedido explicito: Stripe como forma de pago principal, MercadoPago como
+  // secundaria seleccionable -- 'stripe' por default, el streamer puede
+  // cambiar a MercadoPago antes de completar los datos de la tarjeta.
+  const [paymentProvider, setPaymentProvider] = useState('stripe');
   const [error, setError] = useState('');
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
@@ -297,14 +302,18 @@ export default function Membership({ session, onSessionUpdate }) {
               tiene una licencia y solo entro a ver su plan (admin, key
               paga, etc.) -- se piden apenas aca, una vez que ya eligio
               un plan y esta por pagar. */}
+          {/* Correo global a propósito: es el mismo dato para cualquiera de
+              las dos formas de pago (a ese correo llegan los recibos, tanto
+              el automático de Stripe como el de MercadoPago) -- pedido
+              explícito de que este campo no se duplique por proveedor. */}
           <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, MercadoPago lo pide para procesarlo)</label>
+            <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, ahí llega tu recibo)</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
               className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           </div>
 
           <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Nombre y apellido (obligatorio, MercadoPago lo pide para procesar el pago)</label>
+            <label className="theme-label block text-[10px] mb-2">Nombre y apellido (obligatorio para procesar el pago)</label>
             <div className="flex gap-2">
               <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Nombre"
                 className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
@@ -313,31 +322,68 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           </div>
 
+          {/* Selector de forma de pago -- Stripe principal (pedido
+              explícito), MercadoPago secundaria seleccionable. El correo/
+              nombre/apellido de arriba son compartidos por las dos; lo único
+              que cambia es el formulario de tarjeta de más abajo. */}
           <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
-            <div className="flex gap-2">
-              <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
-                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-              <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
-                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-              <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
-                className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            <label className="theme-label block text-[10px] mb-2">Método de pago</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button type="button" onClick={() => setPaymentProvider('stripe')}
+                className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
+                  paymentProvider === 'stripe' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
+                💳 Tarjeta de crédito/débito (Stripe)
+              </button>
+              <button type="button" onClick={() => setPaymentProvider('mercadopago')}
+                className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
+                  paymentProvider === 'mercadopago' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
+                💳 Tarjeta de crédito/débito (MercadoPago)
+              </button>
             </div>
           </div>
 
+          {/* Dirección: solo la usa MercadoPago (ayuda a su motor
+              antifraude, ver CardPaymentForm.jsx/server.js) -- no tiene
+              sentido pedirla si el streamer eligió Stripe. */}
+          {paymentProvider === 'mercadopago' && (
+            <div className="w-full max-w-2xl">
+              <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
+              <div className="flex gap-2">
+                <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
+                  className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+                <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
+                  className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+                <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
+                  className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+              </div>
+            </div>
+          )}
+
           {EMAIL_RE.test(email.trim()) && firstName.trim() && lastName.trim() ? (
-            <CardPaymentForm
-              planType={payingPlan}
-              amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
-              email={email.trim()}
-              firstName={firstName.trim()}
-              lastName={lastName.trim()}
-              zipCode={zipCode.trim()}
-              streetName={streetName.trim()}
-              streetNumber={streetNumber.trim()}
-              onSuccess={handlePaymentSuccess}
-              onCancel={() => setPayingPlan(null)}
-            />
+            paymentProvider === 'stripe' ? (
+              <StripePaymentForm
+                planType={payingPlan}
+                amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+                email={email.trim()}
+                firstName={firstName.trim()}
+                lastName={lastName.trim()}
+                onSuccess={handlePaymentSuccess}
+                onCancel={() => setPayingPlan(null)}
+              />
+            ) : (
+              <CardPaymentForm
+                planType={payingPlan}
+                amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+                email={email.trim()}
+                firstName={firstName.trim()}
+                lastName={lastName.trim()}
+                zipCode={zipCode.trim()}
+                streetName={streetName.trim()}
+                streetNumber={streetNumber.trim()}
+                onSuccess={handlePaymentSuccess}
+                onCancel={() => setPayingPlan(null)}
+              />
+            )
           ) : (
             <p className="text-[10px] text-gray-500">Completa correo, nombre y apellido arriba para continuar con el pago.</p>
           )}

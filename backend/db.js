@@ -121,6 +121,19 @@ const ready = pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_connected
     ON licenses(LOWER(trial_connected_username)) WHERE trial_connected_username IS NOT NULL
   `))
+  // La prueba gratis por tarjeta ahora se verifica con Stripe (SetupIntent,
+  // ver /api/free-trial/setup-intent en server.js) en vez de MercadoPago --
+  // a diferencia del chequeo viejo (solo Luhn + token activo, sin comparar
+  // contra pruebas anteriores), Stripe expone un fingerprint estable de la
+  // tarjeta real (PaymentMethod.card.fingerprint) que SÍ permite bloquear
+  // que la misma tarjeta reclame una segunda prueba gratis -- pedido
+  // implícito de "mejor validación" además del cambio de proveedor. UNIQUE
+  // parcial (no NOT NULL: la vía de "ver anuncios" nunca pasa tarjeta).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_card_fingerprint TEXT`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_card_fingerprint
+    ON licenses(trial_card_fingerprint) WHERE trial_card_fingerprint IS NOT NULL
+  `))
   // Historial de pagos de MercadoPago — separado de licenses.mp_payment_id
   // (que solo guarda el último pago) porque el webhook necesita poder
   // distinguir "ya procesé esta notificación" de "es la primera vez que la
@@ -138,6 +151,21 @@ const ready = pool.query(`
       status TEXT NOT NULL,
       created_at BIGINT NOT NULL
     )
+  `))
+  // Segunda forma de pago (Stripe, seleccionable junto a MercadoPago desde
+  // Membership.jsx): mp_payment_id ya no puede ser NOT NULL porque un pago
+  // de Stripe no tiene uno -- stripe_payment_id es su columna paralela,
+  // con el mismo rol de idempotencia (UNIQUE) que mp_payment_id tiene para
+  // MP (ver insertStripePaymentIfNew más abajo). `provider` es solo
+  // informativo, para poder distinguir el historial de pagos de un
+  // vistazo sin tener que fijarse cuál de las dos columnas de id quedó
+  // llena; las filas ya existentes (todas de MP) quedan con el default.
+  .then(() => pool.query(`ALTER TABLE payments ALTER COLUMN mp_payment_id DROP NOT NULL`))
+  .then(() => pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_payment_id TEXT`))
+  .then(() => pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'mercadopago'`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_stripe_payment
+    ON payments(stripe_payment_id) WHERE stripe_payment_id IS NOT NULL
   `))
   // Una cuenta de Spotify por licencia (multi-tenant, como TikTok): cada
   // streamer conecta LA SUYA por OAuth (ver /api/spotify/connect en
@@ -248,12 +276,12 @@ const ready = pool.query(`
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular' }) {
+async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null }) {
     await ready;
     await pool.query(`
-        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11)
-    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier]);
+        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint)
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint]);
     return findById(id);
 }
 
@@ -556,6 +584,21 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Mismo patrón que insertPaymentIfNew de arriba, pero para Stripe -- el
+// UNIQUE parcial sobre stripe_payment_id (ver migración arriba) es lo que
+// hace esto idempotente ante un reintento (ej. /confirm ya lo aplicó y
+// después llega el webhook con el mismo PaymentIntent).
+async function insertStripePaymentIfNew({ id, licenseId, stripePaymentId, planType, diceTier, amountCents, status, createdAt }) {
+    await ready;
+    const { rows } = await pool.query(`
+        INSERT INTO payments (id, license_id, stripe_payment_id, provider, plan_type, dice_tier, amount_cents, status, created_at)
+        VALUES ($1, $2, $3, 'stripe', $4, $5, $6, $7, $8)
+        ON CONFLICT (stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
+        RETURNING id
+    `, [id, licenseId, stripePaymentId, planType || null, diceTier || null, amountCents, status, createdAt]);
+    return rows.length > 0;
+}
+
 // Devuelve un mapa { [plan_type]: amount_cents } -- solo los planes que el
 // admin haya sobreescrito alguna vez, ver el comentario de la tabla arriba.
 async function getPricingOverrides() {
@@ -596,7 +639,7 @@ async function getPricingHistory(limit = 50) {
 
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
-    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,

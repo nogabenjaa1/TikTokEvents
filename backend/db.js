@@ -139,6 +139,21 @@ const ready = pool.query(`
       created_at BIGINT NOT NULL
     )
   `))
+  // Segunda forma de pago (Stripe, seleccionable junto a MercadoPago desde
+  // Membership.jsx): mp_payment_id ya no puede ser NOT NULL porque un pago
+  // de Stripe no tiene uno -- stripe_payment_id es su columna paralela,
+  // con el mismo rol de idempotencia (UNIQUE) que mp_payment_id tiene para
+  // MP (ver insertStripePaymentIfNew más abajo). `provider` es solo
+  // informativo, para poder distinguir el historial de pagos de un
+  // vistazo sin tener que fijarse cuál de las dos columnas de id quedó
+  // llena; las filas ya existentes (todas de MP) quedan con el default.
+  .then(() => pool.query(`ALTER TABLE payments ALTER COLUMN mp_payment_id DROP NOT NULL`))
+  .then(() => pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_payment_id TEXT`))
+  .then(() => pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'mercadopago'`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_stripe_payment
+    ON payments(stripe_payment_id) WHERE stripe_payment_id IS NOT NULL
+  `))
   // Una cuenta de Spotify por licencia (multi-tenant, como TikTok): cada
   // streamer conecta LA SUYA por OAuth (ver /api/spotify/connect en
   // server.js) para que el comando !play del chat agregue canciones a SU
@@ -556,6 +571,21 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Mismo patrón que insertPaymentIfNew de arriba, pero para Stripe -- el
+// UNIQUE parcial sobre stripe_payment_id (ver migración arriba) es lo que
+// hace esto idempotente ante un reintento (ej. /confirm ya lo aplicó y
+// después llega el webhook con el mismo PaymentIntent).
+async function insertStripePaymentIfNew({ id, licenseId, stripePaymentId, planType, diceTier, amountCents, status, createdAt }) {
+    await ready;
+    const { rows } = await pool.query(`
+        INSERT INTO payments (id, license_id, stripe_payment_id, provider, plan_type, dice_tier, amount_cents, status, created_at)
+        VALUES ($1, $2, $3, 'stripe', $4, $5, $6, $7, $8)
+        ON CONFLICT (stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
+        RETURNING id
+    `, [id, licenseId, stripePaymentId, planType || null, diceTier || null, amountCents, status, createdAt]);
+    return rows.length > 0;
+}
+
 // Devuelve un mapa { [plan_type]: amount_cents } -- solo los planes que el
 // admin haya sobreescrito alguna vez, ver el comentario de la tabla arriba.
 async function getPricingOverrides() {
@@ -596,7 +626,7 @@ async function getPricingHistory(limit = 50) {
 
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
-    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,

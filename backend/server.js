@@ -56,6 +56,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
 const { MercadoPagoConfig, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const Stripe = require('stripe');
 
 const multer = require('multer');
 
@@ -120,6 +121,18 @@ function getMpAccessToken() {
 
 function getMpClient() {
     return new MercadoPagoConfig({ accessToken: getMpAccessToken() });
+}
+
+// Mismo criterio perezoso que getMpClient: no revienta el arranque del
+// server si todavia no se configuro STRIPE_SECRET_KEY -- solo fallan las
+// rutas de pago con Stripe hasta que se agregue. A diferencia de MP, la
+// propia llave de Stripe ya indica si es de prueba o en vivo por su
+// prefijo (sk_test_/sk_live_), asi que no hace falta un flag aparte tipo
+// MP_TEST_MODE.
+function getStripeClient() {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (!secretKey) throw new Error('Falta STRIPE_SECRET_KEY en las variables de entorno');
+    return new Stripe(secretKey);
 }
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
@@ -193,6 +206,14 @@ app.set('trust proxy', 1);
 // problema. Si se quiere una CSP real, hay que armarla con tiempo y
 // probar cada integracion de terceros a mano, no activarla a ciegas.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+// Stripe firma su webhook sobre los bytes CRUDOS del body -- tiene que
+// consumirse asi, antes del express.json() general de la linea de abajo,
+// o stripe.webhooks.constructEvent() no puede validar la firma contra un
+// objeto ya parseado. body-parser marca el request como ya parseado
+// (req._body) apenas esto corre, asi que el express.json() de mas abajo
+// no lo vuelve a tocar para esta ruta puntual -- el handler real de esta
+// ruta vive mas abajo, junto a los demas endpoints de pago.
+app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -967,6 +988,34 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 // mismo pago (ej. el webhook de 'order' llega DESPUES de que
 // /api/payments/charge ya lo aplico al toque) no aplica el cambio dos
 // veces.
+// Extraido de applyApprovedPaymentIfNew para que Stripe pueda reusar
+// EXACTAMENTE la misma logica de rotacion de key / calculo de expiracion /
+// upgrade de dice_tier sin duplicarla -- es la parte mas delicada de todo
+// el flujo de pagos, asi que un solo lugar que la calcule para ambos
+// proveedores.
+function computeLicenseUpdateForPurchase(license, { planType, diceTier }) {
+    const update = {};
+    if (planType) {
+        update.licenseType = planType;
+        const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
+            ? (license.expires_at - Date.now())
+            : 0;
+        const baseExpiresAt = auth.computeExpiresAt(planType);
+        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
+
+        const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
+        update.keyHash = auth.hashKey(newRawKey);
+        update.keyPrefix = auth.keyPrefix(newRawKey);
+        update.pendingKeyReveal = newRawKey;
+    }
+    if (diceTier) {
+        const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
+        const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
+        if (newRank > currentRank) update.diceTier = diceTier;
+    }
+    return update;
+}
+
 async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId }) {
     if (!licenseId || (!planType && !diceTier)) {
         console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
@@ -994,28 +1043,47 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
         return { applied: false };
     }
 
-    const update = {};
-    if (planType) {
-        update.licenseType = planType;
-        const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
-            ? (license.expires_at - Date.now())
-            : 0;
-        const baseExpiresAt = auth.computeExpiresAt(planType);
-        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
-
-        const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
-        update.keyHash = auth.hashKey(newRawKey);
-        update.keyPrefix = auth.keyPrefix(newRawKey);
-        update.pendingKeyReveal = newRawKey;
-    }
-    if (diceTier) {
-        const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
-        const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
-        if (newRank > currentRank) update.diceTier = diceTier;
-    }
+    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier });
     if (Object.keys(update).length > 0) {
         await db.applyPurchase(licenseId, update);
         console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+    }
+    return { applied: true, licenseId };
+}
+
+// Mismo patron que applyApprovedPaymentIfNew de arriba, pero para Stripe:
+// idempotente via el UNIQUE de payments.stripe_payment_id (columna
+// paralela a mp_payment_id, ver db.js) -- llamarla dos veces con el mismo
+// PaymentIntent (ej. /api/payments/stripe/confirm ya lo aplico y despues
+// llega el webhook) no aplica el cambio dos veces.
+async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, stripePaymentId }) {
+    if (!licenseId || (!planType && !diceTier)) {
+        console.error('[Stripe] applyApprovedStripePaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
+        return { applied: false };
+    }
+
+    const isNew = await db.insertStripePaymentIfNew({
+        id: crypto.randomUUID(),
+        licenseId,
+        stripePaymentId: String(stripePaymentId),
+        planType: planType || null,
+        diceTier: diceTier || null,
+        amountCents: pricing.computeAmountCents({ planType, diceTier }),
+        status: 'approved',
+        createdAt: Date.now(),
+    });
+    if (!isNew) return { applied: false, alreadyProcessed: true };
+
+    const license = await db.findById(licenseId);
+    if (!license) {
+        console.error('[Stripe] Pago para una licencia inexistente:', licenseId);
+        return { applied: false };
+    }
+
+    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier });
+    if (Object.keys(update).length > 0) {
+        await db.applyPurchase(licenseId, update);
+        console.log(`[Stripe] ✅ Pago aplicado — licencia ${licenseId}:`, update);
     }
     return { applied: true, licenseId };
 }
@@ -1312,6 +1380,145 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
     } catch (err) {
         console.error('[MP] Error consultando status de orden:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo consultar el estado del pago.' });
+    }
+});
+
+// ==========================================
+// PAGOS: Stripe (Payment Element embebido) -- segunda forma de pago,
+// seleccionable junto a MercadoPago desde Membership.jsx. Mismo principio
+// que el cobro de MP: el monto SIEMPRE se calcula acá desde pricing.js,
+// nunca se confía en nada que mande el cliente. A diferencia de MP (que
+// tokeniza la tarjeta y cobra en un solo POST), Stripe separa la compra en
+// dos pasos -- 1) crear un PaymentIntent server-side (acá abajo,
+// /intent), 2) el frontend lo confirma con stripe.confirmPayment() usando
+// el Payment Element (tarjeta nunca toca nuestro backend) -- y recién
+// entonces /confirm valida contra la API de Stripe (nunca contra lo que
+// diga el frontend) y aplica la compra. El webhook es la confirmación de
+// respaldo por si el navegador se cierra entre el paso 2 y la llamada a
+// /confirm.
+// ==========================================
+
+app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async (req, res) => {
+    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName } = req.body || {};
+    if (planType !== undefined && !pricing.isValidPlan(planType)) {
+        return res.status(400).json({ success: false, error: 'Plan invalido' });
+    }
+    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Addon invalido' });
+    }
+    if (!planType && !diceTier) {
+        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    }
+    const cleanEmail = typeof email === 'string' ? email.trim() : '';
+    if (!EMAIL_RE.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
+    }
+    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : '';
+    const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
+    if (!firstName || !lastName) {
+        return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
+    }
+
+    const amountCents = pricing.computeAmountCents({ planType, diceTier });
+    const titleParts = [];
+    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
+    if (diceTier) titleParts.push(diceTier.toUpperCase());
+
+    try {
+        const stripe = getStripeClient();
+        const intent = await stripe.paymentIntents.create({
+            amount: amountCents,
+            currency: 'mxn',
+            // Solo tarjeta a propósito -- mismo alcance que la opción de MP
+            // ("Credit/Debit Card"), sin habilitar métodos async (OXXO,
+            // SPEI) que complicarían este flujo de confirmación inmediata.
+            payment_method_types: ['card'],
+            description: `BenjaApis - ${titleParts.join(' + ')}`,
+            // Recibo automático de Stripe al correo del comprador -- pedido
+            // explícito, sin necesidad de configurar Stripe Invoicing aparte.
+            receipt_email: cleanEmail,
+            metadata: {
+                licenseId: req.license.id,
+                planType: planType || '',
+                diceTier: diceTier || '',
+            },
+        });
+        res.json({ success: true, clientSecret: intent.client_secret, paymentIntentId: intent.id });
+    } catch (err) {
+        console.error('[Stripe] Error creando PaymentIntent:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+// El frontend llama esto apenas stripe.confirmPayment() resuelve con
+// succeeded (ver StripePaymentForm.jsx) -- nunca se aplica la compra por
+// lo que diga el frontend: se vuelve a pedir el PaymentIntent a la propia
+// API de Stripe y se verifica que su metadata.licenseId sea el de ESTA
+// sesión antes de aplicar nada (mismo criterio que el polling de status
+// de MP). El webhook de más abajo es la red de respaldo si el navegador
+// se cierra justo acá.
+app.post('/api/payments/stripe/confirm', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId || typeof paymentIntentId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Falta el id del pago' });
+    }
+    try {
+        const stripe = getStripeClient();
+        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        if (intent.metadata?.licenseId !== req.license.id) {
+            return res.status(404).json({ success: false, error: 'Pago no encontrado' });
+        }
+        const planType = intent.metadata?.planType || undefined;
+        const diceTier = intent.metadata?.diceTier || undefined;
+        if (intent.status === 'succeeded') {
+            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, stripePaymentId: intent.id });
+        }
+        res.json({
+            success: true,
+            status: intent.status === 'succeeded' ? 'approved' : (intent.status === 'processing' ? 'pending' : intent.status),
+        });
+    } catch (err) {
+        console.error('[Stripe] Error confirmando PaymentIntent:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo confirmar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+// Notificación server-to-server de Stripe -- red de respaldo de /confirm
+// de arriba (ej. el streamer cierra la pestaña justo después de pagar).
+// El body llega CRUDO acá (ver el express.raw() montado antes del
+// express.json() global, arriba del todo del archivo) porque
+// stripe.webhooks.constructEvent() valida la firma sobre los bytes
+// exactos, no sobre un objeto ya parseado.
+app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
+    const secret = (process.env.STRIPE_WEBHOOK_SECRET || '').trim();
+    const signature = req.headers['stripe-signature'];
+    if (!secret || !signature) {
+        return res.sendStatus(400);
+    }
+
+    let event;
+    try {
+        event = getStripeClient().webhooks.constructEvent(req.body, signature, secret);
+    } catch (err) {
+        console.error('[Stripe] Webhook con firma inválida — descartado:', err.message);
+        return res.sendStatus(401);
+    }
+
+    // Se responde 200 apenas la firma es válida, mismo criterio que el
+    // webhook de MP -- Stripe reintenta si no contesta rápido.
+    res.sendStatus(200);
+
+    if (event.type !== 'payment_intent.succeeded') return;
+
+    try {
+        const intent = event.data.object;
+        const licenseId = intent.metadata?.licenseId;
+        const planType = intent.metadata?.planType || undefined;
+        const diceTier = intent.metadata?.diceTier || undefined;
+        if (!licenseId) return;
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, stripePaymentId: intent.id });
+    } catch (err) {
+        console.error('[Stripe] Error procesando webhook:', err.message);
     }
 });
 

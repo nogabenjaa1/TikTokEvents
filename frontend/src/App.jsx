@@ -108,14 +108,17 @@ function sectionFromPath(pathname) {
 }
 
 // Título de pestaña dinámico (pedido explícito: "que sea visible siempre"
-// en qué sección está) -- ver el useEffect que lo aplica más abajo.
+// en qué sección está) -- ver el useEffect que lo aplica más abajo. La
+// marca del sitio es BenjaApis; "TikTokEvents" se conserva solo como
+// prefijo dentro de esa sección puntual (el nombre de la funcionalidad en
+// sí, no el nombre del producto -- pedido explícito de mantenerlo así).
 function sectionTitle(sidebarMode, eventsTab) {
   if (sidebarMode === 'events') {
     const tab = EVENT_TABS.find((t) => t.id === eventsTab);
     return tab ? `TikTokEvents · ${tab.label}` : 'TikTokEvents';
   }
   const section = SECTIONS.find((s) => s.id === sidebarMode);
-  return section ? `TikTokEvents · ${section.label}` : 'TikTokEvents';
+  return section ? `BenjaApis · ${section.label}` : 'BenjaApis';
 }
 
 // Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
@@ -815,11 +818,17 @@ export default function App() {
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
       <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
-        {/* Logo de marca — chico y sin botón/borde a propósito (pedido
-            explícito: "visible pero que no abrume"), primero en la fila/
-            columna para que quede como una cabecera sutil del rail de
-            navegación, no como un botón más. */}
-        <img src={logoMark} alt="" className="h-7 md:h-8 w-auto flex-shrink-0 md:mb-1" />
+        {/* Logo + nombre de marca — chico y sin botón/borde a propósito
+            (pedido explícito: "visible pero que no abrume"), primero en la
+            fila/columna para que quede como una cabecera sutil del rail de
+            navegación, no como un botón más. El nombre va acá porque este
+            rail es lo único presente en TODOS los paneles (pedido
+            explícito: "asegurate que benjaapis salga en todos los
+            paneles"). */}
+        <div className="flex flex-col items-center gap-0.5 flex-shrink-0 md:mb-1">
+          <img src={logoMark} alt="" className="h-7 md:h-8 w-auto" />
+          <span className="text-[7px] font-black uppercase tracking-wider text-gray-500 text-center leading-none">BenjaApis</span>
+        </div>
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -1081,7 +1090,7 @@ export default function App() {
       </div>
     )}
 
-    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar TikTok Concurso" />
+    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
     </ThemedShell>
   );
 }

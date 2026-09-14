@@ -55,7 +55,7 @@ export default function Dashboard({ session, connectionStatus, username, anyGame
       <div className="w-full max-w-4xl flex flex-col gap-1">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🏠 Dashboard</p>
         <h1 className="theme-heading text-2xl font-black">
-          {session ? `Hola, @${session.username}` : 'Bienvenido a TikTokEvents'}
+          {session ? `Hola, @${session.username}` : 'Bienvenido a BenjaApis'}
         </h1>
         <p className="text-xs text-gray-500">
           {session

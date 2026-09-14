@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
+import CardVerifyForm from './CardVerifyForm';
+import RewardedAdGate from './RewardedAdGate';
+import { TRIAL_UNLOCK_AD_COUNT } from './adConfig';
 
 const PLANS = [
   { id: 'month', label: 'Mensual', mxn: 126, period: '/ mes' },
@@ -124,6 +127,59 @@ export default function Membership({ session, onSessionUpdate }) {
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
+
+  // Prueba gratis (mudada entera desde Login.jsx -- pedido explícito: que
+  // el streamer elija entre probar gratis o comprar todo en un solo lugar,
+  // en vez de repetido en cada panel bloqueado). Tres vías para las 7 días
+  // gratis: ver anuncios, verificar una tarjeta real (sin cobro, ver
+  // CardVerifyForm.jsx), o directo con un alias -- las tres terminan en el
+  // mismo trialResult de abajo.
+  const [showTrialAdForm, setShowTrialAdForm] = useState(false);
+  // Hace falta reclamar el gate TRIAL_UNLOCK_AD_COUNT veces seguidas (no
+  // solo una) -- RewardedAdGate resetea su propio estado interno en cada
+  // claim(), así que basta con no cerrar el gate hasta llegar al total.
+  const [showAdGate, setShowAdGate] = useState(false);
+  const [adsWatched, setAdsWatched] = useState(0);
+  const [showCardForm, setShowCardForm] = useState(false);
+  // Alias PROPIO de este flujo -- no el `alias` de arriba (ese es para
+  // comprar un plan directo sin pasar por la prueba gratis primero).
+  const [trialAlias, setTrialAlias] = useState('');
+  const [trialError, setTrialError] = useState('');
+  const [trialLoading, setTrialLoading] = useState(false);
+  // Se muestra ANTES de loguear (ver continueAfterTrial): la key es la
+  // única credencial de esta licencia, y si se pierde antes de guardarla
+  // no hay forma de recuperarla -- ver auth.requestFreeTrial.
+  const [trialResult, setTrialResult] = useState(null); // { key, token, license }
+  const [trialCopied, setTrialCopied] = useState(false);
+
+  const submitTrial = async (e) => {
+    e.preventDefault();
+    if (!trialAlias.trim() || trialLoading) return;
+    setTrialLoading(true);
+    setTrialError('');
+    try {
+      const result = await requestFreeTrial(trialAlias.trim());
+      setTrialResult(result);
+    } catch (err) {
+      setTrialError(err.message || 'No se pudo crear la prueba gratis');
+    } finally {
+      setTrialLoading(false);
+    }
+  };
+
+  const copyTrialKey = () => {
+    navigator.clipboard.writeText(trialResult.key);
+    setTrialCopied(true);
+    setTimeout(() => setTrialCopied(false), 2000);
+  };
+
+  const continueAfterTrial = () => {
+    const { token, key: trialKey, license } = trialResult;
+    const created = { token, licenseKey: trialKey, ...license };
+    saveSession(created);
+    onSessionUpdate?.(created);
+    setTrialResult(null);
+  };
 
   // Precios vigentes desde el backend (pueden diferir de los defaults de
   // PLANS de abajo si el admin los edito desde el panel de Licencias, ver
@@ -313,9 +369,85 @@ export default function Membership({ session, onSessionUpdate }) {
         </form>
       )}
 
+      {/* Pedido explicito: la prueba gratis (ver anuncios / verificar
+          tarjeta / alias directo) vive acá, junto a los planes, para que
+          el streamer elija entre probar gratis o comprar todo en un solo
+          lugar -- antes estaba repetida en cada panel bloqueado
+          (Login.jsx), que ahora solo pide la clave si ya tienes una. */}
+      {!session && (
+        <div className="theme-surface w-full max-w-2xl p-6">
+          {trialResult ? (
+            <div className="flex flex-col gap-3">
+              <p className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave</p>
+              <p className="text-[11px] text-gray-500">
+                Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
+                plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{trialResult.key}</code>
+                <button type="button" onClick={copyTrialKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+                  {trialCopied ? 'Copiado' : 'Copiar'}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={continueAfterTrial}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                Continuar
+              </button>
+            </div>
+          ) : showCardForm ? (
+            <CardVerifyForm
+              onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
+              onCancel={() => setShowCardForm(false)}
+            />
+          ) : !showTrialAdForm ? (
+            <div className="flex flex-col gap-2">
+              <p className="theme-label text-[10px] uppercase tracking-widest font-semibold text-center mb-1">
+                ¿No tienes una licencia? Elige cómo obtener 7 días gratis
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowAdGate(true)}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCardForm(true)}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+              >
+                Verificar una tarjeta (sin cobro)
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={submitTrial} className="flex flex-col gap-3">
+              <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
+              <p className="text-[11px] text-gray-500">Elige un alias para tu clave. Acceso completo por 7 días, sin tarjeta.</p>
+              <input
+                value={trialAlias}
+                onChange={e => setTrialAlias(e.target.value)}
+                placeholder="Elige un alias"
+                className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm"
+              />
+              {trialError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
+              <button
+                type="submit"
+                disabled={trialLoading || !trialAlias.trim()}
+                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {trialLoading ? 'CREANDO...' : 'Solicitar prueba gratis'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
       {!session && (
         <div className="w-full max-w-2xl">
-          <label className="theme-label block text-[10px] mb-2">¿Nueva? Elige un alias para tu licencia (obligatorio para comprar o probar gratis)</label>
+          <label className="theme-label block text-[10px] mb-2">¿Prefieres comprar directo? Elige un alias para tu licencia</label>
           <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Elige un alias"
             className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           <p className="text-[9px] text-gray-500 mt-1">Se usa para crear tu cuenta y va incluido en tu clave (alias-plan-hash).</p>
@@ -497,6 +629,25 @@ export default function Membership({ session, onSessionUpdate }) {
       )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}
+
+      <RewardedAdGate
+        open={showAdGate}
+        onClaim={() => {
+          const next = adsWatched + 1;
+          setAdsWatched(next);
+          if (next >= TRIAL_UNLOCK_AD_COUNT) {
+            setShowAdGate(false);
+            setShowTrialAdForm(true);
+          }
+          // Si todavía faltan rondas, el gate se queda abierto — ya se
+          // reseteó solo (ver RewardedAdGate.reset() en cada claim()) y
+          // vuelve a mostrar el link para el siguiente anuncio.
+        }}
+        onCancel={() => { setShowAdGate(false); setAdsWatched(0); }}
+        title={`Anuncio ${Math.min(adsWatched + 1, TRIAL_UNLOCK_AD_COUNT)} de ${TRIAL_UNLOCK_AD_COUNT}`}
+        claimLabel={adsWatched + 1 >= TRIAL_UNLOCK_AD_COUNT ? 'Reclamar' : 'Continuar'}
+        description="Mira este anuncio corto para avanzar — nos ayuda a mantener el servicio gratis."
+      />
     </div>
   );
 }

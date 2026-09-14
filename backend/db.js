@@ -169,6 +169,42 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS entrance_anim TEXT NOT NULL DEFAULT 'fade'`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS exit_anim TEXT NOT NULL DEFAULT 'fade'`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'gift'`))
+  // Pedido explicito: visual (imagen/gif/video, con mute opcional en video)
+  // y audio son DOS recursos independientes y opcionales -- antes
+  // media_url/media_path/media_type era UNO solo obligatorio. Se agregan
+  // columnas nuevas en vez de reusar las viejas (que se dejan de escribir
+  // pero no se borran, mismo criterio que otras migraciones de esta
+  // tabla) y se relajan a NULLABLE porque una fila nueva puede no tener
+  // ningun archivo viejo-estilo. `text`/`text_position` son el mensaje
+  // opcional (arriba/abajo/al lado del recurso visual, o solo texto si no
+  // hay visual) -- el ESTILO del texto (color/degradado/tamaño) NO vive
+  // por alerta: reusa la personalizacion global del overlay 'alerts' (ver
+  // overlayCustomization.js), igual que el resto de los overlays.
+  .then(() => pool.query(`ALTER TABLE alert_configs ALTER COLUMN media_url DROP NOT NULL`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ALTER COLUMN media_path DROP NOT NULL`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ALTER COLUMN media_type DROP NOT NULL`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS visual_url TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS visual_path TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS visual_type TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS visual_muted BOOLEAN NOT NULL DEFAULT FALSE`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS audio_url TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS audio_path TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS alert_text TEXT`))
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS text_position TEXT NOT NULL DEFAULT 'below'`))
+  // Backfill de una sola vez: una alerta vieja (guardada antes de que
+  // existieran visual_*/audio_*) tenia su unico archivo en media_type/
+  // media_url/media_path -- 'audio' va a audio_*, cualquier otro tipo
+  // (image/gif/video) va a visual_*. Solo toca filas que todavia no
+  // tengan nada en las columnas nuevas, asi que correr esto de nuevo en
+  // cada arranque es un no-op para las que ya migraron.
+  .then(() => pool.query(`
+      UPDATE alert_configs SET audio_url = media_url, audio_path = media_path
+      WHERE media_type = 'audio' AND audio_url IS NULL AND media_url IS NOT NULL
+  `))
+  .then(() => pool.query(`
+      UPDATE alert_configs SET visual_url = media_url, visual_path = media_path, visual_type = media_type
+      WHERE media_type IS NOT NULL AND media_type != 'audio' AND visual_url IS NULL AND media_url IS NOT NULL
+  `))
   // Precios editables desde el panel de Licencias (pedido explicito:
   // "Modificacion manual de precios de licencias desde el panel de
   // administracion") -- una fila por plan que el admin haya tocado; un plan
@@ -370,25 +406,45 @@ async function getAlertConfig(id) {
 }
 
 // Un solo alert por (licencia, regalo) — volver a guardar para el mismo
-// regalo reemplaza el anterior (el caller ya se encargó de borrar el
-// archivo viejo del storage antes de llamar acá, ver server.js).
-async function upsertAlertConfig({ id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim, exitAnim, triggerType }) {
+// regalo reemplaza el anterior. El caller (server.js) resuelve de
+// antemano qué archivo viejo hay que borrar del storage y qué valores de
+// visual_*/audio_* mandar acá (los nuevos recién subidos, o los que ya
+// tenía la alerta si esto es una edición que no tocó ese archivo) — esta
+// función no sabe ni le importa la diferencia entre crear y editar.
+async function upsertAlertConfig({
+    id, licenseId, giftName,
+    visualUrl, visualPath, visualType, visualMuted,
+    audioUrl, audioPath,
+    text, textPosition,
+    durationMs, position, entranceAnim, exitAnim, triggerType,
+}) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, media_url, media_path, media_type, duration_ms, position, entrance_anim, exit_anim, trigger_type, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, duration_ms, position, entrance_anim, exit_anim, trigger_type, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
-            media_url = EXCLUDED.media_url,
-            media_path = EXCLUDED.media_path,
-            media_type = EXCLUDED.media_type,
+            visual_url = EXCLUDED.visual_url,
+            visual_path = EXCLUDED.visual_path,
+            visual_type = EXCLUDED.visual_type,
+            visual_muted = EXCLUDED.visual_muted,
+            audio_url = EXCLUDED.audio_url,
+            audio_path = EXCLUDED.audio_path,
+            alert_text = EXCLUDED.alert_text,
+            text_position = EXCLUDED.text_position,
             duration_ms = EXCLUDED.duration_ms,
             position = EXCLUDED.position,
             entrance_anim = EXCLUDED.entrance_anim,
             exit_anim = EXCLUDED.exit_anim,
             trigger_type = EXCLUDED.trigger_type,
             created_at = EXCLUDED.created_at
-    `, [id, licenseId, giftName, mediaUrl, mediaPath, mediaType, durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', Date.now()]);
+    `, [
+        id, licenseId, giftName,
+        visualUrl || null, visualPath || null, visualType || null, !!visualMuted,
+        audioUrl || null, audioPath || null,
+        text || null, textPosition || 'below',
+        durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', Date.now(),
+    ]);
     return getAlertConfig(id);
 }
 

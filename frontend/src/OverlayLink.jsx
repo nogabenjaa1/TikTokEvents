@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { buildOverlayUrl } from './auth';
-import AlertsAdmin from './AlertsAdmin';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
@@ -143,7 +142,7 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, giftsList, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -233,17 +232,15 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           </>
         )}
 
+        {/* Pedido explicito: el panel de configuración (qué recurso va en
+            cada disparador, editar, probar, etc.) se mudó a TikTokEvents
+            (ver App.jsx) — acá queda solo la URL para pegar en OBS. */}
         {tab === 'alerts' && (
-          <>
-            <OverlayUrlCard
-              title="Overlay de Alertas"
-              description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures abajo. Pégala como una fuente que cubra toda tu escena."
-              url={alertsUrl}
-            />
-            <div className="w-full max-w-xl">
-              <AlertsAdmin giftsList={giftsList} />
-            </div>
-          </>
+          <OverlayUrlCard
+            title="Overlay de Alertas"
+            description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
+            url={alertsUrl}
+          />
         )}
 
         {tab === 'tops' && (

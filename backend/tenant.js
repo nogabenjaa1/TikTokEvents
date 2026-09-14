@@ -193,7 +193,7 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'custom'];
 // Overlays, y qué valores son válidos para cada campo — mismo criterio que
 // VALID_THEME_STYLES/VALID_THEME_ACCENTS, para que un socket manipulado a
 // mano no pueda meter un `background` con CSS arbitrario.
-const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue'];
+const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'];
 const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
 const VALID_USERNAME_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
 const VALID_FONT_SIZES = ['normal', 'large', 'xlarge'];
@@ -410,8 +410,9 @@ class Tenant {
         // Config guardada en DB (ver db.js/server.js — se edita subiendo un
         // archivo por HTTP, no por socket), cacheada acá en memoria para no
         // pegarle a la base en cada regalo que llega. `alertConfigs` mapea
-        // nombre de regalo (en minúscula) -> { id, mediaUrl, mediaType,
-        // durationMs, position }. server.js llama a setAlertConfig/
+        // nombre de regalo (en minúscula) -> { id, visualUrl, visualType,
+        // visualMuted, audioUrl, text, textPosition, durationMs, position }.
+        // server.js llama a setAlertConfig/
         // removeAlertConfig justo después de guardar/borrar en la DB, así
         // el cache nunca queda desactualizado sin tener que releer todo.
         this.alertConfigs = {};
@@ -892,8 +893,11 @@ class Tenant {
             const rows = await db.listAlertConfigs(this.licenseId);
             rows.forEach((row) => {
                 this.alertConfigs[row.gift_name.toLowerCase()] = {
-                    id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
-                    mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+                    id: row.id, giftName: row.gift_name,
+                    visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
+                    audioUrl: row.audio_url,
+                    text: row.alert_text || '', textPosition: row.text_position || 'below',
+                    durationMs: row.duration_ms, position: row.position,
                     entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
                 };
             });
@@ -950,13 +954,43 @@ class Tenant {
         delete this.pendingAlertCombos[key];
         this.broadcast.emit('alert_triggered', {
             triggerId: ++this.alertTriggerCounter,
-            mediaUrl: pending.alert.mediaUrl,
-            mediaType: pending.alert.mediaType,
+            visualUrl: pending.alert.visualUrl,
+            visualType: pending.alert.visualType,
+            visualMuted: pending.alert.visualMuted,
+            audioUrl: pending.alert.audioUrl,
+            text: pending.alert.text,
+            textPosition: pending.alert.textPosition,
             durationMs: pending.alert.durationMs,
             position: pending.alert.position,
             entranceAnim: pending.alert.entranceAnim,
             exitAnim: pending.alert.exitAnim,
             count: pending.count,
+        });
+    }
+
+    // Disparo manual desde el panel (botón "🔥 Probar", ver AlertsAdmin.jsx)
+    // -- salta la cola de combo (ALERT_COMBO_SETTLE_MS) a propósito: es una
+    // prueba puntual, no tiene sentido esperar a "asentarla". Llega al mismo
+    // 'alert_triggered' que ve el overlay de OBS Y el propio panel del
+    // streamer (mismo room, ver attachSocket) -- así el streamer confirma
+    // en vivo que la alerta suena/se ve bien sin depender de estar mirando
+    // OBS en ese momento.
+    testFireAlert(alertId) {
+        const alert = Object.values(this.alertConfigs).find((a) => a.id === alertId);
+        if (!alert) return;
+        this.broadcast.emit('alert_triggered', {
+            triggerId: ++this.alertTriggerCounter,
+            visualUrl: alert.visualUrl,
+            visualType: alert.visualType,
+            visualMuted: alert.visualMuted,
+            audioUrl: alert.audioUrl,
+            text: alert.text,
+            textPosition: alert.textPosition,
+            durationMs: alert.durationMs,
+            position: alert.position,
+            entranceAnim: alert.entranceAnim,
+            exitAnim: alert.exitAnim,
+            count: 1,
         });
     }
 
@@ -2864,6 +2898,13 @@ class Tenant {
         socket.on('set_overlay_customization', (map) => {
             this.overlayCustomization = sanitizeOverlayCustomization(map);
             this.broadcast.emit('overlay_customization_update', this.overlayCustomization);
+        });
+
+        // Botón "🔥 Probar" del panel de Alertas (ver AlertsAdmin.jsx) —
+        // dispara la alerta real, id de por medio, sin esperar ningún
+        // evento de TikTok.
+        socket.on('test_alert', (alertId) => {
+            if (typeof alertId === 'string' && alertId) this.testFireAlert(alertId);
         });
     }
 }

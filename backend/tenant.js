@@ -406,6 +406,27 @@ class Tenant {
         // que la lista visible crezca sin límite en pantalla.
         this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT };
 
+        // ── TTS (lee el chat en voz alta, 100% del lado del navegador del
+        // streamer -- ver TtsChat.jsx) ──
+        // A diferencia del resto de TtsChat (que corre y decide TODO en el
+        // navegador, sin pasar por acá), quién puede activar una lectura sí
+        // se sincroniza por acá -- pedido explícito: que estos filtros no se
+        // pierdan al entrar desde otro navegador/computadora. `enabled` NO
+        // se guarda acá a propósito (ver set_tts_settings): que el TTS lea
+        // el chat siempre arranca APAGADO en cada sesión nueva, es una
+        // decisión de seguridad ya existente en TtsChat.jsx, no algo que
+        // deba "recordarse" solo.
+        this.ttsSettings = { allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1 };
+
+        // Pedido explícito: que la personalización de tema/overlays y los
+        // ajustes de Spotify/TTS de arriba sobrevivan a un reinicio del
+        // server y a entrar desde otro dispositivo -- antes solo vivían acá
+        // en memoria (se perdían en cada redeploy) y/o en el localStorage
+        // de un único navegador. Se cargan una sola vez desde la DB (ver
+        // loadPersistedSettings, llamado en attachSocket) igual que
+        // alertConfigsLoaded de acá abajo.
+        this.settingsLoaded = false;
+
         // ── ALERTAS DE REGALOS ──
         // Config guardada en DB (ver db.js/server.js — se edita subiendo un
         // archivo por HTTP, no por socket), cacheada acá en memoria para no
@@ -875,6 +896,62 @@ class Tenant {
         this.processGiftGifterBoard(event);
         this.processGiftExtensible(event);
         this.processAlertTrigger({ username: event.username, key: event.giftName, repeatCount: event.repeatCount });
+    }
+
+    // ==========================================
+    // AJUSTES PERSISTIDOS (tema, personalización de overlays, Spotify, TTS)
+    // ==========================================
+    // Se llama una sola vez por Tenant (ver attachSocket, que SÍ espera a
+    // que esto termine antes de sincronizar al cliente que se conectó —
+    // a diferencia de loadAlertConfigs, acá sí importa: si el cliente
+    // llegara a ver los valores de fábrica un instante y el streamer
+    // tocara algo en ESE instante, se guardaría por encima del ajuste
+    // real). Cualquier campo que falte o venga inválido en la fila de la
+    // licencia se queda con el default que ya trae el constructor —
+    // idéntico criterio que sanitizeOverlayCustomization/set_theme, nunca
+    // confía ciegamente en lo que haya en la DB.
+    async loadPersistedSettings() {
+        if (this.settingsLoaded) return;
+        this.settingsLoaded = true;
+        try {
+            const license = await db.findById(this.licenseId);
+            if (!license) return;
+
+            if (license.theme_settings) {
+                const t = license.theme_settings;
+                this.theme = {
+                    style: VALID_THEME_STYLES.includes(t.style) ? t.style : this.theme.style,
+                    accent: VALID_THEME_ACCENTS.includes(t.accent) ? t.accent : this.theme.accent,
+                    customColor: sanitizeHexColor(t.customColor, this.theme.customColor),
+                };
+            }
+            if (license.overlay_customization) {
+                this.overlayCustomization = sanitizeOverlayCustomization(license.overlay_customization);
+            }
+            if (license.spotify_settings) {
+                const s = license.spotify_settings;
+                this.spotifySettings = {
+                    enabled: s.enabled !== undefined ? Boolean(s.enabled) : this.spotifySettings.enabled,
+                    allUsers: Boolean(s.allUsers),
+                    moderators: s.moderators !== undefined ? Boolean(s.moderators) : this.spotifySettings.moderators,
+                    fanMembers: Boolean(s.fanMembers),
+                    minFanLevel: Math.max(1, Math.min(50, Number(s.minFanLevel) || 1)),
+                    maxQueueSize: Math.max(1, Math.min(20, Number(s.maxQueueSize) || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT)),
+                };
+            }
+            if (license.tts_settings) {
+                const tt = license.tts_settings;
+                this.ttsSettings = {
+                    allUsers: Boolean(tt.allUsers),
+                    moderators: tt.moderators !== undefined ? Boolean(tt.moderators) : this.ttsSettings.moderators,
+                    superFans: tt.superFans !== undefined ? Boolean(tt.superFans) : this.ttsSettings.superFans,
+                    fanMembers: tt.fanMembers !== undefined ? Boolean(tt.fanMembers) : this.ttsSettings.fanMembers,
+                    minFanLevel: Math.max(1, Math.min(50, Number(tt.minFanLevel) || 1)),
+                };
+            }
+        } catch (err) {
+            console.error(`[${this.licenseId}] No se pudieron cargar los ajustes guardados:`, err.message);
+        }
     }
 
     // ==========================================
@@ -2224,7 +2301,30 @@ class Tenant {
         // Fire-and-forget: ver el comentario de loadAlertConfigs.
         this.loadAlertConfigs();
 
-        // Sincronizar al nuevo cliente al instante
+        // A diferencia de alertConfigs (que se auto-corrige solo con el
+        // próximo regalo si llega a faltar por una fracción de segundo),
+        // estos SÍ tienen que estar cargados de la DB ANTES de sincronizar
+        // al cliente que se acaba de conectar -- pedido explícito: que
+        // tema, personalización de overlays, ajustes de Spotify y de TTS
+        // vuelvan tal cual quedaron la última vez, aunque el streamer entre
+        // desde otro navegador/computadora (o el server se haya reiniciado
+        // de por medio, que borra todo lo que solo vivía en memoria). Sin
+        // este orden, el primer dispositivo en conectarse a un Tenant recién
+        // creado vería por un instante los valores de fábrica en vez de lo
+        // guardado -- y en el peor caso, otro ajuste hecho en ESE instante
+        // desde ese dispositivo podría pisar sin querer lo real con esos
+        // valores de fábrica.
+        this.loadPersistedSettings().then(() => {
+            socket.emit('theme_updated', this.theme);
+            socket.emit('overlay_customization_update', this.overlayCustomization);
+            socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
+            socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+            socket.emit('tts_settings_update', this.ttsSettings);
+        });
+
+        // Sincronizar al nuevo cliente al instante -- todo esto es estado EN
+        // VIVO de la transmisión actual (juegos/colas/conexión), no depende
+        // de nada guardado en la DB.
         socket.emit('state_update', this.contestState);
         socket.emit('zub_state_update', this.getZubPublicState());
         socket.emit('elim_state_update', this.getElimPublicState());
@@ -2233,8 +2333,6 @@ class Tenant {
         socket.emit('taptap_state_update', this.getTapTapPublicState());
         socket.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
-        socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
-        socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
         // Pedido explícito: el overlay de Playlist tiene que poder mostrar
         // "now playing" apenas alguien lo abre, sin depender de que ya
         // hubiera un !play pedido antes (ver maybeStartSpotifyPolling).
@@ -2250,8 +2348,6 @@ class Tenant {
         // se haya desconectado/reconectado).
         socket.emit('live_status', { username: this.currentTikTokUsername, desiredUsername: this.desiredUsername, connected: this.liveConnected });
         socket.emit('prize_updated', this.prize);
-        socket.emit('theme_updated', this.theme);
-        socket.emit('overlay_customization_update', this.overlayCustomization);
         socket.emit('dice_state_update', this.diceState);
 
         // ── COLOR SAYS (dados) ───────────────────────
@@ -2833,6 +2929,13 @@ class Tenant {
             };
             this.broadcast.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
             this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+            // Pedido explícito: que sobreviva a un reinicio del server y a
+            // entrar desde otro dispositivo -- fire-and-forget, la copia en
+            // memoria ya se actualizó y ya se reenvió arriba, esto solo la
+            // deja guardada para la próxima vez que se cree este Tenant.
+            db.setSpotifySettings(this.licenseId, this.spotifySettings).catch((err) => {
+                console.error(`[${this.licenseId}] No se pudo guardar spotify_settings:`, err.message);
+            });
         });
 
         // Control de volumen desde el panel — actúa sobre la reproducción
@@ -2888,16 +2991,45 @@ class Tenant {
             if (style === this.theme.style && accent === this.theme.accent && customColor === this.theme.customColor) return;
             this.theme = { style, accent, customColor };
             this.broadcast.emit('theme_updated', this.theme);
+            // Pedido explícito: que el tema sobreviva a un reinicio del
+            // server y a entrar desde otro dispositivo.
+            db.setThemeSettings(this.licenseId, this.theme).catch((err) => {
+                console.error(`[${this.licenseId}] No se pudo guardar theme_settings:`, err.message);
+            });
         });
 
         // ── PERSONALIZACIÓN DE OVERLAYS (fondo + color de usuario) ──
-        // El panel manda el mapa COMPLETO (los 6 overlays configurables)
-        // cada vez que el streamer toca cualquier control del modal de
-        // "Personalizar" — mismo patrón que set_theme: se sanea y se
-        // reenvía tal cual a todo el room, overlay de OBS incluido.
+        // El panel manda el mapa COMPLETO (los 7 overlays configurables,
+        // Alertas incluido) cada vez que el streamer toca cualquier control
+        // del modal de "Personalizar" — mismo patrón que set_theme: se sanea
+        // y se reenvía tal cual a todo el room, overlay de OBS incluido.
         socket.on('set_overlay_customization', (map) => {
             this.overlayCustomization = sanitizeOverlayCustomization(map);
             this.broadcast.emit('overlay_customization_update', this.overlayCustomization);
+            // Pedido explícito: que sobreviva a un reinicio del server y a
+            // entrar desde otro dispositivo.
+            db.setOverlayCustomization(this.licenseId, this.overlayCustomization).catch((err) => {
+                console.error(`[${this.licenseId}] No se pudo guardar overlay_customization:`, err.message);
+            });
+        });
+
+        // ── TTS (quién puede activar una lectura -- ver TtsChat.jsx, que
+        // hace TODO lo demás 100% en el navegador del streamer) ──
+        // Pedido explícito: que estos filtros no se pierdan al entrar desde
+        // otro navegador/computadora -- antes vivían solo en el localStorage
+        // de UN navegador puntual, sin pasar nunca por acá.
+        socket.on('set_tts_settings', (newSettings) => {
+            this.ttsSettings = {
+                allUsers: Boolean(newSettings?.allUsers),
+                moderators: Boolean(newSettings?.moderators),
+                superFans: Boolean(newSettings?.superFans),
+                fanMembers: Boolean(newSettings?.fanMembers),
+                minFanLevel: Math.max(1, Math.min(50, Number(newSettings?.minFanLevel) || 1)),
+            };
+            this.broadcast.emit('tts_settings_update', this.ttsSettings);
+            db.setTtsSettings(this.licenseId, this.ttsSettings).catch((err) => {
+                console.error(`[${this.licenseId}] No se pudo guardar tts_settings:`, err.message);
+            });
         });
 
         // Botón "🔥 Probar" del panel de Alertas (ver AlertsAdmin.jsx) —

@@ -102,6 +102,18 @@ const ready = pool.query(`
   // dice_tier. Admin (dice_tier='admin') sigue teniendo el bonus siempre,
   // resuelto en el frontend, no acá.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS dice_win_bonus_unlocked BOOLEAN NOT NULL DEFAULT FALSE`))
+  // Ajustes que antes solo vivían en memoria del Tenant (se perdían en cada
+  // reinicio del server) y/o en el localStorage de un único navegador —
+  // pedido explícito: que el streamer entre desde otro navegador/
+  // computadora con solo su clave y todo quede tal cual lo dejó, sin tener
+  // que reconfigurar nada. JSONB nullable: NULL significa "nunca lo tocó",
+  // y el Tenant se queda con sus valores de fábrica (ver
+  // loadPersistedSettings en tenant.js) — nunca se escribe nada acá hasta
+  // que el streamer cambia algo por primera vez.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS theme_settings JSONB`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_customization JSONB`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS spotify_settings JSONB`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS tts_settings JSONB`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -298,6 +310,31 @@ async function setWinBonusUnlocked(id, enabled) {
     await ready;
     await pool.query('UPDATE licenses SET dice_win_bonus_unlocked = $1 WHERE id = $2', [!!enabled, id]);
     return findById(id);
+}
+
+// Ajustes que el Tenant guarda cada vez que el streamer cambia algo (ver
+// tenant.js) y carga al crearse -- ver el comentario de las columnas JSONB
+// en la migración de arriba. No devuelven la licencia entera (a diferencia
+// de setMultiDevice/setWinBonusUnlocked): el caller es siempre un handler
+// de socket fire-and-forget que no necesita la fila de vuelta.
+async function setThemeSettings(id, theme) {
+    await ready;
+    await pool.query('UPDATE licenses SET theme_settings = $1 WHERE id = $2', [JSON.stringify(theme), id]);
+}
+
+async function setOverlayCustomization(id, map) {
+    await ready;
+    await pool.query('UPDATE licenses SET overlay_customization = $1 WHERE id = $2', [JSON.stringify(map), id]);
+}
+
+async function setSpotifySettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET spotify_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
+async function setTtsSettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET tts_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
 }
 
 const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
@@ -560,6 +597,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, consumePendingKeyReveal,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

@@ -94,6 +94,37 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
   }, [settings]);
 
+  // Quién puede activar una lectura (allUsers/moderators/superFans/
+  // fanMembers/minFanLevel) -- pedido explícito: que no se pierda al entrar
+  // desde otro navegador/computadora. El resto de `settings` (voz elegida,
+  // pitch/rate/volumen, filtros de mensaje) se queda 100% local a propósito
+  // -- son preferencias de ESTE navegador/dispositivo (una voz instalada acá
+  // puede ni existir en otra máquina), no algo que tenga sentido sincronizar.
+  useEffect(() => {
+    if (!socket) return;
+    const onSettingsUpdate = (server) => {
+      if (!server) return;
+      setSettings((current) => ({
+        ...current,
+        allUsers: !!server.allUsers,
+        moderators: !!server.moderators,
+        superFans: !!server.superFans,
+        fanMembers: !!server.fanMembers,
+        minFanLevel: server.minFanLevel || current.minFanLevel,
+      }));
+    };
+    socket.on('tts_settings_update', onSettingsUpdate);
+    return () => socket.off('tts_settings_update', onSettingsUpdate);
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit('set_tts_settings', {
+      allUsers: settings.allUsers, moderators: settings.moderators, superFans: settings.superFans,
+      fanMembers: settings.fanMembers, minFanLevel: settings.minFanLevel,
+    });
+  }, [socket, settings.allUsers, settings.moderators, settings.superFans, settings.fanMembers, settings.minFanLevel]);
+
   // getVoices() suele devolver un array vacío en la primera llamada — la
   // lista real llega después, de forma asíncrona, avisada por
   // voiceschanged (comportamiento estándar de la Web Speech API, no un bug

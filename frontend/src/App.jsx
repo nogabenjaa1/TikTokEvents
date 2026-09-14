@@ -95,15 +95,14 @@ const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PATHS).map
 // pathname actual -- se usa tanto para el estado INICIAL (sin flash del
 // contenido por defecto antes de corregirse, ver el useState de más abajo)
 // como para reaccionar a atrás/adelante del navegador. Cualquier ruta
-// desconocida (o la raíz "/") cae en 'dashboard' con sesión, o en 'color'
-// sin sesión -- mismo criterio que ya existía antes de esto (mostrarle
-// algo a un visitante sin cuenta en vez de una pantalla vacía).
-function sectionFromPath(pathname, hasSession) {
+// desconocida (o la raíz "/") cae siempre en 'dashboard' -- es la página
+// principal del sitio, con o sin sesión (Dashboard.jsx ya sabe mostrar una
+// versión reducida para visitantes sin cuenta).
+function sectionFromPath(pathname) {
   const segments = pathname.split('/').filter(Boolean);
-  const fallback = hasSession ? 'dashboard' : 'color';
-  if (segments.length === 0) return { section: fallback, tab: null };
+  if (segments.length === 0) return { section: 'dashboard', tab: null };
   const section = PATH_TO_SECTION[segments[0]];
-  if (!section) return { section: fallback, tab: null };
+  if (!section) return { section: 'dashboard', tab: null };
   const tab = section === 'events' ? (PATH_TO_EVENT_TAB[segments[1]] || 'king') : null;
   return { section, tab };
 }
@@ -231,7 +230,7 @@ export default function App() {
   // respetar la URL arrancamos directo en TikTokEvents -> Spotify, que es
   // donde ese aviso se muestra (ver el banner en Spotify.jsx).
   const cameFromSpotifyOAuth = new URLSearchParams(window.location.search).has('spotify');
-  const initialRoute = sectionFromPath(window.location.pathname, !!loadSession());
+  const initialRoute = sectionFromPath(window.location.pathname);
   const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : initialRoute.section));
   // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
   const [eventsTab, setEventsTab] = useState(() => (cameFromSpotifyOAuth ? 'spotify' : (initialRoute.tab || 'king')));
@@ -312,7 +311,7 @@ export default function App() {
 
   useEffect(() => {
     if (overlayMode) return;
-    const { section, tab } = sectionFromPath(location.pathname, !!session);
+    const { section, tab } = sectionFromPath(location.pathname);
     setSidebarMode(section);
     if (section === 'events' && tab) setEventsTab(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps

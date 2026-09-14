@@ -61,7 +61,7 @@ function NamePreview({ type, from, to }) {
 // cada tarjeta en OverlayLink.jsx. Cada cambio se aplica al instante (mismo
 // criterio "en vivo" que el resto del panel, sin botón de guardar) — el
 // padre (App.jsx) es quien persiste en localStorage y reemite por socket.
-export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose, liveState }) {
+export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose, liveState, hideBackground }) {
   const bg = entry?.background || { type: 'solid' };
   const uc = entry?.usernameColor || { type: 'default' };
 
@@ -81,34 +81,47 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
             cambio (fondo, color de texto, arcoíris, etc.) SIN estar
             conectado a TikTok, y así detectar errores visuales antes de
             salir al directo. Se actualiza sola con cada cambio de abajo,
-            porque usa el mismo `entry` que se está editando. */}
-        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Vista previa (con espectadores de prueba)</p>
-        <div className="mb-5">
-          <OverlayPreviewBox overlayId={overlayId} entry={entry} liveState={liveState} />
-        </div>
+            porque usa el mismo `entry` que se está editando.
+            Alertas no tiene un mock acá (OverlayPreviewBox no lo soporta,
+            no depende de espectadores de prueba) -- ya tiene su propia
+            vista previa en vivo, más completa, en AlertsAdmin.jsx. */}
+        {overlayId !== 'alerts' && (
+          <>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Vista previa (con espectadores de prueba)</p>
+            <div className="mb-5">
+              <OverlayPreviewBox overlayId={overlayId} entry={entry} liveState={liveState} />
+            </div>
+          </>
+        )}
 
-        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Fondo del overlay</p>
-        <div className="flex flex-col gap-2">
-          {BG_OPTIONS.map((opt) => (
-            <OptionRow key={opt.id} active={bg.type === opt.id} onSelect={() => setBg({ type: opt.id })} label={opt.label} hint={opt.hint}>
-              {opt.id === 'rainbow' && (
-                <span className="w-8 h-5 rounded flex-shrink-0" style={{ backgroundImage: RAINBOW_GRADIENT, backgroundSize: '400% 100%', animation: 'tkc-rainbow-move 3s linear infinite' }} />
-              )}
-            </OptionRow>
-          ))}
-        </div>
+        {/* Pedido explicito: las Alertas nunca tienen fondo propio (siempre
+            transparente), así que este panel no le ofrece esa opción. */}
+        {!hideBackground && (
+          <>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Fondo del overlay</p>
+            <div className="flex flex-col gap-2">
+              {BG_OPTIONS.map((opt) => (
+                <OptionRow key={opt.id} active={bg.type === opt.id} onSelect={() => setBg({ type: opt.id })} label={opt.label} hint={opt.hint}>
+                  {opt.id === 'rainbow' && (
+                    <span className="w-8 h-5 rounded flex-shrink-0" style={{ backgroundImage: RAINBOW_GRADIENT, backgroundSize: '400% 100%', animation: 'tkc-rainbow-move 3s linear infinite' }} />
+                  )}
+                </OptionRow>
+              ))}
+            </div>
 
-        {bg.type === 'gradient' && (
-          <div className="flex items-center gap-6 mt-3 mb-1 px-1">
-            <label className="flex items-center gap-2 text-xs text-gray-400">
-              Color inicial
-              <input type="color" value={bg.from || '#7C3AED'} onChange={(e) => setBg({ from: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
-            </label>
-            <label className="flex items-center gap-2 text-xs text-gray-400">
-              Color final
-              <input type="color" value={bg.to || '#3B82F6'} onChange={(e) => setBg({ to: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
-            </label>
-          </div>
+            {bg.type === 'gradient' && (
+              <div className="flex items-center gap-6 mt-3 mb-1 px-1">
+                <label className="flex items-center gap-2 text-xs text-gray-400">
+                  Color inicial
+                  <input type="color" value={bg.from || '#7C3AED'} onChange={(e) => setBg({ from: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-400">
+                  Color final
+                  <input type="color" value={bg.to || '#3B82F6'} onChange={(e) => setBg({ to: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
+                </label>
+              </div>
+            )}
+          </>
         )}
 
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Texto y nombre de usuario</p>

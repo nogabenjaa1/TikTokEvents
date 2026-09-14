@@ -1056,23 +1056,50 @@ export const ANIM_DURATION_MS = 400;
 // `embedded`: la vista previa del panel la usa dentro de una cajita chica
 // en vez de la pantalla completa real — ver `.tkc-alert-embedded` en
 // index.css.
-export function AlertVisual({ alert, phase = 'visible', embedded = false }) {
+// `customize`: la personalización global del overlay 'alerts' (ver
+// overlayCustomization.js) — SOLO se usa `usernameColor` (color/degradado/
+// arcoíris/tamaño) para el texto opcional; `background` no aplica acá
+// porque una alerta nunca tiene fondo propio (ver OverlayCustomizePanel.jsx,
+// que por eso oculta esa sección para este overlay).
+export function AlertVisual({ alert, phase = 'visible', embedded = false, customize }) {
   if (!alert) return null;
   const positionClass = ALERT_POSITION_CLASSES[alert.position] || ALERT_POSITION_CLASSES.center;
   const preset = phase === 'exiting' ? (alert.exitAnim || 'none') : (alert.entranceAnim || 'none');
   const animClass = phase !== 'visible' && preset !== 'none' ? `tkc-alert-anim-${phase === 'exiting' ? 'out' : 'in'}-${preset}` : '';
+
+  // Visual (imagen/gif/video, con mute opcional en video) y audio son dos
+  // recursos INDEPENDIENTES (pedido explícito) -- un video puede sonar solo
+  // con su propio audio, quedar mudo con un audio aparte sonando encima, o
+  // no tener audio para nada; ninguna combinación excluye a las otras.
+  const hasVisual = !!(alert.visualType && alert.visualUrl);
+  const hasText = !!(alert.text && alert.text.trim());
+  const textOverride = getUsernameOverride(customize);
+  const textNode = hasText ? (
+    <p className={`text-3xl font-black text-center drop-shadow-lg ${textOverride.className}`} style={textOverride.cssVars}>
+      {alert.text}
+    </p>
+  ) : null;
+  const visualNode = hasVisual ? (
+    <>
+      {(alert.visualType === 'image' || alert.visualType === 'gif') && (
+        <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain" />
+      )}
+      {alert.visualType === 'video' && (
+        <video src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={!!alert.visualMuted} />
+      )}
+    </>
+  ) : null;
+  // Sin visual (alerta solo de texto y/o solo de audio), la posición del
+  // texto respecto al recurso no tiene sentido -- se muestra solo, centrado.
+  const layoutClass = !hasVisual ? '' : alert.textPosition === 'beside' ? 'flex-row items-center gap-4' : 'flex-col items-center gap-2';
+
   return (
     <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`}>
-      <div className={`relative ${animClass}`}>
-        {(alert.mediaType === 'image' || alert.mediaType === 'gif') && (
-          <img src={alert.mediaUrl} className="max-w-[600px] max-h-[600px] object-contain" />
-        )}
-        {alert.mediaType === 'video' && (
-          <video src={alert.mediaUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={false} />
-        )}
-        {alert.mediaType === 'audio' && (
-          <audio src={alert.mediaUrl} autoPlay />
-        )}
+      <div className={`relative flex ${layoutClass} ${animClass}`}>
+        {hasVisual && alert.textPosition === 'above' && textNode}
+        {visualNode}
+        {(!hasVisual || alert.textPosition !== 'above') && textNode}
+        {alert.audioUrl && <audio src={alert.audioUrl} autoPlay />}
         {alert.count > 1 && (
           <span className="absolute -top-3 -right-3 bg-yellow-400 text-black text-lg font-black px-3 py-1 rounded-full shadow-lg">
             ×{alert.count}
@@ -1091,7 +1118,15 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false }) {
 // ALERT_MAX_DURATION_MS) sin importar el tipo de recurso (el audio/video
 // sigue sonando de fondo si es más largo que eso, pero la alerta visual/
 // el turno de la cola avanza igual).
-export function AlertOverlay({ socket }) {
+// `embedded`: pedido explicito (streamer no escuchaba/veía sus propias
+// alertas -- solo llegaban a los espectadores vía OBS, sin forma de
+// confirmar en el momento que dispararon bien) -- AlertsAdmin.jsx planta
+// este MISMO componente, embebido en una cajita chica dentro del propio
+// panel, así el streamer ve/escucha exactamente lo mismo que ve el
+// overlay real de OBS, en su propio navegador -- sin tocar audio de OBS
+// para nada, así que nunca hay riesgo de que el espectador lo escuche
+// duplicado.
+export function AlertOverlay({ socket, customize, embedded = false }) {
   const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState('visible');
@@ -1144,7 +1179,7 @@ export function AlertOverlay({ socket }) {
     return () => timers.forEach(clearTimeout);
   }, [current]);
 
-  return <AlertVisual alert={current} phase={phase} />;
+  return <AlertVisual alert={current} phase={phase} customize={customize} embedded={embedded} />;
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le

@@ -71,11 +71,17 @@ const downloader = require('./downloader');
 // nunca tocan disco: van directo de la request a Supabase Storage (ver
 // storage.js). 15MB alcanza de sobra para un clip corto de alerta; frenar
 // acá evita cargar archivos gigantes enteros en RAM antes de subirlos.
-const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
-const ALERT_MEDIA_TYPES = {
+// Pedido explicito: visual (imagen/gif/video) y audio son dos campos
+// independientes del mismo form -- `.fields()` en vez de `.single()`
+// porque ahora puede venir uno, el otro, o los dos juntos.
+const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
+    .fields([{ name: 'visual', maxCount: 1 }, { name: 'audio', maxCount: 1 }]);
+const ALERT_VISUAL_TYPES = {
     'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
     'image/gif': 'gif',
     'video/mp4': 'video', 'video/webm': 'video',
+};
+const ALERT_AUDIO_TYPES = {
     'audio/mpeg': 'audio', 'audio/wav': 'audio', 'audio/mp3': 'audio', 'audio/ogg': 'audio',
 };
 
@@ -649,16 +655,16 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 });
 
 // ==========================================
-// ALERTAS: qué recurso (imagen/gif/video/audio) se reproduce en el
-// overlay al llegar un disparador puntual -- un regalo especifico,
-// seguimiento, o sticker personalizado del club de fans (los dos
-// ultimos son pedido explicito: "aplica lo de los seguimientos
-// tambien para las alertas normales") -- ver tenant.js
+// ALERTAS: qué se reproduce en el overlay al llegar un disparador puntual
+// -- un regalo especifico, seguimiento, o sticker personalizado del club
+// de fans (los dos ultimos son pedido explicito: "aplica lo de los
+// seguimientos tambien para las alertas normales") -- ver tenant.js
 // (processAlertTrigger) para el disparo en vivo y storage.js para dónde
-// vive el archivo. Un audio SIN imagen/video (media_type='audio') es lo
-// que arma una alerta puramente sonora -- no hace falta un sistema
-// aparte, ya lo soporta este mismo mecanismo (ver AlertVisual en
-// Overlay.jsx).
+// viven los archivos. Visual (imagen/gif/video, con mute opcional) y
+// audio son DOS recursos independientes y opcionales, mas un texto
+// tambien opcional -- pedido explicito: cualquier combinacion vale
+// (imagen sola, audio solo, video mudo + audio aparte, solo texto, etc.)
+// mientras venga al menos uno de los tres.
 // ==========================================
 // Disparadores que no son un regalo puntual -- gift_name guarda esta
 // misma clave fija para esos casos (ver el comentario de la tabla en
@@ -672,10 +678,15 @@ const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
 const ENTRANCE_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom', 'bounce'];
 const EXIT_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom'];
 
+const TEXT_POSITIONS = ['above', 'below', 'beside'];
+
 function serializeAlert(row) {
     return {
-        id: row.id, giftName: row.gift_name, mediaUrl: row.media_url,
-        mediaType: row.media_type, durationMs: row.duration_ms, position: row.position,
+        id: row.id, giftName: row.gift_name,
+        visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
+        audioUrl: row.audio_url,
+        text: row.alert_text || '', textPosition: row.text_position || 'below',
+        durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
     };
@@ -686,11 +697,19 @@ app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
     res.json({ success: true, alerts: alerts.map(serializeAlert) });
 });
 
-// multipart/form-data: `media` es el archivo, `giftName`/`durationMs`/
-// `position`/`entranceAnim`/`exitAnim` van como campos de texto normales
-// del mismo form.
-app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.single('media'), async (req, res) => {
-    const { giftName, durationMs, position, entranceAnim, exitAnim } = req.body || {};
+// multipart/form-data: `visual`/`audio` son los dos archivos (cada uno
+// opcional, ver uploadAlertMedia arriba); el resto va como campos de texto
+// normales del mismo form. Pedido explicito: visual/audio/texto son TRES
+// recursos independientes, cualquier combinacion vale (solo imagen, solo
+// audio, solo texto, video mudo + audio aparte, etc.) mientras venga al
+// menos uno de los tres.
+// Edicion sin re-subir archivo: si ya existe una alerta para este mismo
+// disparador (mismo gift_name) y el form no trae un archivo nuevo para
+// visual/audio, se mantiene el que ya tenía guardado -- `clearVisual`/
+// `clearAudio` (booleanos de texto) son la forma explícita de borrar un
+// recurso sin tener que borrar la alerta entera.
+app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, async (req, res) => {
+    const { giftName, durationMs, position, entranceAnim, exitAnim, text } = req.body || {};
     const triggerType = VALID_TRIGGER_TYPES.includes(req.body?.triggerType) ? req.body.triggerType : 'gift';
     // Para 'gift' la clave es el nombre real elegido en el panel; los demas
     // disparadores usan su propio nombre fijo como clave (nunca chocan con
@@ -704,34 +723,75 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia.singl
     } else {
         triggerKey = triggerType;
     }
-    if (!req.file) {
-        return res.status(400).json({ success: false, error: 'Falta el archivo de la alerta' });
+
+    const visualFile = req.files?.visual?.[0];
+    const audioFile = req.files?.audio?.[0];
+    let visualFileType;
+    if (visualFile) {
+        visualFileType = ALERT_VISUAL_TYPES[visualFile.mimetype];
+        if (!visualFileType) {
+            return res.status(400).json({ success: false, error: `Formato de imagen/video no soportado: ${visualFile.mimetype}` });
+        }
     }
-    const mediaType = ALERT_MEDIA_TYPES[req.file.mimetype];
-    if (!mediaType) {
-        return res.status(400).json({ success: false, error: `Formato no soportado: ${req.file.mimetype}` });
+    if (audioFile && !ALERT_AUDIO_TYPES[audioFile.mimetype]) {
+        return res.status(400).json({ success: false, error: `Formato de audio no soportado: ${audioFile.mimetype}` });
     }
+
+    const cleanText = typeof text === 'string' ? text.trim().slice(0, 200) : '';
+    const finalTextPosition = TEXT_POSITIONS.includes(req.body?.textPosition) ? req.body.textPosition : 'below';
+    const visualMuted = req.body?.visualMuted === 'true';
+    const clearVisual = req.body?.clearVisual === 'true';
+    const clearAudio = req.body?.clearAudio === 'true';
     const finalPosition = ['center', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'center';
     const finalDuration = Math.max(1000, Math.min(15000, Number(durationMs) || 5000));
     const finalEntranceAnim = ENTRANCE_ANIMS.includes(entranceAnim) ? entranceAnim : 'fade';
     const finalExitAnim = EXIT_ANIMS.includes(exitAnim) ? exitAnim : 'fade';
 
     try {
-        // Si ya había una alerta para este disparador, borra su archivo viejo
-        // del storage antes de subir el nuevo — sin esto quedarían archivos
-        // huérfanos en el bucket cada vez que el streamer cambia una alerta.
         const existing = (await db.listAlertConfigs(req.license.id))
             .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
-        if (existing) await storage.deleteFile(existing.media_path);
+
+        // Resuelve cada recurso por separado: archivo nuevo > (si se pidió
+        // borrar) nada > lo que ya tenía la alerta > nada.
+        let visualUrl = existing?.visual_url || null;
+        let visualPath = existing?.visual_path || null;
+        let finalVisualType = existing?.visual_type || null;
+        if (visualFile) {
+            if (existing?.visual_path) await storage.deleteFile(existing.visual_path);
+            const visualId = crypto.randomUUID();
+            const ext = (visualFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+            visualPath = `${req.license.id}/${visualId}${ext}`;
+            visualUrl = await storage.uploadFile(visualPath, visualFile.buffer, visualFile.mimetype);
+            finalVisualType = visualFileType;
+        } else if (clearVisual) {
+            if (existing?.visual_path) await storage.deleteFile(existing.visual_path);
+            visualUrl = null; visualPath = null; finalVisualType = null;
+        }
+
+        let audioUrl = existing?.audio_url || null;
+        let audioPath = existing?.audio_path || null;
+        if (audioFile) {
+            if (existing?.audio_path) await storage.deleteFile(existing.audio_path);
+            const audioId = crypto.randomUUID();
+            const ext = (audioFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+            audioPath = `${req.license.id}/${audioId}${ext}`;
+            audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioFile.mimetype);
+        } else if (clearAudio) {
+            if (existing?.audio_path) await storage.deleteFile(existing.audio_path);
+            audioUrl = null; audioPath = null;
+        }
+
+        if (!visualUrl && !audioUrl && !cleanText) {
+            return res.status(400).json({ success: false, error: 'Agrega al menos un recurso visual, un audio o un texto' });
+        }
 
         const id = crypto.randomUUID();
-        const ext = (req.file.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-        const mediaPath = `${req.license.id}/${id}${ext}`;
-        const mediaUrl = await storage.uploadFile(mediaPath, req.file.buffer, req.file.mimetype);
-
         const row = await db.upsertAlertConfig({
             id, licenseId: req.license.id, giftName: triggerKey,
-            mediaUrl, mediaPath, mediaType, durationMs: finalDuration, position: finalPosition,
+            visualUrl, visualPath, visualType: finalVisualType, visualMuted,
+            audioUrl, audioPath,
+            text: cleanText, textPosition: finalTextPosition,
+            durationMs: finalDuration, position: finalPosition,
             entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType,
         });
         // Mantiene al día el cache en memoria que usa processAlertTrigger —
@@ -750,7 +810,8 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
     if (!row || row.license_id !== req.license.id) {
         return res.status(404).json({ success: false, error: 'Alerta no encontrada' });
     }
-    await storage.deleteFile(row.media_path);
+    if (row.visual_path) await storage.deleteFile(row.visual_path);
+    if (row.audio_path) await storage.deleteFile(row.audio_path);
     await db.deleteAlertConfig(row.id, req.license.id);
     getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(row.gift_name);
     res.json({ success: true });

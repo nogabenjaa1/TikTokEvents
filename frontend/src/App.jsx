@@ -16,6 +16,7 @@ import Membership from './Membership';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
+import AlertsAdmin from './AlertsAdmin';
 import InterstitialAd from './InterstitialAd';
 import logoMark from './assets/logo-mark.png';
 import { ThemedShell, useTheme, accentStyleVars } from './ThemeContext';
@@ -44,6 +45,7 @@ const EVENT_TABS = [
   { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
   { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
   { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
+  { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
   { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
 ];
 
@@ -577,7 +579,7 @@ export default function App() {
     if (screen === 'alerts') {
       return (
         <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <AlertOverlay socket={socket} />
+          <AlertOverlay socket={socket} customize={overlayCustomization.alerts} />
         </div>
       );
     }
@@ -710,7 +712,7 @@ export default function App() {
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
         {sidebarMode === 'overlay' && (
           <OverlayLink
-            socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState} giftsList={giftsList}
+            socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
             extensibleState={extensibleState} diceState={diceState}
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />
@@ -815,6 +817,22 @@ export default function App() {
                 <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Spotify." />
               ) : (
                 <Spotify socket={socket} queueState={spotifyQueueState} settingsState={spotifySettingsState} />
+              )
+            )}
+            {/* Pedido explicito: el panel de configuración de Alertas se
+                muda de "Overlays" (que ahora solo se queda con la URL/
+                ayuda de OBS, ver OverlayLink.jsx) a TikTokEvents, junto al
+                resto de los módulos que sí edita el streamer. */}
+            {eventsTab === 'alerts' && (
+              needsAccess('alerts') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Alertas." />
+              ) : (
+                <AlertsAdmin
+                  giftsList={giftsList} socket={socket}
+                  customization={panelOverlayDraft.alerts}
+                  onCustomizeChange={(entry) => updateOverlayCustomization('alerts', entry)}
+                  onApplyToAll={() => applyOverlayCustomizationToAll('alerts')}
+                />
               )
             )}
             {/* TTS también requiere sesión — se muestra el login embebido en

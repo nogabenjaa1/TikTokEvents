@@ -10,7 +10,7 @@ const STORAGE_KEY = 'tkc_overlay_customization';
 // que pidió el streamer) — Rey del Trono/Zubastinis/Eliminación/Ruleta
 // comparten una sola URL/fuente de OBS, así que comparten una sola
 // personalización ("games").
-export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue'];
+export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'];
 
 export const OVERLAY_CUSTOMIZE_LABELS = {
   games: 'Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)',
@@ -19,6 +19,12 @@ export const OVERLAY_CUSTOMIZE_LABELS = {
   gifter: 'Top Gifter',
   extensible: 'Modo Extensible',
   musicqueue: 'Cola de Spotify',
+  // Pedido explicito: el texto opcional de las Alertas usa esta MISMA
+  // personalizacion (color/degradado/arcoíris + tamaño) que el resto de
+  // los overlays -- "background" no aplica acá (una alerta nunca tiene
+  // fondo propio, siempre transparente), solo se usa `usernameColor` (ver
+  // getUsernameOverride) para el texto. Ver AlertsAdmin.jsx.
+  alerts: 'Alertas',
 };
 
 // Tamaños de fuente disponibles para texto/nombre de usuario — multiplicador

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
-import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
+import { AlertVisual, AlertOverlay, ANIM_DURATION_MS } from './Overlay';
+import OverlayCustomizePanel from './OverlayCustomizePanel';
+import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
 const POSITIONS = [
   { id: 'center', label: 'Centro' },
@@ -8,6 +10,15 @@ const POSITIONS = [
   { id: 'bottom', label: 'Abajo' },
   { id: 'left', label: 'Izquierda' },
   { id: 'right', label: 'Derecha' },
+];
+
+// Mismas 3 llaves que TEXT_POSITIONS en server.js -- solo importa cuando
+// hay un recurso visual (si no, el texto va solo, centrado, ver AlertVisual
+// en Overlay.jsx).
+const TEXT_POSITIONS = [
+  { id: 'above', label: 'Arriba del recurso' },
+  { id: 'below', label: 'Abajo del recurso' },
+  { id: 'beside', label: 'Al lado del recurso' },
 ];
 
 // Mismos 4 valores que VALID_TRIGGER_TYPES en server.js. 'gift' pide elegir
@@ -40,7 +51,8 @@ const ANIMATION_OUT_OPTIONS = [
   { id: 'zoom', label: 'Zoom' },
 ];
 
-const MEDIA_TYPE_ICON = { image: '🖼️', gif: '🎞️', video: '🎬', audio: '🎧' };
+const VISUAL_TYPE_ICON = { image: '🖼️', gif: '🎞️', video: '🎬' };
+const MAX_TEXT_LENGTH = 200; // mismo tope que aplica el backend (String.slice)
 
 // Mismo límite que ya aplica el backend (ver server.js) y el propio
 // AlertOverlay (ALERT_MAX_DURATION_MS en Overlay.jsx) — el slider de acá
@@ -48,16 +60,16 @@ const MEDIA_TYPE_ICON = { image: '🖼️', gif: '🎞️', video: '🎬', audio
 // recortar de todos modos.
 const MAX_DURATION_S = 15;
 
-// Deduce el "tipo" de un archivo elegido en el <input type="file"> con el
-// mismo criterio que ALERT_MEDIA_TYPES en server.js — para la vista previa
-// en vivo (ver LivePreview más abajo), que corre 100% en el cliente antes
-// de subir nada.
-function fileMediaType(file) {
+// Deduce el "tipo" de un archivo VISUAL elegido en el <input type="file">
+// con el mismo criterio que ALERT_VISUAL_TYPES en server.js — para la
+// vista previa en vivo (ver LivePreview más abajo), que corre 100% en el
+// cliente antes de subir nada. El audio no necesita esto: siempre es
+// "audio", sin distinción de subtipo.
+function fileVisualType(file) {
   if (!file) return null;
   if (file.type === 'image/gif') return 'gif';
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
-  if (file.type.startsWith('audio/')) return 'audio';
   return null;
 }
 
@@ -69,6 +81,10 @@ function fileMediaType(file) {
 const STAGE_W = 960;
 const STAGE_H = 540;
 const STAGE_SCALE = 0.32;
+// Cajita de confirmación "en vivo" (ver LiveConfirmationBox más abajo) —
+// mismo mecanismo de escenario, pero más chica: solo necesita confirmar
+// que algo se disparó, no servir de vista previa de diseño.
+const LIVE_SCALE = 0.15;
 
 // Vista previa en vivo: se actualiza SOLA en cuanto cambia el archivo, la
 // duración, la posición o las animaciones — pedido explícito de que no
@@ -80,7 +96,7 @@ const STAGE_SCALE = 0.32;
 // se puede reusar `draftAlert` como dependencia para reiniciar el timer
 // del final del ciclo porque esa MISMA referencia no cambia entre una
 // vuelta y la siguiente.
-function LivePreview({ draftAlert }) {
+function LivePreview({ draftAlert, customize }) {
   const [phase, setPhase] = useState('entering');
   const [cycle, setCycle] = useState(0);
 
@@ -102,12 +118,31 @@ function LivePreview({ draftAlert }) {
     <div className="rounded-xl overflow-hidden mx-auto" style={{ width: STAGE_W * STAGE_SCALE, height: STAGE_H * STAGE_SCALE, background: 'repeating-conic-gradient(#1a1625 0% 25%, #150f22 0% 50%) 0 0/24px 24px' }}>
       <div className="relative" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${STAGE_SCALE})`, transformOrigin: 'top left' }}>
         {draftAlert ? (
-          <AlertVisual alert={draftAlert} phase={phase} embedded />
+          <AlertVisual alert={draftAlert} phase={phase} embedded customize={customize} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-gray-500 text-sm italic" style={{ transform: `scale(${1 / STAGE_SCALE})` }}>Elige un archivo para ver la vista previa</p>
+            <p className="text-gray-500 text-sm italic" style={{ transform: `scale(${1 / STAGE_SCALE})` }}>Agrega un recurso o un texto para ver la vista previa</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Confirmación "en vivo" — pedido explícito: el streamer no tenía forma de
+// saber si una alerta real se disparó bien (los espectadores la
+// escuchaban/veían en OBS, pero él no). Esta cajita fija, chica, en la
+// esquina del panel, planta el MISMO <AlertOverlay> que corre en OBS,
+// escuchando el mismo evento 'alert_triggered' por el mismo socket — así
+// el streamer ve/escucha exactamente lo mismo que sus espectadores, en su
+// propio navegador. Nunca toca el audio de OBS ni ninguna fuente que
+// vaya al stream, así que jamás se duplica del lado de los espectadores.
+function LiveConfirmationBox({ socket, customize }) {
+  return (
+    <div className="fixed bottom-4 right-4 z-[90] rounded-xl overflow-hidden shadow-2xl border-2 pointer-events-none" style={{ borderColor: 'var(--accent)', width: STAGE_W * LIVE_SCALE, height: STAGE_H * LIVE_SCALE, background: 'rgba(10,6,20,0.85)' }}>
+      <p className="absolute top-1 left-1.5 right-1.5 text-[7px] font-black uppercase tracking-widest text-white/60 z-10 leading-tight">🔔 En vivo — solo tú lo ves</p>
+      <div className="relative" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${LIVE_SCALE})`, transformOrigin: 'top left' }}>
+        <AlertOverlay socket={socket} customize={customize} embedded />
       </div>
     </div>
   );
@@ -116,24 +151,38 @@ function LivePreview({ draftAlert }) {
 // ─────────────────────────────────────────────
 // ALERTAS — panel de administración
 // Cada disparador (un regalo puntual, seguimiento, o sticker
-// de club de fans) puede tener a lo sumo UNA alerta asignada (imagen/gif/
-// video/audio -- un audio solo, sin imagen/video, es una alerta puramente
-// de sonido). El archivo se sube directo a Supabase Storage (ver
-// backend/storage.js) — acá solo se arma el formulario y se manda por
-// multipart/form-data; nunca pasa por localStorage ni por el socket
-// (subir un archivo grande por socket.io sería mucho más frágil que un
-// POST normal con su propio manejo de progreso/errores).
-// El DISPARO en vivo de la alerta (cuando pasa de verdad) sí va por
-// socket — ver AlertOverlay en Overlay.jsx / alert_triggered en
-// tenant.js —, esto de acá es solo la configuración.
+// de club de fans) puede tener a lo sumo UNA alerta asignada. Pedido
+// explícito: visual (imagen/gif/video, con mute opcional) y audio son DOS
+// recursos independientes y opcionales, mas un texto también opcional —
+// cualquier combinación vale (imagen sola, audio solo, video mudo + audio
+// aparte, solo texto, etc.) mientras venga al menos uno de los tres. Los
+// archivos se suben directo a Supabase Storage (ver backend/storage.js) —
+// acá solo se arma el formulario y se manda por multipart/form-data; nunca
+// pasa por localStorage ni por el socket (subir un archivo grande por
+// socket.io sería mucho más frágil que un POST normal con su propio manejo
+// de progreso/errores).
+// El DISPARO en vivo de la alerta (cuando pasa de verdad, o cuando el
+// streamer la prueba desde acá) sí va por socket — ver AlertOverlay en
+// Overlay.jsx / alert_triggered y test_alert en tenant.js —, esto de acá
+// es solo la configuración.
 // ─────────────────────────────────────────────
-export default function AlertsAdmin({ giftsList }) {
+export default function AlertsAdmin({ giftsList, socket, customization, onCustomizeChange, onApplyToAll }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
   const [isDropOpen, setIsDropOpen] = useState(false);
-  const [file, setFile] = useState(null);
+
+  const [visualFile, setVisualFile] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
+  const [visualMuted, setVisualMuted] = useState(false);
+  // "Quitar" explícito de un recurso YA guardado, sin tener que borrar toda
+  // la alerta — solo tiene efecto mientras se está editando (ver save()).
+  const [clearVisual, setClearVisual] = useState(false);
+  const [clearAudio, setClearAudio] = useState(false);
+  const [text, setText] = useState('');
+  const [textPosition, setTextPosition] = useState('below');
+
   const [duration, setDuration] = useState(5);
   const [position, setPosition] = useState('center');
   const [entranceAnim, setEntranceAnim] = useState('fade');
@@ -141,28 +190,51 @@ export default function AlertsAdmin({ giftsList }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // URL de blob del archivo elegido, para la vista previa en vivo — se
-  // crea/revoca en el mismo efecto atado a `file` (React garantiza que el
-  // cleanup de la vuelta anterior corre ANTES del cuerpo de la vuelta
-  // nueva), así nunca se revoca por accidente la URL que se acaba de crear
-  // para el archivo actual. Bug real que tenía la versión anterior de este
-  // archivo (botón "Vista previa" con el ícono roto del navegador): el
-  // `previewObjectUrl.current` se pisaba y revocaba desde dos lugares
-  // distintos en el orden equivocado, así que la imagen que se llegaba a
-  // mostrar ya apuntaba a un blob recién revocado.
-  const [fileUrl, setFileUrl] = useState(null);
+  // null = creando una alerta nueva. Si no, es la alerta que se está
+  // editando (ver startEdit) -- el disparador queda bloqueado mientras se
+  // edita (ver el JSX de abajo) para no terminar con una fila huérfana en
+  // la DB si el streamer lo cambiara a mitad de una edición.
+  const [editingId, setEditingId] = useState(null);
+  const [editingExisting, setEditingExisting] = useState(null);
+
+  const [customizingText, setCustomizingText] = useState(false);
+
+  // URLs de blob de los archivos recién elegidos, para la vista previa en
+  // vivo — se crean/revocan en el mismo efecto atado a cada archivo (React
+  // garantiza que el cleanup de la vuelta anterior corre ANTES del cuerpo
+  // de la vuelta nueva), así nunca se revoca por accidente la URL que se
+  // acaba de crear para el archivo actual.
+  const [visualFileUrl, setVisualFileUrl] = useState(null);
   useEffect(() => {
-    if (!file) { setFileUrl(null); return; }
-    const url = URL.createObjectURL(file);
-    setFileUrl(url);
+    if (!visualFile) { setVisualFileUrl(null); return; }
+    const url = URL.createObjectURL(visualFile);
+    setVisualFileUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [visualFile]);
+
+  const [audioFileUrl, setAudioFileUrl] = useState(null);
+  useEffect(() => {
+    if (!audioFile) { setAudioFileUrl(null); return; }
+    const url = URL.createObjectURL(audioFile);
+    setAudioFileUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [audioFile]);
+
+  // Qué recurso se va a mandar/mostrar realmente: archivo recién elegido >
+  // (si no se pidió quitar) el que ya tenía la alerta en edición > nada.
+  const effectiveVisualUrl = visualFileUrl || (!clearVisual && editingExisting?.visualUrl) || null;
+  const effectiveVisualType = visualFile ? fileVisualType(visualFile) : ((!clearVisual && editingExisting?.visualType) || null);
+  const effectiveAudioUrl = audioFileUrl || (!clearAudio && editingExisting?.audioUrl) || null;
 
   const draftAlert = useMemo(() => {
-    const mediaType = fileMediaType(file);
-    if (!fileUrl || !mediaType) return null;
-    return { mediaUrl: fileUrl, mediaType, durationMs: Math.round(duration * 1000), position, entranceAnim, exitAnim };
-  }, [fileUrl, file, duration, position, entranceAnim, exitAnim]);
+    if (!effectiveVisualUrl && !effectiveAudioUrl && !text.trim()) return null;
+    return {
+      visualUrl: effectiveVisualUrl, visualType: effectiveVisualType, visualMuted,
+      audioUrl: effectiveAudioUrl,
+      text: text.trim(), textPosition,
+      durationMs: Math.round(duration * 1000), position, entranceAnim, exitAnim,
+    };
+  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim]);
 
   // Vista previa de una alerta YA GUARDADA (botón "👁️" de la lista de
   // abajo) — a diferencia de la de arriba (en vivo, en bucle, del
@@ -209,16 +281,72 @@ export default function AlertsAdmin({ giftsList }) {
 
   const alertForTrigger = (triggerKey) => alerts.find((a) => a.giftName.toLowerCase() === triggerKey.toLowerCase());
 
+  // Pedido explícito: después de guardar (nueva alerta o edición), el
+  // panel vuelve a quedar en blanco -- así el streamer puede setear la
+  // siguiente desde cero sin arrastrar los datos recién ingresados.
+  const resetForm = () => {
+    setEditingId(null);
+    setEditingExisting(null);
+    setTriggerType('gift');
+    setSelectedGift(null);
+    setVisualFile(null);
+    setAudioFile(null);
+    setVisualMuted(false);
+    setClearVisual(false);
+    setClearAudio(false);
+    setText('');
+    setTextPosition('below');
+    setDuration(5);
+    setPosition('center');
+    setEntranceAnim('fade');
+    setExitAnim('fade');
+    setError('');
+  };
+
+  const startEdit = (alert) => {
+    setEditingId(alert.id);
+    setEditingExisting(alert);
+    setTriggerType(alert.triggerType || 'gift');
+    if (!alert.triggerType || alert.triggerType === 'gift') {
+      const gift = giftsList.find((g) => g.name.toLowerCase() === alert.giftName.toLowerCase());
+      setSelectedGift(gift || { name: alert.giftName, icon: '', coins: 0 });
+    } else {
+      setSelectedGift(null);
+    }
+    setVisualFile(null);
+    setAudioFile(null);
+    setVisualMuted(!!alert.visualMuted);
+    setClearVisual(false);
+    setClearAudio(false);
+    setText(alert.text || '');
+    setTextPosition(alert.textPosition || 'below');
+    setDuration((alert.durationMs || 5000) / 1000);
+    setPosition(alert.position || 'center');
+    setEntranceAnim(alert.entranceAnim || 'fade');
+    setExitAnim(alert.exitAnim || 'fade');
+    setError('');
+  };
+
   const save = async () => {
     if (triggerType === 'gift' && !selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
-    if (!file) return setError('Elige un archivo (imagen, gif, video o audio).');
+    const hasVisual = !!visualFile || (!clearVisual && !!editingExisting?.visualUrl);
+    const hasAudio = !!audioFile || (!clearAudio && !!editingExisting?.audioUrl);
+    if (!hasVisual && !hasAudio && !text.trim()) {
+      return setError('Agrega al menos un recurso visual, un audio o un texto.');
+    }
     setError('');
     setSaving(true);
     try {
       const form = new FormData();
-      form.append('media', file);
+      if (visualFile) form.append('visual', visualFile);
+      if (audioFile) form.append('audio', audioFile);
+      if (clearVisual) form.append('clearVisual', 'true');
+      if (clearAudio) form.append('clearAudio', 'true');
+      form.append('visualMuted', String(visualMuted));
       form.append('triggerType', triggerType);
       if (triggerType === 'gift') form.append('giftName', selectedGift.name);
+      form.append('text', text.trim());
+      form.append('textPosition', textPosition);
       form.append('durationMs', String(Math.round(duration * 1000)));
       form.append('position', position);
       form.append('entranceAnim', entranceAnim);
@@ -226,7 +354,7 @@ export default function AlertsAdmin({ giftsList }) {
       const res = await fetch(`${backendUrl()}/api/alerts`, { method: 'POST', headers: authHeaders(), body: form });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo guardar la alerta');
-      setFile(null);
+      resetForm();
       await fetchAlerts();
     } catch (err) {
       setError(err.message);
@@ -238,30 +366,53 @@ export default function AlertsAdmin({ giftsList }) {
   const remove = async (id) => {
     if (!window.confirm('¿Borrar esta alerta? Ese disparador dejará de reproducir nada hasta que asignes una nueva.')) return;
     await fetch(`${backendUrl()}/api/alerts/${id}`, { method: 'DELETE', headers: authHeaders() });
+    if (editingId === id) resetForm();
     await fetchAlerts();
   };
+
+  // Botón "🔥 Probar" — dispara la alerta real (ver testFireAlert en
+  // tenant.js), la misma que verían los espectadores en OBS, más la
+  // confirmación en vivo de acá abajo.
+  const testFire = (id) => socket?.emit('test_alert', id);
+
+  const editingLabel = editingId
+    ? (editingExisting?.triggerType && editingExisting.triggerType !== 'gift' ? TRIGGER_LABELS[editingExisting.triggerType] : editingExisting?.giftName)
+    : null;
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔔 Alertas</p>
 
       <div className="theme-surface w-full max-w-md p-6 relative">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">NUEVA ALERTA</h1>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="theme-accent-bg w-3 h-8 rounded-full" />
+            <h1 className="theme-heading text-2xl font-semibold tracking-wide">{editingId ? 'EDITANDO ALERTA' : 'NUEVA ALERTA'}</h1>
+          </div>
+          {editingId && (
+            <button type="button" onClick={resetForm} className="text-[10px] font-bold text-gray-400 hover:text-white underline whitespace-nowrap">
+              Cancelar edición
+            </button>
+          )}
         </div>
+        {editingId && (
+          <p className="text-[10px] text-gray-500 -mt-4 mb-4">
+            Editando la alerta de <strong className="text-white">{editingLabel}</strong> — el disparador no se puede cambiar acá; borra la alerta y crea una nueva si quieres reasignarla a otro regalo.
+          </p>
+        )}
 
         <div className="mb-4">
           <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">DISPARADOR</label>
           <div className="flex gap-2 flex-wrap">
             {TRIGGER_TYPES.map((t) => (
-              <button key={t.id} type="button" onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); }}
-                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+              <button key={t.id} type="button" disabled={!!editingId}
+                onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); }}
+                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {t.icon} {t.label}
               </button>
             ))}
           </div>
-          {triggerType !== 'gift' && alertForTrigger(triggerType) && (
+          {triggerType !== 'gift' && !editingId && alertForTrigger(triggerType) && (
             <p className="text-[10px] text-gray-500 mt-2">Ya tienes una alerta para "{TRIGGER_LABELS[triggerType]}" -- guardar de nuevo la reemplaza.</p>
           )}
         </div>
@@ -276,20 +427,20 @@ export default function AlertsAdmin({ giftsList }) {
             <div className="mb-4 relative z-20">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
               <div
-                onClick={() => setIsDropOpen(!isDropOpen)}
-                className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
+                onClick={() => !editingId && setIsDropOpen(!isDropOpen)}
+                className={`theme-input w-full p-3 flex items-center justify-between ${editingId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-[var(--accent)]'}`}
               >
                 {selectedGift ? (
                   <div className="flex items-center gap-3">
-                    <img src={selectedGift.icon} className="w-6 h-6" />
+                    {selectedGift.icon && <img src={selectedGift.icon} className="w-6 h-6" />}
                     <span className="text-sm">{selectedGift.name}</span>
-                    {alertForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
+                    {!editingId && alertForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
                   </div>
                 ) : (
                   <span className="text-gray-500 text-sm">Elige un regalo...</span>
                 )}
               </div>
-              {isDropOpen && (
+              {isDropOpen && !editingId && (
                 <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
                   {giftsList.filter((g) => g.coins > 0).map((gift, i) => (
                     <div key={`al-${gift.id}-${i}`}
@@ -308,21 +459,78 @@ export default function AlertsAdmin({ giftsList }) {
             )}
 
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">📁 ARCHIVO</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video — opcional)</label>
+              {effectiveVisualUrl && !visualFile ? (
+                <div className="theme-input flex items-center justify-between p-2 mb-2">
+                  <span className="text-[10px] text-gray-400">{VISUAL_TYPE_ICON[effectiveVisualType] || '📎'} Ya tiene un archivo guardado</span>
+                  <button type="button" onClick={() => setClearVisual(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
+                </div>
+              ) : null}
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+                onChange={(e) => { setVisualFile(e.target.files?.[0] || null); setClearVisual(false); }}
                 className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
               />
-              <p className="text-[10px] text-gray-500 mt-1">Imagen, GIF, video (MP4/WebM) o audio (MP3/WAV) — hasta 15MB.</p>
+              <p className="text-[10px] text-gray-500 mt-1">PNG/JPG/WebP, GIF, o video (MP4/WebM) — hasta 15MB.</p>
+              {effectiveVisualType === 'video' && (
+                <label className="flex items-center gap-2 mt-2 text-[10px] text-gray-400 cursor-pointer">
+                  <input type="checkbox" checked={visualMuted} onChange={(e) => setVisualMuted(e.target.checked)} />
+                  Mutear el video (útil si vas a poner un audio aparte abajo)
+                </label>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎧 AUDIO (opcional, independiente del visual)</label>
+              {effectiveAudioUrl && !audioFile ? (
+                <div className="theme-input flex items-center justify-between p-2 mb-2">
+                  <span className="text-[10px] text-gray-400">🎧 Ya tiene un audio guardado</span>
+                  <button type="button" onClick={() => setClearAudio(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
+                </div>
+              ) : null}
+              <input
+                type="file"
+                accept="audio/mpeg,audio/wav,audio/mp3,audio/ogg"
+                onChange={(e) => { setAudioFile(e.target.files?.[0] || null); setClearAudio(false); }}
+                className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
+              />
+              <p className="text-[10px] text-gray-500 mt-1">MP3/WAV/OGG — hasta 15MB. Suena junto al visual, sin importar si el video tiene su propio audio o está mudo.</p>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] uppercase tracking-widest text-gray-400 font-semibold">💬 TEXTO (opcional)</label>
+                <button type="button" onClick={() => setCustomizingText(true)} className="text-[9px] font-black text-gray-400 hover:text-white underline uppercase tracking-widest whitespace-nowrap">
+                  🎨 Personalizar estilo
+                </button>
+              </div>
+              <textarea
+                value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
+                placeholder="Ej: ¡Gracias por el regalo!"
+                className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 text-sm resize-none"
+              />
+              <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
+              {effectiveVisualUrl && (
+                <div className="mt-2">
+                  <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">Posición del texto respecto al recurso</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {TEXT_POSITIONS.map((p) => (
+                      <button key={p.id} type="button" onClick={() => setTextPosition(p.id)}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${textPosition === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Vista previa en vivo — pedido explícito: sin botón, se
                 actualiza sola con cualquier cambio de acá abajo. */}
             <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">👁️ VISTA PREVIA EN VIVO</label>
-              <LivePreview draftAlert={draftAlert} />
+              <LivePreview draftAlert={draftAlert} customize={customization} />
             </div>
 
             <div className="mb-4">
@@ -372,13 +580,20 @@ export default function AlertsAdmin({ giftsList }) {
 
             {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
 
-            <button
-              onClick={save}
-              disabled={saving}
-              className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? 'SUBIENDO...' : 'GUARDAR ALERTA'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={save}
+                disabled={saving}
+                className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'GUARDANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
+              </button>
+              {editingId && (
+                <button onClick={resetForm} type="button" className="theme-btn-secondary px-5 py-4 rounded-xl font-bold tracking-wide text-xs uppercase">
+                  Cancelar
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -391,13 +606,23 @@ export default function AlertsAdmin({ giftsList }) {
           <div className="flex flex-col gap-2">
             {alerts.map((alert) => (
               <div key={alert.id} className="theme-input flex items-center gap-3 px-3 py-2">
-                <span className="text-lg flex-shrink-0">{MEDIA_TYPE_ICON[alert.mediaType] || '📎'}</span>
+                <span className="text-lg flex-shrink-0 flex items-center gap-0.5">
+                  {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
+                  {alert.audioUrl && '🎧'}
+                  {alert.text && '💬'}
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white truncate">{alert.triggerType && alert.triggerType !== 'gift' ? TRIGGER_LABELS[alert.triggerType] || alert.giftName : alert.giftName}</p>
                   <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
                 </div>
+                <button onClick={() => testFire(alert.id)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Probar (dispara la alerta real)">
+                  🔥
+                </button>
                 <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">
                   👁️
+                </button>
+                <button onClick={() => startEdit(alert)} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex-shrink-0" title="Editar">
+                  ✏️
                 </button>
                 <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline flex-shrink-0">
                   Borrar
@@ -410,9 +635,11 @@ export default function AlertsAdmin({ giftsList }) {
         )}
       </div>
 
+      <LiveConfirmationBox socket={socket} customize={customization} />
+
       {savedPreview && (
         <>
-          <AlertVisual alert={savedPreview} phase={savedPreviewPhase} />
+          <AlertVisual alert={savedPreview} phase={savedPreviewPhase} customize={customization} />
           <button
             onClick={closeSavedPreview}
             className="fixed top-4 right-4 z-[10000] theme-btn-secondary px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
@@ -420,6 +647,18 @@ export default function AlertsAdmin({ giftsList }) {
             ✕ Cerrar vista previa
           </button>
         </>
+      )}
+
+      {customizingText && (
+        <OverlayCustomizePanel
+          title={OVERLAY_CUSTOMIZE_LABELS.alerts}
+          overlayId="alerts"
+          entry={customization}
+          onChange={onCustomizeChange}
+          onApplyToAll={onApplyToAll}
+          onClose={() => setCustomizingText(false)}
+          hideBackground
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
@@ -111,6 +111,16 @@ export default function Membership({ session, onSessionUpdate }) {
   // cambiar a MercadoPago antes de completar los datos de la tarjeta.
   const [paymentProvider, setPaymentProvider] = useState('stripe');
   const [error, setError] = useState('');
+  // Validación de correo/nombre/apellido estilo "sitio moderno": el input
+  // se pone en rojo y el error aparece pegado a ÉL (no uno genérico al
+  // final) recién cuando el streamer ya lo tocó (onBlur) o intentó
+  // continuar sin llenarlo -- pedido explícito, reemplaza el texto fijo
+  // "Completa correo, nombre y apellido arriba..." que antes no decía CUÁL
+  // campo faltaba.
+  const [contactTouched, setContactTouched] = useState({ email: false, firstName: false, lastName: false });
+  const emailInputRef = useRef(null);
+  const firstNameInputRef = useRef(null);
+  const lastNameInputRef = useRef(null);
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
@@ -166,6 +176,22 @@ export default function Membership({ session, onSessionUpdate }) {
   }, [banner, onSessionUpdate]);
 
   const currentPlanRank = PLAN_RANK[session?.licenseType] ?? -1;
+
+  const emailValid = EMAIL_RE.test(email.trim());
+  const firstNameValid = !!firstName.trim();
+  const lastNameValid = !!lastName.trim();
+  const contactValid = emailValid && firstNameValid && lastNameValid;
+
+  // Se llama al tocar el botón "Continuar con el pago" (visible mientras
+  // falte algo) -- marca los tres campos como "tocados" de una (para que
+  // se pinten en rojo aunque el streamer nunca haya llegado a enfocarlos)
+  // y lleva el foco directo al primero que falta, en ese orden.
+  const attemptContinue = () => {
+    setContactTouched({ email: true, firstName: true, lastName: true });
+    if (!emailValid) { emailInputRef.current?.focus(); return; }
+    if (!firstNameValid) { firstNameInputRef.current?.focus(); return; }
+    if (!lastNameValid) { lastNameInputRef.current?.focus(); }
+  };
 
   const copyRevealedKey = () => {
     navigator.clipboard.writeText(revealedKey);
@@ -308,17 +334,52 @@ export default function Membership({ session, onSessionUpdate }) {
               explícito de que este campo no se duplique por proveedor. */}
           <div className="w-full max-w-2xl">
             <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, ahí llega tu recibo)</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
-              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            <input
+              ref={emailInputRef}
+              type="email" value={email}
+              onChange={e => setEmail(e.target.value)}
+              onBlur={() => setContactTouched(t => ({ ...t, email: true }))}
+              placeholder="tu@correo.com"
+              style={contactTouched.email && !emailValid ? { borderColor: '#ef4444' } : undefined}
+              className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
+                contactTouched.email && !emailValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
+            />
+            {contactTouched.email && !emailValid && (
+              <p className="text-[10px] font-bold text-red-500 mt-1">Ingresa un correo válido para continuar.</p>
+            )}
           </div>
 
           <div className="w-full max-w-2xl">
             <label className="theme-label block text-[10px] mb-2">Nombre y apellido (obligatorio para procesar el pago)</label>
-            <div className="flex gap-2">
-              <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Nombre"
-                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Apellido"
-                className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+            <div className="flex gap-2 items-start">
+              <div className="flex-1 flex flex-col gap-1">
+                <input
+                  ref={firstNameInputRef}
+                  value={firstName} onChange={e => setFirstName(e.target.value)}
+                  onBlur={() => setContactTouched(t => ({ ...t, firstName: true }))}
+                  placeholder="Nombre"
+                  style={contactTouched.firstName && !firstNameValid ? { borderColor: '#ef4444' } : undefined}
+                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
+                    contactTouched.firstName && !firstNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
+                />
+                {contactTouched.firstName && !firstNameValid && (
+                  <p className="text-[10px] font-bold text-red-500">Ingresa tu nombre.</p>
+                )}
+              </div>
+              <div className="flex-1 flex flex-col gap-1">
+                <input
+                  ref={lastNameInputRef}
+                  value={lastName} onChange={e => setLastName(e.target.value)}
+                  onBlur={() => setContactTouched(t => ({ ...t, lastName: true }))}
+                  placeholder="Apellido"
+                  style={contactTouched.lastName && !lastNameValid ? { borderColor: '#ef4444' } : undefined}
+                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
+                    contactTouched.lastName && !lastNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
+                />
+                {contactTouched.lastName && !lastNameValid && (
+                  <p className="text-[10px] font-bold text-red-500">Ingresa tu apellido.</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -359,7 +420,7 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           )}
 
-          {EMAIL_RE.test(email.trim()) && firstName.trim() && lastName.trim() ? (
+          {contactValid ? (
             paymentProvider === 'stripe' ? (
               <StripePaymentForm
                 planType={payingPlan}
@@ -385,7 +446,10 @@ export default function Membership({ session, onSessionUpdate }) {
               />
             )
           ) : (
-            <p className="text-[10px] text-gray-500">Completa correo, nombre y apellido arriba para continuar con el pago.</p>
+            <button type="button" onClick={attemptContinue}
+              className="theme-btn-primary w-full max-w-2xl py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all">
+              Continuar con el pago
+            </button>
           )}
         </>
       )}

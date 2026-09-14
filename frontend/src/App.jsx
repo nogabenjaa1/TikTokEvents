@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AdminPanel from './AdminPanel';
 import Zubastinis from './Zubastinis';
 import Elimination from './Elimination';
@@ -13,6 +14,7 @@ import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
 import Membership from './Membership';
+import Dashboard from './Dashboard';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
@@ -26,8 +28,11 @@ import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCusto
 
 // Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
 // TikTok (antes eran botones sueltos de primer nivel) detrás de una
-// subsidebar propia — ver EVENT_TABS.
+// subsidebar propia — ver EVENT_TABS. "dashboard" (pedido explícito: página
+// principal con accesos directos, ver Dashboard.jsx) va primero porque es
+// el nuevo destino por default al entrar con sesión.
 const SECTIONS = [
+  { id: 'dashboard', label: 'Dashboard',   icon: '🏠' },
   { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
   { id: 'events',  label: 'TikTokEvents', icon: '🎉' },
   { id: 'color',   label: 'ColorDice',    icon: '🎲' },
@@ -48,6 +53,71 @@ const EVENT_TABS = [
   { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
   { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
 ];
+
+// Pedido explicito: URLs reales para cada sección (benjaapis.dev/overlays,
+// /membership, /tiktokevents/kingthrone, etc.) en vez de todo colgado del
+// estado de React sin reflejo en la barra de direcciones -- así se puede
+// compartir/guardar un enlace directo a una sección y el botón
+// atrás/adelante del navegador funciona. A propósito NO usa <Routes>/<Route>
+// de react-router (el render de acá abajo sigue siendo 100% condicional,
+// como siempre) -- solo se usa el router para LEER/ESCRIBIR el pathname y
+// mantenerlo sincronizado con `sidebarMode`/`eventsTab`, sin tocar cómo se
+// decide qué mostrar. OJO: esto NUNCA debe tocar el modo overlay (la URL
+// que ya está pegada en OBS de streamers reales, ?overlay=true&screen=...)
+// -- por eso el efecto de sincronización de más abajo corta temprano si
+// `overlayMode` es true, y esta sección de rutas ni se evalúa en ese caso
+// (ver el `if (overlayMode) return ...` bien arriba en el componente).
+const SECTION_PATHS = {
+  dashboard: 'dashboard',
+  overlay: 'overlays',
+  events: 'tiktokevents',
+  color: 'colordice',
+  downloader: 'downloader',
+  theme: 'theme',
+  membership: 'membership',
+  licenses: 'licenses',
+};
+const PATH_TO_SECTION = Object.fromEntries(Object.entries(SECTION_PATHS).map(([id, path]) => [path, id]));
+
+const EVENT_TAB_PATHS = {
+  king: 'kingthrone',
+  zub: 'zubastinis',
+  elim: 'elimination',
+  roulette: 'roulette',
+  extensible: 'extensible',
+  spotify: 'spotify',
+  alerts: 'alerts',
+  tts: 'tts',
+};
+const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PATHS).map(([id, path]) => [path, id]));
+
+// Deduce sección + pestaña de TikTokEvents (si aplica) a partir del
+// pathname actual -- se usa tanto para el estado INICIAL (sin flash del
+// contenido por defecto antes de corregirse, ver el useState de más abajo)
+// como para reaccionar a atrás/adelante del navegador. Cualquier ruta
+// desconocida (o la raíz "/") cae en 'dashboard' con sesión, o en 'color'
+// sin sesión -- mismo criterio que ya existía antes de esto (mostrarle
+// algo a un visitante sin cuenta en vez de una pantalla vacía).
+function sectionFromPath(pathname, hasSession) {
+  const segments = pathname.split('/').filter(Boolean);
+  const fallback = hasSession ? 'dashboard' : 'color';
+  if (segments.length === 0) return { section: fallback, tab: null };
+  const section = PATH_TO_SECTION[segments[0]];
+  if (!section) return { section: fallback, tab: null };
+  const tab = section === 'events' ? (PATH_TO_EVENT_TAB[segments[1]] || 'king') : null;
+  return { section, tab };
+}
+
+// Título de pestaña dinámico (pedido explícito: "que sea visible siempre"
+// en qué sección está) -- ver el useEffect que lo aplica más abajo.
+function sectionTitle(sidebarMode, eventsTab) {
+  if (sidebarMode === 'events') {
+    const tab = EVENT_TABS.find((t) => t.id === eventsTab);
+    return tab ? `TikTokEvents · ${tab.label}` : 'TikTokEvents';
+  }
+  const section = SECTIONS.find((s) => s.id === sidebarMode);
+  return section ? `TikTokEvents · ${section.label}` : 'TikTokEvents';
+}
 
 // Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
 // puramente cosmético/local). Todo lo demás requiere sesión — sin ella se
@@ -144,20 +214,27 @@ export default function App() {
   // como TTS) porque acá el permiso lo tiene que aplicar el SERVIDOR antes
   // de llamar a la API real de Spotify, no el navegador de cada espectador.
   const [spotifySettingsState, setSpotifySettingsState] = useState({ enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 });
-  // Arranca en Color Says (de acceso libre, con ads) en vez de Rey del
-  // Trono (bloqueado sin sesión) — así cualquiera que abre el sitio o
-  // recarga la página cae directo donde se muestran los anuncios, sin
-  // tener que navegar hasta ahí primero. EXCEPCIÓN: si venimos de la vuelta
-  // del OAuth de Spotify (?spotify=connected|error), Spotify.jsx redirige
-  // acá con un GET normal del navegador — no hay forma de "recordar" en qué
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Arranca en la sección que indique la URL (pedido explícito de URLs
+  // reales, ver SECTION_PATHS/sectionFromPath más arriba) -- sin sesión y
+  // sin una ruta reconocida, cae en Color Says (de acceso libre, con ads)
+  // en vez de Rey del Trono (bloqueado sin sesión), mismo criterio de
+  // siempre: así cualquiera que abre el sitio a secas cae directo donde se
+  // muestran los anuncios. Se calcula UNA vez acá (no en un efecto) para
+  // que no haya un parpadeo mostrando la sección por defecto antes de
+  // corregirse a la de la URL real. EXCEPCIÓN: si venimos de la vuelta del
+  // OAuth de Spotify (?spotify=connected|error), Spotify.jsx redirige acá
+  // con un GET normal del navegador — no hay forma de "recordar" en qué
   // pestaña estaba el streamer antes de irse a autorizar, así que en vez de
-  // caer en Color Says (donde el aviso de éxito/error no se ve para nada)
-  // arrancamos directo en TikTokEvents -> Spotify, que es donde ese aviso
-  // se muestra (ver el banner en Spotify.jsx).
+  // respetar la URL arrancamos directo en TikTokEvents -> Spotify, que es
+  // donde ese aviso se muestra (ver el banner en Spotify.jsx).
   const cameFromSpotifyOAuth = new URLSearchParams(window.location.search).has('spotify');
-  const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : 'color'));
+  const initialRoute = sectionFromPath(window.location.pathname, !!loadSession());
+  const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : initialRoute.section));
   // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
-  const [eventsTab, setEventsTab] = useState(() => (cameFromSpotifyOAuth ? 'spotify' : 'king'));
+  const [eventsTab, setEventsTab] = useState(() => (cameFromSpotifyOAuth ? 'spotify' : (initialRoute.tab || 'king')));
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
@@ -207,6 +284,54 @@ export default function App() {
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
+
+  // ── URLs reales para cada sección (pedido explícito) ──
+  // sidebarMode/eventsTab siguen siendo el estado de siempre (todo el
+  // render de más abajo sigue leyendo esas dos variables tal cual, sin
+  // tocar ningún `setSidebarMode(...)`/`setEventsTab(...)` existente) --
+  // estos dos efectos son los ÚNICOS que hablan con el router, en las dos
+  // direcciones:
+  //  1) estado -> URL: cada vez que cambian, empuja el pathname
+  //     correspondiente (si no es ya ese) para que la barra de direcciones
+  //     siempre refleje dónde está el streamer.
+  //  2) URL -> estado: si el pathname cambia por afuera (atrás/adelante del
+  //     navegador, un enlace externo), corrige sidebarMode/eventsTab para
+  //     que coincidan.
+  // Nunca se pisan en bucle: si ya coinciden, cada lado no hace nada (React
+  // ya evita el re-render si el estado nuevo es idéntico al viejo). Se
+  // corta temprano en modo overlay -- esa URL (?overlay=true&screen=...) es
+  // la que ya está pegada en OBS de streamers reales, no se toca para nada.
+  useEffect(() => {
+    if (overlayMode) return;
+    const targetPath = sidebarMode === 'events'
+      ? `/${SECTION_PATHS.events}/${EVENT_TAB_PATHS[eventsTab] || EVENT_TAB_PATHS.king}`
+      : `/${SECTION_PATHS[sidebarMode] || SECTION_PATHS.dashboard}`;
+    if (location.pathname !== targetPath) navigate(targetPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayMode, sidebarMode, eventsTab]);
+
+  useEffect(() => {
+    if (overlayMode) return;
+    const { section, tab } = sectionFromPath(location.pathname, !!session);
+    setSidebarMode(section);
+    if (section === 'events' && tab) setEventsTab(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayMode, location.pathname]);
+
+  // Título de la pestaña del navegador (pedido explícito: que siempre sea
+  // visible en qué sección está, no un "TikTokEvents" fijo sin importar
+  // dónde navegue).
+  useEffect(() => {
+    if (overlayMode) return;
+    document.title = sectionTitle(sidebarMode, eventsTab);
+  }, [overlayMode, sidebarMode, eventsTab]);
+
+  // Control remoto del TTS para el shortcut del Dashboard (ver
+  // TtsChat.jsx/Dashboard.jsx) -- `ttsEnabled` es solo para MOSTRAR el
+  // estado actual (TtsChat sigue siendo el dueño real, avisa cada cambio
+  // vía onEnabledChange); `ttsRef` es cómo el Dashboard lo prende/apaga.
+  const ttsRef = useRef(null);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
 
   const usernameRef = useRef(username);
   useEffect(() => { usernameRef.current = username; }, [username]);
@@ -658,6 +783,15 @@ export default function App() {
     });
   };
 
+  // Shortcut del Dashboard: ir directo a una pestaña de TikTokEvents --
+  // misma lógica que ya usan los botones de la subsidebar (ver EVENT_TABS
+  // más abajo, `set_active_app` solo si esa pestaña tiene overlay propio).
+  const goToEventTab = (tabId) => {
+    setSidebarMode('events');
+    setEventsTab(tabId);
+    if (socket && OVERLAY_APPS.includes(tabId)) socket.emit('set_active_app', tabId);
+  };
+
   return (
     <ThemedShell className="flex flex-col">
       {kickedOutMessage && (
@@ -730,6 +864,20 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
+        {/* Pedido explicito: página principal con accesos directos. Sin
+            sesión igual se ve (versión reducida, ver Dashboard.jsx) -- no
+            hace falta needsAccess acá porque cada shortcut ya lleva a una
+            sección que sabe mostrar su propio login embebido si hace falta. */}
+        {sidebarMode === 'dashboard' && (
+          <Dashboard
+            session={session} connectionStatus={connectionStatus} username={username}
+            anyGameActive={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
+            ttsEnabled={ttsEnabled} ttsLocked={needsAccess('tts')}
+            onToggleTts={() => ttsRef.current?.toggleEnabled()}
+            onGoSection={setSidebarMode}
+            onGoEventTab={goToEventTab}
+          />
+        )}
         {sidebarMode === 'overlay' && (
           <OverlayLink
             socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
@@ -867,7 +1015,7 @@ export default function App() {
         {/* Permanece montado siempre (no solo dentro de "events") para que la
             lectura activa no se interrumpa si el streamer se va a otra
             sección mientras TTS sigue leyendo el chat en voz alta. */}
-        <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} />
+        <TtsChat ref={ttsRef} socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} onEnabledChange={setTtsEnabled} />
 
         {/* Pedido explicito: el streamer no escuchaba sus propias alertas de
             sonido (solo llegaban a los espectadores por OBS) -- esto suena

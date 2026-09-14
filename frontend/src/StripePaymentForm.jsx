@@ -17,9 +17,18 @@ function getStripePromise() {
 
 // Stripe.js ya trae sus propios mensajes en español (el Payment Element se
 // monta con locale: 'es', ver más abajo) -- este fallback solo cubre casos
-// sin `message` (ej. error de red antes de llegar a Stripe).
+// sin `message` (ej. error de red antes de llegar a Stripe). Pedido
+// explícito: mostrar también el `decline_code` (ej. "do_not_honor") pegado
+// al mensaje -- Stripe lo manda aparte del texto genérico "tu tarjeta fue
+// rechazada", y es justo el dato que ayuda a saber POR QUÉ (fondos,
+// tarjeta perdida, error genérico del banco, etc.) sin tener que ir a
+// buscarlo al dashboard.
 function friendlyDeclineMessage(error) {
-  return error?.message || 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
+  const message = error?.message || 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
+  if (error?.decline_code) {
+    return `${message.replace(/\.?\s*$/, '')}: ${error.decline_code}`;
+  }
+  return message;
 }
 
 // Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el

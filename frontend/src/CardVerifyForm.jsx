@@ -14,6 +14,17 @@ function getStripePromise() {
   return stripePromise;
 }
 
+// Mismo criterio que StripePaymentForm.jsx: pegar el `decline_code` (ej.
+// "do_not_honor") al mensaje genérico de Stripe -- es el dato que explica
+// POR QUÉ se rechazó, sin tener que ir a buscarlo al dashboard.
+function friendlyDeclineMessage(error) {
+  const message = error?.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.';
+  if (error?.decline_code) {
+    return `${message.replace(/\.?\s*$/, '')}: ${error.decline_code}`;
+  }
+  return message;
+}
+
 // Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el
 // contexto que arma <Elements> (ver el export default de más abajo).
 function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, submitting, setSubmitting, error, setError, onResult }) {
@@ -38,7 +49,7 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
         },
       });
       if (stripeError) {
-        setError(stripeError.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.');
+        setError(friendlyDeclineMessage(stripeError));
         return;
       }
       if (!setupIntent || setupIntent.status !== 'succeeded') {

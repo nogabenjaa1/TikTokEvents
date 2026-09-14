@@ -168,8 +168,13 @@ export default function App() {
   const [overlayTheme, setOverlayTheme] = useState({ style: 'default', accent: 'purple', customColor: '#7C3AED' });
   // El panel SÍ tiene su propio tema local (useTheme, persistido en este
   // dispositivo); lo usamos acá solo para emitirlo al backend cada vez que
-  // cambia, para que el overlay lo replique.
-  const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor } = useTheme();
+  // cambia, para que el overlay lo replique. `setSkin`: pedido explícito de
+  // que el tema no se pierda al entrar desde otro navegador/computadora —
+  // cuando llega la sincronización inicial del backend (ver theme_updated
+  // más abajo), corrige TAMBIÉN el skin propio del panel en este
+  // dispositivo, no solo `overlayTheme`. Es un no-op si ya coinciden (ver
+  // el guard `sameSkin` dentro de setSkin, en ThemeContext.jsx).
+  const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor, setSkin } = useTheme();
 
   // Personalización de fondo + color de usuario por overlay (ver
   // overlayCustomization.js) — MISMO patrón de dos estados que el tema de
@@ -294,9 +299,24 @@ export default function App() {
     socket.on('prize_updated', setPrize);
     socket.on('dice_state_update', setDiceState);
     // El overlay se pinta con el skin que le llega acá — nunca con su
-    // propio localStorage (ver comment de overlayTheme más arriba).
-    socket.on('theme_updated', setOverlayTheme);
-    socket.on('overlay_customization_update', setOverlayCustomizationState);
+    // propio localStorage (ver comment de overlayTheme más arriba). Pedido
+    // explícito: TAMBIÉN corrige el skin propio del panel en este
+    // dispositivo (setSkin) para que no haga falta re-elegirlo al entrar
+    // desde otro navegador/computadora.
+    socket.on('theme_updated', (t) => {
+      setOverlayTheme(t);
+      if (t?.style) setSkin(t.style, t.accent, t.customColor);
+    });
+    // Ídem para la personalización de overlays: además de `overlayCustomization`
+    // (con la que se pinta todo), corrige `panelOverlayDraft` (la copia que
+    // edita el modal "Personalizar" y que se re-emite en cada reconexión,
+    // ver el useEffect de abajo) — sin esto, un dispositivo nuevo pisaría en
+    // silencio lo ya guardado con sus propios valores de fábrica apenas se
+    // conectara.
+    socket.on('overlay_customization_update', (map) => {
+      setOverlayCustomizationState(map);
+      setPanelOverlayDraft(map);
+    });
 
     // Botón "Refrescar overlays" del panel (ver OverlayLink.jsx) — solo las
     // ventanas de overlay (OBS/TikTok LIVE Studio, o una pestaña de preview)

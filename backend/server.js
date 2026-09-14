@@ -1152,7 +1152,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 processing_mode: 'automatic',
                 total_amount: amountStr,
                 external_reference: externalReference,
-                description: `TikTokEvents - ${titleParts.join(' + ')}`,
+                description: `BenjaApis - ${titleParts.join(' + ')}`,
                 // Pedido explicito de MercadoPago (checklist de calidad,
                 // "Precio unitario del producto" / "Cantidad de productos" /
                 // "Nombre del producto" / "Categoría del producto"): un solo
@@ -1163,8 +1163,8 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 // precio de pricing.js en partes. "services" porque esto es
                 // una suscripcion digital, no un producto fisico.
                 items: [{
-                    title: titleParts.join(' + ') || 'TikTokEvents',
-                    description: `Suscripción TikTokEvents - ${titleParts.join(' + ')}`,
+                    title: titleParts.join(' + ') || 'BenjaApis',
+                    description: `Suscripción BenjaApis - ${titleParts.join(' + ')}`,
                     category_id: 'services',
                     quantity: 1,
                     unit_price: amountStr,

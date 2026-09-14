@@ -95,28 +95,30 @@ const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PATHS).map
 // pathname actual -- se usa tanto para el estado INICIAL (sin flash del
 // contenido por defecto antes de corregirse, ver el useState de más abajo)
 // como para reaccionar a atrás/adelante del navegador. Cualquier ruta
-// desconocida (o la raíz "/") cae en 'dashboard' con sesión, o en 'color'
-// sin sesión -- mismo criterio que ya existía antes de esto (mostrarle
-// algo a un visitante sin cuenta en vez de una pantalla vacía).
-function sectionFromPath(pathname, hasSession) {
+// desconocida (o la raíz "/") cae siempre en 'dashboard' -- es la página
+// principal del sitio, con o sin sesión (Dashboard.jsx ya sabe mostrar una
+// versión reducida para visitantes sin cuenta).
+function sectionFromPath(pathname) {
   const segments = pathname.split('/').filter(Boolean);
-  const fallback = hasSession ? 'dashboard' : 'color';
-  if (segments.length === 0) return { section: fallback, tab: null };
+  if (segments.length === 0) return { section: 'dashboard', tab: null };
   const section = PATH_TO_SECTION[segments[0]];
-  if (!section) return { section: fallback, tab: null };
+  if (!section) return { section: 'dashboard', tab: null };
   const tab = section === 'events' ? (PATH_TO_EVENT_TAB[segments[1]] || 'king') : null;
   return { section, tab };
 }
 
 // Título de pestaña dinámico (pedido explícito: "que sea visible siempre"
-// en qué sección está) -- ver el useEffect que lo aplica más abajo.
+// en qué sección está) -- ver el useEffect que lo aplica más abajo. La
+// marca del sitio es BenjaApis; "TikTokEvents" se conserva solo como
+// prefijo dentro de esa sección puntual (el nombre de la funcionalidad en
+// sí, no el nombre del producto -- pedido explícito de mantenerlo así).
 function sectionTitle(sidebarMode, eventsTab) {
   if (sidebarMode === 'events') {
     const tab = EVENT_TABS.find((t) => t.id === eventsTab);
     return tab ? `TikTokEvents · ${tab.label}` : 'TikTokEvents';
   }
   const section = SECTIONS.find((s) => s.id === sidebarMode);
-  return section ? `TikTokEvents · ${section.label}` : 'TikTokEvents';
+  return section ? `BenjaApis · ${section.label}` : 'BenjaApis';
 }
 
 // Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
@@ -231,7 +233,7 @@ export default function App() {
   // respetar la URL arrancamos directo en TikTokEvents -> Spotify, que es
   // donde ese aviso se muestra (ver el banner en Spotify.jsx).
   const cameFromSpotifyOAuth = new URLSearchParams(window.location.search).has('spotify');
-  const initialRoute = sectionFromPath(window.location.pathname, !!loadSession());
+  const initialRoute = sectionFromPath(window.location.pathname);
   const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : initialRoute.section));
   // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
   const [eventsTab, setEventsTab] = useState(() => (cameFromSpotifyOAuth ? 'spotify' : (initialRoute.tab || 'king')));
@@ -312,7 +314,7 @@ export default function App() {
 
   useEffect(() => {
     if (overlayMode) return;
-    const { section, tab } = sectionFromPath(location.pathname, !!session);
+    const { section, tab } = sectionFromPath(location.pathname);
     setSidebarMode(section);
     if (section === 'events' && tab) setEventsTab(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -816,11 +818,17 @@ export default function App() {
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
       <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
-        {/* Logo de marca — chico y sin botón/borde a propósito (pedido
-            explícito: "visible pero que no abrume"), primero en la fila/
-            columna para que quede como una cabecera sutil del rail de
-            navegación, no como un botón más. */}
-        <img src={logoMark} alt="" className="h-7 md:h-8 w-auto flex-shrink-0 md:mb-1" />
+        {/* Logo + nombre de marca — chico y sin botón/borde a propósito
+            (pedido explícito: "visible pero que no abrume"), primero en la
+            fila/columna para que quede como una cabecera sutil del rail de
+            navegación, no como un botón más. El nombre va acá porque este
+            rail es lo único presente en TODOS los paneles (pedido
+            explícito: "asegurate que benjaapis salga en todos los
+            paneles"). */}
+        <div className="flex flex-col items-center gap-0.5 flex-shrink-0 md:mb-1">
+          <img src={logoMark} alt="" className="h-7 md:h-8 w-auto" />
+          <span className="text-[7px] font-black uppercase tracking-wider text-gray-500 text-center leading-none">BenjaApis</span>
+        </div>
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -1082,7 +1090,7 @@ export default function App() {
       </div>
     )}
 
-    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar TikTok Concurso" />
+    <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
     </ThemedShell>
   );
 }

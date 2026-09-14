@@ -94,7 +94,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
         <form onSubmit={submit} className="theme-surface p-8">
           <div className="flex items-center gap-3 mb-8">
             <img src={logoMark} alt="" className="h-9 w-auto flex-shrink-0" />
-            <h1 className="theme-heading text-2xl font-semibold tracking-wide">TikTok Concurso</h1>
+            <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>
           </div>
 
           {notice && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{notice}</p>}

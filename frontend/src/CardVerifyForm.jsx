@@ -1,62 +1,54 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { requestFreeTrial } from './auth';
-import { loadMercadoPagoSdk } from './mercadopagoSdk';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { backendUrl, requestFreeTrial } from './auth';
 
-// Verifica una tarjeta real para desbloquear la prueba gratis sin ver
-// anuncios — a propósito NO cobra ni guarda la tarjeta (ver el comentario
-// en backend/server.js, ruta /api/free-trial). Usa Secure Fields de
-// MercadoPago: número/vencimiento/CVV viven en iframes de MercadoPago que
-// nunca tocan nuestro JS ni nuestro backend — por eso los tres campos
-// sensibles no se pueden pintar con las clases del sistema de temas (viven
-// en otro documento), solo el contenedor y el nombre del titular sí llevan
-// theme-input.
-//
-// Al validar, llama a onResult({ key, token, license }) — el mismo shape
-// que ya maneja Login.jsx para el camino de anuncios (trialResult), así la
-// pantalla de "guarda tu clave" es una sola, compartida entre las tres vías.
-export default function CardVerifyForm({ onResult, onCancel }) {
-  const [sdkState, setSdkState] = useState('loading'); // loading | ready | error | no-key
-  const [alias, setAlias] = useState('');
-  const [cardholderName, setCardholderName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const mpRef = useRef(null);
-  const mountedFieldsRef = useRef(false);
+// Mismo motivo que en StripePaymentForm.jsx: un solo script de Stripe.js
+// por carga de página, no uno por cada vez que se abre este formulario.
+let stripePromise = null;
+function getStripePromise() {
+  if (!stripePromise) {
+    const publicKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+    stripePromise = publicKey ? loadStripe(publicKey) : Promise.resolve(null);
+  }
+  return stripePromise;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    loadMercadoPagoSdk()
-      .then(() => { if (!cancelled) setSdkState('ready'); })
-      .catch(() => { if (!cancelled) setSdkState('error'); });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (sdkState !== 'ready' || mountedFieldsRef.current) return;
-    const publicKey = import.meta.env.VITE_MP_PUBLIC_KEY;
-    if (!publicKey) { setSdkState('no-key'); return; }
-    mountedFieldsRef.current = true;
-    const mp = new window.MercadoPago(publicKey, { locale: 'es-MX' });
-    mpRef.current = mp;
-    // Color fijo, no un token del tema: estos campos se pintan dentro de un
-    // iframe de MercadoPago (otro documento), que no tiene acceso a las
-    // variables CSS de esta página. Negro para el texto (pedido explícito,
-    // el gris anterior se notaba muy poco) y un gris más oscuro para el
-    // placeholder, para que siga leyéndose como placeholder sin perderse.
-    const style = { color: '#000000', fontSize: '14px', placeholderColor: '#6b7280' };
-    mp.fields.create('cardNumber', { placeholder: 'Número de tarjeta', style }).mount('cvf-card-number');
-    mp.fields.create('expirationDate', { placeholder: 'MM/AA', style }).mount('cvf-expiration-date');
-    mp.fields.create('securityCode', { placeholder: 'CVV', style }).mount('cvf-security-code');
-  }, [sdkState]);
+// Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el
+// contexto que arma <Elements> (ver el export default de más abajo).
+function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, submitting, setSubmitting, error, setError, onResult }) {
+  const stripe = useStripe();
+  const elements = useElements();
 
   const submit = async (e) => {
     e.preventDefault();
-    if (submitting || !alias.trim() || !cardholderName.trim() || !mpRef.current) return;
+    if (submitting || !stripe || !elements || !alias.trim() || !cardholderName.trim()) return;
     setSubmitting(true);
     setError('');
     try {
-      const { id: cardToken } = await mpRef.current.fields.createCardToken({ cardholderName: cardholderName.trim() });
-      const result = await requestFreeTrial(alias.trim(), cardToken);
+      // redirect: 'if_required' evita sacar al streamer de este sitio --
+      // Stripe.js igual muestra su propio modal embebido si el banco exige
+      // 3DS (justo lo que hace que esta verificación sea más fuerte que el
+      // simple chequeo de Luhn que hacía MercadoPago antes acá).
+      const { error: stripeError, setupIntent } = await stripe.confirmSetup({
+        elements,
+        redirect: 'if_required',
+        confirmParams: {
+          payment_method_data: { billing_details: { name: cardholderName.trim() } },
+        },
+      });
+      if (stripeError) {
+        setError(stripeError.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.');
+        return;
+      }
+      if (!setupIntent || setupIntent.status !== 'succeeded') {
+        setError('La tarjeta no pasó la verificación de seguridad. Intenta de nuevo.');
+        return;
+      }
+      // Nunca se confía en que el frontend diga "succeeded" -- el backend
+      // vuelve a consultar el SetupIntent contra la propia API de Stripe
+      // antes de crear la licencia (ver /api/free-trial en server.js).
+      const result = await requestFreeTrial(alias.trim(), setupIntent.id);
       onResult(result);
     } catch (err) {
       setError(err.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.');
@@ -65,28 +57,8 @@ export default function CardVerifyForm({ onResult, onCancel }) {
     }
   };
 
-  if (sdkState === 'error' || sdkState === 'no-key') {
-    return (
-      <div className="flex flex-col gap-3">
-        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
-          {sdkState === 'no-key'
-            ? 'Esta opción todavía no está configurada (falta la Public Key de MercadoPago). Prueba con otra vía.'
-            : 'No se pudo cargar el formulario de tarjeta. Revisa tu conexión o intenta más tarde.'}
-        </p>
-        <button type="button" onClick={onCancel} className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all">
-          Volver
-        </button>
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
-      <p className="theme-label text-xs uppercase tracking-widest font-semibold">Verificar tarjeta</p>
-      <p className="text-[11px] text-gray-500">
-        No se te cobra ni se guarda tu tarjeta — solo se verifica que sea real, como alternativa a ver anuncios.
-      </p>
-
       <input
         value={alias}
         onChange={e => setAlias(e.target.value)}
@@ -99,25 +71,80 @@ export default function CardVerifyForm({ onResult, onCancel }) {
         placeholder="Nombre del titular"
         className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
       />
-      <div id="cvf-card-number" className="theme-input w-full p-3 h-11" />
-      <div className="flex gap-2">
-        <div id="cvf-expiration-date" className="theme-input flex-1 p-3 h-11" />
-        <div id="cvf-security-code" className="theme-input flex-1 p-3 h-11" />
-      </div>
-
-      {sdkState === 'loading' && <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de MercadoPago...</p>}
+      <PaymentElement />
       {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
-
       <button
         type="submit"
-        disabled={submitting || sdkState !== 'ready' || !alias.trim() || !cardholderName.trim()}
+        disabled={submitting || !stripe || !alias.trim() || !cardholderName.trim()}
         className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {submitting ? 'VERIFICANDO...' : 'Verificar y activar prueba gratis'}
       </button>
+    </form>
+  );
+}
+
+// Verifica una tarjeta real para desbloquear la prueba gratis sin ver
+// anuncios — a propósito NO cobra nada: usa un SetupIntent de Stripe (no un
+// PaymentIntent), pensado exactamente para autenticar que una tarjeta es
+// real (puede pedir 3DS) sin capturar ningún monto. Reemplaza la
+// verificación vieja de MercadoPago (que solo chequeaba el dígito de Luhn
+// del token, sin autenticación real ni comparación entre pruebas) — ver
+// /api/free-trial/setup-intent y /api/free-trial en server.js.
+//
+// Al validar, llama a onResult({ key, token, license }) — el mismo shape
+// que ya maneja Login.jsx para el camino de anuncios (trialResult), así la
+// pantalla de "guarda tu clave" es una sola, compartida entre las tres vías.
+export default function CardVerifyForm({ onResult, onCancel }) {
+  const [clientSecret, setClientSecret] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [alias, setAlias] = useState('');
+  const [cardholderName, setCardholderName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const requestedRef = useRef(false);
+
+  useEffect(() => {
+    if (requestedRef.current) return;
+    requestedRef.current = true;
+    fetch(`${backendUrl()}/api/free-trial/setup-intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setClientSecret(data.clientSecret);
+        else setLoadError(data.error || 'No se pudo cargar el formulario de tarjeta.');
+      })
+      .catch(() => setLoadError('No se pudo cargar el formulario de tarjeta. Revisa tu conexión o intenta más tarde.'));
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="theme-label text-xs uppercase tracking-widest font-semibold">Verificar tarjeta</p>
+      <p className="text-[11px] text-gray-500">
+        No se te cobra nada — Stripe solo autentica que la tarjeta es real, como alternativa a ver anuncios.
+      </p>
+
+      {loadError ? (
+        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{loadError}</p>
+      ) : !clientSecret ? (
+        <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de Stripe...</p>
+      ) : (
+        <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
+          <CheckoutForm
+            alias={alias} setAlias={setAlias}
+            cardholderName={cardholderName} setCardholderName={setCardholderName}
+            submitting={submitting} setSubmitting={setSubmitting}
+            error={error} setError={setError}
+            onResult={onResult}
+          />
+        </Elements>
+      )}
+
       <button type="button" onClick={onCancel} className="theme-btn-secondary w-full py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all">
         Cancelar
       </button>
-    </form>
+    </div>
   );
 }

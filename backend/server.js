@@ -55,7 +55,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { MercadoPagoConfig, CardToken, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const { MercadoPagoConfig, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 const Stripe = require('stripe');
 
 const multer = require('multer');
@@ -109,8 +109,7 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://loc
 // devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
 // dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
 // producción queda intacto todo el tiempo, listo para volver apagando el
-// flag. Ídem CardToken (verificación de tarjeta en /api/free-trial), que
-// pasa por este mismo getMpClient().
+// flag.
 function getMpAccessToken() {
     const testMode = process.env.MP_TEST_MODE === 'true';
     const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
@@ -314,6 +313,29 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     });
 });
 
+// Crea el SetupIntent que CardVerifyForm.jsx confirma con el Payment
+// Element de Stripe -- pre-login a propósito (todavía no existe ninguna
+// licencia/sesión en este punto, es lo que este mismo flujo está por
+// crear). Sin auth.requireAuth, pero sí con freeTrialLimiter (mismo
+// presupuesto que /api/free-trial, ver el comentario ahí abajo: las dos
+// rutas son dos pasos de un mismo flujo). "Setup" (no "Payment") porque
+// nunca se cobra nada -- el objetivo es solo que Stripe autentique que la
+// tarjeta es real (puede pedir 3DS), no capturar un monto.
+app.post('/api/free-trial/setup-intent', freeTrialLimiter, async (req, res) => {
+    try {
+        const stripe = getStripeClient();
+        // usage: 'on_session' (no el default 'off_session') -- 'off_session'
+        // le hace mostrar al streamer un texto de consentimiento tipo
+        // "permites que BenjaApis cargue tu tarjeta en el futuro", que acá
+        // sería engañoso: esta tarjeta NUNCA se cobra, ni ahora ni después.
+        const intent = await stripe.setupIntents.create({ payment_method_types: ['card'], usage: 'on_session' });
+        res.json({ success: true, clientSecret: intent.client_secret });
+    } catch (err) {
+        console.error('[Stripe] Error creando SetupIntent para prueba gratis:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo iniciar la verificación de tarjeta. Intenta de nuevo en un momento.' });
+    }
+});
+
 // ==========================================
 // PRUEBA GRATIS: 7 días de acceso completo, autoservicio, sin tarjeta.
 // El alias es texto libre (no se pide ni se valida un usuario de TikTok
@@ -324,7 +346,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 // tener que copiar/pegar la key generada.
 // ==========================================
 app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
-    const { alias, cardToken } = req.body || {};
+    const { alias, setupIntentId } = req.body || {};
     if (!alias || typeof alias !== 'string' || !alias.trim()) {
         return res.status(400).json({ success: false, error: 'Falta un alias' });
     }
@@ -334,39 +356,57 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
     }
 
     // Vía alternativa al anuncio: en vez de mirar un video, verificar una
-    // tarjeta real. A propósito NO se guarda ni se cobra nada — el único
-    // objetivo es subir el costo de fabricar pruebas gratis en cadena con
-    // datos inventados. El token es de un solo uso y ya viene de
-    // MercadoPago (tokenizado en el navegador vía Secure Fields, ver
-    // CardVerifyForm.jsx); acá solo se le pregunta a MercadoPago si ese
-    // token es real y pasa el chequeo de Luhn antes de dejarlo pasar.
-    if (cardToken !== undefined) {
-        if (typeof cardToken !== 'string' || !cardToken.trim()) {
-            return res.status(400).json({ success: false, error: 'Token de tarjeta inválido' });
+    // tarjeta real con Stripe. A propósito NO se cobra nada -- el
+    // SetupIntent autentica la tarjeta (puede pedir 3DS, mucho más fuerte
+    // que un simple chequeo de Luhn) sin capturar ningún monto. Pedido
+    // explícito: a diferencia de la verificación vieja de MercadoPago (que
+    // no comparaba nada entre pruebas), acá SÍ se guarda el fingerprint
+    // estable de la tarjeta (trial_card_fingerprint, UNIQUE parcial en
+    // licenses, ver db.js) para que la misma tarjeta física no pueda
+    // reclamar una segunda prueba gratis con otro alias.
+    let trialCardFingerprint = null;
+    if (setupIntentId !== undefined) {
+        if (typeof setupIntentId !== 'string' || !setupIntentId.trim()) {
+            return res.status(400).json({ success: false, error: 'Verificación de tarjeta inválida' });
         }
         try {
-            const tokenInfo = await new CardToken(getMpClient()).get({ id: cardToken.trim() });
-            if (!tokenInfo.luhn_validation || tokenInfo.status !== 'active') {
-                return res.status(400).json({ success: false, error: 'La tarjeta no pasó la validación. Verifica los datos e intenta de nuevo.' });
+            const stripe = getStripeClient();
+            const intent = await stripe.setupIntents.retrieve(setupIntentId.trim(), { expand: ['payment_method'] });
+            if (intent.status !== 'succeeded') {
+                return res.status(400).json({ success: false, error: 'La tarjeta no pasó la verificación de seguridad. Verifica los datos e intenta de nuevo.' });
             }
+            trialCardFingerprint = intent.payment_method?.card?.fingerprint || null;
         } catch (err) {
-            console.error('[MP] Error verificando card token para prueba gratis:', err.message);
+            console.error('[Stripe] Error verificando SetupIntent para prueba gratis:', err.message);
             return res.status(400).json({ success: false, error: 'No se pudo verificar la tarjeta. Intenta de nuevo.' });
         }
     }
 
     const key = `${cleanAlias.toLowerCase()}-FREE7DAY-${crypto.randomBytes(9).toString('base64url')}`;
-    const row = await db.insertLicense({
-        id: crypto.randomUUID(),
-        keyHash: auth.hashKey(key),
-        keyPrefix: auth.keyPrefix(key),
-        username: cleanAlias,
-        licenseType: 'trial',
-        isAdmin: false,
-        createdAt: Date.now(),
-        expiresAt: auth.computeExpiresAt('trial'),
-        trialAlias: cleanAlias,
-    });
+    let row;
+    try {
+        row = await db.insertLicense({
+            id: crypto.randomUUID(),
+            keyHash: auth.hashKey(key),
+            keyPrefix: auth.keyPrefix(key),
+            username: cleanAlias,
+            licenseType: 'trial',
+            isAdmin: false,
+            createdAt: Date.now(),
+            expiresAt: auth.computeExpiresAt('trial'),
+            trialAlias: cleanAlias,
+            trialCardFingerprint,
+        });
+    } catch (err) {
+        // El UNIQUE parcial de trial_card_fingerprint es quien de verdad
+        // impide dos pruebas con la misma tarjeta -- acá solo se traduce
+        // ese rechazo a un mensaje claro (mismo patrón que
+        // idx_licenses_trial_connected en tenant.js).
+        if (err.code === '23505' && err.constraint === 'idx_licenses_trial_card_fingerprint') {
+            return res.status(400).json({ success: false, error: 'Esta tarjeta ya se usó para una prueba gratis.' });
+        }
+        throw err;
+    }
 
     const sessionId = auth.generateSessionId();
     await db.setSession(row.id, sessionId);

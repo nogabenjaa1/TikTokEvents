@@ -121,6 +121,19 @@ const ready = pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_connected
     ON licenses(LOWER(trial_connected_username)) WHERE trial_connected_username IS NOT NULL
   `))
+  // La prueba gratis por tarjeta ahora se verifica con Stripe (SetupIntent,
+  // ver /api/free-trial/setup-intent en server.js) en vez de MercadoPago --
+  // a diferencia del chequeo viejo (solo Luhn + token activo, sin comparar
+  // contra pruebas anteriores), Stripe expone un fingerprint estable de la
+  // tarjeta real (PaymentMethod.card.fingerprint) que SÍ permite bloquear
+  // que la misma tarjeta reclame una segunda prueba gratis -- pedido
+  // implícito de "mejor validación" además del cambio de proveedor. UNIQUE
+  // parcial (no NOT NULL: la vía de "ver anuncios" nunca pasa tarjeta).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS trial_card_fingerprint TEXT`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_trial_card_fingerprint
+    ON licenses(trial_card_fingerprint) WHERE trial_card_fingerprint IS NOT NULL
+  `))
   // Historial de pagos de MercadoPago — separado de licenses.mp_payment_id
   // (que solo guarda el último pago) porque el webhook necesita poder
   // distinguir "ya procesé esta notificación" de "es la primera vez que la
@@ -263,12 +276,12 @@ const ready = pool.query(`
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular' }) {
+async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null }) {
     await ready;
     await pool.query(`
-        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11)
-    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier]);
+        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint)
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint]);
     return findById(id);
 }
 

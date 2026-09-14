@@ -329,15 +329,14 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
   const save = async () => {
     if (triggerType === 'gift' && !selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
-    const hasVisual = !!visualFile || (!clearVisual && !!editingExisting?.visualUrl);
-    const hasAudio = !!audioFile || (!clearAudio && !!editingExisting?.audioUrl);
-    if (!hasVisual && !hasAudio && !text.trim()) {
+    if (!effectiveVisualUrl && !effectiveAudioUrl && !text.trim()) {
       return setError('Agrega al menos un recurso visual, un audio o un texto.');
     }
     setError('');
     setSaving(true);
     try {
       const form = new FormData();
+      if (editingId) form.append('alertId', editingId);
       if (visualFile) form.append('visual', visualFile);
       if (audioFile) form.append('audio', audioFile);
       if (clearVisual) form.append('clearVisual', 'true');
@@ -375,9 +374,15 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   // confirmación en vivo de acá abajo.
   const testFire = (id) => socket?.emit('test_alert', id);
 
-  const editingLabel = editingId
-    ? (editingExisting?.triggerType && editingExisting.triggerType !== 'gift' ? TRIGGER_LABELS[editingExisting.triggerType] : editingExisting?.giftName)
-    : null;
+  // Alerta que YA ocupa este disparador, sin contar la que se está editando
+  // -- pedido explícito: al editar se puede cambiar TODO, incluido a qué
+  // disparador está asignada, así que este chequeo es lo que evita pisar
+  // en silencio la alerta de otro regalo/evento (el backend hace el mismo
+  // chequeo como última barrera, ver /api/alerts en server.js).
+  const conflictForTrigger = (triggerKey) => {
+    const found = alertForTrigger(triggerKey);
+    return found && found.id !== editingId ? found : null;
+  };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
@@ -397,7 +402,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
         {editingId && (
           <p className="text-[10px] text-gray-500 -mt-4 mb-4">
-            Editando la alerta de <strong className="text-white">{editingLabel}</strong> — el disparador no se puede cambiar acá; borra la alerta y crea una nueva si quieres reasignarla a otro regalo.
+            Puedes cambiar cualquier campo, incluido el disparador — si eliges uno que ya tiene otra alerta asignada, tendrás que resolverlo antes de guardar.
           </p>
         )}
 
@@ -405,15 +410,15 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">DISPARADOR</label>
           <div className="flex gap-2 flex-wrap">
             {TRIGGER_TYPES.map((t) => (
-              <button key={t.id} type="button" disabled={!!editingId}
+              <button key={t.id} type="button"
                 onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); }}
-                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {t.icon} {t.label}
               </button>
             ))}
           </div>
-          {triggerType !== 'gift' && !editingId && alertForTrigger(triggerType) && (
-            <p className="text-[10px] text-gray-500 mt-2">Ya tienes una alerta para "{TRIGGER_LABELS[triggerType]}" -- guardar de nuevo la reemplaza.</p>
+          {triggerType !== 'gift' && conflictForTrigger(triggerType) && (
+            <p className="text-[10px] text-amber-500 mt-2">Ya existe una alerta para "{TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.</p>
           )}
         </div>
 
@@ -427,20 +432,20 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <div className="mb-4 relative z-20">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
               <div
-                onClick={() => !editingId && setIsDropOpen(!isDropOpen)}
-                className={`theme-input w-full p-3 flex items-center justify-between ${editingId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-[var(--accent)]'}`}
+                onClick={() => setIsDropOpen(!isDropOpen)}
+                className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
               >
                 {selectedGift ? (
                   <div className="flex items-center gap-3">
                     {selectedGift.icon && <img src={selectedGift.icon} className="w-6 h-6" />}
                     <span className="text-sm">{selectedGift.name}</span>
-                    {!editingId && alertForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
+                    {conflictForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">ya tiene otra alerta</span>}
                   </div>
                 ) : (
                   <span className="text-gray-500 text-sm">Elige un regalo...</span>
                 )}
               </div>
-              {isDropOpen && !editingId && (
+              {isDropOpen && (
                 <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
                   {giftsList.filter((g) => g.coins > 0).map((gift, i) => (
                     <div key={`al-${gift.id}-${i}`}
@@ -450,7 +455,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
                         <img src={gift.icon} className="w-6 h-6" />
                         <span className="text-sm">{gift.name}</span>
                       </div>
-                      {alertForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded">ya tiene alerta</span>}
+                      {conflictForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">ya tiene alerta</span>}
                     </div>
                   ))}
                 </div>

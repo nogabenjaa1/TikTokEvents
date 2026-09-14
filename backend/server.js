@@ -671,6 +671,9 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 // db.js). 'gift' usa el nombre real del regalo elegido en el panel.
 const NON_GIFT_TRIGGER_TYPES = ['follow', 'sticker'];
 const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
+// Mismas etiquetas que TRIGGER_LABELS en AlertsAdmin.jsx — solo para el
+// mensaje de conflicto de disparador de abajo.
+const TRIGGER_LABEL_ES = { follow: 'Seguimiento', sticker: 'Sticker de club de fans' };
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
 // de golpe"; 'bounce' es exclusivo de entrada (no tiene mucho sentido
@@ -703,13 +706,20 @@ app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
 // recursos independientes, cualquier combinacion vale (solo imagen, solo
 // audio, solo texto, video mudo + audio aparte, etc.) mientras venga al
 // menos uno de los tres.
-// Edicion sin re-subir archivo: si ya existe una alerta para este mismo
-// disparador (mismo gift_name) y el form no trae un archivo nuevo para
+// Edicion sin re-subir archivo: si el form no trae un archivo nuevo para
 // visual/audio, se mantiene el que ya tenía guardado -- `clearVisual`/
 // `clearAudio` (booleanos de texto) son la forma explícita de borrar un
 // recurso sin tener que borrar la alerta entera.
+// `alertId` (opcional): pedido explicito -- al editar, TODO se puede
+// cambiar, incluido a qué disparador (regalo/evento) está asignada. Sin
+// esto, cambiar el disparador durante una edición dejaba la fila VIEJA
+// huérfana en la DB (el upsert solo choca por license_id+gift_name, así
+// que una clave nueva simplemente insertaba una fila aparte) -- con
+// `alertId` se ubica la fila real que se está editando por id, y si el
+// disparador cambió, se borra la fila vieja después de resolver qué
+// recurso se lleva a la nueva.
 app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, async (req, res) => {
-    const { giftName, durationMs, position, entranceAnim, exitAnim, text } = req.body || {};
+    const { giftName, durationMs, position, entranceAnim, exitAnim, text, alertId } = req.body || {};
     const triggerType = VALID_TRIGGER_TYPES.includes(req.body?.triggerType) ? req.body.triggerType : 'gift';
     // Para 'gift' la clave es el nombre real elegido en el panel; los demas
     // disparadores usan su propio nombre fijo como clave (nunca chocan con
@@ -748,8 +758,28 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     const finalExitAnim = EXIT_ANIMS.includes(exitAnim) ? exitAnim : 'fade';
 
     try {
-        const existing = (await db.listAlertConfigs(req.license.id))
+        // La fila que se está EDITANDO (si vino alertId y es de esta
+        // licencia) vs. la fila que ya ocupa el disparador DESTINO (puede
+        // ser la misma, otra distinta, o ninguna).
+        const editingRow = alertId ? await db.getAlertConfig(alertId) : null;
+        const isEditing = !!editingRow && editingRow.license_id === req.license.id;
+        const occupyingRow = (await db.listAlertConfigs(req.license.id))
             .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
+
+        // Si el disparador destino ya lo usa OTRA alerta (no la que se está
+        // editando), no se pisa en silencio -- el streamer tiene que
+        // resolverlo a mano primero (borrar esa otra, o elegir otro
+        // disparador).
+        if (occupyingRow && (!isEditing || occupyingRow.id !== editingRow.id)) {
+            return res.status(409).json({ success: false, error: `Ya existe una alerta para "${triggerType === 'gift' ? triggerKey : TRIGGER_LABEL_ES[triggerType] || triggerKey}" — bórrala primero o elige otro disparador.` });
+        }
+
+        // De qué fila se heredan los recursos no tocados: la que se está
+        // editando (por id) si la hay, si no la que ya ocupaba ESTE mismo
+        // disparador (guardar de nuevo sobre la misma clave sin pasar por
+        // "Editar" también cuenta como reemplazo, mismo criterio de
+        // siempre).
+        const existing = isEditing ? editingRow : occupyingRow;
 
         // Resuelve cada recurso por separado: archivo nuevo > (si se pidió
         // borrar) nada > lo que ya tenía la alerta > nada.
@@ -783,6 +813,15 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
 
         if (!visualUrl && !audioUrl && !cleanText) {
             return res.status(400).json({ success: false, error: 'Agrega al menos un recurso visual, un audio o un texto' });
+        }
+
+        // El disparador cambió a mitad de una edición -- la fila vieja (con
+        // su clave anterior) no la va a pisar el upsert de abajo (choca por
+        // license_id+gift_name, y la clave ya es otra), así que se borra
+        // acá explícitamente para no dejarla huérfana.
+        if (isEditing && editingRow.gift_name.toLowerCase() !== triggerKey.toLowerCase()) {
+            await db.deleteAlertConfig(editingRow.id, req.license.id);
+            getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(editingRow.gift_name);
         }
 
         const id = crypto.randomUUID();

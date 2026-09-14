@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
 // voiceURI/pitch/rate: el navegador ya trae varias voces gratis instaladas
@@ -63,7 +63,16 @@ function Toggle({ checked, onChange, label, description }) {
   );
 }
 
-export default function TtsChat({ socket, connectionStatus, visible }) {
+// `ref`: pedido explícito -- el nuevo Dashboard necesita poder
+// activar/desactivar el TTS como un shortcut, sin tener que abrir esta
+// pantalla. En vez de partir `enabled` a un estado propio de App.jsx
+// (duplicaría la lógica que ya lee `settingsRef.current.enabled` dentro
+// del handler de socket, con riesgo real de que un lado quede
+// desincronizado del otro), este componente se sigue quedando como el
+// único dueño de `settings` — el Dashboard solo recibe un control remoto
+// (`toggleEnabled`/`setEnabled` vía ref) y un aviso de cada cambio
+// (`onEnabledChange`) para poder mostrar el estado actual sin duplicarlo.
+const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible, onEnabledChange }, ref) {
   const [settings, setSettings] = useState(loadSettings);
   const [lastMessage, setLastMessage] = useState(null);
   const [queueCount, setQueueCount] = useState(0);
@@ -295,6 +304,28 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
   }, [settings.enabled, connected]);
 
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
+
+  // Avisa al padre (Dashboard) cada vez que `enabled` cambia -- así puede
+  // mostrar el estado actual sin duplicarlo (ver comentario del forwardRef
+  // más arriba).
+  useEffect(() => {
+    onEnabledChange?.(settings.enabled);
+  }, [settings.enabled, onEnabledChange]);
+
+  // Control remoto para el shortcut del Dashboard -- mismo candado que ya
+  // tiene el botón ACTIVAR/DESACTIVAR de acá abajo: no se puede prender sin
+  // estar conectado a un LIVE (sí se puede apagar siempre).
+  useImperativeHandle(ref, () => ({
+    setEnabled: (value) => {
+      if (value && !connected) return;
+      update('enabled', !!value);
+    },
+    toggleEnabled: () => {
+      if (!settings.enabled && !connected) return;
+      update('enabled', !settings.enabled);
+    },
+  }), [connected, settings.enabled]);
+
   // Mover un slider a mano deja de ser "un preset" — se refleja apagando el
   // resaltado de los botones de efecto (ver activePreset).
   const updateSlider = (key, value) => setSettings((current) => ({ ...current, [key]: value, activePreset: null }));
@@ -540,4 +571,6 @@ export default function TtsChat({ socket, connectionStatus, visible }) {
       </div>
     </section>
   );
-}
+});
+
+export default TtsChat;

@@ -1118,15 +1118,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
 // ALERT_MAX_DURATION_MS) sin importar el tipo de recurso (el audio/video
 // sigue sonando de fondo si es más largo que eso, pero la alerta visual/
 // el turno de la cola avanza igual).
-// `embedded`: pedido explicito (streamer no escuchaba/veía sus propias
-// alertas -- solo llegaban a los espectadores vía OBS, sin forma de
-// confirmar en el momento que dispararon bien) -- AlertsAdmin.jsx planta
-// este MISMO componente, embebido en una cajita chica dentro del propio
-// panel, así el streamer ve/escucha exactamente lo mismo que ve el
-// overlay real de OBS, en su propio navegador -- sin tocar audio de OBS
-// para nada, así que nunca hay riesgo de que el espectador lo escuche
-// duplicado.
-export function AlertOverlay({ socket, customize, embedded = false }) {
+export function AlertOverlay({ socket, customize }) {
   const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState('visible');
@@ -1179,7 +1171,49 @@ export function AlertOverlay({ socket, customize, embedded = false }) {
     return () => timers.forEach(clearTimeout);
   }, [current]);
 
-  return <AlertVisual alert={current} phase={phase} customize={customize} embedded={embedded} />;
+  return <AlertVisual alert={current} phase={phase} customize={customize} />;
+}
+
+// Fix real: el streamer nunca escuchaba sus propias alertas -- solo
+// llegaban a los espectadores vía la fuente de OBS, sin forma de
+// enterarse en el momento de que una se disparó bien (reportado: alertas
+// de sonido para regalos puntuales que él nunca oía, aunque el chat sí).
+// El visual ya lo ve en OBS (ahí tiene pegada la URL del overlay real) --
+// esto de acá SOLO reproduce el sonido, en el propio navegador del panel,
+// sin ningún elemento visible. `<audio>`/`<video oculto>` propios (no
+// reusa <AlertVisual>): nunca tocan ninguna fuente que capture OBS, así
+// que es imposible que el espectador lo escuche duplicado. Si llega una
+// alerta nueva mientras la anterior sigue sonando, la corta y arranca la
+// nueva (es solo una notificación para el streamer, no hace falta encolar
+// como si fuera el overlay real).
+export function AlertSoundListener({ socket }) {
+  const audioRef = useRef(null);
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onTrigger = (alert) => {
+      if (alert?.audioUrl && audioRef.current) {
+        audioRef.current.src = alert.audioUrl;
+        audioRef.current.play().catch(() => {});
+      }
+      // Video CON su propio audio (no mudo) -- se reproduce oculto solo
+      // para que suene, sin mostrarse en ningún lado del panel.
+      if (alert?.visualType === 'video' && alert.visualUrl && !alert.visualMuted && videoRef.current) {
+        videoRef.current.src = alert.visualUrl;
+        videoRef.current.play().catch(() => {});
+      }
+    };
+    socket.on('alert_triggered', onTrigger);
+    return () => socket.off('alert_triggered', onTrigger);
+  }, [socket]);
+
+  return (
+    <>
+      <audio ref={audioRef} />
+      <video ref={videoRef} style={{ display: 'none' }} />
+    </>
+  );
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le

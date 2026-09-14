@@ -7,7 +7,7 @@ import Extensible from './Extensible';
 import Spotify from './Spotify';
 import ColorSays from './Colorsays';
 import Downloader from './Downloader';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
@@ -848,6 +848,13 @@ export default function App() {
             lectura activa no se interrumpa si el streamer se va a otra
             sección mientras TTS sigue leyendo el chat en voz alta. */}
         <TtsChat socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} />
+
+        {/* Pedido explicito: el streamer no escuchaba sus propias alertas de
+            sonido (solo llegaban a los espectadores por OBS) -- esto suena
+            en SU navegador sin importar en qué pestaña del panel esté, no
+            solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
+            tiene pegada esa URL aparte). */}
+        <AlertSoundListener socket={socket} />
 
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el

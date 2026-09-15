@@ -25,6 +25,19 @@ function friendlyDeclineMessage(error) {
   return message;
 }
 
+// Pedido explícito: Stripe.js resuelve confirmSetup DIRECTO en el
+// navegador, así que un rechazo nunca toca este backend por su cuenta --
+// sin esto no quedaba ningún rastro en los logs del servidor para poder
+// diagnosticarlo después (antes había que ir a buscarlo a mano en
+// devtools). Best-effort: si falla el propio reporte, no afecta el flujo.
+function reportStripeError(error) {
+  fetch(`${backendUrl()}/api/stripe/client-error`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context: 'free-trial-verify', error }),
+  }).catch(() => {});
+}
+
 // Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el
 // contexto que arma <Elements> (ver el export default de más abajo).
 function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, submitting, setSubmitting, error, setError, onResult }) {
@@ -50,6 +63,7 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
       });
       if (stripeError) {
         setError(friendlyDeclineMessage(stripeError));
+        reportStripeError(stripeError);
         return;
       }
       if (!setupIntent || setupIntent.status !== 'succeeded') {

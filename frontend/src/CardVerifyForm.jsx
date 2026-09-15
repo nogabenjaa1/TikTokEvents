@@ -104,12 +104,15 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
 // /api/free-trial/setup-intent y /api/free-trial en server.js.
 //
 // Al validar, llama a onResult({ key, token, license }) — el mismo shape
-// que ya maneja Login.jsx para el camino de anuncios (trialResult), así la
-// pantalla de "guarda tu clave" es una sola, compartida entre las tres vías.
-export default function CardVerifyForm({ onResult, onCancel }) {
+// que ya maneja Membership.jsx para el camino de anuncios (trialResult),
+// así la pantalla de "guarda tu clave" es una sola, compartida entre las
+// tres vías. `alias`/`setAlias` son controlados desde afuera (pedido
+// explícito: un solo input de alias compartido entre la prueba gratis y
+// la compra directa, no uno propio acá adentro que obligue a escribirlo
+// dos veces).
+export default function CardVerifyForm({ alias, setAlias, onResult, onCancel }) {
   const [clientSecret, setClientSecret] = useState(null);
   const [loadError, setLoadError] = useState('');
-  const [alias, setAlias] = useState('');
   const [cardholderName, setCardholderName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');

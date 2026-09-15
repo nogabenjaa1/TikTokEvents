@@ -932,6 +932,26 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
 // addon, son ambas válidas).
 // ==========================================
 
+// Pedido explicito de MercadoPago (soporte, ver "reintentos clonados" en
+// su guía de reducción de high_risk): dos pagos consecutivos con el mismo
+// payer + mismos items + mismo monto disparan su motor antifraude, aunque
+// la integración esté completa. En vez de dejar que el streamer reintente
+// de una con los datos idénticos (que MP va a rechazar igual, pero ahora
+// sumando una marca antifraude más a la cuenta), se frena ACÁ antes de
+// llamar a MP: mismo licencia+plan+addon+monto dentro de una ventana
+// corta devuelve un error claro sin gastar otro intento real. En memoria
+// nada más (no hace falta persistencia -- si el proceso reinicia, el
+// peor caso es dejar pasar un reintento, no un problema real) con
+// limpieza perezosa para no crecer sin límite.
+const RECENT_CHARGE_COOLDOWN_MS = 3 * 60 * 1000;
+const recentChargeAttempts = new Map(); // `${licenseId}:${planType}:${diceTier}:${amountCents}` -> timestamp
+setInterval(() => {
+    const cutoff = Date.now() - RECENT_CHARGE_COOLDOWN_MS;
+    for (const [key, ts] of recentChargeAttempts) {
+        if (ts < cutoff) recentChargeAttempts.delete(key);
+    }
+}, RECENT_CHARGE_COOLDOWN_MS).unref();
+
 // Precios vigentes de los 3 planes (override del admin si existe, default
 // de pricing.js si no) -- publica a proposito, sin auth: la vitrina de
 // Membership.jsx la necesita ANTES de que exista una sesion (ver el
@@ -1203,6 +1223,21 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
     // un transaction_amount que pueda venir del formData del Brick.
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
+
+    // Pedido explicito de MercadoPago: frena reintentos idénticos (mismo
+    // payer + mismos items + mismo monto) antes de gastar otro intento
+    // real contra su antifraude -- ver el comentario de
+    // recentChargeAttempts más arriba.
+    const chargeAttemptKey = `${req.license.id}:${planType || ''}:${diceTier || ''}:${amountCents}`;
+    const lastAttemptAt = recentChargeAttempts.get(chargeAttemptKey);
+    if (lastAttemptAt && Date.now() - lastAttemptAt < RECENT_CHARGE_COOLDOWN_MS) {
+        return res.status(429).json({
+            success: false,
+            error: 'Ya intentaste este mismo pago hace muy poco. Por seguridad, MercadoPago rechaza reintentos idénticos muy seguidos — espera unos minutos o prueba pagando con Stripe.',
+        });
+    }
+    recentChargeAttempts.set(chargeAttemptKey, Date.now());
+
     // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
     // acepta ese caracter en external_reference (confirmado probando:
     // "'$.external_reference' - does not match pattern"). Se usa '_' como

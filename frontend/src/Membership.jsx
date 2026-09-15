@@ -141,9 +141,6 @@ export default function Membership({ session, onSessionUpdate }) {
   const [showAdGate, setShowAdGate] = useState(false);
   const [adsWatched, setAdsWatched] = useState(0);
   const [showCardForm, setShowCardForm] = useState(false);
-  // Alias PROPIO de este flujo -- no el `alias` de arriba (ese es para
-  // comprar un plan directo sin pasar por la prueba gratis primero).
-  const [trialAlias, setTrialAlias] = useState('');
   const [trialError, setTrialError] = useState('');
   const [trialLoading, setTrialLoading] = useState(false);
   // Se muestra ANTES de loguear (ver continueAfterTrial): la key es la
@@ -151,14 +148,33 @@ export default function Membership({ session, onSessionUpdate }) {
   // no hay forma de recuperarla -- ver auth.requestFreeTrial.
   const [trialResult, setTrialResult] = useState(null); // { key, token, license }
   const [trialCopied, setTrialCopied] = useState(false);
+  const aliasInputRef = useRef(null);
+  // Error propio del alias (no el `error` genérico de más abajo, que
+  // renderiza al final de toda la página -- lejos del input, ver el
+  // comentario en handleBuy) para que el aviso quede pegado al campo.
+  const [aliasError, setAliasError] = useState('');
 
-  const submitTrial = async (e) => {
-    e.preventDefault();
-    if (!trialAlias.trim() || trialLoading) return;
+  // Pedido explícito: un solo input de alias, compartido entre la prueba
+  // gratis (las 3 vías) y la compra directa de un plan -- antes había uno
+  // propio por vía (CardVerifyForm, el formulario post-anuncios, y el de
+  // "comprar directo"), obligando a escribirlo hasta 2 veces si el
+  // streamer cambiaba de idea entre probar gratis y comprar. Se valida acá
+  // antes de abrir cualquiera de las vías (ver los onClick de más abajo);
+  // `ensureSession` lo vuelve a chequear por su cuenta para el camino de
+  // compra directa (mismo helper, mismo mensaje pegado al campo).
+  const requireAlias = () => {
+    if (alias.trim()) return true;
+    setAliasError('Elige un alias antes de continuar.');
+    aliasInputRef.current?.focus();
+    return false;
+  };
+
+  const submitTrial = async () => {
+    if (!alias.trim() || trialLoading) return;
     setTrialLoading(true);
     setTrialError('');
     try {
-      const result = await requestFreeTrial(trialAlias.trim());
+      const result = await requestFreeTrial(alias.trim());
       setTrialResult(result);
     } catch (err) {
       setTrialError(err.message || 'No se pudo crear la prueba gratis');
@@ -261,12 +277,8 @@ export default function Membership({ session, onSessionUpdate }) {
   // sin un paso de registro separado.
   const ensureSession = async () => {
     if (session?.licenseKey !== undefined || loadSession()?.token) return true;
-    const cleanAlias = alias.trim();
-    if (!cleanAlias) {
-      setError('Escribe un alias para tu licencia antes de continuar.');
-      return false;
-    }
-    const { token, key, license } = await requestFreeTrial(cleanAlias);
+    if (!requireAlias()) return false;
+    const { token, key, license } = await requestFreeTrial(alias.trim());
     const created = { token, licenseKey: key, ...license };
     saveSession(created);
     onSessionUpdate?.(created);
@@ -369,13 +381,15 @@ export default function Membership({ session, onSessionUpdate }) {
         </form>
       )}
 
-      {/* Pedido explicito: la prueba gratis (ver anuncios / verificar
-          tarjeta / alias directo) vive acá, junto a los planes, para que
-          el streamer elija entre probar gratis o comprar todo en un solo
-          lugar -- antes estaba repetida en cada panel bloqueado
-          (Login.jsx), que ahora solo pide la clave si ya tienes una. */}
+      {/* Pedido explicito: un solo input de alias, compartido entre la
+          prueba gratis (las 3 vías) y la compra directa de un plan -- antes
+          había uno propio por vía, obligando a escribirlo hasta 2 veces si
+          el streamer cambiaba de idea entre probar gratis y comprar. Vive
+          acá junto a los planes (mudado entero desde Login.jsx) para que el
+          streamer elija todo en un solo lugar, en vez de repetido en cada
+          panel bloqueado (que ahora solo pide la clave si ya tienes una). */}
       {!session && (
-        <div className="theme-surface w-full max-w-2xl p-6">
+        <div className="theme-surface w-full max-w-2xl p-6 flex flex-col gap-4">
           {trialResult ? (
             <div className="flex flex-col gap-3">
               <p className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave</p>
@@ -397,60 +411,70 @@ export default function Membership({ session, onSessionUpdate }) {
                 Continuar
               </button>
             </div>
-          ) : showCardForm ? (
-            <CardVerifyForm
-              onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
-              onCancel={() => setShowCardForm(false)}
-            />
-          ) : !showTrialAdForm ? (
-            <div className="flex flex-col gap-2">
-              <p className="theme-label text-[10px] uppercase tracking-widest font-semibold text-center mb-1">
-                ¿No tienes una licencia? Elige cómo obtener 7 días gratis
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowAdGate(true)}
-                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
-              >
-                Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCardForm(true)}
-                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
-              >
-                Verificar una tarjeta (sin cobro)
-              </button>
-            </div>
           ) : (
-            <form onSubmit={submitTrial} className="flex flex-col gap-3">
-              <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
-              <p className="text-[11px] text-gray-500">Elige un alias para tu clave. Acceso completo por 7 días, sin tarjeta.</p>
-              <input
-                value={trialAlias}
-                onChange={e => setTrialAlias(e.target.value)}
-                placeholder="Elige un alias"
-                className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm"
-              />
-              {trialError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
-              <button
-                type="submit"
-                disabled={trialLoading || !trialAlias.trim()}
-                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {trialLoading ? 'CREANDO...' : 'Solicitar prueba gratis'}
-              </button>
-            </form>
-          )}
-        </div>
-      )}
+            <>
+              <div>
+                <label className="theme-label block text-[10px] mb-2">Elige un alias para tu licencia</label>
+                <input
+                  ref={aliasInputRef}
+                  value={alias}
+                  onChange={e => { setAlias(e.target.value); if (aliasError) setAliasError(''); }}
+                  placeholder="Elige un alias"
+                  style={aliasError ? { borderColor: '#ef4444' } : undefined}
+                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
+                    aliasError ? 'ring-2 ring-red-500/30' : ''].join(' ')}
+                />
+                {aliasError ? (
+                  <p className="text-[10px] font-bold text-red-500 mt-1">{aliasError}</p>
+                ) : (
+                  <p className="text-[9px] text-gray-500 mt-1">Lo usas tanto para la prueba gratis como para comprar un plan — va incluido en tu clave (alias-plan-hash).</p>
+                )}
+              </div>
 
-      {!session && (
-        <div className="w-full max-w-2xl">
-          <label className="theme-label block text-[10px] mb-2">¿Prefieres comprar directo? Elige un alias para tu licencia</label>
-          <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Elige un alias"
-            className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-          <p className="text-[9px] text-gray-500 mt-1">Se usa para crear tu cuenta y va incluido en tu clave (alias-plan-hash).</p>
+              {showCardForm ? (
+                <CardVerifyForm
+                  alias={alias} setAlias={setAlias}
+                  onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
+                  onCancel={() => setShowCardForm(false)}
+                />
+              ) : showTrialAdForm ? (
+                <div className="flex flex-col gap-3">
+                  <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
+                  <p className="text-[11px] text-gray-500">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
+                  {trialError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
+                  <button
+                    type="button"
+                    onClick={submitTrial}
+                    disabled={trialLoading || !alias.trim()}
+                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {trialLoading ? 'CREANDO...' : 'Solicitar prueba gratis'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="theme-label text-[10px] uppercase tracking-widest font-semibold text-center mb-1">
+                    ¿No tienes una licencia? Elige cómo obtener 7 días gratis
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { if (requireAlias()) setShowAdGate(true); }}
+                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                  >
+                    Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (requireAlias()) setShowCardForm(true); }}
+                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                  >
+                    Verificar una tarjeta (sin cobro)
+                  </button>
+                  <p className="text-[10px] text-gray-500 text-center mt-1">O elige un plan más abajo para comprar directo con el mismo alias.</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -807,13 +807,22 @@ export default function App() {
         </div>
       )}
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
-      <TikTokLoginBar
-        username={username} setUsername={handleSetUsername}
-        connectionStatus={connectionStatus}
-        connectionError={connectionError}
-        disabled={usernameLocked}
-        onDisconnect={() => handleSetUsername('')}
-      />
+      {/* Pedido explicito: esta barra solo tiene sentido en TikTokEvents
+          (el unico apartado que de verdad depende de una conexion en vivo)
+          -- en el resto (ColorDice, Tema, Membresia, Overlays, etc.) antes
+          quedaba de adorno pidiendo un usuario que nadie iba a conectar
+          ahi. La conexion en si (username/connectionStatus, mas arriba en
+          este componente) sigue viva igual aunque la barra no este
+          montada -- desmontarla no la corta. */}
+      {sidebarMode === 'events' && (
+        <TikTokLoginBar
+          username={username} setUsername={handleSetUsername}
+          connectionStatus={connectionStatus}
+          connectionError={connectionError}
+          disabled={usernameLocked}
+          onDisconnect={() => handleSetUsername('')}
+        />
+      )}
 
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}

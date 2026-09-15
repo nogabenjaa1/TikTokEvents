@@ -31,6 +31,19 @@ function friendlyDeclineMessage(error) {
   return message;
 }
 
+// Pedido explícito: Stripe.js resuelve confirmPayment DIRECTO en el
+// navegador, así que un rechazo nunca toca este backend por su cuenta --
+// sin esto no quedaba ningún rastro en los logs del servidor para poder
+// diagnosticarlo después (antes había que ir a buscarlo a mano en
+// devtools). Best-effort: si falla el propio reporte, no afecta el flujo.
+function reportStripeError(error) {
+  fetch(`${backendUrl()}/api/stripe/client-error`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context: 'checkout', error }),
+  }).catch(() => {});
+}
+
 // Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el
 // contexto que arma <Elements>, no se pueden llamar en el componente que la
 // envuelve (ver el export default de más abajo).
@@ -56,6 +69,7 @@ function CheckoutInner({ pending, setPending, submitError, setSubmitError, onSuc
     if (error) {
       setPending(false);
       setSubmitError(friendlyDeclineMessage(error));
+      reportStripeError(error);
       return;
     }
     if (!paymentIntent || paymentIntent.status !== 'succeeded') {

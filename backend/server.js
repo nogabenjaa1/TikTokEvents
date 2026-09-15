@@ -254,6 +254,11 @@ const paymentStatusLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standard
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
 const webhookLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+// Reporte de errores de tarjeta que Stripe.js resuelve DIRECTO en el
+// navegador (confirmSetup/confirmPayment) -- sin auth a propósito (la
+// verificación de tarjeta de la prueba gratis pasa pre-login), asi que
+// este limite es lo unico que frena el ruido/abuso.
+const stripeClientErrorLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 // Downloader: /info y /start son acciones puntuales (parecido a
 // paymentLimiter) -- pesadas para el server (yt-dlp + ffmpeg), asi que
 // mas estrictas. /status en cambio se poll-ea cada ~1s DESDE EL MISMO
@@ -1581,6 +1586,19 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }
+});
+
+// Rechazos de tarjeta (SetupIntent de la prueba gratis o PaymentIntent del
+// checkout) los resuelve Stripe.js DIRECTO en el navegador
+// (confirmSetup/confirmPayment) -- nunca pasan por este backend, así que
+// sin esto no queda ningún rastro en los logs de un intento rechazado.
+// Pedido explícito: poder ver acá el JSON crudo del error (decline_code,
+// etc.) sin tener que abrir devtools cada vez. Sin auth a propósito: la
+// verificación de tarjeta de la prueba gratis pasa pre-login. Solo
+// loguea -- no se persiste en DB ni se usa para nada más.
+app.post('/api/stripe/client-error', stripeClientErrorLimiter, (req, res) => {
+    console.error(`[Stripe] Error de tarjeta reportado por el navegador (${req.body?.context || 'sin contexto'}):`, JSON.stringify(req.body?.error));
+    res.sendStatus(204);
 });
 
 // ==========================================

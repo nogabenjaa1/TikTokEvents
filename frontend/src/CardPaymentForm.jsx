@@ -47,7 +47,7 @@ function friendlyDeclineMessage(statusDetail) {
 // hosteado de MP) el redirect de create-preference. El Brick tokeniza la
 // tarjeta en un iframe de MercadoPago; acá nunca se ve el número real, solo
 // el token + payment_method_id que arma en su callback onSubmit.
-export default function CardPaymentForm({ planType, diceTier, amount, email, firstName, lastName, zipCode, streetName, streetNumber, onSuccess, onCancel }) {
+export default function CardPaymentForm({ planType, diceTier, amount, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt, onSuccess, onCancel }) {
   const [sdkState, setSdkState] = useState('loading'); // loading | ready | error | no-key
   const [submitError, setSubmitError] = useState('');
   const [pending, setPending] = useState(false);
@@ -62,9 +62,9 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, fir
   // y el backend rechazaba con "correo invalido" pese a que en pantalla
   // ya se veia el correo correcto). Este ref se actualiza en cada render
   // para que onSubmit siempre lea el valor mas reciente.
-  const latestRef = useRef({ planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber });
+  const latestRef = useRef({ planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt });
   useEffect(() => {
-    latestRef.current = { planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber };
+    latestRef.current = { planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt };
   });
   // Challenge 3DS (checklist de calidad de MP, "Protocolo de seguridad
   // 3DS"): cuando MercadoPago quiere una segunda verificacion con el banco
@@ -200,6 +200,10 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, fir
               deviceId: window.MP_DEVICE_SESSION_ID,
               identificationType: formData.payer?.identification?.type,
               identificationNumber: formData.payer?.identification?.number,
+              // Pedido explicito: evidencia para un eventual contracargo
+              // de mala fe -- fecha/hora exacta en la que se aceptó la
+              // política de reembolsos, ver Membership.jsx/RefundPolicyModal.jsx.
+              policyAcceptedAt: current.policyAcceptedAt,
             }),
           })
             .then(res => res.json())

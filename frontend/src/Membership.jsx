@@ -4,6 +4,7 @@ import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
 import RewardedAdGate from './RewardedAdGate';
+import RefundPolicyModal from './RefundPolicyModal';
 import { TRIAL_UNLOCK_AD_COUNT } from './adConfig';
 
 const PLANS = [
@@ -124,6 +125,18 @@ export default function Membership({ session, onSessionUpdate }) {
   const emailInputRef = useRef(null);
   const firstNameInputRef = useRef(null);
   const lastNameInputRef = useRef(null);
+  // Pedido explicito: aceptación obligatoria de la política de reembolsos
+  // antes de poder pagar -- no evita que alguien dispute con su banco (eso
+  // lo decide el banco, no acá), pero le da a Stripe/MercadoPago evidencia
+  // real (aceptación explícita, CON FECHA) para pelear y ganar la disputa
+  // si llega. `policyAcceptedAt` (null = no aceptó todavía) es lo que de
+  // verdad viaja al backend (ver StripePaymentForm/CardPaymentForm más
+  // abajo) -- se guarda el momento exacto del check, no `Date.now()` leído
+  // de nuevo en cada render.
+  const [policyAcceptedAt, setPolicyAcceptedAt] = useState(null);
+  const [policyError, setPolicyError] = useState('');
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const policyCheckboxRef = useRef(null);
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
@@ -253,16 +266,23 @@ export default function Membership({ session, onSessionUpdate }) {
   const firstNameValid = !!firstName.trim();
   const lastNameValid = !!lastName.trim();
   const contactValid = emailValid && firstNameValid && lastNameValid;
+  const readyToPay = contactValid && !!policyAcceptedAt;
 
   // Se llama al tocar el botón "Continuar con el pago" (visible mientras
   // falte algo) -- marca los tres campos como "tocados" de una (para que
   // se pinten en rojo aunque el streamer nunca haya llegado a enfocarlos)
-  // y lleva el foco directo al primero que falta, en ese orden.
+  // y lleva el foco directo al primero que falta, en ese orden (el
+  // checkbox de la política queda al final a propósito: si falta algo más
+  // arriba, tiene prioridad).
   const attemptContinue = () => {
     setContactTouched({ email: true, firstName: true, lastName: true });
     if (!emailValid) { emailInputRef.current?.focus(); return; }
     if (!firstNameValid) { firstNameInputRef.current?.focus(); return; }
-    if (!lastNameValid) { lastNameInputRef.current?.focus(); }
+    if (!lastNameValid) { lastNameInputRef.current?.focus(); return; }
+    if (!policyAcceptedAt) {
+      setPolicyError('Acepta la política de reembolsos para continuar.');
+      policyCheckboxRef.current?.focus();
+    }
   };
 
   const copyRevealedKey = () => {
@@ -576,7 +596,35 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           )}
 
-          {contactValid ? (
+          {/* Pedido explicito: checkbox obligatorio antes de pagar --
+              guarda `policyAcceptedAt` (fecha/hora exacta de la
+              aceptación) para mandarlo con el pago como evidencia ante un
+              contracargo de mala fe (ver comentario del estado más
+              arriba). El texto completo vive en RefundPolicyModal.jsx. */}
+          <div className="w-full max-w-2xl">
+            <label className="flex items-start gap-2 text-[11px] text-gray-400 cursor-pointer">
+              <input
+                ref={policyCheckboxRef}
+                type="checkbox"
+                checked={!!policyAcceptedAt}
+                onChange={e => {
+                  setPolicyAcceptedAt(e.target.checked ? new Date().toISOString() : null);
+                  if (policyError) setPolicyError('');
+                }}
+                className="mt-0.5 flex-shrink-0"
+              />
+              <span>
+                Acepto la{' '}
+                <button type="button" onClick={(e) => { e.preventDefault(); setShowPolicyModal(true); }} className="underline font-bold text-gray-300 hover:text-white">
+                  política de reembolsos
+                </button>
+                {' '}(todas las ventas son finales, servicio digital de acceso inmediato).
+              </span>
+            </label>
+            {policyError && <p className="text-[10px] font-bold text-red-500 mt-1">{policyError}</p>}
+          </div>
+
+          {readyToPay ? (
             paymentProvider === 'stripe' ? (
               <StripePaymentForm
                 planType={payingPlan}
@@ -584,6 +632,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 email={email.trim()}
                 firstName={firstName.trim()}
                 lastName={lastName.trim()}
+                policyAcceptedAt={policyAcceptedAt}
                 onSuccess={handlePaymentSuccess}
                 onCancel={() => setPayingPlan(null)}
               />
@@ -597,6 +646,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 zipCode={zipCode.trim()}
                 streetName={streetName.trim()}
                 streetNumber={streetNumber.trim()}
+                policyAcceptedAt={policyAcceptedAt}
                 onSuccess={handlePaymentSuccess}
                 onCancel={() => setPayingPlan(null)}
               />
@@ -672,6 +722,8 @@ export default function Membership({ session, onSessionUpdate }) {
         claimLabel={adsWatched + 1 >= TRIAL_UNLOCK_AD_COUNT ? 'Reclamar' : 'Continuar'}
         description="Mira este anuncio corto para avanzar — nos ayuda a mantener el servicio gratis."
       />
+
+      {showPolicyModal && <RefundPolicyModal onClose={() => setShowPolicyModal(false)} />}
     </div>
   );
 }

@@ -1159,7 +1159,7 @@ function evaluateOrderStatus(order) {
 // verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId } = req.body || {};
+    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -1183,6 +1183,16 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     }
     if (!paymentMethodId || typeof paymentMethodId !== 'string') {
         return res.status(400).json({ success: false, error: 'Falta el medio de pago' });
+    }
+    // Pedido explicito: evidencia real (con fecha) de que el comprador
+    // aceptó la política de reembolsos ANTES de pagar -- se exige
+    // server-side (no solo ocultar el botón en el frontend) para que el
+    // registro exista siempre. Va pegado al `description` de la orden (ver
+    // más abajo) en vez de additional_info -- ese campo tiene un schema
+    // estricto del lado de MP (confirmado en vivo: rechaza cualquier clave
+    // que no reconozca), mientras que description es texto libre.
+    if (typeof policyAcceptedAt !== 'string' || Number.isNaN(Date.parse(policyAcceptedAt))) {
+        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
 
     // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
@@ -1260,7 +1270,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 processing_mode: 'automatic',
                 total_amount: amountStr,
                 external_reference: externalReference,
-                description: `BenjaApis - ${titleParts.join(' + ')}`,
+                description: `BenjaApis - ${titleParts.join(' + ')} | Política de reembolsos aceptada: ${policyAcceptedAt}`,
                 // Pedido explicito de MercadoPago (checklist de calidad,
                 // "Precio unitario del producto" / "Cantidad de productos" /
                 // "Nombre del producto" / "Categoría del producto"): un solo
@@ -1439,7 +1449,7 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
 // ==========================================
 
 app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName } = req.body || {};
+    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
     if (planType !== undefined && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
@@ -1457,6 +1467,16 @@ app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async 
     const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
     if (!firstName || !lastName) {
         return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
+    }
+    // Pedido explicito: evidencia real (con fecha) de que el comprador
+    // aceptó la política de reembolsos ANTES de pagar -- se manda como
+    // metadata del PaymentIntent, visible en el propio dashboard de
+    // Stripe si alguien abre una disputa. Se exige server-side (no solo
+    // ocultar el botón en el frontend) para que el registro exista
+    // siempre, sin depender de que nadie evite el check del lado del
+    // cliente.
+    if (typeof policyAcceptedAt !== 'string' || Number.isNaN(Date.parse(policyAcceptedAt))) {
+        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
 
     const amountCents = pricing.computeAmountCents({ planType, diceTier });
@@ -1481,6 +1501,7 @@ app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async 
                 licenseId: req.license.id,
                 planType: planType || '',
                 diceTier: diceTier || '',
+                policyAcceptedAt,
             },
         });
         res.json({ success: true, clientSecret: intent.client_secret, paymentIntentId: intent.id });

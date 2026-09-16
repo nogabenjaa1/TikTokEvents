@@ -8,9 +8,35 @@ const STORAGE_KEY = 'tiktok-concurso-tts-settings';
 // rate 1 = velocidad normal del habla.
 const DEFAULTS = {
   enabled: false, allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1,
+  usernameOverrides: [], // [{ username, mode: 'enabled'|'disabled' }] -- sincronizado con el backend, igual que los filtros de arriba
   voiceURI: '', pitch: 1, rate: 1, volume: 1, activePreset: 'normal',
-  minChars: 2, ignoreRepeats: true, blockedWords: '',
+  minChars: 2, ignoreRepeats: true, blockedWords: '', messageTemplate: '',
 };
+
+// Tags del formato de lectura (pedido explícito) -- mismo criterio que las
+// alertas (ver applyAlertTextTemplate en tenant.js): {username} es el
+// @usuario real de TikTok, {nickname} su nombre público (con el mismo
+// fallback a @usuario si no tiene uno), y {message} es el mensaje de chat
+// en sí. Si el streamer no escribe {message} en algún lado de su plantilla,
+// se lo agregamos al final a propósito -- así "listo, ya", el ejemplo más
+// simple ("{username} dice:") funciona sin que tenga que acordarse de
+// agregar el tag del mensaje. Si la plantilla queda vacía, se lee el
+// mensaje tal cual, sin ningún cambio de comportamiento.
+function applyMessageTemplate(message, template) {
+  const t = (template || '').trim();
+  if (!t) return message.comment;
+  const hasMessageTag = /\{message\}/i.test(t);
+  const built = t
+    .replace(/\{username\}/gi, message.uniqueId || message.username || '')
+    .replace(/\{nickname\}/gi, message.username || '')
+    .replace(/\{message\}/gi, message.comment);
+  return hasMessageTag ? built : `${built} ${message.comment}`.trim();
+}
+
+// Normaliza igual que el backend (sanitizeUsernameOverrides en tenant.js):
+// sin '@' y en minúsculas, para que la comparación contra `message.uniqueId`
+// en isOverridden sea directa.
+const normalizeOverrideUsername = (value) => value.trim().replace(/^@/, '').toLowerCase();
 const TEST_TEXT_DEFAULT = 'Así se va a escuchar tu voz del chat.';
 
 // Presets de pitch/rate/volumen — pedido explícito de "más efectos, pero con
@@ -83,6 +109,10 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // | 'recovered' (el watchdog tuvo que forzar un avance — se muestra un
   // instante como aviso, después vuelve solo a idle/speaking).
   const [engineStatus, setEngineStatus] = useState('idle');
+  const [newOverrideUsername, setNewOverrideUsername] = useState('');
+  const [newOverrideMode, setNewOverrideMode] = useState('enabled');
+  const [editingOverride, setEditingOverride] = useState(null);
+  const [editingOverrideValue, setEditingOverrideValue] = useState('');
   const settingsRef = useRef(settings);
   const voicesRef = useRef(voices);
   const seenIds = useRef(new Set());
@@ -134,7 +164,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
         if (sent) {
           const matchesSent = current.allUsers === sent.allUsers && current.moderators === sent.moderators
             && current.superFans === sent.superFans && current.fanMembers === sent.fanMembers
-            && current.minFanLevel === sent.minFanLevel;
+            && current.minFanLevel === sent.minFanLevel
+            && JSON.stringify(current.usernameOverrides) === JSON.stringify(sent.usernameOverrides);
           if (!matchesSent) return current; // ya hay un cambio local mas nuevo que este eco
         }
         return {
@@ -144,6 +175,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
           superFans: !!server.superFans,
           fanMembers: !!server.fanMembers,
           minFanLevel: server.minFanLevel || current.minFanLevel,
+          usernameOverrides: Array.isArray(server.usernameOverrides) ? server.usernameOverrides : current.usernameOverrides,
         };
       });
     };
@@ -160,13 +192,14 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
       const payload = {
         allUsers: settings.allUsers, moderators: settings.moderators, superFans: settings.superFans,
         fanMembers: settings.fanMembers, minFanLevel: settings.minFanLevel,
+        usernameOverrides: settings.usernameOverrides,
       };
       socket.emit('set_tts_settings', payload);
       lastEmittedRef.current = payload;
       emitTimeoutRef.current = null;
     }, 300);
     return () => { if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current); };
-  }, [socket, settings.allUsers, settings.moderators, settings.superFans, settings.fanMembers, settings.minFanLevel]);
+  }, [socket, settings.allUsers, settings.moderators, settings.superFans, settings.fanMembers, settings.minFanLevel, settings.usernameOverrides]);
 
   // getVoices() suele devolver un array vacío en la primera llamada — la
   // lista real llega después, de forma asíncrona, avisada por
@@ -246,7 +279,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     speakingRef.current = true;
     setEngineStatus('speaking');
     const current = settingsRef.current;
-    const utterance = buildUtterance(next.message.comment, current.voiceURI, current.pitch, current.rate, current.volume);
+    const spokenText = applyMessageTemplate(next.message, current.messageTemplate);
+    const utterance = buildUtterance(spokenText, current.voiceURI, current.pitch, current.rate, current.volume);
     utterance.onstart = () => setLastMessage(next.message);
 
     const finish = () => {
@@ -317,7 +351,18 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
       seenIds.current.add(message.id);
       if (seenIds.current.size > 500) seenIds.current.clear();
 
-      const authorized = current.allUsers
+      // Lista blanca/negra: pisa el resto de los criterios de arriba en
+      // ambas direcciones -- 'disabled' descalifica aunque cumpla todo,
+      // 'enabled' autoriza aunque no cumpla nada (ver comentario de
+      // sanitizeUsernameOverrides en tenant.js).
+      const normalizedUniqueId = (message.uniqueId || '').toLowerCase();
+      const override = normalizedUniqueId
+        ? current.usernameOverrides.find((entry) => entry.username === normalizedUniqueId)
+        : null;
+      if (override?.mode === 'disabled') return;
+
+      const authorized = override?.mode === 'enabled'
+        || current.allUsers
         || (current.moderators && message.isModerator)
         || (current.superFans && message.isSuperFan)
         || (current.fanMembers && message.fanLevel >= current.minFanLevel);
@@ -338,6 +383,48 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   }, [settings.enabled, connected]);
 
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
+
+  // CRUD de la lista blanca/negra -- agregar reemplaza cualquier entrada
+  // previa del mismo @usuario en vez de duplicarla (ej: si ya estaba
+  // deshabilitado y lo vuelven a agregar como habilitado, gana el nuevo).
+  const addOverride = () => {
+    const username = normalizeOverrideUsername(newOverrideUsername);
+    if (!username) return;
+    setSettings((current) => ({
+      ...current,
+      usernameOverrides: [...current.usernameOverrides.filter((entry) => entry.username !== username), { username, mode: newOverrideMode }],
+    }));
+    setNewOverrideUsername('');
+  };
+  const removeOverride = (username) => setSettings((current) => ({
+    ...current,
+    usernameOverrides: current.usernameOverrides.filter((entry) => entry.username !== username),
+  }));
+  const toggleOverrideMode = (username) => setSettings((current) => ({
+    ...current,
+    usernameOverrides: current.usernameOverrides.map((entry) => (
+      entry.username === username ? { ...entry, mode: entry.mode === 'enabled' ? 'disabled' : 'enabled' } : entry
+    )),
+  }));
+  const startEditOverride = (username) => { setEditingOverride(username); setEditingOverrideValue(username); };
+  const cancelEditOverride = () => setEditingOverride(null);
+  const saveEditOverride = () => {
+    const username = normalizeOverrideUsername(editingOverrideValue);
+    const previous = editingOverride;
+    setEditingOverride(null);
+    if (!username || username === previous) return;
+    setSettings((current) => {
+      // Si ya existe otra entrada con el nuevo nombre, se descarta la que
+      // se estaba editando en vez de terminar con dos filas iguales.
+      if (current.usernameOverrides.some((entry) => entry.username === username)) {
+        return { ...current, usernameOverrides: current.usernameOverrides.filter((entry) => entry.username !== previous) };
+      }
+      return {
+        ...current,
+        usernameOverrides: current.usernameOverrides.map((entry) => (entry.username === previous ? { ...entry, username } : entry)),
+      };
+    });
+  };
 
   // Avisa al padre (Dashboard) cada vez que `enabled` cambia -- así puede
   // mostrar el estado actual sin duplicarlo (ver comentario del forwardRef
@@ -483,6 +570,30 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 />
                 <p className="text-[10px] text-gray-500 mt-1">Si un mensaje contiene alguna de estas palabras, no se lee.</p>
               </label>
+
+              <label className="block mt-4">
+                <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Formato de lectura</span>
+                <input
+                  value={settings.messageTemplate}
+                  onChange={(event) => update('messageTemplate', event.target.value)}
+                  placeholder="Ej: {username} dice:"
+                  className="theme-input w-full p-3 outline-none text-sm text-white"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Opcional — si lo dejas vacío, se lee el mensaje tal cual. Tags disponibles:{' '}
+                  <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{username}'}</code>{' '}
+                  (usuario de TikTok),{' '}
+                  <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{nickname}'}</code>{' '}
+                  (nombre público) y{' '}
+                  <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{message}'}</code>{' '}
+                  (el mensaje en sí — si no lo escribes, se agrega solo al final).
+                </p>
+                {settings.messageTemplate.trim() && (
+                  <p className="text-[10px] theme-accent-text mt-2">
+                    Se escuchará así: "{applyMessageTemplate({ uniqueId: 'usuario_de_prueba', username: 'Usuario de Prueba', comment: 'hola a todos' }, settings.messageTemplate)}"
+                  </p>
+                )}
+              </label>
             </div>
           </div>
 
@@ -601,6 +712,70 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
               </button>
             </div>
           </label>
+        </div>
+
+        <div className="theme-surface p-6 mt-5">
+          <h2 className="text-sm font-black tracking-widest mb-1">LISTA BLANCA / NEGRA</h2>
+          <p className="text-xs text-gray-500 mb-5">Fuerza que un @usuario puntual se lea siempre o nunca, sin importar los filtros de arriba. Se sincroniza igual que ellos entre dispositivos.</p>
+
+          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            <input
+              value={newOverrideUsername}
+              onChange={(event) => setNewOverrideUsername(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') addOverride(); }}
+              placeholder="usuario_de_tiktok (sin @)"
+              className="theme-input flex-1 p-3 outline-none text-sm font-bold text-white min-w-0"
+            />
+            <select
+              value={newOverrideMode}
+              onChange={(event) => setNewOverrideMode(event.target.value)}
+              className="theme-input p-3 outline-none text-sm font-bold text-white flex-shrink-0"
+            >
+              <option value="enabled">Habilitado (siempre se lee)</option>
+              <option value="disabled">Deshabilitado (nunca se lee)</option>
+            </select>
+            <button type="button" onClick={addOverride} disabled={!newOverrideUsername.trim()} className="theme-btn-primary px-6 py-3 text-xs font-black tracking-widest disabled:opacity-40 flex-shrink-0">
+              AGREGAR
+            </button>
+          </div>
+
+          {settings.usernameOverrides.length === 0 ? (
+            <p className="text-xs text-gray-600 text-center py-4">Todavía no agregaste ningún usuario a la lista.</p>
+          ) : (
+            <div className="space-y-2">
+              {settings.usernameOverrides.map((entry) => (
+                <div key={entry.username} className="theme-input flex items-center gap-2 px-3 py-2">
+                  {editingOverride === entry.username ? (
+                    <>
+                      <input
+                        autoFocus
+                        value={editingOverrideValue}
+                        onChange={(event) => setEditingOverrideValue(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') saveEditOverride(); if (event.key === 'Escape') cancelEditOverride(); }}
+                        className="flex-1 bg-transparent outline-none text-sm font-bold text-white min-w-0"
+                      />
+                      <button type="button" onClick={saveEditOverride} aria-label="Guardar cambio" className="text-emerald-400 hover:opacity-70 text-sm font-black flex-shrink-0">✓</button>
+                      <button type="button" onClick={cancelEditOverride} aria-label="Cancelar edición" className="text-gray-500 hover:opacity-70 text-sm font-black flex-shrink-0">✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm font-bold truncate">@{entry.username}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleOverrideMode(entry.username)}
+                        title="Click para cambiar entre habilitado y deshabilitado"
+                        className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border flex-shrink-0 transition-opacity hover:opacity-80 ${entry.mode === 'enabled' ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' : 'bg-red-950/70 border-red-500/50 text-red-300'}`}
+                      >
+                        {entry.mode === 'enabled' ? 'Habilitado' : 'Deshabilitado'}
+                      </button>
+                      <button type="button" onClick={() => startEditOverride(entry.username)} aria-label={`Editar @${entry.username}`} className="text-gray-500 hover:opacity-80 text-sm flex-shrink-0">✎</button>
+                      <button type="button" onClick={() => removeOverride(entry.username)} aria-label={`Quitar @${entry.username} de la lista`} className="text-gray-500 hover:text-red-400 text-sm font-black flex-shrink-0">✕</button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </section>

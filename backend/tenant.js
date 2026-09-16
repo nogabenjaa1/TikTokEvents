@@ -219,6 +219,32 @@ function sanitizeHexColor(value, fallback) {
     return typeof value === 'string' && HEX_COLOR_RE.test(value) ? value : fallback;
 }
 
+// Lista blanca/negra del TTS por @usuario de TikTok (pedido explícito): un
+// usuario en modo 'enabled' se lee SIEMPRE aunque no cumpla ningún filtro de
+// abajo (moderador/Super Fan/nivel de fan), uno en 'disabled' NUNCA se lee
+// aunque los cumpla todos -- ver isAuthorizedForTts en TtsChat.jsx, donde se
+// aplica antes que el resto de los criterios. Se normaliza a minúsculas y
+// sin '@' acá mismo al guardar, para que la comparación en el navegador sea
+// directa contra el `uniqueId` tal cual lo manda TikTok (ver
+// handleChatEvent), sin tener que renormalizar en cada mensaje de chat.
+const TTS_OVERRIDE_MODES = ['enabled', 'disabled'];
+const TTS_OVERRIDES_MAX = 200;
+
+function sanitizeUsernameOverrides(raw) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const entry of raw) {
+        const username = typeof entry?.username === 'string' ? entry.username.trim().replace(/^@/, '').toLowerCase().slice(0, 50) : '';
+        const mode = TTS_OVERRIDE_MODES.includes(entry?.mode) ? entry.mode : null;
+        if (!username || !mode || seen.has(username)) continue;
+        seen.add(username);
+        out.push({ username, mode });
+        if (out.length >= TTS_OVERRIDES_MAX) break;
+    }
+    return out;
+}
+
 // Sanea el mapa completo que manda el panel (ver set_overlay_customization
 // más abajo) — cualquier id/campo inválido o faltante cae al default en vez
 // de rechazar todo el mensaje, para que un solo overlay mal formado no tire
@@ -432,7 +458,7 @@ class Tenant {
         // el chat siempre arranca APAGADO en cada sesión nueva, es una
         // decisión de seguridad ya existente en TtsChat.jsx, no algo que
         // deba "recordarse" solo.
-        this.ttsSettings = { allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1 };
+        this.ttsSettings = { allUsers: false, moderators: true, superFans: true, fanMembers: true, minFanLevel: 1, usernameOverrides: [] };
 
         // Pedido explícito: que la personalización de tema/overlays y los
         // ajustes de Spotify/TTS de arriba sobrevivan a un reinicio del
@@ -971,6 +997,7 @@ class Tenant {
                     superFans: tt.superFans !== undefined ? Boolean(tt.superFans) : this.ttsSettings.superFans,
                     fanMembers: tt.fanMembers !== undefined ? Boolean(tt.fanMembers) : this.ttsSettings.fanMembers,
                     minFanLevel: Math.max(1, Math.min(50, Number(tt.minFanLevel) || 1)),
+                    usernameOverrides: sanitizeUsernameOverrides(tt.usernameOverrides),
                 };
             }
         } catch (err) {
@@ -1210,6 +1237,7 @@ class Tenant {
             this.broadcast.emit('tts_chat_message', {
                 id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
                 username: data.nickname || data.uniqueId || 'Usuario',
+                uniqueId: data.uniqueId || '',
                 comment: comment.slice(0, 300),
                 isModerator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
                 isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
@@ -3077,6 +3105,7 @@ class Tenant {
                 superFans: Boolean(newSettings?.superFans),
                 fanMembers: Boolean(newSettings?.fanMembers),
                 minFanLevel: Math.max(1, Math.min(50, Number(newSettings?.minFanLevel) || 1)),
+                usernameOverrides: sanitizeUsernameOverrides(newSettings?.usernameOverrides),
             };
             this.broadcast.emit('tts_settings_update', this.ttsSettings);
             db.setTtsSettings(this.licenseId, this.ttsSettings).catch((err) => {

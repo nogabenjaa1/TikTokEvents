@@ -109,18 +109,43 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // pitch/rate/volumen, filtros de mensaje) se queda 100% local a propósito
   // -- son preferencias de ESTE navegador/dispositivo (una voz instalada acá
   // puede ni existir en otra máquina), no algo que tenga sentido sincronizar.
+  //
+  // Bug real reportado: tocar +/- varias veces seguido en "nivel mínimo de
+  // fan" (o cualquier toggle de arriba) hacía que el valor "subiera y
+  // bajara solo" hasta quedar trabado en algo distinto de lo último
+  // clickeado. Causa: cada cambio emitía al toque via el efecto de abajo, el
+  // backend lo reenviaba (mismo tab incluido, ver Tenant.broadcast en
+  // tenant.js) y el handler de acá arriba pisaba `settings` sin fijarse si
+  // el streamer ya había hecho un click MÁS NUEVO mientras ese viaje de ida
+  // y vuelta estaba en el aire -- y como el efecto de emitir depende del
+  // propio `settings`, ese pisado encima disparaba un reenvío del valor
+  // viejo, empeorando el problema en vez de asentarse. `emitTimeoutRef`
+  // (el debounce de abajo) + `lastEmittedRef` cortan el lazo: mientras haya
+  // un envío pendiente, o el eco no coincida con lo último que mandamos
+  // (=> hay un click más nuevo que ese eco no vio todavía), se ignora.
+  const emitTimeoutRef = useRef(null);
+  const lastEmittedRef = useRef(null);
   useEffect(() => {
     if (!socket) return;
     const onSettingsUpdate = (server) => {
-      if (!server) return;
-      setSettings((current) => ({
-        ...current,
-        allUsers: !!server.allUsers,
-        moderators: !!server.moderators,
-        superFans: !!server.superFans,
-        fanMembers: !!server.fanMembers,
-        minFanLevel: server.minFanLevel || current.minFanLevel,
-      }));
+      if (!server || emitTimeoutRef.current) return;
+      setSettings((current) => {
+        const sent = lastEmittedRef.current;
+        if (sent) {
+          const matchesSent = current.allUsers === sent.allUsers && current.moderators === sent.moderators
+            && current.superFans === sent.superFans && current.fanMembers === sent.fanMembers
+            && current.minFanLevel === sent.minFanLevel;
+          if (!matchesSent) return current; // ya hay un cambio local mas nuevo que este eco
+        }
+        return {
+          ...current,
+          allUsers: !!server.allUsers,
+          moderators: !!server.moderators,
+          superFans: !!server.superFans,
+          fanMembers: !!server.fanMembers,
+          minFanLevel: server.minFanLevel || current.minFanLevel,
+        };
+      });
     };
     socket.on('tts_settings_update', onSettingsUpdate);
     return () => socket.off('tts_settings_update', onSettingsUpdate);
@@ -128,10 +153,19 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
   useEffect(() => {
     if (!socket) return;
-    socket.emit('set_tts_settings', {
-      allUsers: settings.allUsers, moderators: settings.moderators, superFans: settings.superFans,
-      fanMembers: settings.fanMembers, minFanLevel: settings.minFanLevel,
-    });
+    // Debounce a proposito (ver comentario de arriba): colapsa una racha de
+    // clicks en un solo envío con el valor final, en vez de uno por click.
+    if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current);
+    emitTimeoutRef.current = setTimeout(() => {
+      const payload = {
+        allUsers: settings.allUsers, moderators: settings.moderators, superFans: settings.superFans,
+        fanMembers: settings.fanMembers, minFanLevel: settings.minFanLevel,
+      };
+      socket.emit('set_tts_settings', payload);
+      lastEmittedRef.current = payload;
+      emitTimeoutRef.current = null;
+    }, 300);
+    return () => { if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current); };
   }, [socket, settings.allUsers, settings.moderators, settings.superFans, settings.fanMembers, settings.minFanLevel]);
 
   // getVoices() suele devolver un array vacío en la primera llamada — la

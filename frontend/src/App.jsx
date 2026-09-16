@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import AdminPanel from './AdminPanel';
 import Zubastinis from './Zubastinis';
@@ -177,11 +177,24 @@ export default function App() {
   // 401 en Licencias dejaba un cartel de error suelto ahí mientras el
   // resto de la app (socket ya conectado de antes) seguía funcionando —
   // ahora cualquiera de los dos casos lleva al mismo login limpio.
-  const handleSessionInvalid = (message) => {
+  //
+  // Bug real reportado: el panel de Licencias "peleaba" con el scroll
+  // (subía y bajaba solo) hasta llegar arriba del todo. Causa: esta
+  // función era un closure NUEVO en cada render de App -- y App re-renderiza
+  // muy seguido en vivo (decenas de listeners de socket, ver más abajo).
+  // LicenseManager.jsx la recibe como `onSessionInvalid` y la mete en la
+  // dependencia de un useCallback/useEffect propio que vuelve a pedir la
+  // lista de licencias cada vez que esta identidad cambia -- con `useCallback`
+  // (todo lo que usa adentro es estable: clearSession es una función de
+  // módulo, setKickedOutMessage/setSession son setters de React) esta
+  // función ahora mantiene la MISMA identidad entre renders, así que ya no
+  // dispara ese refetch en cadena que hacía crecer y encoger la lista
+  // (por el "Cargando licencias...") mientras el streamer scrolleaba.
+  const handleSessionInvalid = useCallback((message) => {
     clearSession();
     setKickedOutMessage(message);
     setSession(null);
-  };
+  }, []);
 
   // Ads periódicos para licencia trial: se muestra un interstitial cada
   // TRIAL_AD_INTERVAL_MS (3 cada 2 horas) mientras haya sesión trial activa

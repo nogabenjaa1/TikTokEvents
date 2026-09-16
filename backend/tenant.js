@@ -104,6 +104,22 @@ const TAPTAP_SETTLE_MS = 1500;
 // alerta con el total acumulado.
 const ALERT_COMBO_SETTLE_MS = 700;
 
+// Tags de texto para las alertas (pedido explícito): {username}/{nickname}/
+// {gift}/{coins}/{count} -- se sustituyen recién al DISPARAR de verdad la
+// alerta (ver settleAlertCombo/testFireAlert), nunca en el texto que se
+// guarda en la DB (ese se queda con el template literal tal cual lo
+// escribió el streamer, ver AlertsAdmin.jsx). Case-insensitive (\{Username\}
+// funciona igual que \{username\}) para no exigir que lo escriban exacto.
+function applyAlertTextTemplate(text, { username = '', nickname = '', gift = '', coins = 0, count = 1 } = {}) {
+    if (!text) return text;
+    return text
+        .replace(/\{username\}/gi, username)
+        .replace(/\{nickname\}/gi, nickname || username)
+        .replace(/\{gift\}/gi, gift)
+        .replace(/\{coins\}/gi, String(coins))
+        .replace(/\{count\}/gi, String(count));
+}
+
 // ENTRADAS/INSTA-WIN POR VALOR (Rey del Trono/Eliminación/Ruleta): pedido
 // explícito — los regalos de un mismo espectador solo se combinan entre sí
 // si llegan separados por GIFT_ACCUMULATE_WINDOW_MS o menos; si pasa más
@@ -881,6 +897,11 @@ class Tenant {
 
         const event = {
             username: data.uniqueId,
+            // Pedido explicito ({nickname} en el texto de las alertas): el
+            // nombre público (puede tener espacios/emojis, distinto del
+            // @usuario) ya lo lee el chat del TTS en otro lado de este mismo
+            // archivo (ver el handler de 'chat' más abajo) -- mismo campo.
+            nickname: data.nickname || data.uniqueId || '',
             avatar: data.profilePictureUrl || '',
             giftName: data.name || '',
             diamondCount: data.diamondCount || 0,
@@ -895,7 +916,10 @@ class Tenant {
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
         this.processGiftExtensible(event);
-        this.processAlertTrigger({ username: event.username, key: event.giftName, repeatCount: event.repeatCount });
+        this.processAlertTrigger({
+            username: event.username, nickname: event.nickname, key: event.giftName,
+            repeatCount: event.repeatCount, giftName: event.giftName, coins: event.totalCoins,
+        });
     }
 
     // ==========================================
@@ -1006,7 +1030,7 @@ class Tenant {
     // handleSocialEvent/handleEmoteEvent mas abajo y NON_GIFT_TRIGGER_TYPES
     // en server.js) -- mismo mapa `alertConfigs`, sin distinguir el tipo,
     // porque un regalo real de TikTok jamas se llama literal "follow".
-    processAlertTrigger({ username, key: triggerKey, repeatCount }) {
+    processAlertTrigger({ username, nickname, key: triggerKey, repeatCount, giftName, coins }) {
         if (!triggerKey) return;
         const alert = this.alertConfigs[triggerKey.toLowerCase()];
         if (!alert) return;
@@ -1015,9 +1039,18 @@ class Tenant {
         const pending = this.pendingAlertCombos[comboKey];
         if (pending) {
             pending.count += units;
+            // Pedido explicito ({coins} en el texto): si el mismo
+            // regalo+persona llega en varios envios separados antes de
+            // asentarse (ver el comentario de arriba), {coins} tiene que
+            // reflejar el TOTAL acumulado, igual que ya hace `count`.
+            pending.coins += coins || 0;
             clearTimeout(pending.timer);
         } else {
-            this.pendingAlertCombos[comboKey] = { alert, count: units, timer: null };
+            this.pendingAlertCombos[comboKey] = {
+                alert, count: units, coins: coins || 0,
+                username: username || '', nickname: nickname || username || '', giftName: giftName || '',
+                timer: null,
+            };
         }
         this.pendingAlertCombos[comboKey].timer = setTimeout(() => this.settleAlertCombo(comboKey), ALERT_COMBO_SETTLE_MS);
     }
@@ -1035,7 +1068,15 @@ class Tenant {
             visualType: pending.alert.visualType,
             visualMuted: pending.alert.visualMuted,
             audioUrl: pending.alert.audioUrl,
-            text: pending.alert.text,
+            // Pedido explicito: tags {username}/{nickname}/{gift}/{coins}/
+            // {count} en el texto de la alerta -- se sustituyen ACÁ, recién
+            // al disparar de verdad (con el total ya asentado del combo),
+            // nunca en el texto guardado en la DB (ese se queda con el
+            // template literal, ver AlertsAdmin.jsx).
+            text: applyAlertTextTemplate(pending.alert.text, {
+                username: pending.username, nickname: pending.nickname,
+                gift: pending.giftName, coins: pending.coins, count: pending.count,
+            }),
             textPosition: pending.alert.textPosition,
             durationMs: pending.alert.durationMs,
             position: pending.alert.position,
@@ -1051,7 +1092,9 @@ class Tenant {
     // 'alert_triggered' que ve el overlay de OBS Y el propio panel del
     // streamer (mismo room, ver attachSocket) -- así el streamer confirma
     // en vivo que la alerta suena/se ve bien sin depender de estar mirando
-    // OBS en ese momento.
+    // OBS en ese momento. No hay un espectador real disparándola, así que
+    // los tags se rellenan con datos de prueba obvios (ver
+    // applyAlertTextTemplate) en vez de dejarlos literales sin reemplazar.
     testFireAlert(alertId) {
         const alert = Object.values(this.alertConfigs).find((a) => a.id === alertId);
         if (!alert) return;
@@ -1061,7 +1104,10 @@ class Tenant {
             visualType: alert.visualType,
             visualMuted: alert.visualMuted,
             audioUrl: alert.audioUrl,
-            text: alert.text,
+            text: applyAlertTextTemplate(alert.text, {
+                username: 'usuario_de_prueba', nickname: 'Usuario de Prueba',
+                gift: alert.giftName || 'Regalo', coins: 100, count: 1,
+            }),
             textPosition: alert.textPosition,
             durationMs: alert.durationMs,
             position: alert.position,
@@ -1110,7 +1156,10 @@ class Tenant {
         if (!data?.uniqueId) return;
         if (String(data.action) !== '1') return; // no es un follow (ej. share -- no soportado, ver el comentario de arriba)
         this.processFollowExtensible();
-        this.processAlertTrigger({ username: data.uniqueId, key: 'follow', repeatCount: 1 });
+        this.processAlertTrigger({
+            username: data.uniqueId, nickname: data.nickname || data.uniqueId, key: 'follow',
+            repeatCount: 1, giftName: '', coins: 0,
+        });
     }
 
     handleEmoteEvent(data) {
@@ -1120,7 +1169,10 @@ class Tenant {
             emote?.emoteType === 2 || emote?.emoteScene === 2 || emote?.rewardCondition === 2
         ));
         if (!isFanClubSticker) return;
-        this.processAlertTrigger({ username: data.uniqueId, key: 'sticker', repeatCount: 1 });
+        this.processAlertTrigger({
+            username: data.uniqueId, nickname: data.nickname || data.uniqueId, key: 'sticker',
+            repeatCount: 1, giftName: '', coins: 0,
+        });
     }
 
     // Reenviamos únicamente los datos necesarios para que el panel decida

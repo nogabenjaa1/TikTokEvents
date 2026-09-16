@@ -92,6 +92,20 @@ const STAGE_SCALE = 0.32;
 // se puede reusar `draftAlert` como dependencia para reiniciar el timer
 // del final del ciclo porque esa MISMA referencia no cambia entre una
 // vuelta y la siguiente.
+// Mismos tags que entiende el backend al disparar de verdad (ver
+// applyAlertTextTemplate en tenant.js) -- acá se sustituyen con datos de
+// EJEMPLO nada más, para que las vistas previas de este panel no muestren
+// las llaves literales mientras se edita/revisa una alerta.
+function applyPreviewTags(text, gift) {
+  if (!text) return text;
+  return text
+    .replace(/\{username\}/gi, 'usuario_de_prueba')
+    .replace(/\{nickname\}/gi, 'Usuario de Prueba')
+    .replace(/\{gift\}/gi, gift || 'Regalo')
+    .replace(/\{coins\}/gi, '100')
+    .replace(/\{count\}/gi, '1');
+}
+
 function LivePreview({ draftAlert, customize }) {
   const [phase, setPhase] = useState('entering');
   const [cycle, setCycle] = useState(0);
@@ -152,6 +166,13 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
   const [visualFile, setVisualFile] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  // Pedido explicito: poder deshacer un archivo elegido por accidente
+  // (antes de guardar) con un botón "✕" -- limpiar solo el estado no
+  // alcanza, un <input type="file"> es un elemento no controlado y sigue
+  // mostrando el nombre del archivo elegido aunque `visualFile`/`audioFile`
+  // vuelvan a null, hace falta resetear el input de verdad con la ref.
+  const visualInputRef = useRef(null);
+  const audioInputRef = useRef(null);
   const [visualMuted, setVisualMuted] = useState(false);
   // "Quitar" explícito de un recurso YA guardado, sin tener que borrar toda
   // la alerta — solo tiene efecto mientras se está editando (ver save()).
@@ -208,10 +229,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     return {
       visualUrl: effectiveVisualUrl, visualType: effectiveVisualType, visualMuted,
       audioUrl: effectiveAudioUrl,
-      text: text.trim(), textPosition,
+      text: applyPreviewTags(text.trim(), triggerType === 'gift' ? selectedGift?.name : ''), textPosition,
       durationMs: Math.round(duration * 1000), position, entranceAnim, exitAnim,
     };
-  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim]);
+  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim, triggerType, selectedGift]);
 
   // Vista previa de una alerta YA GUARDADA (botón "👁️" de la lista de
   // abajo) — a diferencia de la de arriba (en vivo, en bucle, del
@@ -226,7 +247,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const previewSaved = (alert) => {
     clearTimeout(savedPreviewTimer.current);
     setSavedPreviewPhase('entering');
-    setSavedPreview(alert);
+    setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, alert.giftName) });
     const dur = Math.min(MAX_DURATION_S * 1000, Math.max(500, alert.durationMs || 5000));
     const timers = [
       setTimeout(() => setSavedPreviewPhase('visible'), ANIM_DURATION_MS),
@@ -442,13 +463,24 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
             <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video — opcional)</label>
-              {effectiveVisualUrl && !visualFile ? (
+              {visualFile ? (
+                <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
+                  <span className="text-[10px] text-gray-400 truncate">📎 {visualFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setVisualFile(null); if (visualInputRef.current) visualInputRef.current.value = ''; }}
+                    className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
+                    title="Quitar este archivo" aria-label="Quitar archivo elegido"
+                  >✕</button>
+                </div>
+              ) : effectiveVisualUrl ? (
                 <div className="theme-input flex items-center justify-between p-2 mb-2">
                   <span className="text-[10px] text-gray-400">{VISUAL_TYPE_ICON[effectiveVisualType] || '📎'} Ya tiene un archivo guardado</span>
                   <button type="button" onClick={() => setClearVisual(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
                 </div>
               ) : null}
               <input
+                ref={visualInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
                 onChange={(e) => { setVisualFile(e.target.files?.[0] || null); setClearVisual(false); }}
@@ -465,13 +497,24 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
             <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎧 AUDIO (opcional, independiente del visual)</label>
-              {effectiveAudioUrl && !audioFile ? (
+              {audioFile ? (
+                <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
+                  <span className="text-[10px] text-gray-400 truncate">🎧 {audioFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setAudioFile(null); if (audioInputRef.current) audioInputRef.current.value = ''; }}
+                    className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
+                    title="Quitar este archivo" aria-label="Quitar archivo elegido"
+                  >✕</button>
+                </div>
+              ) : effectiveAudioUrl ? (
                 <div className="theme-input flex items-center justify-between p-2 mb-2">
                   <span className="text-[10px] text-gray-400">🎧 Ya tiene un audio guardado</span>
                   <button type="button" onClick={() => setClearAudio(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
                 </div>
               ) : null}
               <input
+                ref={audioInputRef}
                 type="file"
                 accept="audio/mpeg,audio/wav,audio/mp3,audio/ogg"
                 onChange={(e) => { setAudioFile(e.target.files?.[0] || null); setClearAudio(false); }}
@@ -489,9 +532,17 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               </div>
               <textarea
                 value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
-                placeholder="Ej: ¡Gracias por el regalo!"
+                placeholder="Ej: ¡Gracias por el {gift}, {username}!"
                 className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 text-sm resize-none"
               />
+              <p className="text-[10px] text-gray-500 mt-1">
+                Tags disponibles: <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{username}'}</code>{' '}
+                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{nickname}'}</code>{' '}
+                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{gift}'}</code>{' '}
+                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{coins}'}</code>{' '}
+                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{count}'}</code>
+                {' '}— se reemplazan por los datos reales al dispararse (usuario, su nombre público, el regalo, cuántas monedas costó y cuántas veces seguidas lo mandó).
+              </p>
               <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
               {effectiveVisualUrl && (
                 <div className="mt-2">

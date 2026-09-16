@@ -592,15 +592,14 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 /* ==========================================
    MOBILE: barras superiores a sangre completa
    ========================================== */
-/* TikTokLoginBar y el rail de navegación (App.jsx) están pensados como
-   tarjetas/cajas flotantes en desktop — con bordes redondeados eso se ve
-   bien porque flotan sobre espacio libre. En mobile pasan a ocupar el
-   ancho completo apiladas una sobre otra (ver el flex-col del contenedor
-   en App.jsx), y esos mismos bordes redondeados dejan ver triangulitos del
-   fondo en cada esquina, como si las secciones no encajaran entre sí. Se
-   sacan los bordes/márgenes solo en mobile; a partir de md: no se toca
-   nada (Cute sí le da margen y radio propios al sidebar ahí, y eso se
-   mantiene intacto en desktop). */
+/* El rail de navegación (App.jsx) está pensado como una tarjeta/caja
+   flotante en desktop — con bordes redondeados eso se ve bien porque flota
+   sobre espacio libre. En mobile pasa a ocupar el ancho completo (ver el
+   flex-col del contenedor en App.jsx), y esos mismos bordes redondeados
+   dejan ver triangulitos del fondo en cada esquina, como si las secciones
+   no encajaran entre sí. Se sacan los bordes/márgenes solo en mobile; a
+   partir de md: no se toca nada (Cute sí le da margen y radio propios al
+   sidebar ahí, y eso se mantiene intacto en desktop). */
 @media (max-width: 767px) {
   .tkc-mobile-flush {
     border-radius: 0 !important;

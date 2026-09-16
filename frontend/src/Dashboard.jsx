@@ -1,4 +1,5 @@
 import React from 'react';
+import TikTokLoginBar from './TikTokLoginBar';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
@@ -44,7 +45,10 @@ function ShortcutCard({ icon, label, hint, onClick, locked }) {
 // resto queda con el candado 🔒 -- clickearlos igual navega a esa sección,
 // que ya sabe mostrar su propio login embebido (mismo comportamiento que
 // clickear esos botones desde la sidebar).
-export default function Dashboard({ session, connectionStatus, username, anyGameActive, ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab }) {
+export default function Dashboard({
+  session, connectionStatus, username, setUsername, connectionError, usernameLocked, onDisconnectTikTok,
+  anyGameActive, ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab,
+}) {
   const connected = connectionStatus === 'connected';
   const daysLeft = session?.expiresAt
     ? Math.ceil((session.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
@@ -68,12 +72,14 @@ export default function Dashboard({ session, connectionStatus, username, anyGame
           desactivar el TTS desde ahí". */}
       {session && (
         <div className="w-full max-w-4xl grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="theme-surface p-4 flex flex-col gap-1">
+          <div className="theme-surface p-4 flex flex-col gap-2">
             <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Conexión a TikTok</p>
-            <p className="text-sm font-black">
-              {connected ? `🟢 @${username || '—'} en vivo` : username ? '🟡 Conectando...' : '⚪ Sin conectar'}
-            </p>
-            {anyGameActive && <p className="text-[10px] text-amber-500 font-bold mt-1">Hay un juego activo ahora mismo</p>}
+            <TikTokLoginBar
+              username={username} setUsername={setUsername}
+              connectionStatus={connectionStatus} connectionError={connectionError}
+              disabled={usernameLocked} onDisconnect={onDisconnectTikTok}
+            />
+            {anyGameActive && <p className="text-[10px] text-amber-500 font-bold">Hay un juego activo ahora mismo</p>}
           </div>
 
           <div className="theme-surface p-4 flex flex-col gap-2">

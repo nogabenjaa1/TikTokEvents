@@ -10,7 +10,6 @@ import ColorSays from './Colorsays';
 import Downloader from './Downloader';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
 import DiceOverlay from './DiceOverlay';
-import TikTokLoginBar from './TikTokLoginBar';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
 import Membership from './Membership';
@@ -871,23 +870,6 @@ export default function App() {
         </div>
       )}
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
-      {/* Pedido explicito: esta barra solo tiene sentido en TikTokEvents
-          (el unico apartado que de verdad depende de una conexion en vivo)
-          -- en el resto (ColorDice, Tema, Membresia, Overlays, etc.) antes
-          quedaba de adorno pidiendo un usuario que nadie iba a conectar
-          ahi. La conexion en si (username/connectionStatus, mas arriba en
-          este componente) sigue viva igual aunque la barra no este
-          montada -- desmontarla no la corta. */}
-      {sidebarMode === 'events' && (
-        <TikTokLoginBar
-          username={username} setUsername={handleSetUsername}
-          connectionStatus={connectionStatus}
-          connectionError={connectionError}
-          disabled={usernameLocked}
-          onDisconnect={() => handleSetUsername('')}
-        />
-      )}
-
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
       <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
@@ -952,6 +934,8 @@ export default function App() {
         {sidebarMode === 'dashboard' && (
           <Dashboard
             session={session} connectionStatus={connectionStatus} username={username}
+            setUsername={handleSetUsername} connectionError={connectionError}
+            usernameLocked={usernameLocked} onDisconnectTikTok={() => handleSetUsername('')}
             anyGameActive={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
             ttsEnabled={ttsEnabled} ttsLocked={needsAccess('tts')}
             onToggleTts={() => ttsRef.current?.toggleEnabled()}

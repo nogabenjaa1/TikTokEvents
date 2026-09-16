@@ -1,5 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
+
+const DEFAULT_SPOTIFY_SETTINGS = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 };
+function spotifySettingsEqual(a, b) {
+  return a.enabled === b.enabled && a.allUsers === b.allUsers && a.moderators === b.moderators
+    && a.fanMembers === b.fanMembers && a.minFanLevel === b.minFanLevel && a.maxQueueSize === b.maxQueueSize;
+}
 
 // Mismo interruptor visual que TTS/Colorsays (WinBonusToggle) — se duplica
 // en vez de compartirse porque acá no lleva label/descripción propios, se
@@ -99,12 +105,55 @@ export default function Spotify({ socket, queueState, settingsState }) {
   const queue = queueState?.queue || [];
   const nowPlaying = queueState?.nowPlaying || null;
 
-  const settings = settingsState || { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 };
-  const update = (key, value) => socket?.emit('update_spotify_settings', { ...settings, [key]: value });
+  // Bug real reportado (mismo patrón ya arreglado en TtsChat.jsx/App.jsx):
+  // antes `settings` era una lectura directa de `settingsState` (el prop
+  // que App.jsx actualiza con lo que confirma el backend) sin ningún
+  // estado local propio -- cada arrastre del slider de "nivel mínimo" o
+  // "máximo en el overlay" emitía al toque y el valor mostrado en
+  // pantalla dependía 100% de que la confirmación del servidor volviera
+  // a tiempo, así que el slider podía quedarse atrás o saltar hacia atrás
+  // a mitad de un arrastre rápido. Se agrega un espejo local
+  // (`localSettings`) con el mismo debounce + guardia de eco que TTS: solo
+  // se aplica lo que llega de App.jsx si no hay un cambio local más nuevo
+  // todavía sin confirmar.
+  const [localSettings, setLocalSettings] = useState(() => settingsState || DEFAULT_SPOTIFY_SETTINGS);
+  const spotifyEmitTimeoutRef = useRef(null);
+  const lastEmittedSpotifyRef = useRef(null);
 
+  useEffect(() => {
+    if (!settingsState || spotifyEmitTimeoutRef.current) return;
+    setLocalSettings((current) => {
+      const sent = lastEmittedSpotifyRef.current;
+      if (sent && !spotifySettingsEqual(current, sent)) return current;
+      return settingsState;
+    });
+  }, [settingsState]);
+
+  useEffect(() => {
+    if (!socket) return;
+    if (spotifyEmitTimeoutRef.current) clearTimeout(spotifyEmitTimeoutRef.current);
+    spotifyEmitTimeoutRef.current = setTimeout(() => {
+      socket.emit('update_spotify_settings', localSettings);
+      lastEmittedSpotifyRef.current = localSettings;
+      spotifyEmitTimeoutRef.current = null;
+    }, 300);
+    return () => { if (spotifyEmitTimeoutRef.current) clearTimeout(spotifyEmitTimeoutRef.current); };
+  }, [socket, localSettings]);
+
+  const settings = localSettings;
+  const update = (key, value) => setLocalSettings((current) => ({ ...current, [key]: value }));
+
+  // El volumen ya tenía estado local propio (nunca sufrió este bug, no hay
+  // eco que lo pise) -- se le agrega el mismo debounce nada más para no
+  // spamear la API de Spotify con un request por cada tick del arrastre.
+  const volumeEmitTimeoutRef = useRef(null);
   const changeVolume = (value) => {
     setVolume(value);
-    socket?.emit('set_spotify_volume', value);
+    if (volumeEmitTimeoutRef.current) clearTimeout(volumeEmitTimeoutRef.current);
+    volumeEmitTimeoutRef.current = setTimeout(() => {
+      socket?.emit('set_spotify_volume', value);
+      volumeEmitTimeoutRef.current = null;
+    }, 250);
   };
 
   return (

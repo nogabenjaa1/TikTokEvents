@@ -266,6 +266,32 @@ export default function App() {
   const [overlayCustomization, setOverlayCustomizationState] = useState(defaultOverlayCustomizationMap());
   const [panelOverlayDraft, setPanelOverlayDraft] = useState(() => loadOverlayCustomization());
 
+  // Refs con el valor MÁS RECIENTE de tema/personalización -- declaradas
+  // ACÁ (antes del listener de sockets de más abajo, que solo depende de
+  // [socket] y por lo tanto ve una foto vieja de panelThemeStyle/
+  // panelOverlayDraft en su closure) para poder comparar, en el momento
+  // exacto en que llega un eco del backend, "¿esto que emití hace un rato
+  // sigue siendo lo que el streamer tiene ahora, o ya cambió algo más
+  // nuevo mientras tanto?".
+  const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
+  useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor }; }, [panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
+  const panelOverlayDraftRef = useRef(panelOverlayDraft);
+  useEffect(() => { panelOverlayDraftRef.current = panelOverlayDraft; }, [panelOverlayDraft]);
+
+  // Bug real reportado: cambiar rápido varias veces un ajuste del modal de
+  // personalizar overlays (o un swatch de tema) podía "pisarse" con el eco
+  // que el backend reenvía de un cambio anterior (mismo tab incluido, ver
+  // Tenant.broadcast en tenant.js) -- como el efecto que emite depende del
+  // propio estado, ese pisado encima disparaba un reenvío del valor viejo,
+  // dejando el panel trabado en algo distinto de lo último elegido. Mismo
+  // arreglo que TtsChat.jsx: debounce en el emit (ver más abajo) + ignorar
+  // un eco si no coincide con lo último que mandamos (=> hay un cambio
+  // local más nuevo que ese eco todavía no vio).
+  const themeEmitTimeoutRef = useRef(null);
+  const lastEmittedThemeRef = useRef(null);
+  const overlayEmitTimeoutRef = useRef(null);
+  const lastEmittedOverlayRef = useRef(null);
+
   // Premio COMPARTIDO entre Rey del Trono/Zubastinis/Eliminación/Ruleta
   // (título + imagen opcional) — se setea desde cualquiera de los cuatro
   // paneles y se aplica a todos (ver PrizeEditor.jsx/tenant.js). El
@@ -431,6 +457,15 @@ export default function App() {
     // dispositivo (setSkin) para que no haga falta re-elegirlo al entrar
     // desde otro navegador/computadora.
     socket.on('theme_updated', (t) => {
+      // Ver comentario de themeEmitTimeoutRef/lastEmittedThemeRef más
+      // arriba: mientras haya un envío pendiente, o este eco no coincida
+      // con lo último que mandamos, hay un cambio local más nuevo en
+      // camino -- se ignora, el propio debounce va a mandar (y confirmar)
+      // el valor final en un momento.
+      if (themeEmitTimeoutRef.current) return;
+      const sent = lastEmittedThemeRef.current;
+      const current = panelThemeRef.current;
+      if (sent && (sent.style !== current.style || sent.accent !== current.accent || sent.customColor !== current.customColor)) return;
       setOverlayTheme(t);
       if (t?.style) setSkin(t.style, t.accent, t.customColor);
     });
@@ -441,6 +476,10 @@ export default function App() {
     // silencio lo ya guardado con sus propios valores de fábrica apenas se
     // conectara.
     socket.on('overlay_customization_update', (map) => {
+      if (overlayEmitTimeoutRef.current) return;
+      const sent = lastEmittedOverlayRef.current;
+      const current = panelOverlayDraftRef.current;
+      if (sent && JSON.stringify(sent) !== JSON.stringify(current)) return;
       setOverlayCustomizationState(map);
       setPanelOverlayDraft(map);
     });
@@ -514,10 +553,20 @@ export default function App() {
 
   // Emite el skin del panel al backend cada vez que cambia (y una vez al
   // conectar, para sincronizar de entrada) — nunca en modo overlay, que solo
-  // debe RECIBIR el tema, jamás pisarlo con el suyo propio.
+  // debe RECIBIR el tema, jamás pisarlo con el suyo propio. Debounce a
+  // propósito (ver comentario de themeEmitTimeoutRef más arriba): colapsa
+  // una racha de clicks/cambios en un solo envío con el valor final, en
+  // vez de uno por cambio.
   useEffect(() => {
     if (overlayMode || !socket) return;
-    socket.emit('set_theme', { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
+    if (themeEmitTimeoutRef.current) clearTimeout(themeEmitTimeoutRef.current);
+    themeEmitTimeoutRef.current = setTimeout(() => {
+      const payload = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor };
+      socket.emit('set_theme', payload);
+      lastEmittedThemeRef.current = payload;
+      themeEmitTimeoutRef.current = null;
+    }, 300);
+    return () => { if (themeEmitTimeoutRef.current) clearTimeout(themeEmitTimeoutRef.current); };
   }, [socket, overlayMode, panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
 
   // Mismo criterio que el efecto de arriba, para la personalización de
@@ -530,7 +579,13 @@ export default function App() {
 
   useEffect(() => {
     if (overlayMode || !socket) return;
-    socket.emit('set_overlay_customization', panelOverlayDraft);
+    if (overlayEmitTimeoutRef.current) clearTimeout(overlayEmitTimeoutRef.current);
+    overlayEmitTimeoutRef.current = setTimeout(() => {
+      socket.emit('set_overlay_customization', panelOverlayDraft);
+      lastEmittedOverlayRef.current = panelOverlayDraft;
+      overlayEmitTimeoutRef.current = null;
+    }, 300);
+    return () => { if (overlayEmitTimeoutRef.current) clearTimeout(overlayEmitTimeoutRef.current); };
   }, [socket, overlayMode, panelOverlayDraft]);
 
   // Re-sincroniza tema + personalización de overlays cada vez que el socket
@@ -542,14 +597,10 @@ export default function App() {
   // vuelva a tocar CUALQUIER control — el socket.io-client reconecta solo
   // (comportamiento por defecto) pero, al ser el MISMO objeto socket, los
   // efectos de arriba (dependientes de panelThemeStyle/panelOverlayDraft)
-  // no se vuelven a disparar si el streamer no cambió nada. Usamos refs
-  // para mandar siempre el valor más reciente, sin importar cuándo llegue
-  // el evento 'connect'.
-  const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
-  useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor }; }, [panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
-  const panelOverlayDraftRef = useRef(panelOverlayDraft);
-  useEffect(() => { panelOverlayDraftRef.current = panelOverlayDraft; }, [panelOverlayDraft]);
-
+  // no se vuelven a disparar si el streamer no cambió nada. Usamos los
+  // refs declarados arriba (panelThemeRef/panelOverlayDraftRef) para
+  // mandar siempre el valor más reciente, sin importar cuándo llegue el
+  // evento 'connect'.
   useEffect(() => {
     if (overlayMode || !socket) return;
     const resync = () => {

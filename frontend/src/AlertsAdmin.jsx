@@ -21,16 +21,26 @@ const TEXT_POSITIONS = [
   { id: 'beside', label: 'Al lado del recurso' },
 ];
 
-// Mismos 4 valores que VALID_TRIGGER_TYPES en server.js. 'gift' pide elegir
-// un regalo de la lista (como siempre); los otros 3 no -- disparan solo
+// Mismos valores que VALID_TRIGGER_TYPES en server.js. 'gift' pide elegir
+// un regalo de la lista (como siempre); 'follow'/'sticker' disparan solo
 // con la clave fija que ya conoce el backend (ver processAlertTrigger en
-// tenant.js).
+// tenant.js). 'gift_global' es distinto a los otros tres -- pedido
+// explícito ("alertas globales y alertas específicas, no deben pisarse
+// entre sí"): en vez de un regalo o una clave fija, pide un mínimo de
+// monedas, y puede haber VARIAS (una por cada mínimo distinto) -- se
+// dispara con cualquier regalo SIN alerta específica propia que alcance
+// ese mínimo (el de mayor mínimo que el regalo alcance, si hay más de
+// una). Nunca compite con una alerta específica: el backend solo la
+// busca cuando el regalo no tiene la suya propia (ver
+// findGlobalAlertForCoins en tenant.js).
 const TRIGGER_TYPES = [
-  { id: 'gift', label: 'Regalo', icon: '🎁' },
+  { id: 'gift', label: 'Regalo específico', icon: '🎁' },
+  { id: 'gift_global', label: 'Alerta general (por monedas)', icon: '🌐' },
   { id: 'follow', label: 'Seguimiento', icon: '👣' },
   { id: 'sticker', label: 'Sticker de club de fans', icon: '🎫' },
 ];
 const TRIGGER_LABELS = Object.fromEntries(TRIGGER_TYPES.map((t) => [t.id, t.label]));
+const MIN_COINS_CAP = 999999; // mismo tope que MIN_COINS_CAP en server.js
 
 // Mismas listas que ENTRANCE_ANIMS/EXIT_ANIMS en server.js — 'bounce' es
 // exclusivo de entrada (ver comentario ahí). 'none' = sin animación,
@@ -96,14 +106,26 @@ const STAGE_SCALE = 0.32;
 // applyAlertTextTemplate en tenant.js) -- acá se sustituyen con datos de
 // EJEMPLO nada más, para que las vistas previas de este panel no muestren
 // las llaves literales mientras se edita/revisa una alerta.
-function applyPreviewTags(text, gift) {
+function applyPreviewTags(text, gift, coins = '100') {
   if (!text) return text;
   return text
     .replace(/\{username\}/gi, 'usuario_de_prueba')
     .replace(/\{nickname\}/gi, 'Usuario de Prueba')
     .replace(/\{gift\}/gi, gift || 'Regalo')
-    .replace(/\{coins\}/gi, '100')
+    .replace(/\{coins\}/gi, String(coins))
     .replace(/\{count\}/gi, '1');
+}
+
+// Nombre para mostrar en la lista de abajo -- una alerta general no tiene
+// un regalo fijo (su `giftName` real es la clave interna "global:100", no
+// algo presentable), así que se arma un texto propio con su mínimo.
+function alertDisplayName(alert) {
+  if (alert.triggerType === 'gift_global') {
+    const n = alert.minCoins ?? 0;
+    return `🌐 Alerta general · desde ${n} moneda${n === 1 ? '' : 's'}`;
+  }
+  if (alert.triggerType && alert.triggerType !== 'gift') return TRIGGER_LABELS[alert.triggerType] || alert.giftName;
+  return alert.giftName;
 }
 
 function LivePreview({ draftAlert, customize }) {
@@ -139,6 +161,36 @@ function LivePreview({ draftAlert, customize }) {
   );
 }
 
+// Una fila de la lista de "Alertas configuradas" — misma pinta para
+// específicas y generales, solo cambia qué texto arma alertDisplayName.
+function AlertRow({ alert, testFire, previewSaved, startEdit, remove }) {
+  return (
+    <div className="theme-input flex items-center gap-3 px-3 py-2">
+      <span className="text-lg flex-shrink-0 flex items-center gap-0.5">
+        {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
+        {alert.audioUrl && '🎧'}
+        {alert.text && '💬'}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-white truncate">{alertDisplayName(alert)}</p>
+        <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
+      </div>
+      <button onClick={() => testFire(alert.id)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Probar (dispara la alerta real)">
+        🔥
+      </button>
+      <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">
+        👁️
+      </button>
+      <button onClick={() => startEdit(alert)} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex-shrink-0" title="Editar">
+        ✏️
+      </button>
+      <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline flex-shrink-0">
+        Borrar
+      </button>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 // ALERTAS — panel de administración
 // Cada disparador (un regalo puntual, seguimiento, o sticker
@@ -162,6 +214,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [loading, setLoading] = useState(true);
   const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
+  const [minCoins, setMinCoins] = useState('');
   const [isDropOpen, setIsDropOpen] = useState(false);
 
   const [visualFile, setVisualFile] = useState(null);
@@ -229,10 +282,15 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     return {
       visualUrl: effectiveVisualUrl, visualType: effectiveVisualType, visualMuted,
       audioUrl: effectiveAudioUrl,
-      text: applyPreviewTags(text.trim(), triggerType === 'gift' ? selectedGift?.name : ''), textPosition,
+      text: applyPreviewTags(
+        text.trim(),
+        triggerType === 'gift' ? selectedGift?.name : '',
+        triggerType === 'gift_global' && minCoins ? minCoins : '100',
+      ),
+      textPosition,
       durationMs: Math.round(duration * 1000), position, entranceAnim, exitAnim,
     };
-  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim, triggerType, selectedGift]);
+  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim, triggerType, selectedGift, minCoins]);
 
   // Vista previa de una alerta YA GUARDADA (botón "👁️" de la lista de
   // abajo) — a diferencia de la de arriba (en vivo, en bucle, del
@@ -247,7 +305,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const previewSaved = (alert) => {
     clearTimeout(savedPreviewTimer.current);
     setSavedPreviewPhase('entering');
-    setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, alert.giftName) });
+    const isGlobal = alert.triggerType === 'gift_global';
+    setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, isGlobal ? '' : alert.giftName, isGlobal ? (alert.minCoins ?? 100) : '100') });
     const dur = Math.min(MAX_DURATION_S * 1000, Math.max(500, alert.durationMs || 5000));
     const timers = [
       setTimeout(() => setSavedPreviewPhase('visible'), ANIM_DURATION_MS),
@@ -277,6 +336,14 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
   useEffect(() => { fetchAlerts(); }, []);
 
+  // Separadas para la lista de abajo (pedido explícito: "alertas globales y
+  // alertas específicas" como dos categorías) — las generales ordenadas por
+  // mínimo ascendente, para que se lea como una escalera de niveles.
+  const specificAlerts = useMemo(() => alerts.filter((a) => a.triggerType !== 'gift_global'), [alerts]);
+  const globalAlerts = useMemo(() => (
+    alerts.filter((a) => a.triggerType === 'gift_global').sort((a, b) => (a.minCoins ?? 0) - (b.minCoins ?? 0))
+  ), [alerts]);
+
   const alertForTrigger = (triggerKey) => alerts.find((a) => a.giftName.toLowerCase() === triggerKey.toLowerCase());
 
   // Pedido explícito: después de guardar (nueva alerta o edición), el
@@ -287,6 +354,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setEditingExisting(null);
     setTriggerType('gift');
     setSelectedGift(null);
+    setMinCoins('');
     setVisualFile(null);
     setAudioFile(null);
     setVisualMuted(false);
@@ -311,6 +379,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     } else {
       setSelectedGift(null);
     }
+    setMinCoins(alert.triggerType === 'gift_global' && alert.minCoins != null ? String(alert.minCoins) : '');
     setVisualFile(null);
     setAudioFile(null);
     setVisualMuted(!!alert.visualMuted);
@@ -327,6 +396,12 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
   const save = async () => {
     if (triggerType === 'gift' && !selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
+    if (triggerType === 'gift_global') {
+      const n = Number(minCoins);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > MIN_COINS_CAP) {
+        return setError(`Ingresa un mínimo de monedas válido (entre 1 y ${MIN_COINS_CAP}).`);
+      }
+    }
     if (!effectiveVisualUrl && !effectiveAudioUrl && !text.trim()) {
       return setError('Agrega al menos un recurso visual, un audio o un texto.');
     }
@@ -342,6 +417,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       form.append('visualMuted', String(visualMuted));
       form.append('triggerType', triggerType);
       if (triggerType === 'gift') form.append('giftName', selectedGift.name);
+      if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
       form.append('durationMs', String(Math.round(duration * 1000)));
@@ -382,6 +458,17 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     return found && found.id !== editingId ? found : null;
   };
 
+  // Mismo chequeo que conflictForTrigger, pero para alertas generales: no
+  // hay una clave fija por tipo (puede haber varias 'gift_global', una por
+  // cada mínimo), así que el conflicto es por MISMO mínimo, no por
+  // triggerType — dos alertas generales con el mismo número de monedas no
+  // tendrían forma de distinguirse cuál dispara.
+  const conflictForMinCoins = (n) => {
+    if (!Number.isFinite(n)) return null;
+    const found = alerts.find((a) => a.triggerType === 'gift_global' && Number(a.minCoins) === n);
+    return found && found.id !== editingId ? found : null;
+  };
+
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔔 Alertas</p>
@@ -409,16 +496,37 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <div className="flex gap-2 flex-wrap">
             {TRIGGER_TYPES.map((t) => (
               <button key={t.id} type="button"
-                onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); }}
+                onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'gift_global') setMinCoins(''); }}
                 className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {t.icon} {t.label}
               </button>
             ))}
           </div>
-          {triggerType !== 'gift' && conflictForTrigger(triggerType) && (
+          {triggerType === 'gift_global' && (
+            <p className="text-[10px] text-gray-500 mt-2">
+              Se dispara con cualquier regalo que NO tenga su propia alerta específica y cuyo valor en monedas alcance el mínimo de abajo. Nunca compite con una alerta específica: si el regalo tiene la suya, esa gana siempre.
+            </p>
+          )}
+          {triggerType !== 'gift' && triggerType !== 'gift_global' && conflictForTrigger(triggerType) && (
             <p className="text-[10px] text-amber-500 mt-2">Ya existe una alerta para "{TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.</p>
           )}
         </div>
+
+        {triggerType === 'gift_global' && (
+          <div className="mb-4">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🪙 MÍNIMO DE MONEDAS</label>
+            <input
+              type="number" min="1" max={MIN_COINS_CAP} step="1"
+              value={minCoins}
+              onChange={(e) => setMinCoins(e.target.value)}
+              placeholder="Ej: 1"
+              className="theme-input w-full p-3 outline-none text-sm text-white"
+            />
+            {minCoins !== '' && conflictForMinCoins(Number(minCoins)) && (
+              <p className="text-[10px] text-amber-500 mt-2">Ya existe una alerta general para {minCoins} monedas — bórrala o elige otro mínimo antes de guardar.</p>
+            )}
+          </div>
+        )}
 
         {triggerType === 'gift' && giftsList.length === 0 ? (
           <p className="text-[11px] text-gray-500 leading-snug">
@@ -632,39 +740,34 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       </div>
 
       <div className="theme-surface w-full max-w-md p-6">
-        <h2 className="theme-heading text-lg font-semibold mb-4">Alertas configuradas</h2>
+        <h2 className="theme-heading text-lg font-semibold mb-1">Alertas específicas</h2>
+        <p className="text-[10px] text-gray-500 mb-4">Un regalo, seguimiento o sticker puntual — siempre tienen prioridad sobre las generales de abajo.</p>
         {loading ? (
           <p className="text-gray-500 text-sm italic">Cargando...</p>
-        ) : alerts.length > 0 ? (
+        ) : specificAlerts.length > 0 ? (
           <div className="flex flex-col gap-2">
-            {alerts.map((alert) => (
-              <div key={alert.id} className="theme-input flex items-center gap-3 px-3 py-2">
-                <span className="text-lg flex-shrink-0 flex items-center gap-0.5">
-                  {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
-                  {alert.audioUrl && '🎧'}
-                  {alert.text && '💬'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{alert.triggerType && alert.triggerType !== 'gift' ? TRIGGER_LABELS[alert.triggerType] || alert.giftName : alert.giftName}</p>
-                  <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
-                </div>
-                <button onClick={() => testFire(alert.id)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Probar (dispara la alerta real)">
-                  🔥
-                </button>
-                <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">
-                  👁️
-                </button>
-                <button onClick={() => startEdit(alert)} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex-shrink-0" title="Editar">
-                  ✏️
-                </button>
-                <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline flex-shrink-0">
-                  Borrar
-                </button>
-              </div>
+            {specificAlerts.map((alert) => (
+              <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
             ))}
           </div>
         ) : (
-          <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta.</p>
+          <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta específica.</p>
+        )}
+      </div>
+
+      <div className="theme-surface w-full max-w-md p-6">
+        <h2 className="theme-heading text-lg font-semibold mb-1">Alertas generales</h2>
+        <p className="text-[10px] text-gray-500 mb-4">Se disparan solo si el regalo no tiene una alerta específica asignada — la de mayor mínimo que el regalo alcance.</p>
+        {loading ? (
+          <p className="text-gray-500 text-sm italic">Cargando...</p>
+        ) : globalAlerts.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {globalAlerts.map((alert) => (
+              <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta general.</p>
         )}
       </div>
 

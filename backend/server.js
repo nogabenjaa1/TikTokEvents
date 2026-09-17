@@ -736,10 +736,19 @@ app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req
 // misma clave fija para esos casos (ver el comentario de la tabla en
 // db.js). 'gift' usa el nombre real del regalo elegido en el panel.
 const NON_GIFT_TRIGGER_TYPES = ['follow', 'sticker'];
-const VALID_TRIGGER_TYPES = ['gift', ...NON_GIFT_TRIGGER_TYPES];
+// 'gift_global' (pedido explícito: "alertas globales" además de las
+// específicas de siempre) no tiene un regalo fijo -- se dispara con
+// cualquier regalo SIN alerta específica propia que alcance el mínimo de
+// monedas configurado (`minCoins`, ver más abajo y findGlobalAlertForCoins
+// en tenant.js). A diferencia de 'follow'/'sticker' (una sola alerta
+// posible, clave fija), puede haber VARIAS alertas 'gift_global' -- una
+// por cada mínimo distinto que el streamer quiera -- así que no entra en
+// NON_GIFT_TRIGGER_TYPES (esa lista asume una clave fija por tipo).
+const VALID_TRIGGER_TYPES = ['gift', 'gift_global', ...NON_GIFT_TRIGGER_TYPES];
 // Mismas etiquetas que TRIGGER_LABELS en AlertsAdmin.jsx — solo para el
 // mensaje de conflicto de disparador de abajo.
-const TRIGGER_LABEL_ES = { follow: 'Seguimiento', sticker: 'Sticker de club de fans' };
+const TRIGGER_LABEL_ES = { follow: 'Seguimiento', sticker: 'Sticker de club de fans', gift_global: 'Alerta general' };
+const MIN_COINS_CAP = 999999;
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
 // de golpe"; 'bounce' es exclusivo de entrada (no tiene mucho sentido
@@ -758,6 +767,7 @@ function serializeAlert(row) {
         durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
+        minCoins: row.min_coins != null ? Number(row.min_coins) : null,
     };
 }
 
@@ -787,15 +797,24 @@ app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
 app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, async (req, res) => {
     const { giftName, durationMs, position, entranceAnim, exitAnim, text, alertId } = req.body || {};
     const triggerType = VALID_TRIGGER_TYPES.includes(req.body?.triggerType) ? req.body.triggerType : 'gift';
-    // Para 'gift' la clave es el nombre real elegido en el panel; los demas
-    // disparadores usan su propio nombre fijo como clave (nunca chocan con
-    // un regalo real de TikTok, que jamas se llamaria literal "follow").
+    // Para 'gift' la clave es el nombre real elegido en el panel; 'follow'/
+    // 'sticker' usan su propio nombre fijo (nunca chocan con un regalo real
+    // de TikTok, que jamas se llamaria literal "follow"); 'gift_global' usa
+    // el mínimo de monedas (puede haber varias, una por cada mínimo
+    // distinto, a diferencia de los otros dos que solo admiten una).
     let triggerKey;
+    let minCoins = null;
     if (triggerType === 'gift') {
         if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
             return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
         }
         triggerKey = giftName.trim();
+    } else if (triggerType === 'gift_global') {
+        minCoins = Math.trunc(Number(req.body?.minCoins));
+        if (!Number.isFinite(minCoins) || minCoins < 1 || minCoins > MIN_COINS_CAP) {
+            return res.status(400).json({ success: false, error: `El mínimo de monedas debe ser un número entre 1 y ${MIN_COINS_CAP}` });
+        }
+        triggerKey = `global:${minCoins}`;
     } else {
         triggerKey = triggerType;
     }
@@ -837,7 +856,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         // resolverlo a mano primero (borrar esa otra, o elegir otro
         // disparador).
         if (occupyingRow && (!isEditing || occupyingRow.id !== editingRow.id)) {
-            return res.status(409).json({ success: false, error: `Ya existe una alerta para "${triggerType === 'gift' ? triggerKey : TRIGGER_LABEL_ES[triggerType] || triggerKey}" — bórrala primero o elige otro disparador.` });
+            const conflictLabel = triggerType === 'gift' ? triggerKey
+                : triggerType === 'gift_global' ? `general de ${minCoins} monedas`
+                : TRIGGER_LABEL_ES[triggerType] || triggerKey;
+            const conflictNoun = triggerType === 'gift_global' ? 'mínimo' : 'disparador';
+            return res.status(409).json({ success: false, error: `Ya existe una alerta para "${conflictLabel}" — bórrala primero o elige otro ${conflictNoun}.` });
         }
 
         // De qué fila se heredan los recursos no tocados: la que se está
@@ -897,7 +920,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             audioUrl, audioPath,
             text: cleanText, textPosition: finalTextPosition,
             durationMs: finalDuration, position: finalPosition,
-            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType,
+            entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType, minCoins,
         });
         // Mantiene al día el cache en memoria que usa processAlertTrigger —
         // sin esto, la alerta recién guardada no dispararía hasta el

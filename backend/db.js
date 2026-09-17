@@ -231,6 +231,17 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS audio_path TEXT`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS alert_text TEXT`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS text_position TEXT NOT NULL DEFAULT 'below'`))
+  // Alertas GENERALES (pedido explícito: "alertas globales" además de las
+  // específicas de siempre) -- trigger_type = 'gift_global', sin regalo
+  // fijo: se disparan con CUALQUIER regalo que no tenga su propia alerta
+  // específica y cuyo valor en monedas alcance este mínimo (ver
+  // findGlobalAlertForCoins en tenant.js). NULL para toda fila que no sea
+  // de este tipo. `gift_name` sigue guardando la clave única de la fila
+  // (acá, `global:<minCoins>`, ver server.js) -- eso es lo que habilita
+  // reusar el mismo UNIQUE(license_id, gift_name) para no permitir dos
+  // alertas generales con el mismo mínimo, mismo criterio que ya evita dos
+  // alertas para el mismo regalo.
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS min_coins INTEGER`))
   // Backfill de una sola vez: una alerta vieja (guardada antes de que
   // existieran visual_*/audio_*) tenia su unico archivo en media_type/
   // media_url/media_path -- 'audio' va a audio_*, cualquier otro tipo
@@ -481,12 +492,12 @@ async function upsertAlertConfig({
     visualUrl, visualPath, visualType, visualMuted,
     audioUrl, audioPath,
     text, textPosition,
-    durationMs, position, entranceAnim, exitAnim, triggerType,
+    durationMs, position, entranceAnim, exitAnim, triggerType, minCoins = null,
 }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, duration_ms, position, entrance_anim, exit_anim, trigger_type, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             visual_url = EXCLUDED.visual_url,
@@ -502,13 +513,15 @@ async function upsertAlertConfig({
             entrance_anim = EXCLUDED.entrance_anim,
             exit_anim = EXCLUDED.exit_anim,
             trigger_type = EXCLUDED.trigger_type,
+            min_coins = EXCLUDED.min_coins,
             created_at = EXCLUDED.created_at
     `, [
         id, licenseId, giftName,
         visualUrl || null, visualPath || null, visualType || null, !!visualMuted,
         audioUrl || null, audioPath || null,
         text || null, textPosition || 'below',
-        durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', Date.now(),
+        durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', minCoins,
+        Date.now(),
     ]);
     return getAlertConfig(id);
 }

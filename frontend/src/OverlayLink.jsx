@@ -177,12 +177,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx — el
-          botón de refresco YA NO vive acá (ver más abajo): sea cual sea su
-          ancho, un botón pegado al borde derecho de ESTA fila cae en el
-          mismo rincón superior donde flota la barra/botón "Off" de TikTok
-          (fixed top-4 right-4, ver TikTokLoginBar.jsx) en ciertos anchos de
-          pantalla. Bajarlo a su propia franja, fuera de esta banda
-          superior, saca el choque de encima desde este lado. */}
+          botón de refresco YA NO vive acá (ver más abajo), en su propia
+          franja aparte. */}
       <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
         {OVERLAY_TABS.map((t) => (
           <button

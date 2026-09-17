@@ -945,6 +945,7 @@ class Tenant {
         this.processAlertTrigger({
             username: event.username, nickname: event.nickname, key: event.giftName,
             repeatCount: event.repeatCount, giftName: event.giftName, coins: event.totalCoins,
+            allowGlobalFallback: true,
         });
     }
 
@@ -1027,6 +1028,7 @@ class Tenant {
                     text: row.alert_text || '', textPosition: row.text_position || 'below',
                     durationMs: row.duration_ms, position: row.position,
                     entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
+                    minCoins: row.min_coins != null ? Number(row.min_coins) : null,
                 };
             });
         } catch (err) {
@@ -1057,9 +1059,18 @@ class Tenant {
     // handleSocialEvent/handleEmoteEvent mas abajo y NON_GIFT_TRIGGER_TYPES
     // en server.js) -- mismo mapa `alertConfigs`, sin distinguir el tipo,
     // porque un regalo real de TikTok jamas se llama literal "follow".
-    processAlertTrigger({ username, nickname, key: triggerKey, repeatCount, giftName, coins }) {
+    // `allowGlobalFallback` (pedido explícito: "alertas globales" además de
+    // las específicas) -- solo tiene sentido para regalos de verdad (nunca
+    // para 'follow'/'sticker', que no mueven monedas): si NO hay una alerta
+    // específica para este triggerKey, busca la alerta general de mayor
+    // mínimo que el regalo todavía alcance (ver findGlobalAlertForCoins).
+    // Las dos categorías nunca se pisan entre sí -- una alerta específica
+    // encontrada acá arriba corta la búsqueda antes de siquiera mirar las
+    // generales.
+    processAlertTrigger({ username, nickname, key: triggerKey, repeatCount, giftName, coins, allowGlobalFallback = false }) {
         if (!triggerKey) return;
-        const alert = this.alertConfigs[triggerKey.toLowerCase()];
+        let alert = this.alertConfigs[triggerKey.toLowerCase()];
+        if (!alert && allowGlobalFallback) alert = this.findGlobalAlertForCoins(coins);
         if (!alert) return;
         const comboKey = `${username || ''}:${triggerKey.toLowerCase()}`;
         const units = Math.max(1, repeatCount || 1);
@@ -1080,6 +1091,25 @@ class Tenant {
             };
         }
         this.pendingAlertCombos[comboKey].timer = setTimeout(() => this.settleAlertCombo(comboKey), ALERT_COMBO_SETTLE_MS);
+    }
+
+    // Alerta GENERAL de mayor mínimo que el regalo todavía alcance (pedido
+    // explícito: varias alertas globales por nivel, ej. una desde 1 moneda
+    // y otra separada desde 500) -- `minCoins` solo existe en las filas
+    // 'gift_global' (ver loadAlertConfigs/setAlertConfig), así que filtrar
+    // por `minCoins != null` alcanza para no confundirlas con alertas
+    // específicas o de follow/sticker. Se elige la de mínimo MÁS ALTO entre
+    // las que el regalo alcanza (no la primera que matchee) para que un
+    // regalo caro dispare su propio nivel "premium" en vez del genérico más
+    // bajo si el streamer configuró varios escalones.
+    findGlobalAlertForCoins(coins) {
+        const value = Number(coins) || 0;
+        let best = null;
+        for (const alert of Object.values(this.alertConfigs)) {
+            if (alert.minCoins == null || value < alert.minCoins) continue;
+            if (!best || alert.minCoins > best.minCoins) best = alert;
+        }
+        return best;
     }
 
     // El combo terminó (silencio de ALERT_COMBO_SETTLE_MS): recién acá se
@@ -1125,6 +1155,12 @@ class Tenant {
     testFireAlert(alertId) {
         const alert = Object.values(this.alertConfigs).find((a) => a.id === alertId);
         if (!alert) return;
+        // Una alerta general no tiene un regalo fijo -- `giftName` acá es la
+        // clave interna ("global:100"), no algo presentable, así que la
+        // prueba usa un nombre de regalo genérico y una cantidad de monedas
+        // que respete su propio mínimo (en vez del fijo 100 de siempre, que
+        // podría quedar por debajo del mínimo configurado y confundir).
+        const isGlobal = alert.minCoins != null;
         this.broadcast.emit('alert_triggered', {
             triggerId: ++this.alertTriggerCounter,
             visualUrl: alert.visualUrl,
@@ -1133,7 +1169,8 @@ class Tenant {
             audioUrl: alert.audioUrl,
             text: applyAlertTextTemplate(alert.text, {
                 username: 'usuario_de_prueba', nickname: 'Usuario de Prueba',
-                gift: alert.giftName || 'Regalo', coins: 100, count: 1,
+                gift: isGlobal ? 'Regalo' : (alert.giftName || 'Regalo'),
+                coins: isGlobal ? Math.max(100, alert.minCoins) : 100, count: 1,
             }),
             textPosition: alert.textPosition,
             durationMs: alert.durationMs,

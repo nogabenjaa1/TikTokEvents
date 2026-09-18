@@ -334,13 +334,21 @@ export default function Membership({ session, onSessionUpdate }) {
 
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">💳 Membresía</p>
+      <div className="w-full max-w-2xl flex flex-col gap-1">
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">💳 Membresía</p>
+        <h1 className="theme-heading text-2xl font-black">{session ? 'Tu plan y tus pagos' : 'Elige cómo empezar'}</h1>
+        <p className="text-xs text-gray-500">
+          {session
+            ? 'Revisa tu plan actual, mejóralo o renuévalo cuando quieras.'
+            : 'Prueba gratis 7 días o elige un plan. Tu clave es tu única credencial: guárdala en un lugar seguro.'}
+        </p>
+      </div>
 
       {/* Mismo tratamiento que los avisos de Login.jsx (fondo teñido + borde
           fino parejo, no una franja lateral) — un solo lenguaje de "aviso"
           en toda la app en vez de introducir un segundo estilo de alerta. */}
       {banner && (
-        <div className={['w-full max-w-2xl rounded-lg px-4 py-3 text-xs font-bold border',
+        <div role={banner === 'failure' ? 'alert' : 'status'} className={['w-full max-w-2xl rounded-lg px-4 py-3 text-xs font-bold border',
           banner === 'success' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600'
             : banner === 'pending' ? 'bg-amber-500/10 border-amber-500/40 text-amber-600'
             : 'bg-red-500/10 border-red-500/40 text-red-700'].join(' ')}>
@@ -397,7 +405,7 @@ export default function Membership({ session, onSessionUpdate }) {
             className="theme-btn-primary px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
             {loginLoading ? 'Verificando...' : 'Entrar'}
           </button>
-          {loginError && <p className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
+          {loginError && <p role="alert" className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
         </form>
       )}
 
@@ -412,7 +420,7 @@ export default function Membership({ session, onSessionUpdate }) {
         <div className="theme-surface w-full max-w-2xl p-6 flex flex-col gap-4">
           {trialResult ? (
             <div className="flex flex-col gap-3">
-              <p className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave</p>
+              <p role="status" className="theme-label text-xs uppercase tracking-widest font-semibold">⚠️ Guarda tu clave ahora</p>
               <p className="text-[11px] text-gray-500">
                 Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
                 plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
@@ -445,7 +453,7 @@ export default function Membership({ session, onSessionUpdate }) {
                     aliasError ? 'ring-2 ring-red-500/30' : ''].join(' ')}
                 />
                 {aliasError ? (
-                  <p className="text-[10px] font-bold text-red-500 mt-1">{aliasError}</p>
+                  <p role="alert" className="text-[10px] font-bold text-red-500 mt-1">{aliasError}</p>
                 ) : (
                   <p className="text-[9px] text-gray-500 mt-1">Lo usas tanto para la prueba gratis como para comprar un plan — va incluido en tu clave (alias-plan-hash).</p>
                 )}
@@ -461,7 +469,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 <div className="flex flex-col gap-3">
                   <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
                   <p className="text-[11px] text-gray-500">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
-                  {trialError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
+                  {trialError && <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
                   <button
                     type="button"
                     onClick={submitTrial}

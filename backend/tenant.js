@@ -2609,7 +2609,15 @@ class Tenant {
 
         // ── VERIFICACIÓN DE USUARIO LIVE (independiente de cualquier módulo) ──
         socket.on('set_desired_username', (uname) => {
-            this.desiredUsername = uname && uname.trim() ? uname.trim().replace(/^@+/, '') : null;
+            const nextDesiredUsername = uname && uname.trim() ? uname.trim().replace(/^@+/, '') : null;
+            // Un reintento ya agendado (ver scheduleReconnect) capturó el
+            // username VIEJO en su closure y no vuelve a chequear
+            // `desiredUsername` antes de disparar — sin cortarlo acá,
+            // seguía reconectándose solo al username abandonado para
+            // siempre (bug real: logs de "Intentando conectar" sin fin
+            // tras limpiar el campo).
+            if (this.retryTimeout) { clearTimeout(this.retryTimeout); this.retryTimeout = null; }
+            this.desiredUsername = nextDesiredUsername;
             if (this.desiredUsername) {
                 this.ensureTikTokConnection(this.desiredUsername).catch(() => {});
             } else {

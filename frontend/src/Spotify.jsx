@@ -185,10 +185,11 @@ export default function Spotify({ socket, queueState, settingsState }) {
         <div className="flex items-center gap-3 mb-4">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">CONEXIÓN</h1>
-          {!loading && (
-            <span className={`ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${connected ? 'text-green-300 border-green-500/40 bg-green-500/10' : 'border-gray-600/50 text-gray-400'}`}>
-              {connected ? '● Conectado' : 'Sin conectar'}
-            </span>
+          {!loading && connected && (
+            <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border text-green-300 border-green-500/40 bg-green-500/10">● Conectado</span>
+          )}
+          {!loading && !connected && (
+            <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">Sin conectar</span>
           )}
         </div>
 

@@ -34,12 +34,23 @@ import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCusto
 const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard',   icon: '🏠' },
   { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
-  { id: 'events',  label: 'TikTokEvents', icon: '🎉' },
+  { id: 'events',  label: 'Eventos',      icon: '🎉' },
   { id: 'color',   label: 'ColorDice',    icon: '🎲' },
   { id: 'downloader', label: 'Downloader', icon: '⬇️' },
   { id: 'theme',   label: 'Tema',         icon: '🎨' },
   { id: 'membership', label: 'Membresía', icon: '💳' },
 ];
+
+// Primer id de cada grupo de EVENT_TABS (juegos | contadores y metas |
+// interacción con el chat, mismo orden que el Dashboard) -- delante de cada
+// uno va un separador fino en la subnavegación.
+const EVENT_TAB_GROUP_STARTS = ['extensible', 'spotify'];
+
+// Botón del rail principal (pedido explícito: navegación profesional). En
+// mobile es una pastilla algo más ancha que alta para que entre el nombre
+// completo sin apretarse con el vecino; en desktop, un cuadro de ancho fijo.
+const NAV_BTN = 'theme-nav-btn min-w-[64px] md:w-[68px] h-[52px] px-2 md:px-1 rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]';
+const NAV_LABEL = 'text-[9px] font-bold uppercase tracking-wide text-center leading-tight whitespace-nowrap';
 
 // Pestañas dentro de la sección "TikTokEvents" — cada una es uno de los
 // módulos que ya existían como botón de primer nivel.
@@ -401,6 +412,14 @@ export default function App() {
     if (section === 'events' && tab) setEventsTab(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayMode, location.pathname]);
+
+  // La subnavegación de eventos se desplaza en pantallas angostas: al
+  // cambiar de pestaña (o llegar por un enlace directo) la activa se centra
+  // para que nunca quede escondida fuera de la vista.
+  useEffect(() => {
+    if (overlayMode || sidebarMode !== 'events') return;
+    document.querySelector('[data-events-tab-active="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [overlayMode, sidebarMode, eventsTab]);
 
   // Título de la pestaña del navegador (pedido explícito: que siempre sea
   // visible en qué sección está, no un "TikTokEvents" fijo sin importar
@@ -941,7 +960,7 @@ export default function App() {
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
-      <aside className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[72px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
+      <aside aria-label="Navegación principal" className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[84px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
         {/* Logo + nombre de marca — chico y sin botón/borde a propósito
             (pedido explícito: "visible pero que no abrume"), primero en la
             fila/columna para que quede como una cabecera sutil del rail de
@@ -956,14 +975,14 @@ export default function App() {
         {SECTIONS.map((s) => (
           <button
             key={s.id}
+            type="button"
             onClick={() => setSidebarMode(s.id)}
-            className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
-              sidebarMode === s.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-            ].join(' ')}
+            aria-current={sidebarMode === s.id ? 'page' : undefined}
+            title={s.id === 'events' ? 'TikTokEvents: juegos, alertas, TTS y más' : s.label}
+            className={[NAV_BTN, sidebarMode === s.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent'].join(' ')}
           >
-            <span className="text-xl leading-none">{s.icon}</span>
-            <span className={[ 'text-[8px] font-bold uppercase tracking-wider text-center leading-tight', sidebarMode === s.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+            <span className="text-xl leading-none" aria-hidden="true">{s.icon}</span>
+            <span className={[NAV_LABEL, sidebarMode === s.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
               {s.label}
             </span>
           </button>
@@ -971,26 +990,38 @@ export default function App() {
 
         {session?.isAdmin && (
           <button
+            type="button"
             onClick={() => setSidebarMode('licenses')}
             title="Administrar licencias"
-            className={[
-              'theme-nav-btn w-[52px] h-[52px] rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0',
-              sidebarMode === 'licenses' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-            ].join(' ')}
+            aria-current={sidebarMode === 'licenses' ? 'page' : undefined}
+            className={[NAV_BTN, sidebarMode === 'licenses' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent'].join(' ')}
           >
-            <span className="text-xl leading-none">🔑</span>
-            <span className={[ 'text-[8px] font-bold uppercase tracking-wider', sidebarMode === 'licenses' ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+            <span className="text-xl leading-none" aria-hidden="true">🔑</span>
+            <span className={[NAV_LABEL, sidebarMode === 'licenses' ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
               Licencias
             </span>
           </button>
         )}
 
         <div className="hidden md:block flex-1" />
+        {!session && (
+          <button type="button" onClick={() => goToEventTab('king')} title="Inicia sesión o prueba gratis"
+            className={[NAV_BTN, 'theme-btn-primary'].join(' ')}>
+            <span className="text-xl leading-none" aria-hidden="true">🔑</span>
+            <span className={NAV_LABEL}>Entrar</span>
+          </button>
+        )}
         {session && (
-          <button onClick={logout} title="Cerrar sesión"
-            className="w-[52px] h-[52px] rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0">
-            <span className="text-xl leading-none">🚪</span>
-            <span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Salir</span>
+          <button type="button"
+            onClick={() => {
+              const gameRunning = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive;
+              if (gameRunning && !window.confirm('Hay un juego activo. Si cierras sesión se detendrá. ¿Cerrar sesión de todos modos?')) return;
+              logout();
+            }}
+            title="Cerrar sesión"
+            className="min-w-[64px] md:w-[68px] h-[52px] px-2 md:px-1 rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+            <span className="text-xl leading-none" aria-hidden="true">🚪</span>
+            <span className={[NAV_LABEL, 'text-gray-500'].join(' ')}>Salir</span>
           </button>
         )}
       </aside>
@@ -1025,10 +1056,14 @@ export default function App() {
           <>
             {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
                 entre igual de bien en mobile que el rail principal. */}
-            <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+            <nav aria-label="Eventos de TikTok" className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
               {EVENT_TABS.map((t) => (
+                <React.Fragment key={t.id}>
+                {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
                 <button
-                  key={t.id}
+                  type="button"
+                  aria-current={eventsTab === t.id ? 'page' : undefined}
+                  data-events-tab-active={eventsTab === t.id ? 'true' : undefined}
                   onClick={() => {
                     setEventsTab(t.id);
                     // Avisamos al backend que cambiamos de modo (solo si ese
@@ -1037,17 +1072,18 @@ export default function App() {
                     if (socket && OVERLAY_APPS.includes(t.id)) socket.emit('set_active_app', t.id);
                   }}
                   className={[
-                    'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
+                    'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
                     eventsTab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
                   ].join(' ')}
                 >
-                  <span className="text-base leading-none">{t.icon}</span>
+                  <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
                   <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
                     {t.label}
                   </span>
                 </button>
+                </React.Fragment>
               ))}
-            </div>
+            </nav>
 
             {eventsTab === 'king' && (
               needsAccess('king') ? (

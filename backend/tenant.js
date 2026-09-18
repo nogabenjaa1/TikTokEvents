@@ -728,6 +728,28 @@ class Tenant {
         this.scheduleReconnect(username);
     }
 
+    // Reconexión manual pedida desde el panel (botón "Reconectar TikTok"):
+    // mismo camino que la reconexión automática del guardián -- conserva
+    // rankings y partidas (no toca wasEverConnected) y suelta la conexión
+    // vieja dentro de ensureTikTokConnection. Se ignora si se pidió hace
+    // menos de 5 s, para que un doble clic no dispare dos conexiones.
+    forceReconnect() {
+        const username = this.desiredUsername || this.currentTikTokUsername;
+        if (!username) return;
+        const now = Date.now();
+        if (now - (this.lastForceReconnectAt || 0) < 5000) return;
+        this.lastForceReconnectAt = now;
+        console.log(`[${this.licenseId}] [TIKTOK] 🔄 Reconexión manual pedida desde el panel.`);
+        if (this.retryTimeout) { clearTimeout(this.retryTimeout); this.retryTimeout = null; }
+        if (this.watchdogInterval) { clearInterval(this.watchdogInterval); this.watchdogInterval = null; }
+        this.liveConnected = false;
+        this.connectingPromise = null;
+        this.connectedAt = null;
+        this.consecutiveShortDisconnects = 0;
+        this.broadcast.emit('live_disconnected');
+        this.ensureTikTokConnection(username).catch(() => {});
+    }
+
     // Bug crítico corregido a propósito (pedido explícito): cuando el LIVE
     // se corta de verdad (ver el `live_stream_ended` que dispara esto,
     // justo después de confirmar con isUserOfflineError/wasEverConnected
@@ -2738,6 +2760,8 @@ class Tenant {
                 this.maybeDisconnectTikTok();
             }
         });
+
+        socket.on('force_reconnect', () => this.forceReconnect());
 
         // ── REY DEL TRONO ──────────────────────────
         socket.on('start_contest', (config) => {

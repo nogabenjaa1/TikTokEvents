@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TikTokLoginBar from './TikTokLoginBar';
+import SystemHealth from './SystemHealth';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
@@ -93,6 +94,7 @@ function SectionTitle({ children, hint }) {
 export default function Dashboard({
   session, connectionStatus, username, setUsername, connectionError, usernameLocked, onDisconnectTikTok,
   anyGameActive, ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab,
+  socketConnected, ttsEngine, onResetVoice, onReconnectTikTok,
 }) {
   const connected = connectionStatus === 'connected';
   const daysLeft = session?.expiresAt
@@ -269,6 +271,15 @@ export default function Dashboard({
               <button type="button" onClick={() => onGoSection('membership')} className="text-[11px] font-bold text-sky-400 hover:text-sky-300 underline mt-1 text-left">
                 Ver planes
               </button>
+            </div>
+
+            <div className="theme-surface p-4 flex flex-col gap-2 md:col-span-3">
+              <h2 className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">Estado del sistema</h2>
+              <SystemHealth
+                socketConnected={socketConnected} connectionStatus={connectionStatus}
+                ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
+                onResetVoice={onResetVoice} onReconnectTikTok={onReconnectTikTok}
+              />
             </div>
           </div>
         </section>

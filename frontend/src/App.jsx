@@ -15,6 +15,7 @@ import Login from './Login';
 import LicenseManager from './LicenseManager';
 import Membership from './Membership';
 import Dashboard from './Dashboard';
+import SystemHealth from './SystemHealth';
 import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
 import OverlayLink from './OverlayLink';
@@ -345,6 +346,12 @@ export default function App() {
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
+  // Salud del sistema (ver SystemHealth.jsx): estado real del socket con el
+  // servidor y del motor de voz, más el aviso de "el servidor se reinició".
+  const [socketConnected, setSocketConnected]  = useState(false);
+  const [ttsEngine, setTtsEngine]              = useState('idle');
+  const [serverRestarted, setServerRestarted]  = useState(false);
+  const bootIdRef = useRef(null);
   // Catálogo de regalos: se guarda por licencia en el backend (ver
   // GET /api/gifts), así los selectores funcionan aunque no haya LIVE
   // conectado. Se conserva la MISMA referencia si el contenido no cambió --
@@ -678,6 +685,30 @@ export default function App() {
   // refs declarados arriba (panelThemeRef/panelOverlayDraftRef) para
   // mandar siempre el valor más reciente, sin importar cuándo llegue el
   // evento 'connect'.
+  // Estado de la conexión con el servidor + detección de reinicios: cada
+  // arranque del backend tiene un id distinto; si un panel que seguía abierto
+  // recibe un id nuevo, el servidor se reinició y todo lo que vivía en
+  // memoria (partidas, rankings, conexión con TikTok) se perdió.
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    const onConnect = () => setSocketConnected(true);
+    const onDisconnect = () => setSocketConnected(false);
+    const onBoot = ({ bootId } = {}) => {
+      if (!bootId) return;
+      if (bootIdRef.current && bootIdRef.current !== bootId) setServerRestarted(true);
+      bootIdRef.current = bootId;
+    };
+    setSocketConnected(socket.connected);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('server_boot', onBoot);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('server_boot', onBoot);
+    };
+  }, [socket, overlayMode]);
+
   useEffect(() => {
     if (overlayMode || !socket) return;
     const resync = () => {
@@ -952,6 +983,12 @@ export default function App() {
           {kickedOutMessage}
         </div>
       )}
+      {serverRestarted && (
+        <div role="alert" className="w-full bg-amber-500/10 border-b border-amber-500/40 text-amber-700 text-[11px] font-bold text-center py-1.5 px-3 tracking-wide flex-shrink-0 flex items-center justify-center gap-3">
+          <span>El servidor se reinició: las partidas que estaban activas se detuvieron y los rankings se limpiaron. Tu conexión con TikTok se restablece sola; revisa que todo siga en orden.</span>
+          <button type="button" onClick={() => setServerRestarted(false)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
+        </div>
+      )}
       {showExpiryWarning && (
         <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
           Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
@@ -1039,6 +1076,9 @@ export default function App() {
             anyGameActive={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
             ttsEnabled={ttsEnabled} ttsLocked={needsAccess('tts')}
             onToggleTts={() => ttsRef.current?.toggleEnabled()}
+            socketConnected={socketConnected} ttsEngine={ttsEngine}
+            onResetVoice={() => ttsRef.current?.resetEngine()}
+            onReconnectTikTok={() => socket?.emit('force_reconnect')}
             onGoSection={setSidebarMode}
             onGoEventTab={goToEventTab}
           />
@@ -1083,6 +1123,7 @@ export default function App() {
                 </button>
                 </React.Fragment>
               ))}
+              <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />
             </nav>
 
             {eventsTab === 'king' && (
@@ -1193,7 +1234,7 @@ export default function App() {
         {/* Permanece montado siempre (no solo dentro de "events") para que la
             lectura activa no se interrumpa si el streamer se va a otra
             sección mientras TTS sigue leyendo el chat en voz alta. */}
-        <TtsChat ref={ttsRef} socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} onEnabledChange={setTtsEnabled} />
+        <TtsChat ref={ttsRef} socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} onEnabledChange={setTtsEnabled} onEngineStatusChange={setTtsEngine} />
 
         {/* Pedido explicito: el streamer no escuchaba sus propias alertas de
             sonido (solo llegaban a los espectadores por OBS) -- esto suena

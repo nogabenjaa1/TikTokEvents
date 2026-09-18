@@ -75,6 +75,25 @@ const TIKTOK_CONNECT_TIMEOUT_MS = 20000;
 const WATCHDOG_CHECK_INTERVAL_MS = 30000;
 const WATCHDOG_TIMEOUT_MS = 120000;
 
+// Bug real reportado ("el stream terminó y se quedó en bucle"): cuando el
+// LIVE de verdad termina, a veces TikTok igual deja pasar el handshake de
+// conexión (llega a loguear "✅ CONECTADO") pero corta el WebSocket casi al
+// instante después -- a diferencia del caso ya manejado más abajo
+// (isUserOfflineError, donde el propio connect() rechaza con "isn't
+// online"), acá connect() SÍ resuelve, así que el catch de esa promesa
+// nunca se entera de nada raro. El handler de 'disconnected' (más abajo)
+// reintentaba sin condición ninguna, así que terminaba conectándose y
+// desconectándose en bucle cada pocos segundos para siempre, generando un
+// log infinito y nunca liberando el panel. Este umbral es lo que distingue
+// "corte real de red a mitad de un LIVE sano" (conexión que duró minutos)
+// de "el LIVE ya terminó" (conexiones que no llegan a durar ni
+// SHORT_CONNECTION_THRESHOLD_MS) -- se exige que se repita
+// MAX_CONSECUTIVE_SHORT_DISCONNECTS veces seguidas antes de darlo por
+// terminado, para no cortar el reintento automático por una única
+// reconexión mala pero pasajera.
+const SHORT_CONNECTION_THRESHOLD_MS = 15000;
+const MAX_CONSECUTIVE_SHORT_DISCONNECTS = 3;
+
 class TikTokConnectTimeoutError extends Error {
     constructor() {
         super(`La conexión no respondió en ${TIKTOK_CONNECT_TIMEOUT_MS / 1000}s`);
@@ -588,6 +607,11 @@ class Tenant {
         // abajo). Se resetea a false en disconnectTikTok (conexión nueva de
         // cero) y en cuanto se confirma el próximo `live_connected`.
         this.wasEverConnected = false;
+        // Ver el comentario de SHORT_CONNECTION_THRESHOLD_MS mas arriba --
+        // el circuit-breaker que corta el bucle de reconexión cuando el
+        // LIVE ya terminó de verdad pero connect() sigue resolviendo.
+        this.connectedAt = null;
+        this.consecutiveShortDisconnects = 0;
         // Ver el comentario de WATCHDOG_TIMEOUT_MS mas arriba.
         this.lastTikTokMessageAt = null;
         this.watchdogInterval = null;
@@ -617,6 +641,8 @@ class Tenant {
         this.liveConnected = false;
         this.connectingPromise = null;
         this.wasEverConnected = false;
+        this.connectedAt = null;
+        this.consecutiveShortDisconnects = 0;
 
         // Ráfagas de tap-tap en curso quedan huérfanas si la conexión se cae
         // a mitad de una: sin esto, sus timers seguirían vivos apuntando a
@@ -835,6 +861,31 @@ class Tenant {
                 this.viewerCount = 0;
                 this.broadcast.emit('live_disconnected');
                 this.broadcast.emit('viewer_count_update', { viewerCount: 0 });
+
+                // Circuit-breaker (ver SHORT_CONNECTION_THRESHOLD_MS más
+                // arriba): esta conexión duró muy poco -- probablemente el
+                // LIVE ya terminó y TikTok solo dejó pasar el handshake
+                // antes de cortar, en vez de rechazar connect() directo
+                // (ese otro caso ya lo cubre isUserOfflineError más abajo).
+                const durationMs = this.connectedAt ? Date.now() - this.connectedAt : Infinity;
+                this.connectedAt = null;
+                if (durationMs < SHORT_CONNECTION_THRESHOLD_MS) {
+                    this.consecutiveShortDisconnects += 1;
+                } else {
+                    this.consecutiveShortDisconnects = 0;
+                }
+
+                if (this.consecutiveShortDisconnects >= MAX_CONSECUTIVE_SHORT_DISCONNECTS) {
+                    console.log(`[${this.licenseId}] [TIKTOK] 🛑 @${username} se desconectó ${this.consecutiveShortDisconnects} veces seguidas casi al instante — probablemente el LIVE ya terminó, se corta el reintento automático.`);
+                    this.consecutiveShortDisconnects = 0;
+                    this.wasEverConnected = false;
+                    this.desiredUsername = null;
+                    this.stopAllActiveGames();
+                    this.broadcast.emit('live_stream_ended', { username });
+                    this.maybeDisconnectTikTok();
+                    return;
+                }
+
                 this.scheduleReconnect(username);
             });
 
@@ -875,6 +926,7 @@ class Tenant {
             }
             this.liveConnected = true;
             this.wasEverConnected = true;
+            this.connectedAt = Date.now();
             this.connectingPromise = null;
             this.lastTikTokMessageAt = Date.now();
             if (this.watchdogInterval) clearInterval(this.watchdogInterval);

@@ -11,6 +11,11 @@ const DEFAULTS = {
   usernameOverrides: [], // [{ username, mode: 'enabled'|'disabled' }] -- sincronizado con el backend, igual que los filtros de arriba
   voiceURI: '', pitch: 1, rate: 1, volume: 1, activePreset: 'normal',
   minChars: 2, ignoreRepeats: true, blockedWords: '', messageTemplate: '',
+  // Voz aleatoria (pedido explícito): cada mensaje elige una voz al azar
+  // entre las disponibles del navegador, en vez de la fija de `voiceURI` --
+  // preferencia local de ESTE navegador, mismo criterio que voiceURI/pitch/
+  // rate/volumen (ver comentario grande más abajo).
+  randomVoice: false,
 };
 
 // Tags del formato de lectura (pedido explícito) -- mismo criterio que las
@@ -225,6 +230,18 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
   const resolveVoice = (voiceURI, list) => list.find(v => v.voiceURI === voiceURI) || null;
 
+  // Voz aleatoria (pedido explícito): con el switch activo, cada mensaje
+  // sortea una voz distinta entre TODAS las disponibles del navegador, en
+  // vez de usar siempre la fija de `voiceURI`. Si el navegador todavía no
+  // reportó ninguna voz (ver el comentario de loadVoices más arriba), cae
+  // en la voz configurada normal -- nunca deja el mensaje sin voz por esto.
+  const pickVoice = (current) => {
+    if (current.randomVoice && voicesRef.current.length > 0) {
+      return voicesRef.current[Math.floor(Math.random() * voicesRef.current.length)];
+    }
+    return resolveVoice(current.voiceURI, voicesRef.current);
+  };
+
   // Muchos motores de voz "leen" los emojis en vez de ignorarlos (dicen el
   // nombre del ícono, o directamente un sonido raro) — se sacan del texto
   // ANTES de armar la utterance. El monitor de voz sigue mostrando el
@@ -235,9 +252,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     .replace(/\s+/g, ' ')
     .trim();
 
-  const buildUtterance = (text, voiceURI, pitch, rate, volume) => {
+  const buildUtterance = (text, voice, pitch, rate, volume) => {
     const utterance = new SpeechSynthesisUtterance(stripEmojis(text));
-    const voice = resolveVoice(voiceURI, voicesRef.current);
     utterance.voice = voice;
     utterance.lang = voice?.lang || 'es-MX';
     utterance.pitch = pitch;
@@ -280,7 +296,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     setEngineStatus('speaking');
     const current = settingsRef.current;
     const spokenText = applyMessageTemplate(next.message, current.messageTemplate);
-    const utterance = buildUtterance(spokenText, current.voiceURI, current.pitch, current.rate, current.volume);
+    const utterance = buildUtterance(spokenText, pickVoice(current), current.pitch, current.rate, current.volume);
     utterance.onstart = () => setLastMessage(next.message);
 
     const finish = () => {
@@ -463,7 +479,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const speakPreview = (pitch, rate, volume) => {
     if (!('speechSynthesis' in window) || !testText.trim()) return;
     window.speechSynthesis.cancel();
-    const utterance = buildUtterance(testText.trim(), settings.voiceURI, pitch, rate, volume);
+    const utterance = buildUtterance(testText.trim(), pickVoice(settings), pitch, rate, volume);
     utterance.onstart = () => setTesting(true);
     utterance.onend = () => setTesting(false);
     utterance.onerror = () => setTesting(false);
@@ -648,13 +664,23 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             ))}
           </div>
 
+          <div className="mb-5">
+            <Toggle
+              checked={settings.randomVoice}
+              onChange={(v) => update('randomVoice', v)}
+              label="🎲 Voz aleatoria"
+              description="Cada mensaje usa una voz al azar entre todas las disponibles, en vez de la fija de abajo."
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <label className="block sm:col-span-2">
+            <label className={`block sm:col-span-2 ${settings.randomVoice ? 'opacity-45' : ''}`}>
               <span className="theme-label block text-[10px] uppercase tracking-widest font-black mb-2">Voz ({voices.length} disponibles)</span>
               <select
                 value={settings.voiceURI}
+                disabled={settings.randomVoice}
                 onChange={(event) => update('voiceURI', event.target.value)}
-                className="theme-input w-full p-3 outline-none text-sm font-bold text-white"
+                className="theme-input w-full p-3 outline-none text-sm font-bold text-white disabled:cursor-not-allowed"
               >
                 <option value="">Predeterminada del navegador</option>
                 {voices.map(v => (

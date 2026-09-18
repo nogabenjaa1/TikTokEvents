@@ -117,14 +117,19 @@ const ready = pool.query(`
   // Sonido opcional al completar el Objetivo (pedido explícito) --
   // { audioUrl, audioPath }, mismo criterio que spotify_settings/
   // tts_settings: sobrevive a un reinicio del server y a entrar desde otro
-  // dispositivo. A propósito NO guarda acá el progreso/meta del objetivo en
-  // sí (eso vive solo en memoria, como el resto de los "juegos" -- ver
-  // goalState en tenant.js), solo esta configuración persistente.
+  // dispositivo. El progreso/meta del objetivo NO va acá sino en
+  // goal_progress (más abajo) -- esta columna es solo la configuración
+  // persistente del sonido.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
   // Catálogo de regalos de TikTok, cargado UNA vez por licencia (pedido
   // explícito): así los selectores de regalo de juegos/alertas funcionan
   // aunque todavía no haya un LIVE conectado. Array de { id, name, coins, icon }.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS gift_catalog JSONB`))
+  // Progreso del Objetivo (meta de monedas/seguidores) -- a diferencia del
+  // resto de los "juegos", este acumula durante horas y perderlo por un
+  // reinicio del servidor (deploy, caída) es de lo más molesto: se guarda
+  // acá y se restaura al volver.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_progress JSONB`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -390,6 +395,11 @@ async function setTtsSettings(id, settings) {
 async function setGoalSettings(id, settings) {
     await ready;
     await pool.query('UPDATE licenses SET goal_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
+async function setGoalProgress(id, progress) {
+    await ready;
+    await pool.query('UPDATE licenses SET goal_progress = $1 WHERE id = $2', [JSON.stringify(progress), id]);
 }
 
 async function setGiftCatalog(id, gifts) {
@@ -674,7 +684,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog, setGoalProgress,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

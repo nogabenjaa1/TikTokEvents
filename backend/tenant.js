@@ -386,6 +386,7 @@ class Tenant {
     dispose() {
         this.disconnectTikTok();
         this.stopSpotifyQueuePolling();
+        if (this.goalPersistTimer) this.persistGoalProgress(); // guarda lo último pendiente antes de soltar el tenant
         if (this.tapTapDiagnosticsBroadcastTimer) { clearTimeout(this.tapTapDiagnosticsBroadcastTimer); this.tapTapDiagnosticsBroadcastTimer = null; }
     }
 
@@ -897,6 +898,23 @@ class Tenant {
                     minFanLevel: Math.max(1, Math.min(50, Number(tt.minFanLevel) || 1)),
                     usernameOverrides: sanitizeUsernameOverrides(tt.usernameOverrides),
                 };
+            }
+            if (license.goal_progress && !this.goalState.isActive) {
+                const gp = license.goal_progress;
+                const targetType = gp.targetType === 'followers' ? 'followers' : 'coins';
+                const cap = targetType === 'coins' ? 10_000_000 : 1_000_000;
+                const target = Math.max(1, Math.min(cap, Math.round(Number(gp.target)) || 1));
+                if (gp.isActive) {
+                    this.goalState = {
+                        isActive: true,
+                        finished: !!gp.finished,
+                        targetType,
+                        target,
+                        current: Math.max(0, Math.min(target, Math.round(Number(gp.current)) || 0)),
+                        title: typeof gp.title === 'string' ? gp.title.slice(0, 60) : '',
+                    };
+                    console.log(`[${this.licenseId}] [OBJETIVO] Progreso restaurado tras el reinicio: ${this.goalState.current}/${this.goalState.target}.`);
+                }
             }
             if (license.goal_settings) {
                 const gs = license.goal_settings;
@@ -2353,6 +2371,23 @@ class Tenant {
         return { ...this.goalState, audioUrl: this.goalAudioUrl };
     }
 
+    // Emite el estado del objetivo Y lo guarda en la DB (con debounce: un
+    // regalo grande o una ráfaga de seguidores no debe pegarle a la DB una
+    // vez por evento). Si el servidor se reinicia, loadPersistedSettings lo
+    // restaura tal cual.
+    emitGoalState() {
+        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        if (this.goalPersistTimer) clearTimeout(this.goalPersistTimer);
+        this.goalPersistTimer = setTimeout(() => this.persistGoalProgress(), 1500);
+    }
+
+    persistGoalProgress() {
+        if (this.goalPersistTimer) { clearTimeout(this.goalPersistTimer); this.goalPersistTimer = null; }
+        const { isActive, finished, targetType, target, current, title } = this.goalState;
+        return db.setGoalProgress(this.licenseId, { isActive, finished, targetType, target, current, title })
+            .catch((err) => console.error(`[${this.licenseId}] [DB] setGoalProgress:`, err.message));
+    }
+
     // Llamado desde server.js justo después de subir/borrar el audio en
     // Supabase Storage -- mantiene este cache en memoria al día (mismo
     // criterio que setAlertConfig) y avisa al overlay/panel al instante.
@@ -2374,7 +2409,7 @@ class Tenant {
         if (!state.isActive || state.finished || state.targetType !== 'coins' || !totalCoins) return;
         state.current = Math.min(state.target, state.current + totalCoins);
         if (state.current >= state.target) state.finished = true;
-        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        this.emitGoalState();
     }
 
     processFollowGoal() {
@@ -2382,7 +2417,7 @@ class Tenant {
         if (!state.isActive || state.finished || state.targetType !== 'followers') return;
         state.current = Math.min(state.target, state.current + 1);
         if (state.current >= state.target) state.finished = true;
-        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        this.emitGoalState();
     }
 
     // ==========================================
@@ -2418,6 +2453,7 @@ class Tenant {
             socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
             socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             socket.emit('tts_settings_update', this.ttsSettings);
+            socket.emit('goal_state_update', this.getGoalPublicState());
         });
 
         // Sincronizar al nuevo cliente al instante -- todo esto es estado EN
@@ -3001,7 +3037,7 @@ class Tenant {
             const target = Math.max(1, Math.min(cap, Math.round(Number(config?.target)) || 1));
             const title = typeof config?.title === 'string' ? config.title.trim().slice(0, 60) : '';
             this.goalState = { isActive: true, finished: false, targetType, target, current: 0, title };
-            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+            this.emitGoalState();
             if (config?.tiktokUsername) this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
         });
 
@@ -3020,7 +3056,7 @@ class Tenant {
                 this.goalState.target = Math.max(1, Math.min(cap, Math.round(Number(config.target)) || this.goalState.target));
                 this.goalState.finished = this.goalState.current >= this.goalState.target;
             }
-            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+            this.emitGoalState();
         });
 
         // Botón "Reiniciar progreso" -- pedido explícito: el objetivo (tipo
@@ -3030,12 +3066,12 @@ class Tenant {
         socket.on('reset_goal', () => {
             this.goalState.current = 0;
             this.goalState.finished = false;
-            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+            this.emitGoalState();
         });
 
         socket.on('stop_goal', () => {
             this.goalState.isActive = false;
-            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+            this.emitGoalState();
         });
 
         // ── TOP GIFTER / TOP TAP-TAP (rankings continuos) ──

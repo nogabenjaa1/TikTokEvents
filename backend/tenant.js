@@ -296,6 +296,9 @@ function sanitizeOverlayCustomization(raw) {
             // de los overlays lo ignora sin problema, mismo criterio que
             // messageAnimation con el Chat.
             volume: typeof entry.volume === 'number' && entry.volume >= 0 && entry.volume <= 1 ? entry.volume : 1,
+            // Switch de bordes por overlay (pedido explícito) -- encendido
+            // por defecto, ver bordersEnabled en overlayCustomization.js.
+            borders: typeof entry.borders === 'boolean' ? entry.borders : true,
         };
     }
     return out;

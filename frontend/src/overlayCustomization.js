@@ -60,6 +60,10 @@ function defaultEntry() {
     // propio streamer en su panel, ver AlertSoundListener), el resto lo
     // ignora sin problema. 1 = volumen normal del archivo, 0 = mudo.
     volume: 1,
+    // Bordes/marcos visibles del overlay (pedido explícito, switch por
+    // overlay): el marco exterior y los separadores entre filas. Encendido
+    // por defecto -- así nadie ve un cambio hasta que lo apaga a propósito.
+    borders: true,
   };
 }
 
@@ -71,7 +75,8 @@ function isValidEntry(e) {
   return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
     && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type)
     && (e.messageAnimation === undefined || VALID_MESSAGE_ANIMATIONS.includes(e.messageAnimation))
-    && (e.volume === undefined || (typeof e.volume === 'number' && e.volume >= 0 && e.volume <= 1));
+    && (e.volume === undefined || (typeof e.volume === 'number' && e.volume >= 0 && e.volume <= 1))
+    && (e.borders === undefined || typeof e.borders === 'boolean');
 }
 
 export function loadOverlayCustomization() {
@@ -128,13 +133,38 @@ function rainbowBackgroundStyle() {
   };
 }
 
-export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)') {
+// Bordes on/off (pedido explícito). `borders` es opcional en el entry: si
+// falta (datos viejos) cuenta como encendido, igual que el default.
+export function bordersEnabled(entry) {
+  return entry?.borders !== false;
+}
+
+// Con los bordes apagados el color pasa a transparente (no se quita el
+// grosor) para que nada se corra de lugar, y se anula la sombra/brillo del
+// marco -- de otra forma seguiría dibujando un contorno aunque sea difuso.
+// Va DENTRO de resolveBackgroundStyle porque todos los marcos y filas que ya
+// usaban la personalización pasan por ahí (ver Overlay.jsx/DiceOverlay.jsx).
+export function bordersOffStyle(entry) {
+  return bordersEnabled(entry) ? {} : { borderColor: 'transparent', boxShadow: 'none' };
+}
+
+// Para los elementos que ponen su borde con un `border` inline propio
+// (después del fondo) en vez de heredar el del tema.
+export function rowBorder(entry) {
+  return bordersEnabled(entry) ? '1px solid var(--surface-border-color)' : '1px solid transparent';
+}
+
+function backgroundOnlyStyle(entry, fallbackVar) {
   const bg = entry?.background;
   if (!bg || bg.type === 'solid') return { background: fallbackVar };
   if (bg.type === 'transparent') return { background: 'transparent' };
   if (bg.type === 'gradient') return { background: `linear-gradient(135deg, ${bg.from || '#7C3AED'}, ${bg.to || '#3B82F6'})` };
   if (bg.type === 'rainbow') return rainbowBackgroundStyle();
   return { background: fallbackVar };
+}
+
+export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)') {
+  return { ...backgroundOnlyStyle(entry, fallbackVar), ...bordersOffStyle(entry) };
 }
 
 // Color del texto de un username en HTML normal (no SVG, ver

@@ -165,30 +165,55 @@ function LivePreview({ draftAlert, customize }) {
 // Una fila de la lista de "Alertas configuradas" — misma pinta para
 // específicas y generales, solo cambia qué texto arma alertDisplayName.
 function AlertRow({ alert, testFire, previewSaved, startEdit, remove }) {
+  const name = alertDisplayName(alert);
   return (
-    <div className="theme-input flex items-center gap-3 px-3 py-2">
-      <span className="text-lg flex-shrink-0 flex items-center gap-0.5">
-        {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
-        {alert.audioUrl && '🎧'}
-        {alert.text && '💬'}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-white truncate">{alertDisplayName(alert)}</p>
-        <p className="text-[10px] text-gray-500">{(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}</p>
+    <div className="theme-input flex flex-col gap-3 px-4 py-3">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <span className="text-lg flex-shrink-0 flex items-center gap-0.5" aria-hidden="true">
+          {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
+          {alert.audioUrl && '🎧'}
+          {alert.text && '💬'}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-white truncate">{name}</p>
+          <p className="text-[11px] text-gray-500 truncate">
+            {(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}
+            {alert.text ? ` · "${alert.text}"` : ''}
+          </p>
+        </div>
       </div>
-      <button onClick={() => testFire(alert.id)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Probar (dispara la alerta real)">
-        🔥
-      </button>
-      <button onClick={() => previewSaved(alert)} className="text-[10px] font-bold text-gray-300 hover:text-white flex-shrink-0" title="Vista previa">
-        👁️
-      </button>
-      <button onClick={() => startEdit(alert)} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex-shrink-0" title="Editar">
-        ✏️
-      </button>
-      <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline flex-shrink-0">
-        Borrar
-      </button>
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button onClick={() => testFire(alert.id)} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" title="Dispara la alerta real en tu stream" aria-label={`Probar la alerta ${name}`}>
+          🔥 Probar
+        </button>
+        <button onClick={() => previewSaved(alert)} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" title="Verla aquí, sin disparar nada" aria-label={`Vista previa de la alerta ${name}`}>
+          👁️ Ver
+        </button>
+        <button onClick={() => startEdit(alert)} className="theme-btn-primary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" aria-label={`Editar la alerta ${name}`}>
+          ✏️ Editar
+        </button>
+        <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline px-1" aria-label={`Borrar la alerta ${name}`}>
+          Borrar
+        </button>
+      </div>
     </div>
+  );
+}
+
+// Tarjeta numerada del formulario: divide la creación de una alerta en
+// pasos cortos en vez de una sola columna larga de campos sueltos.
+function FormSection({ step, title, hint, children }) {
+  return (
+    <section className="theme-surface w-full max-w-2xl p-6">
+      <div className="flex items-start gap-3 mb-5">
+        <span className="theme-accent-bg text-sm font-black w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0">{step}</span>
+        <div>
+          <h2 className="theme-heading text-lg font-semibold leading-tight">{title}</h2>
+          {hint && <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -246,6 +271,18 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   // edita (ver el JSX de abajo) para no terminar con una fila huérfana en
   // la DB si el streamer lo cambiara a mitad de una edición.
   const [editingId, setEditingId] = useState(null);
+  // 'list' = lista de alertas guardadas (vista por defecto); 'form' = crear
+  // o editar una. Pedido explícito: el formulario no se muestra hasta que el
+  // streamer toca "Nueva alerta" o "Editar".
+  const [view, setView] = useState('list');
+  const [notice, setNotice] = useState('');
+  const noticeTimer = useRef(null);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  const showNotice = (message) => {
+    setNotice(message);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(''), 4000);
+  };
   const [editingExisting, setEditingExisting] = useState(null);
 
   const [customizingText, setCustomizingText] = useState(false);
@@ -369,7 +406,20 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setError('');
   };
 
+  const openNew = () => {
+    resetForm();
+    setNotice('');
+    setView('form');
+  };
+
+  const closeForm = () => {
+    resetForm();
+    setView('list');
+  };
+
   const startEdit = (alert) => {
+    setNotice('');
+    setView('form');
     setEditingId(alert.id);
     setEditingExisting(alert);
     setTriggerType(alert.triggerType || 'gift');
@@ -427,7 +477,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       const res = await fetch(`${backendUrl()}/api/alerts`, { method: 'POST', headers: authHeaders(), body: form });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo guardar la alerta');
+      const wasEditing = !!editingId;
       resetForm();
+      setView('list');
+      showNotice(wasEditing ? 'Cambios guardados.' : 'Alerta creada.');
       await fetchAlerts();
     } catch (err) {
       setError(err.message);
@@ -440,6 +493,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     if (!window.confirm('¿Borrar esta alerta? Ese disparador dejará de reproducir nada hasta que asignes una nueva.')) return;
     await fetch(`${backendUrl()}/api/alerts/${id}`, { method: 'DELETE', headers: authHeaders() });
     if (editingId === id) resetForm();
+    showNotice('Alerta borrada.');
     await fetchAlerts();
   };
 
@@ -469,51 +523,140 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     return found && found.id !== editingId ? found : null;
   };
 
-  return (
-    <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔔 Alertas</p>
+  const totalAlerts = alerts.length;
 
-      <div className="theme-surface w-full max-w-md p-6 relative">
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="theme-accent-bg w-3 h-8 rounded-full" />
-            <h1 className="theme-heading text-2xl font-semibold tracking-wide">{editingId ? 'EDITANDO ALERTA' : 'NUEVA ALERTA'}</h1>
-          </div>
-          {editingId && (
-            <button type="button" onClick={resetForm} className="text-[10px] font-bold text-gray-400 hover:text-white underline whitespace-nowrap">
-              Cancelar edición
-            </button>
-          )}
+  // Al pasar de lista a formulario (o al revés) arranca desde arriba.
+  const rootRef = useRef(null);
+  useEffect(() => {
+    rootRef.current?.scrollTo?.(0, 0);
+    window.scrollTo(0, 0);
+  }, [view]);
+
+  // ── Vista 1: LISTA ─────────────────────────────────────────
+  const listView = (
+    <>
+      <div className="w-full max-w-2xl flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🔔 Alertas</p>
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">Mis alertas</h1>
+          <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
         </div>
-        {editingId && (
-          <p className="text-[10px] text-gray-500 -mt-4 mb-4">
-            Puedes cambiar cualquier campo, incluido el disparador — si eliges uno que ya tiene otra alerta asignada, tendrás que resolverlo antes de guardar.
+        <div className="flex gap-2 flex-shrink-0">
+          <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Estilo del texto y volumen general de todas las alertas">
+            🎨 Estilo y volumen
+          </button>
+          <button type="button" onClick={openNew} className="theme-btn-primary px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
+            ＋ Nueva alerta
+          </button>
+        </div>
+      </div>
+
+      {notice && (
+        <div role="status" className="w-full max-w-2xl rounded-xl px-4 py-3 text-xs font-bold text-green-300 bg-green-500/10 border border-green-500/30">
+          ✅ {notice}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="theme-surface w-full max-w-2xl p-6">
+          <p className="text-gray-500 text-sm italic">Cargando tus alertas...</p>
+        </div>
+      ) : totalAlerts === 0 ? (
+        <div className="theme-surface w-full max-w-2xl p-8 text-center">
+          <p className="text-4xl mb-3">🔔</p>
+          <h2 className="theme-heading text-lg font-semibold mb-2">Aún no tienes alertas</h2>
+          <p className="text-sm text-gray-400 max-w-md mx-auto mb-6">Crea tu primera alerta en tres pasos rápidos. No necesitas estar en vivo para armarla.</p>
+          <ol className="text-left text-xs text-gray-400 max-w-sm mx-auto mb-6 flex flex-col gap-2">
+            <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">1</span> Elige qué la activa: un regalo, un seguidor nuevo o un sticker.</li>
+            <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">2</span> Sube una imagen, GIF o video, un audio y/o escribe un texto.</li>
+            <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">3</span> Mira la vista previa, ajusta y guarda.</li>
+          </ol>
+          <button type="button" onClick={openNew} className="theme-btn-primary px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">
+            ＋ Crear mi primera alerta
+          </button>
+        </div>
+      ) : (
+        <>
+          <section className="theme-surface w-full max-w-2xl p-6">
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <h2 className="theme-heading text-lg font-semibold">Alertas específicas</h2>
+              <span className="theme-chip text-[10px] font-bold px-2 py-0.5 rounded-full">{specificAlerts.length}</span>
+            </div>
+            <p className="text-[11px] text-gray-500 mb-4">Un regalo, seguimiento o sticker puntual. Siempre tienen prioridad sobre las generales.</p>
+            {specificAlerts.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {specificAlerts.map((alert) => (
+                  <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-600 text-xs italic">Todavía no tienes alertas específicas.</p>
+            )}
+          </section>
+
+          <section className="theme-surface w-full max-w-2xl p-6">
+            <div className="flex items-baseline justify-between gap-3 mb-1">
+              <h2 className="theme-heading text-lg font-semibold">Alertas generales</h2>
+              <span className="theme-chip text-[10px] font-bold px-2 py-0.5 rounded-full">{globalAlerts.length}</span>
+            </div>
+            <p className="text-[11px] text-gray-500 mb-4">Se disparan con cualquier regalo que no tenga una alerta específica, según su valor en monedas.</p>
+            {globalAlerts.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {globalAlerts.map((alert) => (
+                  <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-600 text-xs italic">Todavía no tienes alertas generales.</p>
+            )}
+          </section>
+        </>
+      )}
+    </>
+  );
+
+  // ── Vista 2: FORMULARIO (nueva / edición) ──────────────────
+  const formView = (
+    <>
+      <div className="w-full max-w-2xl">
+        <button type="button" onClick={closeForm} className="text-[11px] font-bold text-gray-400 hover:text-white mb-3 inline-flex items-center gap-1">
+          ← Volver a mis alertas
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="theme-accent-bg w-3 h-8 rounded-full" />
+          <div>
+            <h1 className="theme-heading text-2xl font-semibold tracking-wide">{editingId ? 'Editar alerta' : 'Nueva alerta'}</h1>
+            <p className="text-xs text-gray-500">
+              {editingId
+                ? 'Cambia lo que quieras, incluido el disparador. Si eliges uno que ya tiene otra alerta, tendrás que resolverlo antes de guardar.'
+                : 'Completa los pasos y mira cómo queda en la vista previa antes de guardar.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <FormSection step="1" title="¿Cuándo se dispara?" hint="Elige qué evento activa esta alerta.">
+        <div className="flex gap-2 flex-wrap">
+          {TRIGGER_TYPES.map((t) => (
+            <button key={t.id} type="button"
+              onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'gift_global') setMinCoins(''); }}
+              aria-pressed={triggerType === t.id}
+              className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+        {triggerType === 'gift_global' && (
+          <p className="text-[11px] text-gray-500 mt-3">
+            Se dispara con cualquier regalo que NO tenga su propia alerta específica y cuyo valor en monedas alcance el mínimo de abajo. Nunca compite con una alerta específica: si el regalo tiene la suya, esa gana siempre.
           </p>
         )}
-
-        <div className="mb-4">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">DISPARADOR</label>
-          <div className="flex gap-2 flex-wrap">
-            {TRIGGER_TYPES.map((t) => (
-              <button key={t.id} type="button"
-                onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'gift_global') setMinCoins(''); }}
-                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-          {triggerType === 'gift_global' && (
-            <p className="text-[10px] text-gray-500 mt-2">
-              Se dispara con cualquier regalo que NO tenga su propia alerta específica y cuyo valor en monedas alcance el mínimo de abajo. Nunca compite con una alerta específica: si el regalo tiene la suya, esa gana siempre.
-            </p>
-          )}
-          {triggerType !== 'gift' && triggerType !== 'gift_global' && conflictForTrigger(triggerType) && (
-            <p className="text-[10px] text-amber-500 mt-2">Ya existe una alerta para "{TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.</p>
-          )}
-        </div>
+        {triggerType !== 'gift' && triggerType !== 'gift_global' && conflictForTrigger(triggerType) && (
+          <p className="text-[11px] text-amber-500 mt-3">Ya existe una alerta para "{TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.</p>
+        )}
 
         {triggerType === 'gift_global' && (
-          <div className="mb-4">
+          <div className="mt-4">
             <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🪙 MÍNIMO DE MONEDAS</label>
             <input
               type="number" min="1" max={MIN_COINS_CAP} step="1"
@@ -523,13 +666,13 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               className="theme-input w-full p-3 outline-none text-sm text-white"
             />
             {minCoins !== '' && conflictForMinCoins(Number(minCoins)) && (
-              <p className="text-[10px] text-amber-500 mt-2">Ya existe una alerta general para {minCoins} monedas — bórrala o elige otro mínimo antes de guardar.</p>
+              <p className="text-[11px] text-amber-500 mt-2">Ya existe una alerta general para {minCoins} monedas — bórrala o elige otro mínimo antes de guardar.</p>
             )}
           </div>
         )}
 
         {triggerType === 'gift' && (
-          <div className="mb-4 relative z-20">
+          <div className="mt-4 relative z-20">
             <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
             <GiftPicker
               gifts={giftsList.filter((g) => g.coins > 0)}
@@ -541,208 +684,186 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             />
           </div>
         )}
+      </FormSection>
 
-        <>
-            <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video — opcional)</label>
-              {visualFile ? (
-                <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
-                  <span className="text-[10px] text-gray-400 truncate">📎 {visualFile.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => { setVisualFile(null); if (visualInputRef.current) visualInputRef.current.value = ''; }}
-                    className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
-                    title="Quitar este archivo" aria-label="Quitar archivo elegido"
-                  >✕</button>
-                </div>
-              ) : effectiveVisualUrl ? (
-                <div className="theme-input flex items-center justify-between p-2 mb-2">
-                  <span className="text-[10px] text-gray-400">{VISUAL_TYPE_ICON[effectiveVisualType] || '📎'} Ya tiene un archivo guardado</span>
-                  <button type="button" onClick={() => setClearVisual(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
-                </div>
-              ) : null}
-              <input
-                ref={visualInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
-                onChange={(e) => { setVisualFile(e.target.files?.[0] || null); setClearVisual(false); }}
-                className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
-              />
-              <p className="text-[10px] text-gray-500 mt-1">PNG/JPG/WebP, GIF, o video (MP4/WebM) — hasta 15MB.</p>
-              {effectiveVisualType === 'video' && (
-                <label className="flex items-center gap-2 mt-2 text-[10px] text-gray-400 cursor-pointer">
-                  <input type="checkbox" checked={visualMuted} onChange={(e) => setVisualMuted(e.target.checked)} />
-                  Mutear el video (útil si vas a poner un audio aparte abajo)
-                </label>
-              )}
+      <FormSection step="2" title="¿Qué se muestra?" hint="Usa uno, dos o los tres. Con que haya al menos uno, ya vale.">
+        <div className="mb-5">
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video)</label>
+          {visualFile ? (
+            <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
+              <span className="text-[11px] text-gray-400 truncate">📎 {visualFile.name}</span>
+              <button
+                type="button"
+                onClick={() => { setVisualFile(null); if (visualInputRef.current) visualInputRef.current.value = ''; }}
+                className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
+                title="Quitar este archivo" aria-label="Quitar archivo elegido"
+              >✕</button>
             </div>
-
-            <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎧 AUDIO (opcional, independiente del visual)</label>
-              {audioFile ? (
-                <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
-                  <span className="text-[10px] text-gray-400 truncate">🎧 {audioFile.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => { setAudioFile(null); if (audioInputRef.current) audioInputRef.current.value = ''; }}
-                    className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
-                    title="Quitar este archivo" aria-label="Quitar archivo elegido"
-                  >✕</button>
-                </div>
-              ) : effectiveAudioUrl ? (
-                <div className="theme-input flex items-center justify-between p-2 mb-2">
-                  <span className="text-[10px] text-gray-400">🎧 Ya tiene un audio guardado</span>
-                  <button type="button" onClick={() => setClearAudio(true)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
-                </div>
-              ) : null}
-              <input
-                ref={audioInputRef}
-                type="file"
-                accept="audio/mpeg,audio/wav,audio/mp3,audio/ogg"
-                onChange={(e) => { setAudioFile(e.target.files?.[0] || null); setClearAudio(false); }}
-                className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
-              />
-              <p className="text-[10px] text-gray-500 mt-1">MP3/WAV/OGG — hasta 15MB. Suena junto al visual, sin importar si el video tiene su propio audio o está mudo.</p>
+          ) : effectiveVisualUrl ? (
+            <div className="theme-input flex items-center justify-between p-2 mb-2">
+              <span className="text-[11px] text-gray-400">{VISUAL_TYPE_ICON[effectiveVisualType] || '📎'} Ya tiene un archivo guardado</span>
+              <button type="button" onClick={() => setClearVisual(true)} className="text-[11px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
             </div>
+          ) : null}
+          <input
+            ref={visualInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+            onChange={(e) => { setVisualFile(e.target.files?.[0] || null); setClearVisual(false); }}
+            className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">PNG/JPG/WebP, GIF, o video (MP4/WebM) — hasta 15MB.</p>
+          {effectiveVisualType === 'video' && (
+            <label className="flex items-center gap-2 mt-2 text-[11px] text-gray-400 cursor-pointer">
+              <input type="checkbox" checked={visualMuted} onChange={(e) => setVisualMuted(e.target.checked)} />
+              Mutear el video (útil si vas a poner un audio aparte abajo)
+            </label>
+          )}
+        </div>
 
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 font-semibold">💬 TEXTO (opcional)</label>
-                <button type="button" onClick={() => setCustomizingText(true)} className="text-[9px] font-black text-gray-400 hover:text-white underline uppercase tracking-widest whitespace-nowrap">
-                  🎨 Personalizar estilo
-                </button>
-              </div>
-              <textarea
-                value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
-                placeholder="Ej: ¡Gracias por el {gift}, {username}!"
-                className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 text-sm resize-none"
-              />
-              <p className="text-[10px] text-gray-500 mt-1">
-                Tags disponibles: <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{username}'}</code>{' '}
-                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{nickname}'}</code>{' '}
-                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{gift}'}</code>{' '}
-                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{coins}'}</code>{' '}
-                <code className="theme-chip px-1 py-0.5 rounded text-[9px]">{'{count}'}</code>
-                {' '}— se reemplazan por los datos reales al dispararse (usuario, su nombre público, el regalo, cuántas monedas costó y cuántas veces seguidas lo mandó).
-              </p>
-              <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
-              {effectiveVisualUrl && (
-                <div className="mt-2">
-                  <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">Posición del texto respecto al recurso</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {TEXT_POSITIONS.map((p) => (
-                      <button key={p.id} type="button" onClick={() => setTextPosition(p.id)}
-                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${textPosition === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+        <div className="mb-5">
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎧 AUDIO</label>
+          {audioFile ? (
+            <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
+              <span className="text-[11px] text-gray-400 truncate">🎧 {audioFile.name}</span>
+              <button
+                type="button"
+                onClick={() => { setAudioFile(null); if (audioInputRef.current) audioInputRef.current.value = ''; }}
+                className="text-red-400 hover:text-red-300 font-black text-sm flex-shrink-0 leading-none"
+                title="Quitar este archivo" aria-label="Quitar archivo elegido"
+              >✕</button>
             </div>
-
-            {/* Vista previa en vivo — pedido explícito: sin botón, se
-                actualiza sola con cualquier cambio de acá abajo. */}
-            <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">👁️ VISTA PREVIA EN VIVO</label>
-              <LivePreview draftAlert={draftAlert} customize={customization} />
+          ) : effectiveAudioUrl ? (
+            <div className="theme-input flex items-center justify-between p-2 mb-2">
+              <span className="text-[11px] text-gray-400">🎧 Ya tiene un audio guardado</span>
+              <button type="button" onClick={() => setClearAudio(true)} className="text-[11px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
             </div>
+          ) : null}
+          <input
+            ref={audioInputRef}
+            type="file"
+            accept="audio/mpeg,audio/wav,audio/mp3,audio/ogg"
+            onChange={(e) => { setAudioFile(e.target.files?.[0] || null); setClearAudio(false); }}
+            className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">MP3/WAV/OGG — hasta 15MB. Suena junto al visual, sin importar si el video tiene su propio audio o está mudo.</p>
+        </div>
 
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">DURACIÓN EN PANTALLA</label>
-                <span className="theme-chip font-bold px-2 rounded text-xs">{duration}s</span>
-              </div>
-              <input type="range" min="1" max={MAX_DURATION_S} step="1" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
-              <p className="text-[10px] text-gray-500 mt-1">Máximo {MAX_DURATION_S}s por alerta.</p>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">POSICIÓN EN PANTALLA</label>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 font-semibold">💬 TEXTO</label>
+            <button type="button" onClick={() => setCustomizingText(true)} className="text-[10px] font-black text-gray-400 hover:text-white underline uppercase tracking-widest whitespace-nowrap">
+              🎨 Personalizar estilo
+            </button>
+          </div>
+          <textarea
+            value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
+            placeholder="Ej: ¡Gracias por el {gift}, {username}!"
+            className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 text-sm resize-none"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">
+            Puedes usar estos datos, que se reemplazan al dispararse:{' '}
+            <code className="theme-chip px-1 py-0.5 rounded text-[10px]">{'{username}'}</code>{' '}
+            <code className="theme-chip px-1 py-0.5 rounded text-[10px]">{'{nickname}'}</code>{' '}
+            <code className="theme-chip px-1 py-0.5 rounded text-[10px]">{'{gift}'}</code>{' '}
+            <code className="theme-chip px-1 py-0.5 rounded text-[10px]">{'{coins}'}</code>{' '}
+            <code className="theme-chip px-1 py-0.5 rounded text-[10px]">{'{count}'}</code>
+            {' '}(usuario, su nombre público, el regalo, sus monedas y cuántas veces seguidas lo mandó).
+          </p>
+          <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
+          {effectiveVisualUrl && (
+            <div className="mt-2">
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">Posición del texto respecto al recurso</label>
               <div className="flex gap-2 flex-wrap">
-                {POSITIONS.map((p) => (
-                  <button key={p.id} type="button" onClick={() => setPosition(p.id)}
-                    className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${position === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                {TEXT_POSITIONS.map((p) => (
+                  <button key={p.id} type="button" onClick={() => setTextPosition(p.id)} aria-pressed={textPosition === p.id}
+                    className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${textPosition === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                     {p.label}
                   </button>
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      </FormSection>
 
-            <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE ENTRADA</label>
-              <div className="flex gap-2 flex-wrap">
-                {ANIMATION_IN_OPTIONS.map((a) => (
-                  <button key={a.id} type="button" onClick={() => setEntranceAnim(a.id)}
-                    className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${entranceAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+      <FormSection step="3" title="¿Cómo aparece?" hint="La vista previa se actualiza sola con cada cambio.">
+        <div className="mb-5">
+          <LivePreview draftAlert={draftAlert} customize={customization} />
+        </div>
 
-            <div className="mb-6">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE SALIDA</label>
-              <div className="flex gap-2 flex-wrap">
-                {ANIMATION_OUT_OPTIONS.map((a) => (
-                  <button key={a.id} type="button" onClick={() => setExitAnim(a.id)}
-                    className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${exitAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="mb-5">
+          <div className="flex justify-between items-center mb-1">
+            <label className="theme-label text-[10px] uppercase tracking-widest font-semibold" htmlFor="alert-duration">DURACIÓN EN PANTALLA</label>
+            <span className="theme-chip font-bold px-2 rounded text-xs">{duration}s</span>
+          </div>
+          <input id="alert-duration" type="range" min="1" max={MAX_DURATION_S} step="1" value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="w-full" />
+          <p className="text-[11px] text-gray-500 mt-1">Máximo {MAX_DURATION_S}s por alerta.</p>
+        </div>
 
-            {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
-
-            <div className="flex gap-2">
-              <button
-                onClick={save}
-                disabled={saving}
-                className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {saving ? 'GUARDANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
+        <div className="mb-5">
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">POSICIÓN EN PANTALLA</label>
+          <div className="flex gap-2 flex-wrap">
+            {POSITIONS.map((p) => (
+              <button key={p.id} type="button" onClick={() => setPosition(p.id)} aria-pressed={position === p.id}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${position === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                {p.label}
               </button>
-              {editingId && (
-                <button onClick={resetForm} type="button" className="theme-btn-secondary px-5 py-4 rounded-xl font-bold tracking-wide text-xs uppercase">
-                  Cancelar
+            ))}
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-5">
+          <div>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE ENTRADA</label>
+            <div className="flex gap-2 flex-wrap">
+              {ANIMATION_IN_OPTIONS.map((a) => (
+                <button key={a.id} type="button" onClick={() => setEntranceAnim(a.id)} aria-pressed={entranceAnim === a.id}
+                  className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${entranceAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  {a.label}
                 </button>
-              )}
+              ))}
             </div>
-          </>
-      </div>
-
-      <div className="theme-surface w-full max-w-md p-6">
-        <h2 className="theme-heading text-lg font-semibold mb-1">Alertas específicas</h2>
-        <p className="text-[10px] text-gray-500 mb-4">Un regalo, seguimiento o sticker puntual — siempre tienen prioridad sobre las generales de abajo.</p>
-        {loading ? (
-          <p className="text-gray-500 text-sm italic">Cargando...</p>
-        ) : specificAlerts.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {specificAlerts.map((alert) => (
-              <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
-            ))}
           </div>
-        ) : (
-          <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta específica.</p>
-        )}
-      </div>
-
-      <div className="theme-surface w-full max-w-md p-6">
-        <h2 className="theme-heading text-lg font-semibold mb-1">Alertas generales</h2>
-        <p className="text-[10px] text-gray-500 mb-4">Se disparan solo si el regalo no tiene una alerta específica asignada — la de mayor mínimo que el regalo alcance.</p>
-        {loading ? (
-          <p className="text-gray-500 text-sm italic">Cargando...</p>
-        ) : globalAlerts.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {globalAlerts.map((alert) => (
-              <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
-            ))}
+          <div>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE SALIDA</label>
+            <div className="flex gap-2 flex-wrap">
+              {ANIMATION_OUT_OPTIONS.map((a) => (
+                <button key={a.id} type="button" onClick={() => setExitAnim(a.id)} aria-pressed={exitAnim === a.id}
+                  className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${exitAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <p className="text-gray-600 text-xs italic">Todavía no configuraste ninguna alerta general.</p>
-        )}
+        </div>
+      </FormSection>
+
+      {/* Barra de acciones siempre a la vista: en un formulario largo el
+          botón de guardar no debe quedar perdido hasta el final. */}
+      <div className="sticky bottom-0 z-30 w-full max-w-2xl pb-2">
+        <div className="theme-surface p-3">
+          {error && <p role="alert" className="text-[11px] font-bold text-red-500 mb-2 px-1">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="theme-btn-primary flex-1 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? 'GUARDANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
+            </button>
+            <button onClick={closeForm} type="button" className="theme-btn-secondary px-5 py-3 rounded-xl font-bold tracking-wide text-xs uppercase">
+              Cancelar
+            </button>
+          </div>
+        </div>
       </div>
+    </>
+  );
+
+  return (
+    <div ref={rootRef} className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
+      {view === 'form' ? formView : listView}
 
       {savedPreview && (
         <>

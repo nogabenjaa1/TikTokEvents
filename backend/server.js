@@ -56,6 +56,7 @@ const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const compression = require('compression');
 
 const { MercadoPagoConfig, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 const Stripe = require('stripe');
@@ -210,6 +211,21 @@ app.set('trust proxy', 1);
 // problema. Si se quiere una CSP real, hay que armarla con tiempo y
 // probar cada integracion de terceros a mano, no activarla a ciegas.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+// Comprime respuestas (el paquete JS del frontend pesa ~600 kB sin gzip).
+// socket.io va por su propio canal WebSocket, no pasa por acá.
+app.use(compression());
+
+// Identifica esta "vida" del proceso: si cambia mientras un panel sigue
+// abierto, el servidor se reinició (deploy, caída, Render dormido) y todo lo
+// que vivía solo en memoria se perdió -- ver 'server_boot' más abajo.
+const BOOT_ID = crypto.randomUUID();
+
+// Chequeo de salud sin autenticación ni datos sensibles: sirve para el
+// health check de Render y para un ping externo (UptimeRobot, etc.) que
+// evite que el servicio se duerma por inactividad.
+app.get('/health', (req, res) => {
+    res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()) });
+});
 // Stripe firma su webhook sobre los bytes CRUDOS del body -- tiene que
 // consumirse asi, antes del express.json() general de la linea de abajo,
 // o stripe.webhooks.constructEvent() no puede validar la firma contra un
@@ -1795,7 +1811,25 @@ app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, r
 // ==========================================
 io.use(auth.socketAuthMiddleware);
 
+// Saca de memoria los tenants que nadie usa hace rato (ver
+// Tenant.isEvictable) -- antes cada licencia que se conectaba alguna vez se
+// quedaba en el proceso para siempre.
+const TENANT_IDLE_EVICT_MS = 30 * 60 * 1000;
+const TENANT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+setInterval(() => {
+    for (const [licenseId, tenant] of tenants) {
+        const hasSockets = (io.sockets.adapter.rooms.get(licenseId)?.size || 0) > 0;
+        if (!tenant.isEvictable(hasSockets, TENANT_IDLE_EVICT_MS)) continue;
+        try { tenant.dispose(); } catch (err) { console.error(`[${licenseId}] Error liberando tenant inactivo:`, err.message); }
+        tenants.delete(licenseId);
+        console.log(`[${licenseId}] Tenant inactivo liberado de memoria (${tenants.size} restantes).`);
+    }
+}, TENANT_SWEEP_INTERVAL_MS).unref();
+
 io.on('connection', (socket) => {
+    // Cada panel recuerda este id: si al reconectarse trae otro distinto, el
+    // servidor se reinició y lo activo se perdió (ver App.jsx).
+    socket.emit('server_boot', { bootId: BOOT_ID });
     socket.join(socket.licenseId);
     const tenant = getOrCreateTenant(socket.licenseId, socket.licenseType);
     tenant.attachSocket(socket);

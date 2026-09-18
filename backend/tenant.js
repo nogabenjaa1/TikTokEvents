@@ -72,8 +72,15 @@ const TIKTOK_CONNECT_TIMEOUT_MS = 20000;
 // sin ni uno solo, se asume que la conexión está muerta de verdad y se
 // fuerza una reconexión, aunque el objeto de conexión diga que sigue
 // viva.
-const WATCHDOG_CHECK_INTERVAL_MS = 30000;
-const WATCHDOG_TIMEOUT_MS = 120000;
+// Reporte real: "el bot deja de leer comentarios un rato y luego vuelve" --
+// con 30s de chequeo y 120s de silencio el hueco podía pasar de 2 minutos
+// antes de forzar la reconexión. Ahora se revisa cada 10s y se corta a los
+// 45s sin ningún mensaje (los conteos de espectadores llegan mucho más
+// seguido que eso en un LIVE vivo). Una reconexión por esta vía NUNCA borra
+// rankings ni partidas (ver wasEverConnected), así que un falso positivo
+// solo cuesta un par de segundos.
+const WATCHDOG_CHECK_INTERVAL_MS = 10000;
+const WATCHDOG_TIMEOUT_MS = 45000;
 
 // Bug real reportado ("el stream terminó y se quedó en bucle"): cuando el
 // LIVE de verdad termina, a veces TikTok igual deja pasar el handshake de
@@ -622,6 +629,31 @@ class Tenant {
         // Ver el comentario de WATCHDOG_TIMEOUT_MS mas arriba.
         this.lastTikTokMessageAt = null;
         this.watchdogInterval = null;
+        // Último momento en que hubo (o dejó de haber) un socket conectado a
+        // este tenant -- ver isEvictable/disposeTenant.
+        this.lastSocketActivityAt = Date.now();
+    }
+
+    // Un tenant se puede sacar de memoria cuando nadie lo usa: sin sockets
+    // (ni panel ni overlays de OBS), sin nada activo ni conexión con TikTok
+    // (anyContestNeedsConnection cubre juegos, extensible, objetivo y el
+    // usuario deseado), y sin actividad de sockets hace `idleMs`. Todo lo
+    // que importa se guarda en la DB y se vuelve a cargar al reconectarse
+    // (ver loadPersistedSettings); solo se pierde estado efímero como los
+    // rankings de Top Gifter/Tap-Tap y la cola de Spotify, que igual se
+    // reinician al empezar un directo nuevo.
+    isEvictable(hasSockets, idleMs) {
+        if (hasSockets) return false;
+        if (this.liveConnected || this.connectingPromise || this.anyContestNeedsConnection()) return false;
+        return Date.now() - this.lastSocketActivityAt >= idleMs;
+    }
+
+    // Libera todo lo que este tenant tuviera vivo (timers/conexión) antes de
+    // quitarlo del Map de server.js.
+    dispose() {
+        this.disconnectTikTok();
+        this.stopSpotifyQueuePolling();
+        if (this.tapTapDiagnosticsBroadcastTimer) { clearTimeout(this.tapTapDiagnosticsBroadcastTimer); this.tapTapDiagnosticsBroadcastTimer = null; }
     }
 
     // Broadcast scopeado: reemplaza los antiguos io.emit(...) globales.
@@ -2606,6 +2638,9 @@ class Tenant {
     // de siempre, delegando a los métodos de instancia.
     // ==========================================
     attachSocket(socket) {
+        this.lastSocketActivityAt = Date.now();
+        socket.on('disconnect', () => { this.lastSocketActivityAt = Date.now(); });
+
         // Fire-and-forget: ver el comentario de loadAlertConfigs.
         this.loadAlertConfigs();
 

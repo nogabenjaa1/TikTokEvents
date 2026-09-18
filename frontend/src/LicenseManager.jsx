@@ -1,3 +1,4 @@
+import { SkeletonRows } from './PanelHelp';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
@@ -562,7 +563,7 @@ export default function LicenseManager({ onSessionInvalid }) {
       {/* Listado */}
       <div className="w-full max-w-lg flex flex-col gap-2">
         {loading ? (
-          <p className="text-gray-600 text-sm italic text-center">Cargando licencias...</p>
+          <SkeletonRows count={4} label="Cargando licencias..." />
         ) : filteredLicenses.length === 0 ? (
           <p className="text-gray-600 text-sm italic text-center">
             {licenses.length === 0 ? 'No hay licencias todavía.' : 'Ninguna licencia coincide con el filtro.'}

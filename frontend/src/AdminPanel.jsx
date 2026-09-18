@@ -19,6 +19,7 @@ const NO_INSTA_WIN = {
 // comparte con Zubastinis y cualquier módulo futuro.
 // ─────────────────────────────────────────────
 export default function AdminPanel({ state, socket, username, connectionStatus, giftsList, prize }) {
+  const [startError, setStartError] = useState('');
   const [selectedGift, setSelectedGift]         = useState(null);
   const [selectedInstaWin, setSelectedInstaWin] = useState(NO_INSTA_WIN);
 
@@ -67,8 +68,9 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   }, [selectedGift, selectedInstaWin, mainTime, snipeTime, state.isActive]);
 
   const startContest = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
-    if (!selectedGift) return alert('¡Elige el regalo objetivo!');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (!selectedGift) return setStartError('¡Elige el regalo objetivo!');
     socket.emit('start_contest', {
       tiktokUsername:    username,
       targetGiftName:    selectedGift.name,
@@ -198,7 +200,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
             {/* Botones */}
             <div className="flex gap-4">

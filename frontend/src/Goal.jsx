@@ -29,6 +29,7 @@ const TARGET_TYPES = [
 // "Reiniciar progreso" de acá abajo.
 // ─────────────────────────────────────────────
 export default function Goal({ state, socket, username, connectionStatus }) {
+  const [startError, setStartError] = useState('');
   const saved = loadSavedConfig();
   const [targetType, setTargetType] = useState(saved.targetType);
   const [targetInput, setTargetInput] = useState(saved.targetInput);
@@ -57,7 +58,8 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   const targetValid = Number.isFinite(parsedTarget) && parsedTarget >= 1 && parsedTarget <= cap;
 
   const startGoal = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     if (!targetValid) return setError(`Ingresa una meta válida (entre 1 y ${cap.toLocaleString('es-MX')}).`);
     setError('');
     socket.emit('start_goal', { targetType, target: parsedTarget, title: title.trim(), tiktokUsername: username });
@@ -226,7 +228,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
 
         {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
 
-        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
         <div className="flex gap-4">
           {!state.isActive ? (

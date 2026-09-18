@@ -214,6 +214,13 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="default"] .text-gray-600 {
   color: var(--ink-default) !important;
 }
+/* Texto secundario (ayudas, descripciones): antes TODO el gris pasaba a la
+   misma tinta oscura y se perdía la jerarquía; ahora las ayudas van a ~78%
+   de la tinta (contraste sigue por encima de 4.5:1 sobre el pastel). */
+.themed-app[data-theme-style="default"] .text-gray-500,
+.themed-app[data-theme-style="default"] .text-gray-600 {
+  color: color-mix(in oklch, var(--ink-default) 78%, transparent) !important;
+}
 .themed-app[data-theme-style="default"] .placeholder-gray-600::placeholder {
   color: color-mix(in oklch, var(--ink-default) 55%, transparent);
 }
@@ -268,6 +275,10 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .text-gray-500,
 .themed-app[data-theme-style="cute"] .text-gray-600 {
   color: var(--ink-cute) !important;
+}
+.themed-app[data-theme-style="cute"] .text-gray-500,
+.themed-app[data-theme-style="cute"] .text-gray-600 {
+  color: color-mix(in oklch, var(--ink-cute) 78%, transparent) !important;
 }
 .themed-app[data-theme-style="cute"] .placeholder-gray-600::placeholder {
   color: color-mix(in oklch, var(--ink-cute) 55%, transparent);

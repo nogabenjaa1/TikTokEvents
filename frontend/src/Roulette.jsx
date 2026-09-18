@@ -40,6 +40,7 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', resu
 // normalizada desde App.jsx, compartida con los demás módulos.
 // ─────────────────────────────────────────────
 export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
+  const [startError, setStartError] = useState('');
   const [entryMode, setEntryMode]         = useState('chat');
   const [keyword, setKeyword]             = useState('participo');
   const [entryWindowSec, setEntryWindowSec] = useState(300);
@@ -85,9 +86,10 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   };
 
   const startRoulette = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
-    if (entryMode === 'chat' && !keyword.trim()) return alert('¡Escribe la palabra clave para participar!');
-    if (entryMode === 'gift' && !selectedGift) return alert('¡Elige el regalo para participar!');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (entryMode === 'chat' && !keyword.trim()) return setStartError('¡Escribe la palabra clave para participar!');
+    if (entryMode === 'gift' && !selectedGift) return setStartError('¡Elige el regalo para participar!');
     socket.emit('start_roulette', buildConfig());
   };
 
@@ -314,7 +316,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <p className="text-[10px] text-gray-500 mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
             {/* Botones */}
             <div className="flex gap-4">

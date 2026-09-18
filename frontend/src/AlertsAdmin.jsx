@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
+import { SkeletonRows } from './PanelHelp';
 import { backendUrl, authHeaders } from './auth';
 import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
@@ -559,7 +560,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
       {loading ? (
         <div className="theme-surface w-full max-w-2xl p-6">
-          <p className="text-gray-500 text-sm italic">Cargando tus alertas...</p>
+          <SkeletonRows count={3} label="Cargando tus alertas..." />
         </div>
       ) : totalAlerts === 0 ? (
         <div className="theme-surface w-full max-w-2xl p-8 text-center">

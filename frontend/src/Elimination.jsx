@@ -52,6 +52,7 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con los demás módulos.
 // ─────────────────────────────────────────────
 export default function Elimination({ state, socket, username, connectionStatus, giftsList, prize }) {
+  const [startError, setStartError] = useState('');
   const [selectedGift, setSelectedGift]         = useState(null);
   const [selectedInstaWin, setSelectedInstaWin] = useState(NO_INSTA_WIN);
   const [baseTime, setBaseTime]                 = useState(60);
@@ -98,8 +99,9 @@ export default function Elimination({ state, socket, username, connectionStatus,
   }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, state.isActive]);
 
   const startElimination = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
-    if (!selectedGift) return alert('¡Elige el regalo para unirse!');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (!selectedGift) return setStartError('¡Elige el regalo para unirse!');
     socket.emit('start_elimination', {
       tiktokUsername: username,
       targetGiftName:    selectedGift.name,
@@ -329,7 +331,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
               <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
             {/* Botones */}
             <div className="flex gap-4">

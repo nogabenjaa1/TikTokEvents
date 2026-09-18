@@ -120,6 +120,12 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   };
 
   const pct = state.isActive ? Math.min(100, Math.round(((state.current || 0) / Math.max(1, state.target || 1)) * 100)) : 0;
+  // Sin objetivo activo la vista previa muestra lo que se está armando en el
+  // formulario (título, meta y barra en 0), para verlo antes de iniciar.
+  const previewTitle = (state.isActive ? state.title : title.trim())
+    || ((state.isActive ? state.targetType : targetType) === 'followers' ? '👤 Objetivo de seguidores' : '🎁 Objetivo de regalos');
+  const previewCurrent = state.isActive ? (state.current || 0) : 0;
+  const previewTarget = state.isActive ? (state.target || 0) : (targetValid ? parsedTarget : 0);
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
@@ -128,22 +134,17 @@ export default function Goal({ state, socket, username, connectionStatus }) {
       <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
         {state.finished && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black relative z-10 mb-3">🎯 OBJETIVO</p>
-        {state.isActive ? (
-          <div className="relative z-10">
-            <p className="text-sm font-bold text-gray-300 truncate mb-2">
-              {state.title || (state.targetType === 'followers' ? '👤 Objetivo de seguidores' : '🎁 Objetivo de regalos')}
-            </p>
-            <div className="w-full h-6 rounded-full overflow-hidden border mb-2" style={{ borderColor: 'var(--surface-border-color)', background: 'rgba(0,0,0,0.25)' }}>
-              <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${state.finished ? 'bg-yellow-400' : 'theme-accent-bg'}`} style={{ width: `${pct}%` }} />
-            </div>
-            <p className="text-center text-2xl font-black tabular-nums">
-              {(state.current || 0).toLocaleString('es-MX')} <span className="text-gray-500 text-base">/ {(state.target || 0).toLocaleString('es-MX')}</span>
-            </p>
-            {state.finished && <p className="text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">🎉 ¡Objetivo alcanzado!</p>}
+        <div className="relative z-10">
+          <p className="text-sm font-bold text-gray-300 truncate mb-2">{previewTitle}</p>
+          <div className="w-full h-6 rounded-full overflow-hidden border mb-2" style={{ borderColor: 'var(--surface-border-color)', background: 'rgba(0,0,0,0.25)' }}>
+            <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${state.finished ? 'bg-yellow-400' : 'theme-accent-bg'}`} style={{ width: `${pct}%` }} />
           </div>
-        ) : (
-          <p className="text-gray-600 text-sm italic font-medium relative z-10 text-center mt-2">Todavía no arrancó...</p>
-        )}
+          <p className="text-center text-2xl font-black tabular-nums">
+            {previewCurrent.toLocaleString('es-MX')} <span className="text-gray-500 text-base">/ {previewTarget.toLocaleString('es-MX')}</span>
+          </p>
+          {state.finished && <p className="text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">🎉 ¡Objetivo alcanzado!</p>}
+          {!state.isActive && <p className="text-center text-[10px] text-gray-600 italic mt-1">Vista previa — todavía no arrancó</p>}
+        </div>
       </div>
 
       {/* Settings */}
@@ -182,14 +183,14 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-6">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">TÍTULO (OPCIONAL)</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">📝 ¿PARA QUÉ ES ESTE OBJETIVO?</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value.slice(0, 60))}
             placeholder="Ej: Para la silla nueva"
             className="theme-input w-full p-3 text-sm outline-none"
           />
-          <p className="text-[10px] text-gray-500 mt-1">Si lo dejas vacío, el overlay muestra un título genérico según el tipo elegido.</p>
+          <p className="text-[10px] text-gray-500 mt-1">{title.length}/60 — Este texto se muestra sobre la barra de progreso en el overlay. Si lo dejas vacío, se usa un título genérico según el tipo elegido.</p>
         </div>
 
         <div className="mb-6">

@@ -57,9 +57,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   const restartZubastinis = () => socket.emit('restart_zubastinis');
   const togglePause       = () => socket.emit(state.paused ? 'resume_zubastinis' : 'pause_zubastinis');
 
-  // Los ajustes se pueden tocar mientras se confirma el username o la
-  // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
+  // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
+  // explícito); solo el botón START exige "connected" a secas.
   const top3 = state.top3 || [];
 
   const timerLabel = state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIMER');
@@ -134,7 +133,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
         </div>
 
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
@@ -212,7 +211,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             </div>
           </div>
 
-          {/* Premio: fuera del bloque isLocked a propósito — se puede
+          {/* Premio: aparte de los ajustes a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
           <PrizeEditor socket={socket} prize={prize} />
         </div>

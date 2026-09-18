@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import GiftPicker from './GiftPicker';
 import { backendUrl, authHeaders } from './auth';
 import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
@@ -215,7 +216,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
   const [minCoins, setMinCoins] = useState('');
-  const [isDropOpen, setIsDropOpen] = useState(false);
 
   const [visualFile, setVisualFile] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
@@ -528,47 +528,21 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           </div>
         )}
 
-        {triggerType === 'gift' && giftsList.length === 0 ? (
-          <p className="text-[11px] text-gray-500 leading-snug">
-            Conecta un usuario de TikTok en la barra de arriba para cargar la lista de regalos disponibles.
-          </p>
-        ) : (
-          <>
-            {triggerType === 'gift' && (
-            <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
-              <div
-                onClick={() => setIsDropOpen(!isDropOpen)}
-                className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
-              >
-                {selectedGift ? (
-                  <div className="flex items-center gap-3">
-                    {selectedGift.icon && <img src={selectedGift.icon} className="w-6 h-6" />}
-                    <span className="text-sm">{selectedGift.name}</span>
-                    {conflictForTrigger(selectedGift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">ya tiene otra alerta</span>}
-                  </div>
-                ) : (
-                  <span className="text-gray-500 text-sm">Elige un regalo...</span>
-                )}
-              </div>
-              {isDropOpen && (
-                <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
-                  {giftsList.filter((g) => g.coins > 0).map((gift, i) => (
-                    <div key={`al-${gift.id}-${i}`}
-                      onClick={() => { setSelectedGift(gift); setIsDropOpen(false); }}
-                      className="p-2 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] cursor-pointer flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <img src={gift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{gift.name}</span>
-                      </div>
-                      {conflictForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">ya tiene alerta</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
+        {triggerType === 'gift' && (
+          <div className="mb-4 relative z-20">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
+            <GiftPicker
+              gifts={giftsList.filter((g) => g.coins > 0)}
+              selected={selectedGift}
+              onSelect={setSelectedGift}
+              placeholder="Elige un regalo..."
+              emptyText="Aún no hay regalos cargados. Conecta un usuario de TikTok en la barra de arriba una sola vez y quedarán guardados para siempre en tu licencia."
+              renderBadge={(gift) => conflictForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex-shrink-0">ya tiene alerta</span>}
+            />
+          </div>
+        )}
 
+        <>
             <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video — opcional)</label>
               {visualFile ? (
@@ -736,7 +710,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               )}
             </div>
           </>
-        )}
       </div>
 
       <div className="theme-surface w-full max-w-md p-6">

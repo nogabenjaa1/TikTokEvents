@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -42,7 +43,6 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   const [keyword, setKeyword]             = useState('participo');
   const [entryWindowSec, setEntryWindowSec] = useState(300);
   const [selectedGift, setSelectedGift]   = useState(null);
-  const [isDropOpen, setIsDropOpen]       = useState(false);
   const [winnerRule, setWinnerRule]       = useState('first');
   const [winnerPosition, setWinnerPosition] = useState(1);
   // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
@@ -124,7 +124,6 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound, state.isActive, state.mode]);
 
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
   const entries = state.entries || [];
   const size = sizeFor(entries.length);
   const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
@@ -186,7 +185,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
         </div>
 
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Modo de entrada */}
             <div className="mb-4">
@@ -216,37 +215,12 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             ) : (
               <div className="mb-4 relative z-20">
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO PARA PARTICIPAR</label>
-                <div
-                  onClick={() => setIsDropOpen(!isDropOpen)}
-                  className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
-                >
-                  {selectedGift ? (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-3">
-                        <img src={selectedGift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{selectedGift.name}</span>
-                      </div>
-                      <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md">{selectedGift.coins} 🪙</span>
-                    </div>
-                  ) : (
-                    <span className="text-gray-500 text-sm">Esperando...</span>
-                  )}
-                </div>
-                {isDropOpen && (
-                  <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
-                    {giftsList.filter(g => g.coins > 0).map((gift, i) => (
-                      <div key={`r-${gift.id}-${i}`}
-                        onClick={() => { setSelectedGift(gift); setIsDropOpen(false); }}
-                        className="p-2 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] cursor-pointer flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <img src={gift.icon} className="w-6 h-6" />
-                          <span className="text-sm">{gift.name}</span>
-                        </div>
-                        <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <GiftPicker
+                  gifts={giftsList.filter(g => g.coins > 0)}
+                  selected={selectedGift}
+                  onSelect={setSelectedGift}
+                  placeholder="Elige un regalo..."
+                />
                 <p className="text-[10px] text-gray-500 mt-1 leading-snug">
                   Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
                 </p>
@@ -371,7 +345,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             </div>
           </div>
 
-          {/* Premio: fuera del bloque isLocked a propósito — se puede
+          {/* Premio: aparte de los ajustes a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
           <PrizeEditor socket={socket} prize={prize} />
         </div>

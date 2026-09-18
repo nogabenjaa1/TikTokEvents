@@ -1713,10 +1713,25 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
                 id: g.id, name: g.name, coins: g.diamond_count, icon: g.image.url_list[0]
             }))
             .sort((a, b) => a.coins - b.coins);
+        // Se guarda por licencia para que el resto de la app pueda usar los
+        // selectores de regalo sin un LIVE conectado (ver GET /api/gifts).
+        // Un fallo de DB acá no debe tumbar la respuesta con los regalos.
+        if (validGifts.length > 0) {
+            db.setGiftCatalog(req.license.id, validGifts).catch((err) => {
+                console.error(`[${req.license.id}] No se pudo guardar el catálogo de regalos:`, err.message);
+            });
+        }
         res.json({ success: true, gifts: validGifts });
     } catch (error) {
         res.json({ success: false });
     }
+});
+
+// Catálogo de regalos ya guardado de esta licencia (ver /api/setup arriba).
+// Vacío hasta que el streamer se conecte a un LIVE al menos una vez.
+app.get('/api/gifts', auth.requireAuth, (req, res) => {
+    const gifts = Array.isArray(req.license.gift_catalog) ? req.license.gift_catalog : [];
+    res.json({ success: true, gifts });
 });
 
 // ==========================================

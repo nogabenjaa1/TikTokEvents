@@ -112,7 +112,6 @@ export default function Extensible({ state, socket, username, connectionStatus }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsPerFollow, secondsPerGift, reverseMode, state.isActive]);
 
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
@@ -147,7 +146,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
         </div>
 
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Tiempo base */}
             <div className="mb-4">

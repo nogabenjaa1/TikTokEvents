@@ -334,6 +334,18 @@ export default function App() {
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
+  // Catálogo de regalos: se guarda por licencia en el backend (ver
+  // GET /api/gifts), así los selectores funcionan aunque no haya LIVE
+  // conectado. Se conserva la MISMA referencia si el contenido no cambió --
+  // los paneles de juegos re-preseleccionan regalo cada vez que llega una
+  // lista nueva, y eso pisaría lo que el streamer ya eligió.
+  const applyGifts = useCallback((gifts) => {
+    setGiftsList((prev) => {
+      const next = [NO_INSTA_WIN, ...gifts];
+      const same = prev.length === next.length && prev.every((g, i) => g.id === next[i].id && g.coins === next[i].coins && g.name === next[i].name);
+      return same ? prev : next;
+    });
+  }, []);
 
   // ── URLs reales para cada sección (pedido explícito) ──
   // sidebarMode/eventsTab siguen siendo el estado de siempre (todo el
@@ -690,7 +702,6 @@ export default function App() {
     if (!normalizedUsername) {
       setConnectionStatus('idle');
       setConnectionError('');
-      setGiftsList([]);
       // OJO: `username` arranca vacío en cada carga de la página, así que
       // este bloque también corre en el primer render de una sesión que en
       // realidad SÍ tiene una conexión real viva del lado del backend
@@ -720,13 +731,9 @@ export default function App() {
         try {
           const res = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
           const data = await res.json();
-          if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) {
-            setGiftsList([NO_INSTA_WIN, ...data.gifts]);
-          } else {
-            setGiftsList([]);
-          }
+          if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
         } catch {
-          setGiftsList([]);
+          // Se conserva el catálogo ya guardado (ver applyGifts).
         }
       })();
       return;
@@ -744,20 +751,34 @@ export default function App() {
       try {
         const res  = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
         const data = await res.json();
-        if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) {
-          setGiftsList([NO_INSTA_WIN, ...data.gifts]);
-        } else {
-          setGiftsList([]);
-        }
+        if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
       } catch {
-        // Los juegos no tendrán selector de regalos hasta que se vuelva a
-        // escribir el usuario, pero la conexión LIVE y el TTS siguen activos.
-        setGiftsList([]);
+        // Si falla, se sigue con el catálogo ya guardado de la licencia (si
+        // hay); la conexión LIVE y el TTS siguen activos de todos modos.
       }
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [username, socket, overlayMode]);
+  }, [username, socket, overlayMode, applyGifts]);
+
+  // Carga el catálogo de regalos YA guardado de esta licencia apenas hay
+  // sesión (pedido explícito): no depende de ninguna conexión a TikTok. Al
+  // cambiar de licencia (otro login en la misma pestaña) se vacía primero
+  // para no mostrar los regalos de la cuenta anterior.
+  const licenseKey = session?.token || null;
+  useEffect(() => {
+    if (overlayMode || !licenseKey) { setGiftsList([]); return; }
+    let cancelled = false;
+    setGiftsList([]);
+    (async () => {
+      try {
+        const res = await fetch(`${backendUrl()}/api/gifts`, { headers: authHeaders() });
+        const data = await res.json();
+        if (!cancelled && data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
+      } catch { /* sin catálogo guardado todavía: se llena al conectar un LIVE */ }
+    })();
+    return () => { cancelled = true; };
+  }, [overlayMode, licenseKey, applyGifts]);
 
   // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
   // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO

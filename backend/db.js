@@ -121,6 +121,10 @@ const ready = pool.query(`
   // sí (eso vive solo en memoria, como el resto de los "juegos" -- ver
   // goalState en tenant.js), solo esta configuración persistente.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
+  // Catálogo de regalos de TikTok, cargado UNA vez por licencia (pedido
+  // explícito): así los selectores de regalo de juegos/alertas funcionan
+  // aunque todavía no haya un LIVE conectado. Array de { id, name, coins, icon }.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS gift_catalog JSONB`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -386,6 +390,11 @@ async function setTtsSettings(id, settings) {
 async function setGoalSettings(id, settings) {
     await ready;
     await pool.query('UPDATE licenses SET goal_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
+async function setGiftCatalog(id, gifts) {
+    await ready;
+    await pool.query('UPDATE licenses SET gift_catalog = $1 WHERE id = $2', [JSON.stringify(gifts), id]);
 }
 
 const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
@@ -665,7 +674,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

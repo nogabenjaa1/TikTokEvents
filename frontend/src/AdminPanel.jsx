@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -23,8 +24,6 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   const [mainTime, setMainTime]   = useState(15);
   const [snipeTime, setSnipeTime] = useState(5);
 
-  const [isNormalDropOpen, setIsNormalDropOpen] = useState(false);
-  const [isInstaDropOpen, setIsInstaDropOpen]   = useState(false);
 
   // Cuando llega una lista de regalos nueva (usuario conectado), preseleccionar
   useEffect(() => {
@@ -68,6 +67,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
   const startContest = () => {
     if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    if (!selectedGift) return alert('¡Elige el regalo objetivo!');
     socket.emit('start_contest', {
       tiktokUsername:    username,
       targetGiftName:    selectedGift.name,
@@ -85,9 +85,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   const restartContest = () => socket.emit('restart_contest');
   const togglePause    = () => socket.emit(state.paused ? 'resume_contest' : 'pause_contest');
 
-  // Los ajustes se pueden tocar mientras se confirma el username o la
-  // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
+  // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
+  // explícito); solo el botón START exige "connected" a secas.
 
   const timerLabel = state.paused ? 'PAUSADO' : (state.mode === 'waiting' ? 'ESPERANDO' : 'TIEMPO');
   const timerColorClass = state.paused
@@ -146,46 +145,17 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
         </div>
 
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Selector regalo normal */}
             <div className="mb-4 relative z-20">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">⚔️ REGALO OBJETIVO</label>
-              <div
-                onClick={() => { setIsNormalDropOpen(!isNormalDropOpen); setIsInstaDropOpen(false); }}
-                className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
-              >
-                {selectedGift ? (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3">
-                      <img src={selectedGift.icon} className="w-6 h-6" />
-                      <span className="text-sm">{selectedGift.name}</span>
-                    </div>
-                    <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md">
-                      {selectedGift.coins} 🪙
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-gray-500 text-sm">Esperando...</span>
-                )}
-              </div>
-              {isNormalDropOpen && (
-                <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
-                  {giftsList.filter(g => g.coins > 0).map((gift, i) => (
-                    <div
-                      key={`n-${gift.id}-${i}`}
-                      onClick={() => { setSelectedGift(gift); setIsNormalDropOpen(false); }}
-                      className="p-2 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img src={gift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{gift.name}</span>
-                      </div>
-                      <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <GiftPicker
+                gifts={giftsList.filter(g => g.coins > 0)}
+                selected={selectedGift}
+                onSelect={setSelectedGift}
+                placeholder="Elige un regalo..."
+              />
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">
                 Cualquier regalo cuenta si su valor en monedas alcanza a este (acumulando varios seguidos, máximo 10s entre uno y otro) — sin importar por cuánto se pase, siempre cuenta como una sola vez.
               </p>
@@ -194,43 +164,13 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
               <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">👑 INSTA-WIN</label>
-              <div
-                onClick={() => { setIsInstaDropOpen(!isInstaDropOpen); setIsNormalDropOpen(false); }}
-                className="w-full p-3 bg-yellow-900/10 rounded-xl border border-yellow-700/50 cursor-pointer flex items-center justify-between hover:border-yellow-500"
-              >
-                {selectedInstaWin ? (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3">
-                      <img src={selectedInstaWin.icon} className="w-6 h-6" />
-                      <span className="text-sm text-yellow-100">{selectedInstaWin.name}</span>
-                    </div>
-                    {selectedInstaWin.coins > 0 && (
-                      <span className="text-yellow-400 text-xs font-bold">{selectedInstaWin.coins} 🪙</span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-gray-500 text-sm">Esperando...</span>
-                )}
-              </div>
-              {isInstaDropOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-[var(--surface-bg-alt)] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
-                  {giftsList.map((gift, i) => (
-                    <div
-                      key={`i-${gift.id || 'none'}-${i}`}
-                      onClick={() => { setSelectedInstaWin(gift); setIsInstaDropOpen(false); }}
-                      className="p-2 hover:bg-yellow-900/30 cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img src={gift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{gift.name}</span>
-                      </div>
-                      {gift.coins > 0 && (
-                        <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <GiftPicker
+                gifts={giftsList}
+                selected={selectedInstaWin}
+                onSelect={setSelectedInstaWin}
+                placeholder="Elige un regalo..."
+                variant="insta"
+              />
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">
                 Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
               </p>
@@ -288,7 +228,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             </div>
           </div>
 
-          {/* Premio: fuera del bloque isLocked a propósito — se puede
+          {/* Premio: aparte de los ajustes a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
           <PrizeEditor socket={socket} prize={prize} />
         </div>

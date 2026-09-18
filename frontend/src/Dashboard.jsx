@@ -157,13 +157,16 @@ export default function Dashboard({
               : 'Inicia sesión o prueba gratis para desbloquear todo el panel.'}
           </p>
         </div>
-        {session && (
-          <span
-            role="status"
-            className={`inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${connected ? 'text-green-300 border-green-500/40 bg-green-500/10' : 'text-gray-400 border-gray-600/50'}`}
-          >
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-            {connected ? 'En vivo' : 'Sin conexión en vivo'}
+        {session && connected && (
+          <span role="status" className="inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border text-green-300 border-green-500/40 bg-green-500/10">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            En vivo
+          </span>
+        )}
+        {session && !connected && (
+          <span role="status" className="inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border border-gray-600/50 text-gray-400">
+            <span className="w-2 h-2 rounded-full bg-gray-500" />
+            Sin conexión en vivo
           </span>
         )}
       </header>
@@ -191,7 +194,7 @@ export default function Dashboard({
               Ocultar guía
             </button>
           </div>
-          <div className="w-full h-1.5 rounded-full overflow-hidden mb-4" style={{ background: 'rgba(0,0,0,0.25)' }} aria-hidden="true">
+          <div className="w-full h-1.5 rounded-full overflow-hidden mb-4 bg-black/25" aria-hidden="true">
             <div className="h-full theme-accent-bg transition-[width] duration-500" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
           </div>
           <ol className="grid grid-cols-1 md:grid-cols-2 gap-3">

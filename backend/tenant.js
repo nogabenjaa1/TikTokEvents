@@ -292,6 +292,10 @@ function sanitizeOverlayCustomization(raw) {
                 fontSize: VALID_FONT_SIZES.includes(uc.fontSize) ? uc.fontSize : 'normal',
             },
             messageAnimation: VALID_MESSAGE_ANIMATIONS.includes(entry.messageAnimation) ? entry.messageAnimation : 'fade',
+            // Volumen general de las Alertas (pedido explícito) -- el resto
+            // de los overlays lo ignora sin problema, mismo criterio que
+            // messageAnimation con el Chat.
+            volume: typeof entry.volume === 'number' && entry.volume >= 0 && entry.volume <= 1 ? entry.volume : 1,
         };
     }
     return out;

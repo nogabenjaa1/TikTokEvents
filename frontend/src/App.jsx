@@ -1121,7 +1121,7 @@ export default function App() {
             en SU navegador sin importar en qué pestaña del panel esté, no
             solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
             tiene pegada esa URL aparte). */}
-        <AlertSoundListener socket={socket} />
+        <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} />
 
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el

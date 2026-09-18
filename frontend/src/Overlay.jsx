@@ -1191,6 +1191,19 @@ export const ANIM_DURATION_MS = 400;
 // porque una alerta nunca tiene fondo propio (ver OverlayCustomizePanel.jsx,
 // que por eso oculta esa sección para este overlay).
 export function AlertVisual({ alert, phase = 'visible', embedded = false, customize }) {
+  // Volumen general (pedido explícito, ver OverlayCustomizePanel.jsx) --
+  // `volume` de HTMLMediaElement es una propiedad JS, no un atributo HTML,
+  // así que no alcanza con pasarlo como prop de JSX -- se aplica a mano vía
+  // ref cada vez que cambia el volumen configurado O el recurso (nuevo
+  // src, nuevo <audio>/<video> que reproducir).
+  const audioElRef = useRef(null);
+  const videoElRef = useRef(null);
+  useEffect(() => {
+    const vol = Math.max(0, Math.min(1, customize?.volume ?? 1));
+    if (audioElRef.current) audioElRef.current.volume = vol;
+    if (videoElRef.current) videoElRef.current.volume = vol;
+  }, [customize?.volume, alert?.audioUrl, alert?.visualUrl]);
+
   if (!alert) return null;
   const positionClass = ALERT_POSITION_CLASSES[alert.position] || ALERT_POSITION_CLASSES.center;
   const preset = phase === 'exiting' ? (alert.exitAnim || 'none') : (alert.entranceAnim || 'none');
@@ -1214,7 +1227,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
         <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain" />
       )}
       {alert.visualType === 'video' && (
-        <video src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={!!alert.visualMuted} />
+        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={!!alert.visualMuted} />
       )}
     </>
   ) : null;
@@ -1228,7 +1241,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
         {hasVisual && alert.textPosition === 'above' && textNode}
         {visualNode}
         {(!hasVisual || alert.textPosition !== 'above') && textNode}
-        {alert.audioUrl && <audio src={alert.audioUrl} autoPlay />}
+        {alert.audioUrl && <audio ref={audioElRef} src={alert.audioUrl} autoPlay />}
         {alert.count > 1 && (
           <span className="absolute -top-3 -right-3 bg-yellow-400 text-black text-lg font-black px-3 py-1 rounded-full shadow-lg">
             ×{alert.count}
@@ -1315,21 +1328,30 @@ export function AlertOverlay({ socket, customize }) {
 // alerta nueva mientras la anterior sigue sonando, la corta y arranca la
 // nueva (es solo una notificación para el streamer, no hace falta encolar
 // como si fuera el overlay real).
-export function AlertSoundListener({ socket }) {
+export function AlertSoundListener({ socket, customize }) {
   const audioRef = useRef(null);
   const videoRef = useRef(null);
+  // Ref (no dependencia del efecto de abajo): lee el volumen configurado
+  // MÁS RECIENTE sin tener que desuscribir/resuscribir el socket cada vez
+  // que el streamer mueve el control de volumen, mismo criterio que
+  // settingsRef en TtsChat.jsx.
+  const customizeRef = useRef(customize);
+  useEffect(() => { customizeRef.current = customize; }, [customize]);
 
   useEffect(() => {
     if (!socket) return;
     const onTrigger = (alert) => {
+      const vol = Math.max(0, Math.min(1, customizeRef.current?.volume ?? 1));
       if (alert?.audioUrl && audioRef.current) {
         audioRef.current.src = alert.audioUrl;
+        audioRef.current.volume = vol;
         audioRef.current.play().catch(() => {});
       }
       // Video CON su propio audio (no mudo) -- se reproduce oculto solo
       // para que suene, sin mostrarse en ningún lado del panel.
       if (alert?.visualType === 'video' && alert.visualUrl && !alert.visualMuted && videoRef.current) {
         videoRef.current.src = alert.visualUrl;
+        videoRef.current.volume = vol;
         videoRef.current.play().catch(() => {});
       }
     };

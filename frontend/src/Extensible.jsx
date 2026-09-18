@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import TimeInput from './TimeInput';
 import { formatHHMMSS } from './timeFormat';
@@ -112,7 +113,6 @@ export default function Extensible({ state, socket, username, connectionStatus }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsPerFollow, secondsPerGift, reverseMode, state.isActive]);
 
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
@@ -146,8 +146,13 @@ export default function Extensible({ state, socket, username, connectionStatus }
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="extensible">
+        <p>Un contador que arranca con un <span className="font-bold text-white">tiempo base</span>. Cada nuevo seguidor y cada regalo le <span className="font-bold text-white">suma segundos</span> (o se los resta en Modo Inverso).</p>
+        <p>Puedes ajustar el tiempo a mano mientras corre y pausarlo cuando quieras.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Tiempo base */}
             <div className="mb-4">
@@ -221,6 +226,8 @@ export default function Extensible({ state, socket, username, connectionStatus }
               </button>
               <p className="text-[10px] text-gray-500 mt-1">Se puede cambiar en cualquier momento, incluso con el contador activo.</p>
             </div>
+
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
             {/* Botones */}
             <div className="flex gap-4">

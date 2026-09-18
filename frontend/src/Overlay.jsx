@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
-import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill } from './overlayCustomization';
+import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill, rowBorder, bordersOffStyle, bordersEnabled } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';
 import { formatMMSS, formatHHMMSS } from './timeFormat';
 
@@ -104,7 +104,7 @@ function KingOverlay({ state, prize, customize }) {
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3">ROBA EL LUGAR CON:</p>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
@@ -145,7 +145,7 @@ function KingOverlay({ state, prize, customize }) {
         {state.mode === 'finished' ? (
           <div className="text-[40px] leading-none font-black tracking-widest text-yellow-400 animate-pulse py-4">WINNER!</div>
         ) : (
-          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">{state.paused ? 'PAUSADO' : state.mode === 'waiting' ? 'ESPERANDO...' : 'TIEMPO RESTANTE'}</p>
             <p className={`text-[80px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'snipe' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : state.mode === 'waiting' ? 'text-gray-500' : 'text-white'}`}>{formatMMSS(state.timeLeft)}</p>          </div>
         )}
@@ -186,7 +186,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
 
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mt-3 mb-4">🏆 TOP REGALADORES</p>
 
-      <div className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+      <div className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
         <span className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">Mínimo para ganar:</span>
         <span className={`text-sm font-black ${state.minCoins > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>
           {state.minCoins > 0 ? `${state.minCoins} 🪙` : 'Sin mínimo'}
@@ -226,7 +226,7 @@ function ZubastinisOverlay({ state, prize, customize }) {
             )}
           </div>
         ) : (
-          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-4 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
             <p className="text-[10px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-1">
               {state.paused ? 'PAUSADO' : state.mode === 'tiebreak' ? 'DESEMPATE' : 'TIEMPO RESTANTE'}
             </p>
@@ -404,7 +404,7 @@ function EliminationOverlay({ state, prize, customize }) {
             <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
           )}
         </div>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
@@ -473,19 +473,19 @@ function EliminationOverlay({ state, prize, customize }) {
             )}
           </div>
         ) : state.mode === 'revealing' ? (
-          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎲 SORTEANDO...</p>
             <PhaseProgressBar active={state.mode === 'revealing'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
-          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
             <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminados</p>
             <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>
         ) : (
           // Más chico que en King/Zub a propósito: le deja más espacio a la
           // grilla de participantes, que puede tener muchos más elementos.
-          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">{state.paused ? 'PAUSADO' : timerTitle}</p>
             <p className={`text-[52px] leading-none font-black tabular-nums transition-colors tracking-tighter ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white'}`}>{formatMMSS(state.timeLeft)}</p>
           </div>
@@ -713,7 +713,7 @@ function RouletteOverlay({ state, prize, customize }) {
               entrar tarde, no depende de ningún toggle configurable. */}
           <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
         </div>
-        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
             {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-lg font-black text-white">{entryRuleLabel}</span>
@@ -774,17 +774,17 @@ function RouletteOverlay({ state, prize, customize }) {
             )}
           </div>
         ) : state.mode === 'spinning' ? (
-          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
             <PhaseProgressBar active={state.mode === 'spinning'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
-          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)' }}>
+          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
             <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminadas</p>
             <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>
         ) : (
-          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: '1px solid var(--surface-border-color)' }}>
+          <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
             <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">TIEMPO PARA ENTRAR</p>
             <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{formatMMSS(state.timeLeft)}</p>
           </div>
@@ -962,7 +962,7 @@ export function GoalOverlay({ state, customize }) {
           {unit} {current.toLocaleString('es-MX')} <span className="text-gray-400">/ {target.toLocaleString('es-MX')}</span>
         </p>
       </div>
-      <div className="w-full h-10 rounded-full overflow-hidden border" style={{ borderColor: 'var(--surface-border-color)', background: 'rgba(0,0,0,0.25)' }}>
+      <div className="w-full h-10 rounded-full overflow-hidden border" style={{ borderColor: bordersEnabled(customize) ? 'var(--surface-border-color)' : 'transparent', background: 'rgba(0,0,0,0.25)' }}>
         <div
           className={`h-full rounded-full transition-[width] duration-700 ease-out ${finished ? 'bg-yellow-400' : 'theme-accent-bg'}`}
           style={{ width: `${pct}%` }}
@@ -1073,7 +1073,7 @@ function SpotifySongRow({ song, playing, customize, rowBg, nameOverride }) {
     >
       {song.albumArt
         ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
-        : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)' }}>🎵</span>}
+        : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-white truncate">{song.title}</p>
         <p className="text-[10px] text-gray-400 truncate">
@@ -1117,7 +1117,7 @@ export function SpotifyQueueOverlay({ state, customize }) {
         <SpotifySongRow song={nowPlaying} playing customize={customize} rowBg={rowBg} nameOverride={nameOverride} />
       ) : (
         <div className="flex items-center gap-3 rounded-xl px-3 py-2 border" style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
-          <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)' }}>🎵</span>
+          <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>
           <p className="text-xs italic text-gray-500">Esperando canción...</p>
         </div>
       )}

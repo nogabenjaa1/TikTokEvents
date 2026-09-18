@@ -1,5 +1,5 @@
 import React from 'react';
-import { RAINBOW_GRADIENT, VALID_MESSAGE_ANIMATIONS, MESSAGE_ANIMATION_LABELS } from './overlayCustomization';
+import { RAINBOW_GRADIENT, VALID_MESSAGE_ANIMATIONS, MESSAGE_ANIMATION_LABELS, bordersEnabled } from './overlayCustomization';
 import OverlayPreviewBox from './OverlayPreviewBox';
 
 const BG_OPTIONS = [
@@ -64,6 +64,7 @@ function NamePreview({ type, from, to }) {
 export default function OverlayCustomizePanel({ title, overlayId, entry, onChange, onApplyToAll, onClose, liveState, hideBackground }) {
   const bg = entry?.background || { type: 'solid' };
   const uc = entry?.usernameColor || { type: 'default' };
+  const bordersOn = bordersEnabled(entry);
 
   const setBg = (patch) => onChange({ ...entry, background: { ...bg, ...patch } });
   const setUc = (patch) => onChange({ ...entry, usernameColor: { ...uc, ...patch } });
@@ -143,6 +144,30 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
               </div>
             )}
           </>
+        )}
+
+        {/* Pedido explícito: switch de bordes por overlay -- apagado, el
+            marco exterior y los separadores entre filas pasan a transparente
+            y solo queda la información. Las Alertas no tienen marco. */}
+        {!hideBackground && (
+          <div className="mt-5">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Bordes</p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={bordersOn}
+              onClick={() => onChange({ ...entry, borders: !bordersOn })}
+              className="theme-input w-full flex items-center justify-between gap-3 px-3 py-2 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">Mostrar bordes</span>
+                <span className="block text-[10px] text-gray-500">Apágalo para quitar el marco y las líneas que separan cada fila: solo se verá la información.</span>
+              </span>
+              <span className={['relative w-11 h-6 rounded-full flex-shrink-0 transition-colors', bordersOn ? 'theme-accent-bg' : 'bg-gray-600'].join(' ')}>
+                <span className={['absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all', bordersOn ? 'left-[22px]' : 'left-0.5'].join(' ')} />
+              </span>
+            </button>
+          </div>
         )}
 
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Texto y nombre de usuario</p>

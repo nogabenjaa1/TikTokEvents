@@ -49,7 +49,7 @@ export default function ThemeSwitcher() {
       <div>
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🎨 TEMA</p>
         <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
-        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. Pasa el mouse (o arrastra el color personalizado) sobre un skin para probarlo antes de confirmarlo.</p>
+        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. En computadora pasa el mouse (o usa el teclado) sobre un skin para probarlo antes de confirmarlo; en el celular solo tócalo.</p>
       </div>
 
       {/* ── 1. Vista previa en vivo — domina la pantalla, no un preview chico al final ── */}
@@ -81,14 +81,16 @@ export default function ThemeSwitcher() {
       {/* ── 2. Últimos usados — revertir en un toque ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-500 font-semibold flex-shrink-0">Últimos usados:</span>
-        <button
+        <span
           className="theme-chip px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
           style={{ background: accentHex(accent), color: '#fff' }}
+          title="Skin que estás usando ahora"
         >
           <span aria-hidden>✓</span> {skinName(current)}
-        </button>
+        </span>
         {recents.map(r => (
           <button
+            type="button"
             key={`${r.style}-${r.accent}-${r.customColor}`}
             onClick={() => applySkin(r.style, r.accent, r.customColor)}
             onMouseEnter={() => setPreviewSkin(r)}
@@ -101,6 +103,7 @@ export default function ThemeSwitcher() {
         ))}
         <span className="flex-1" />
         <button
+          type="button"
           onClick={revertToPrevious}
           disabled={!previous}
           className="text-[11px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors flex items-center gap-1.5"
@@ -124,10 +127,15 @@ export default function ThemeSwitcher() {
                 return (
                   <button
                     key={a.id}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={`Skin ${s.shortLabel} ${a.label}`}
                     onClick={() => applySkin(s.id, a.id)}
                     onMouseEnter={() => setPreviewSkin({ style: s.id, accent: a.id })}
                     onMouseLeave={() => setPreviewSkin(null)}
-                    className="rounded-xl p-2.5 text-left border transition-all min-w-0"
+                    onFocus={() => setPreviewSkin({ style: s.id, accent: a.id })}
+                    onBlur={() => setPreviewSkin(null)}
+                    className="rounded-xl p-2.5 text-left border transition-all min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                     style={{
                       background: selected ? `${hex}22` : 'var(--surface-bg-alt)',
                       borderColor: selected ? hex : 'var(--surface-border-color)',
@@ -199,7 +207,7 @@ export default function ThemeSwitcher() {
 
       {/* ── Toast de confirmación — no bloqueante, se cierra solo ── */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
+        <div role="status" className="fixed bottom-6 right-6 z-[100] bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
           <span className="text-emerald-400">✓</span> Skin "{toast.name}" aplicado
         </div>
       )}

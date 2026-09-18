@@ -1,4 +1,6 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -61,8 +63,6 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [fastMode, setFastMode]                 = useState(false);
   const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
   const [lockedMode, setLockedMode]             = useState(false);
-  const [isDropOpen, setIsDropOpen]             = useState(false);
-  const [isInstaDropOpen, setIsInstaDropOpen]   = useState(false);
   const [manualUsername, setManualUsername]     = useState('');
   const [manualCount, setManualCount]           = useState(1);
 
@@ -135,9 +135,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
   // update_elim_settings).
   const lockedModeLocked = state.isActive && lockedMode;
 
-  // Los ajustes se pueden tocar mientras se confirma el username o la
-  // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
+  // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
+  // explícito); solo el botón START exige "connected" a secas.
   const participants = state.participants || [];
   const size = sizeFor(participants.length);
   const distinctCount = new Set(participants.map(p => p.username)).size;
@@ -220,47 +219,23 @@ export default function Elimination({ state, socket, username, connectionStatus,
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="elim">
+        <p>Primero se abre un tiempo para <span className="font-bold text-white">unirse mandando el regalo</span> elegido. Al agotarse, se elimina a un participante al azar.</p>
+        <p>Después se abre una ventana para que cualquiera (re)entre con el mismo regalo. Se repite hasta que queda un sobreviviente. El <span className="font-bold text-white">Insta-Win</span> declara ganador al instante a quien lo mande.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Selector regalo para unirse */}
             <div className="mb-4 relative z-20">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎯 REGALO PARA UNIRSE</label>
-              <div
-                onClick={() => { setIsDropOpen(!isDropOpen); setIsInstaDropOpen(false); }}
-                className="theme-input w-full p-3 cursor-pointer flex items-center justify-between hover:border-[var(--accent)]"
-              >
-                {selectedGift ? (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3">
-                      <img src={selectedGift.icon} className="w-6 h-6" />
-                      <span className="text-sm">{selectedGift.name}</span>
-                    </div>
-                    <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md">
-                      {selectedGift.coins} 🪙
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-gray-500 text-sm">Esperando...</span>
-                )}
-              </div>
-              {isDropOpen && (
-                <div className="theme-surface absolute top-full left-0 w-full mt-1 overflow-y-auto max-h-48">
-                  {giftsList.filter(g => g.coins > 0).map((gift, i) => (
-                    <div
-                      key={`e-${gift.id}-${i}`}
-                      onClick={() => { setSelectedGift(gift); setIsDropOpen(false); }}
-                      className="p-2 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img src={gift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{gift.name}</span>
-                      </div>
-                      <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <GiftPicker
+                gifts={giftsList.filter(g => g.coins > 0)}
+                selected={selectedGift}
+                onSelect={setSelectedGift}
+                placeholder="Elige un regalo..."
+              />
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">
                 Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
               </p>
@@ -269,43 +244,13 @@ export default function Elimination({ state, socket, username, connectionStatus,
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
               <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">👑 INSTA-WIN</label>
-              <div
-                onClick={() => { setIsInstaDropOpen(!isInstaDropOpen); setIsDropOpen(false); }}
-                className="w-full p-3 bg-yellow-900/10 rounded-xl border border-yellow-700/50 cursor-pointer flex items-center justify-between hover:border-yellow-500"
-              >
-                {selectedInstaWin ? (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3">
-                      <img src={selectedInstaWin.icon} className="w-6 h-6" />
-                      <span className="text-sm text-yellow-100">{selectedInstaWin.name}</span>
-                    </div>
-                    {selectedInstaWin.coins > 0 && (
-                      <span className="text-yellow-400 text-xs font-bold">{selectedInstaWin.coins} 🪙</span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-gray-500 text-sm">Esperando...</span>
-                )}
-              </div>
-              {isInstaDropOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-[var(--surface-bg-alt)] border border-yellow-700/50 rounded-xl shadow-xl overflow-y-auto max-h-48">
-                  {giftsList.map((gift, i) => (
-                    <div
-                      key={`ei-${gift.id || 'none'}-${i}`}
-                      onClick={() => { setSelectedInstaWin(gift); setIsInstaDropOpen(false); }}
-                      className="p-2 hover:bg-yellow-900/30 cursor-pointer flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img src={gift.icon} className="w-6 h-6" />
-                        <span className="text-sm">{gift.name}</span>
-                      </div>
-                      {gift.coins > 0 && (
-                        <span className="text-yellow-400 text-xs">{gift.coins} 🪙</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <GiftPicker
+                gifts={giftsList}
+                selected={selectedInstaWin}
+                onSelect={setSelectedInstaWin}
+                placeholder="Elige un regalo..."
+                variant="insta"
+              />
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">
                 Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
               </p>
@@ -384,6 +329,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
               <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
 
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+
             {/* Botones */}
             <div className="flex gap-4">
               {!state.isActive ? (
@@ -420,7 +367,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </div>
           </div>
 
-          {/* Premio: fuera del bloque isLocked a propósito — se puede
+          {/* Premio: aparte de los ajustes a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
           <PrizeEditor socket={socket} prize={prize} />
         </div>

@@ -1,3 +1,4 @@
+import { HowItWorks } from './PanelHelp';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
@@ -497,7 +498,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
         : { text: '● Al aire', cls: 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' };
 
   return (
-    <section className={`${visible ? 'flex-1' : 'hidden'} overflow-y-auto px-8 pt-24 pb-10 text-white`}>
+    <section className={`${visible ? 'flex-1' : 'hidden'} overflow-y-auto px-4 sm:px-8 pt-10 pb-10 text-white`}>
       <div className="max-w-4xl mx-auto">
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>
@@ -509,6 +510,11 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             {statusBadge.text}
           </span>
         </header>
+
+        <HowItWorks storageKey="tts">
+          <p>Cada mensaje del chat que cumpla tus reglas se <span className="font-bold text-white">lee en voz alta</span> con la voz del navegador donde tengas abierto este panel.</p>
+          <p>Elige a quién leer (todos, moderadores, Super Fans o miembros del Fan Club), ajusta la voz y prueba cómo suena. Por seguridad el TTS se apaga cada vez que recargas la página: vuelve a activarlo al empezar.</p>
+        </HowItWorks>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-5">
           <div className="theme-surface-featured p-6">
@@ -523,7 +529,12 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             </div>
 
             {!('speechSynthesis' in window) && <p className="rounded-xl bg-red-950/60 border border-red-800 text-red-300 p-3 text-xs">Este navegador no admite Speech Synthesis.</p>}
-            {!connected && <p className="rounded-xl bg-red-500/10 border border-red-500/40 text-red-700 p-3 text-xs mb-4">Conecta una cuenta que esté transmitiendo en TikTok LIVE para activar el TTS.</p>}
+            {!connected && <p role="status" className="rounded-xl bg-red-500/10 border border-red-500/40 text-red-700 p-3 text-xs mb-4">Para activar el TTS conecta una cuenta que esté transmitiendo en TikTok LIVE (desde el Dashboard).</p>}
+            {!settings.allUsers && !settings.moderators && !settings.superFans && !settings.fanMembers && (
+              <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-4">Ahora mismo no se leerá a nadie: activa al menos una opción de abajo (por ejemplo "Todos los usuarios").</p>
+            )}
+
+            <h3 className="text-xs font-black tracking-widest text-gray-400 mb-3">¿A QUIÉN LEER?</h3>
 
             <div className="space-y-3">
               <Toggle checked={settings.allUsers} onChange={(v) => update('allUsers', v)} label="Todos los usuarios" description="Lee a cualquier persona del chat; anula los filtros inferiores." />

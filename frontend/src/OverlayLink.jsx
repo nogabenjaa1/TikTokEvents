@@ -3,14 +3,31 @@ import { buildOverlayUrl } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
+// La URL lleva la clave de licencia -- si el streamer comparte pantalla o
+// hace directo con este panel a la vista, mostrarla completa filtra su
+// clave. Por eso se muestra oculta por defecto ("Mostrar" la revela); copiar
+// y abrir la vista previa siempre usan la URL real.
+function maskOverlayUrl(url) {
+  return url.replace(/(key=)[^&#]+/i, '$1••••••••••••');
+}
+
 function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLabel, resetConfirm, onCustomize }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
-  const copyUrl = () => {
+  const copyUrl = async () => {
     if (!url) return;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyFailed(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles: se muestra la URL para copiarla a mano.
+      setRevealed(true);
+      setCopyFailed(true);
+    }
   };
 
   const handleReset = () => {
@@ -29,35 +46,41 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
           </button>
         )}
       </div>
-      <p className="text-gray-500 text-xs mb-2">{description}</p>
+      <p className="text-gray-400 text-xs mb-2">{description}</p>
       {/* Pedido explícito: el tamaño exacto de la fuente de navegador tiene
           que verse en CADA tarjeta, no solo en el cuadro de ayuda genérico
           de más abajo. */}
       {dimensions && (
         <p className="mb-3">
-          <span className="theme-chip inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full">📐 {dimensions}</span>
+          <span className="theme-chip inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full" title="Tamaño exacto que debes poner en la fuente de navegador de OBS">📐 Tamaño en OBS: {dimensions}</span>
         </p>
       )}
 
       {!url ? (
-        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
+        <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
           No pudimos recuperar tu clave de licencia de esta sesión. Cierra sesión y vuelve a entrar con tu clave para generar el enlace.
         </p>
       ) : (
         <>
-          <div className="flex items-center gap-2 mb-4">
-            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{url}</code>
+          <div className="flex items-center gap-2 mb-1">
+            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{revealed ? url : maskOverlayUrl(url)}</code>
+            <button type="button" onClick={() => setRevealed((r) => !r)} className="theme-btn-secondary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0" aria-pressed={revealed}>
+              {revealed ? '🙈 Ocultar' : '👁️ Mostrar'}
+            </button>
           </div>
+          <p className="text-[11px] text-gray-500 mb-4">
+            {copyFailed ? 'No pudimos copiar automáticamente: selecciona la URL de arriba y cópiala a mano.' : 'La URL incluye tu clave de licencia, por eso se muestra oculta. "Copiar URL" copia la completa.'}
+          </p>
           <div className="flex gap-3">
             <button onClick={copyUrl} className="theme-btn-primary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest">
-              {copied ? '✅ Copiado' : 'Copiar URL'}
+              {copied ? '✅ Copiado' : '📋 Copiar URL'}
             </button>
             {/* Enlace real (no window.open): un <a target="_blank"> nunca lo
                 bloquea un bloqueador de ventanas emergentes, a diferencia de
                 una ventana abierta por script. */}
             <a href={url} target="_blank" rel="noopener noreferrer"
               className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-center">
-              👁️ Preview
+              👁️ Vista previa
             </a>
           </div>
           {onReset && (
@@ -101,6 +124,32 @@ function TapTapDiagnosticsBox({ diagnostics }) {
       )}
       <p className="text-gray-600 mt-2 leading-snug">Si este número no sube aunque veas gente tocando la pantalla en tu directo, el problema es que TikTok no está mandando esos eventos (no depende de este panel). Si sube pero "usuarios distintos" queda bajo, avísanos con este dato.</p>
     </div>
+  );
+}
+
+const INTRO_KEY = 'tkc_overlay_intro_closed';
+
+// Guía corta para quien nunca agregó una fuente de navegador -- abierta por
+// defecto; si el streamer la cierra, recuerda que la cerró.
+function OverlayIntro() {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(INTRO_KEY) !== '1'; } catch { return true; }
+  });
+  const onToggle = (e) => {
+    const nowOpen = e.currentTarget.open;
+    setOpen(nowOpen);
+    try { localStorage.setItem(INTRO_KEY, nowOpen ? '0' : '1'); } catch { /* sin storage */ }
+  };
+  return (
+    <details open={open} onToggle={onToggle} className="theme-surface-featured w-full max-w-xl p-5">
+      <summary className="cursor-pointer text-sm font-black theme-heading">🚀 ¿Primera vez? Así agregas un overlay a tu stream</summary>
+      <ol className="mt-3 text-xs text-gray-400 space-y-2 list-decimal list-inside">
+        <li><span className="font-bold text-white">Copia la URL</span> del overlay que quieras con el botón "Copiar URL".</li>
+        <li>En <span className="font-bold text-white">OBS</span> (o TikTok LIVE Studio) agrega una fuente nueva de tipo <span className="font-bold text-white">Navegador</span>.</li>
+        <li><span className="font-bold text-white">Pega la URL</span> y escribe el ancho y el alto que indica la tarjeta (📐).</li>
+        <li>Personaliza cómo se ve con <span className="font-bold text-white">🎨 Personalizar</span>: los cambios se aplican solos, sin volver a pegar nada.</li>
+      </ol>
+    </details>
   );
 }
 
@@ -197,23 +246,25 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
       {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx — el
           botón de refresco YA NO vive acá (ver más abajo), en su propia
           franja aparte. */}
-      <div className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <nav aria-label="Tipos de overlay" className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
         {OVERLAY_TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
+            aria-current={tab === t.id ? 'page' : undefined}
             onClick={() => setTab(t.id)}
             className={[
               'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
               tab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
             ].join(' ')}
           >
-            <span className="text-base leading-none">{t.icon}</span>
+            <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
             <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
               {t.label}
             </span>
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* Franja propia, en el flujo normal del contenido (no fixed, no
           pegada a ningún borde de la ventana) — a propósito lejos de la
@@ -229,6 +280,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
       </div>
 
       <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-4 font-sans flex-1 overflow-y-auto">
+        <OverlayIntro />
+
         {tab === 'events' && (
           <>
             <OverlayUrlCard
@@ -329,7 +382,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
 
         {help && (
           <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-2">
-            <h3 className="theme-heading text-sm font-bold mb-2">{help.title}</h3>
+            <h3 className="theme-heading text-sm font-bold mb-2">Paso a paso — {help.title}</h3>
             <ol className="list-decimal list-inside space-y-1">
               {help.steps.map((step, i) => <li key={i}>{step}</li>)}
             </ol>

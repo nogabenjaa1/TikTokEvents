@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
@@ -57,9 +58,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   const restartZubastinis = () => socket.emit('restart_zubastinis');
   const togglePause       = () => socket.emit(state.paused ? 'resume_zubastinis' : 'pause_zubastinis');
 
-  // Los ajustes se pueden tocar mientras se confirma el username o la
-  // conexión en vivo; el botón START, en cambio, exige "connected" a secas.
-  const isLocked = connectionStatus !== 'connecting' && connectionStatus !== 'connected';
+  // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
+  // explícito); solo el botón START exige "connected" a secas.
   const top3 = state.top3 || [];
 
   const timerLabel = state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIMER');
@@ -133,8 +133,13 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="zub">
+        <p>El reloj arranca en cuanto pulsas iniciar. Al terminar el tiempo gana quien <span className="font-bold text-white">más monedas haya regalado</span> en total.</p>
+        <p>Puedes poner un mínimo de monedas para poder ganar y un tiempo de desempate por si hay empate en el primer puesto.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
-          <div className={`transition-all duration-500 ${isLocked ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div>
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
@@ -176,6 +181,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               <p className="text-[10px] text-gray-600 mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
             </div>
 
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+
             {/* Botones */}
             <div className="flex gap-3 flex-wrap">
               {!state.isActive ? (
@@ -212,7 +219,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             </div>
           </div>
 
-          {/* Premio: fuera del bloque isLocked a propósito — se puede
+          {/* Premio: aparte de los ajustes a propósito — se puede
               configurar antes de tener la conexión live confirmada. */}
           <PrizeEditor socket={socket} prize={prize} />
         </div>

@@ -19,6 +19,10 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // La clave es la credencial: se muestra oculta por defecto (por si el
+  // streamer comparte pantalla) y se puede revelar para revisar que quedó
+  // bien pegada.
+  const [showKey, setShowKey] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -33,7 +37,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
       saveSession({ token, licenseKey: trimmedKey, ...license });
       onLoggedIn();
     } catch (err) {
-      setError(err.message || 'Licencia inválida, revocada o expirada');
+      setError(err.message || 'No pudimos validar la clave. Revisa que esté completa y sin espacios de más, e inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -48,18 +52,27 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>
           </div>
 
-          {notice && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{notice}</p>}
+          {notice && <p role="status" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{notice}</p>}
 
-          <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
-          <input
-            autoFocus={!embedded}
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            placeholder="Pega tu clave aquí"
-            className="theme-input w-full p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm mb-4"
-          />
+          <label htmlFor="license-key" className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              id="license-key"
+              autoFocus={!embedded}
+              type={showKey ? 'text' : 'password'}
+              autoComplete="off"
+              spellCheck={false}
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              placeholder="Pega tu clave aquí"
+              className="theme-input flex-1 min-w-0 p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
+            />
+            <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary px-3 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0">
+              {showKey ? '🙈' : '👁️'}
+            </button>
+          </div>
 
-          {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{error}</p>}
+          {error && <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{error}</p>}
 
           <button
             type="submit"
@@ -69,7 +82,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             {loading ? 'VERIFICANDO...' : 'ENTRAR'}
           </button>
 
-          <p className="text-[10px] text-gray-600 mt-4 text-center">¿Sin clave? Pídesela al administrador.</p>
+          <p className="text-[11px] text-gray-500 mt-4 text-center">¿Aún no tienes clave? Puedes probar gratis o comprar un plan.</p>
         </form>
 
         {onWantsMembership && (

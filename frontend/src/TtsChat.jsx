@@ -2,6 +2,9 @@ import { HowItWorks } from './PanelHelp';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
+// Segundos que un mensaje puede esperar en la cola antes de descartarse (ver
+// maxMessageAgeSec en DEFAULTS y processQueue).
+const DEFAULT_MAX_MESSAGE_AGE_SEC = 30;
 // voiceURI/pitch/rate: el navegador ya trae varias voces gratis instaladas
 // (del sistema operativo, más las "Google ..." que Chrome/Edge exponen
 // cuando hay internet) — antes ni se elegían, quedaba lo que el navegador
@@ -17,6 +20,7 @@ const DEFAULTS = {
   // preferencia local de ESTE navegador, mismo criterio que voiceURI/pitch/
   // rate/volumen (ver comentario grande más abajo).
   randomVoice: false,
+  maxMessageAgeSec: DEFAULT_MAX_MESSAGE_AGE_SEC,
 };
 
 // Tags del formato de lectura (pedido explícito) -- mismo criterio que las
@@ -71,8 +75,12 @@ const EFFECT_PRESETS = {
 // cuántos se acumulan, y 3) forzar que avance si un mensaje no termina de
 // leerse en un tiempo razonable (bug real y conocido de Chrome: el motor de
 // voz a veces se queda "colgado" después de un rato sin avisar).
-const MAX_QUEUE = 8;
-const MAX_MESSAGE_AGE_MS = 12000;
+const MAX_QUEUE = 15;
+// Antes los mensajes que esperaban más de 12 s se descartaban en silencio,
+// y con un chat movido parecía que "el bot dejó de leer". Ahora el tiempo es
+// configurable (ver maxMessageAgeSec en DEFAULTS) y por defecto más generoso.
+// Cada cuánto revisa que el motor de voz no se haya quedado mudo/pausado.
+const ENGINE_KEEPALIVE_MS = 4000;
 const UTTERANCE_SAFETY_MS = 15000;
 const REPEAT_WINDOW_MS = 15000;
 const REPEAT_HISTORY = 3;
@@ -104,7 +112,7 @@ function Toggle({ checked, onChange, label, description }) {
 // único dueño de `settings` — el Dashboard solo recibe un control remoto
 // (`toggleEnabled`/`setEnabled` vía ref) y un aviso de cada cambio
 // (`onEnabledChange`) para poder mostrar el estado actual sin duplicarlo.
-const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible, onEnabledChange }, ref) {
+const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible, onEnabledChange, onEngineStatusChange }, ref) {
   const [settings, setSettings] = useState(loadSettings);
   const [lastMessage, setLastMessage] = useState(null);
   const [queueCount, setQueueCount] = useState(0);
@@ -133,6 +141,9 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
   const connected = connectionStatus === 'connected';
   const active = settings.enabled && connected;
+
+  // El padre (App.jsx) muestra el estado del motor en el indicador de salud.
+  useEffect(() => { onEngineStatusChange?.(engineStatus); }, [engineStatus, onEngineStatusChange]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -286,7 +297,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const processQueue = () => {
     if (speakingRef.current) return;
     const now = Date.now();
-    while (queueRef.current.length && now - queueRef.current[0].ts > MAX_MESSAGE_AGE_MS) {
+    const maxAgeMs = Math.max(5, Number(settingsRef.current.maxMessageAgeSec) || DEFAULT_MAX_MESSAGE_AGE_SEC) * 1000;
+    while (queueRef.current.length && now - queueRef.current[0].ts > maxAgeMs) {
       queueRef.current.shift();
     }
     const next = queueRef.current.shift();
@@ -393,6 +405,53 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
+  // Vigilancia del motor de voz mientras el TTS está activo. Chrome tiene un
+  // bug conocido: a veces pausa o deja de avisar (sin onend/onerror) y la
+  // cola se queda esperando para siempre; además congela los temporizadores
+  // de las pestañas ocultas, así que el watchdog de cada mensaje puede no
+  // dispararse a tiempo. Cada pocos segundos: si quedó pausado se reanuda, y
+  // si creemos que hay un mensaje leyéndose pero el navegador ya no habla
+  // nada, se da por terminado y se sigue con el siguiente.
+  const recoverIfStuck = () => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    if (synth.paused) synth.resume();
+    if (speakingRef.current && !synth.speaking && !synth.pending) {
+      if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+      speakingRef.current = false;
+      processQueue();
+    } else if (!speakingRef.current && queueRef.current.length > 0) {
+      processQueue();
+    }
+  };
+  const recoverIfStuckRef = useRef(recoverIfStuck);
+  useEffect(() => { recoverIfStuckRef.current = recoverIfStuck; });
+
+  const [hiddenNotice, setHiddenNotice] = useState('');
+  useEffect(() => {
+    if (!settings.enabled || !('speechSynthesis' in window)) return;
+    const id = setInterval(() => recoverIfStuckRef.current(), ENGINE_KEEPALIVE_MS);
+    let hiddenAt = null;
+    let noticeTimer = null;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      recoverIfStuckRef.current();
+      if (hiddenFor > 20000) {
+        setHiddenNotice(`Esta pestaña estuvo oculta ${Math.round(hiddenFor / 1000)} s: el navegador puede haber pausado la voz. Ya la reanudamos.`);
+        clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => setHiddenNotice(''), 8000);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(id);
+      clearTimeout(noticeTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [settings.enabled]);
+
   useEffect(() => {
     if (!settings.enabled || connected) return;
     resetEngine();
@@ -454,6 +513,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // tiene el botón ACTIVAR/DESACTIVAR de acá abajo: no se puede prender sin
   // estar conectado a un LIVE (sí se puede apagar siempre).
   useImperativeHandle(ref, () => ({
+    resetEngine: () => resetEngine(),
     setEnabled: (value) => {
       if (value && !connected) return;
       update('enabled', !!value);
@@ -534,6 +594,13 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
               <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-4">Ahora mismo no se leerá a nadie: activa al menos una opción de abajo (por ejemplo "Todos los usuarios").</p>
             )}
 
+            {hiddenNotice && <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-4">{hiddenNotice}</p>}
+            {settings.enabled && (
+              <p className="text-[11px] text-gray-500 leading-snug mb-4">
+                💡 Para que la voz no se pause, mantén esta pestaña visible (por ejemplo en una ventana aparte junto a tu transmisión): los navegadores frenan las pestañas ocultas.
+              </p>
+            )}
+
             <h3 className="text-xs font-black tracking-widest text-gray-400 mb-3">¿A QUIÉN LEER?</h3>
 
             <div className="space-y-3">
@@ -583,6 +650,15 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 </div>
                 <input type="range" min="1" max="20" value={settings.minChars} onChange={(event) => update('minChars', Number(event.target.value))} className="w-full" />
                 <p className="text-[10px] text-gray-500 mt-1">Mensajes más cortos que esto se ignoran (ej: "jaja", "ok").</p>
+              </label>
+
+              <label className="block mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="theme-label text-[10px] uppercase tracking-widest font-black">Descartar mensajes que esperen más de</span>
+                  <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{settings.maxMessageAgeSec} s</span>
+                </div>
+                <input type="range" min="10" max="120" step="5" value={settings.maxMessageAgeSec} onChange={(event) => update('maxMessageAgeSec', Number(event.target.value))} className="w-full" />
+                <p className="text-[10px] text-gray-500 mt-1">Con el chat muy movido, los mensajes que llevan esperando más que esto se saltan para leer lo más reciente. Súbelo si quieres que se lea todo.</p>
               </label>
 
               <Toggle checked={settings.ignoreRepeats} onChange={(v) => update('ignoreRepeats', v)} label="Ignorar repetidos" description="No lee el mismo mensaje (o uno igual) dos veces seguidas en pocos segundos." />
@@ -651,7 +727,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             )}
             <div className="flex gap-2">
               <button type="button" onClick={stop} disabled={!queueCount && engineStatus === 'idle'} className="theme-btn-secondary flex-1 py-3 text-[10px] font-black tracking-widest disabled:opacity-40">DETENER Y VACIAR COLA</button>
-              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary px-4 py-3 text-[10px] font-black tracking-widest">↻</button>
+              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary px-4 py-3 text-[10px] font-black tracking-widest">↻ Reiniciar voz</button>
             </div>
           </aside>
         </div>

@@ -23,6 +23,7 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con el King.
 // ─────────────────────────────────────────────
 export default function Zubastinis({ state, socket, username, connectionStatus, prize }) {
+  const [startError, setStartError] = useState('');
   const [mainTime, setMainTime]         = useState(60);
   const [snipeTime, setSnipeTime]       = useState(15);
   const [tiebreakTime, setTiebreakTime] = useState(15);
@@ -50,7 +51,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   }, [mainTime, snipeTime, tiebreakTime, minCoins, state.isActive]);
 
   const startZubastinis = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     socket.emit('start_zubastinis', { tiktokUsername: username, mainTime, snipeTime, tiebreakTime, minCoins });
   };
 
@@ -181,7 +183,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               <p className="text-[10px] text-gray-600 mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
             {/* Botones */}
             <div className="flex gap-3 flex-wrap">

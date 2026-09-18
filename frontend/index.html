@@ -12,7 +12,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- La hoja de la fuente se pide con preload y se activa al llegar, en vez
+         de bloquear el primer render (display=swap ya evita texto invisible). -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
     <title>BenjaApis</title>
     <!-- AdSense necesita este script presente en el HTML de entrada desde
          el inicio para poder verificar el sitio — el rastreador no navega

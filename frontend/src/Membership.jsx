@@ -508,6 +508,21 @@ export default function Membership({ session, onSessionUpdate }) {
 
       {payingPlan && (
         <>
+          {/* Resumen fijo del plan elegido: en el formulario de pago (largo)
+              siempre se ve qué se está comprando y cuánto, y se puede volver
+              a elegir otro sin perder el lugar. */}
+          <div className="sticky top-0 z-20 w-full max-w-2xl theme-surface-featured px-4 py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="theme-label text-[9px]">Vas a pagar</p>
+              <p className="text-sm font-black truncate">
+                Plan {PLAN_LABELS[payingPlan] || payingPlan} · MX$ {(livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn)?.toLocaleString('es-MX')}
+              </p>
+            </div>
+            <button type="button" onClick={() => setPayingPlan(null)} className="theme-btn-secondary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0">
+              Cambiar plan
+            </button>
+          </div>
+
           {/* Pedido explicito: estos campos solo estorban para quien ya
               tiene una licencia y solo entro a ver su plan (admin, key
               paga, etc.) -- se piden apenas aca, una vez que ya eligio

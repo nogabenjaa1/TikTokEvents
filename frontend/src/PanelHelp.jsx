@@ -27,14 +27,34 @@ export function HowItWorks({ storageKey, children }) {
 
 // Aviso encima del botón INICIAR mientras todavía no hay un LIVE conectado.
 // A propósito no bloquea nada de los ajustes: solo explica qué falta.
-export function StartRequirement({ connectionStatus, active }) {
-  if (active || connectionStatus === 'connected') return null;
+// `error`: mensaje al intentar iniciar sin algo obligatorio (regalo, palabra
+// clave...) -- reemplaza a los antiguos alert() del navegador.
+export function StartRequirement({ connectionStatus, active, error }) {
+  const needsLive = !(active || connectionStatus === 'connected');
   const connecting = connectionStatus === 'connecting' || connectionStatus === 'checking';
   return (
-    <p role="status" className="text-[11px] text-amber-500 font-bold mb-3 leading-snug">
-      {connecting
-        ? 'Conectando con tu LIVE... en cuanto se confirme podrás iniciar.'
-        : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde el Dashboard). Mientras tanto puedes dejar todo configurado.'}
-    </p>
+    <>
+      {error && <p role="alert" className="text-[11px] text-red-500 font-bold mb-3 leading-snug">{error}</p>}
+      {needsLive && (
+        <p role="status" className="text-[11px] text-amber-500 font-bold mb-3 leading-snug">
+          {connecting
+            ? 'Conectando con tu LIVE... en cuanto se confirme podrás iniciar.'
+            : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde el Dashboard). Mientras tanto puedes dejar todo configurado.'}
+        </p>
+      )}
+    </>
+  );
+}
+
+// Marcador de posición mientras cargan listas (alertas, licencias): filas
+// grises que laten en lugar de un texto suelto "Cargando...".
+export function SkeletonRows({ count = 3, label = 'Cargando...' }) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col gap-2">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="theme-input h-12 animate-pulse opacity-60" />
+      ))}
+      <span className="sr-only">{label}</span>
+    </div>
   );
 }

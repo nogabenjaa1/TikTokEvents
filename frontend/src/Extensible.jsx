@@ -32,6 +32,7 @@ function loadSavedConfig() {
 // la idea es premiar cualquier apoyo, no una dinámica de puntería.
 // ─────────────────────────────────────────────
 export default function Extensible({ state, socket, username, connectionStatus }) {
+  const [startError, setStartError] = useState('');
   // Semilla inicial (pedido explícito, ver comentario de STORAGE_KEY más
   // arriba): arranca de lo último guardado en este navegador.
   const saved = loadSavedConfig();
@@ -76,7 +77,8 @@ export default function Extensible({ state, socket, username, connectionStatus }
   });
 
   const startExtensible = () => {
-    if (connectionStatus !== 'connected') return alert('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
+    setStartError('');
+    if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     socket.emit('start_extensible', buildConfig());
   };
 
@@ -227,7 +229,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
               <p className="text-[10px] text-gray-500 mt-1">Se puede cambiar en cualquier momento, incluso con el contador activo.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
             {/* Botones */}
             <div className="flex gap-4">

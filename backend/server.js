@@ -3,16 +3,18 @@ require('dotenv').config({ quiet: true });
 // Bug conocido de tiktok-live-connector (legacy.js, getTopViewerAttributes):
 // al normalizar CUALQUIER WebcastRoomUserSeqMessage (estadísticas de
 // viewers, las manda TikTok solo cada tanto mientras alguien está en vivo)
-// hace `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
+// hacía `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
 // chicas/nuevas llega undefined y explota. Pasa DENTRO de un emit síncrono
 // disparado por el propio WebSocket interno de la librería, así que no hay
 // forma de envolverlo en un try/catch desde nuestro código (no es un
-// listener nuestro el que revienta). Sin este handler, esa excepción no
-// atrapada tira abajo TODO el proceso — afecta a todas las licencias
-// conectadas en ese momento, no solo a la que recibió el mensaje. Nunca
-// escuchamos el evento 'roomUser' ni usamos esos datos, así que perder ese
-// mensaje puntual no afecta ningún juego — es estrictamente mejor que un
-// reinicio completo del backend.
+// listener nuestro el que revienta). Ya está parcheado (ver
+// patch-tiktok-live-connector.js, `getTopViewerAttributes`) — ahora sí
+// escuchamos 'roomUser' (ver handleRoomUserEvent en tenant.js, para el
+// contador de espectadores del overlay de chat), pero este handler global
+// se deja igual como red de seguridad: cualquier otra excepción no
+// atrapada en cualquier otro punto del proceso (no solo este evento
+// puntual) tira abajo TODO el proceso sin él — afecta a todas las
+// licencias conectadas en ese momento, no solo a una.
 process.on('uncaughtException', (err) => {
     console.error('[UNCAUGHT EXCEPTION] El proceso siguió vivo — no se reinició. Detalle:', err);
 });
@@ -82,9 +84,12 @@ const ALERT_VISUAL_TYPES = {
     'image/gif': 'gif',
     'video/mp4': 'video', 'video/webm': 'video',
 };
+// Compartido con el sonido de "objetivo completado" (ver /api/goal/audio
+// más abajo) -- mismos formatos de audio válidos en los dos casos.
 const ALERT_AUDIO_TYPES = {
     'audio/mpeg': 'audio', 'audio/wav': 'audio', 'audio/mp3': 'audio', 'audio/ogg': 'audio',
 };
+const uploadGoalAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }).single('audio');
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
 // un dominio propio). Con un solo valor, cors/socket.io lo tratan igual
@@ -942,6 +947,40 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
     if (row.audio_path) await storage.deleteFile(row.audio_path);
     await db.deleteAlertConfig(row.id, req.license.id);
     getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(row.gift_name);
+    res.json({ success: true });
+});
+
+// Sonido opcional al completar el Objetivo (pedido explícito) -- mismo
+// bucket/criterio de subida que las Alertas, pero acá es UN solo archivo
+// por licencia (no una fila por disparador): se guarda directo en
+// `goal_settings` de la licencia, no en `alert_configs`.
+app.post('/api/goal/audio', auth.requireAuth, generalLimiter, uploadGoalAudio, async (req, res) => {
+    const audioFile = req.file;
+    if (!audioFile) return res.status(400).json({ success: false, error: 'Falta el archivo de audio' });
+    if (!ALERT_AUDIO_TYPES[audioFile.mimetype]) {
+        return res.status(400).json({ success: false, error: `Formato de audio no soportado: ${audioFile.mimetype}` });
+    }
+    try {
+        const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
+        if (tenant.goalAudioPath) await storage.deleteFile(tenant.goalAudioPath);
+        const audioId = crypto.randomUUID();
+        const ext = (audioFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+        const audioPath = `${req.license.id}/goal-${audioId}${ext}`;
+        const audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioFile.mimetype);
+        await db.setGoalSettings(req.license.id, { audioUrl, audioPath });
+        tenant.setGoalAudio(audioUrl, audioPath);
+        res.json({ success: true, audioUrl });
+    } catch (err) {
+        console.error('[Objetivo] Error subiendo el audio:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudo guardar el audio — revisa que Supabase Storage esté configurado.' });
+    }
+});
+
+app.delete('/api/goal/audio', auth.requireAuth, generalLimiter, async (req, res) => {
+    const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
+    if (tenant.goalAudioPath) await storage.deleteFile(tenant.goalAudioPath);
+    await db.setGoalSettings(req.license.id, { audioUrl: null, audioPath: null });
+    tenant.setGoalAudio(null, null);
     res.json({ success: true });
 });
 

@@ -8,7 +8,8 @@ import Extensible from './Extensible';
 import Spotify from './Spotify';
 import ColorSays from './Colorsays';
 import Downloader from './Downloader';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
+import Goal from './Goal';
 import DiceOverlay from './DiceOverlay';
 import Login from './Login';
 import LicenseManager from './LicenseManager';
@@ -48,6 +49,7 @@ const EVENT_TABS = [
   { id: 'elim',     label: 'Eliminación',   icon: '💀' },
   { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
   { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
+  { id: 'goal',     label: 'Objetivo',      icon: '🎯' },
   { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
   { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
   { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
@@ -84,6 +86,7 @@ const EVENT_TAB_PATHS = {
   elim: 'elimination',
   roulette: 'roulette',
   extensible: 'extensible',
+  goal: 'objetivo',
   spotify: 'spotify',
   alerts: 'alerts',
   tts: 'tts',
@@ -220,6 +223,13 @@ export default function App() {
   // propio overlay horizontal (?screen=extensible) — no participa del
   // selector activeApp.
   const [extensibleState, setExtensibleState] = useState({ isActive: false, finished: false, baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3, timeLeft: 0 });
+  // Objetivo (meta de regalos en monedas o de seguidores nuevos, pedido
+  // explícito) — acumulador simple sin paso del tiempo, con su propio
+  // overlay horizontal (?screen=goal), no participa del selector activeApp.
+  const [goalState, setGoalState] = useState({ isActive: false, finished: false, targetType: 'coins', target: 0, current: 0, title: '' });
+  // Espectadores en vivo (para el overlay de chat, ?screen=chat) — un solo
+  // número centralizado, mismo criterio que gifterState/tapTapState.
+  const [viewerCount, setViewerCount] = useState(0);
   // Cola de canciones pedidas por chat con !play (ver Spotify.jsx) — mismo
   // patrón que tapTapState/gifterState: un solo estado centralizado que
   // sirve tanto al panel como al overlay propio (?screen=musicqueue).
@@ -456,6 +466,8 @@ export default function App() {
     socket.on('taptap_diagnostics_update', setTapTapDiagnostics);
     socket.on('gifter_state_update', setGifterState);
     socket.on('extensible_state_update', setExtensibleState);
+    socket.on('goal_state_update', setGoalState);
+    socket.on('viewer_count_update', ({ viewerCount: count }) => setViewerCount(count || 0));
     socket.on('spotify_queue_update', setSpotifyQueueState);
     socket.on('spotify_settings_update', setSpotifySettingsState);
 
@@ -742,7 +754,7 @@ export default function App() {
   // realmente transparente en OBS.
   useEffect(() => {
     if (!overlayMode) return;
-    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors'].includes(getOverlayScreen());
+    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors', 'goal', 'chat'].includes(getOverlayScreen());
     document.body.classList.toggle('tkc-overlay-transparent', transparent);
     return () => document.body.classList.remove('tkc-overlay-transparent');
   }, [overlayMode]);
@@ -797,6 +809,20 @@ export default function App() {
       return (
         <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
           <ExtensibleOverlay state={extensibleState} customize={overlayCustomization.extensible} />
+        </div>
+      );
+    }
+    if (screen === 'goal') {
+      return (
+        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+          <GoalOverlay state={goalState} customize={overlayCustomization.goal} />
+        </div>
+      );
+    }
+    if (screen === 'chat') {
+      return (
+        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+          <ChatOverlay socket={socket} viewerCount={viewerCount} customize={overlayCustomization.chat} />
         </div>
       );
     }
@@ -947,6 +973,7 @@ export default function App() {
           <OverlayLink
             socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
             extensibleState={extensibleState} diceState={diceState}
+            goalState={goalState} viewerCount={viewerCount}
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />
         )}
@@ -1043,6 +1070,13 @@ export default function App() {
                   state={extensibleState} socket={socket}
                   username={username} connectionStatus={connectionStatus}
                 />
+              )
+            )}
+            {eventsTab === 'goal' && (
+              needsAccess('goal') ? (
+                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar el Objetivo." />
+              ) : (
+                <Goal state={goalState} socket={socket} username={username} connectionStatus={connectionStatus} />
               )
             )}
             {eventsTab === 'spotify' && (

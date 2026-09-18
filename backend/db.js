@@ -114,6 +114,13 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_customization JSONB`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS spotify_settings JSONB`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS tts_settings JSONB`))
+  // Sonido opcional al completar el Objetivo (pedido explícito) --
+  // { audioUrl, audioPath }, mismo criterio que spotify_settings/
+  // tts_settings: sobrevive a un reinicio del server y a entrar desde otro
+  // dispositivo. A propósito NO guarda acá el progreso/meta del objetivo en
+  // sí (eso vive solo en memoria, como el resto de los "juegos" -- ver
+  // goalState en tenant.js), solo esta configuración persistente.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -374,6 +381,11 @@ async function setSpotifySettings(id, settings) {
 async function setTtsSettings(id, settings) {
     await ready;
     await pool.query('UPDATE licenses SET tts_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
+async function setGoalSettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET goal_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
 }
 
 const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
@@ -653,7 +665,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

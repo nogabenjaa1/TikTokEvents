@@ -10,7 +10,7 @@ const STORAGE_KEY = 'tkc_overlay_customization';
 // que pidió el streamer) — Rey del Trono/Zubastinis/Eliminación/Ruleta
 // comparten una sola URL/fuente de OBS, así que comparten una sola
 // personalización ("games").
-export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'];
+export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'goal', 'chat'];
 
 export const OVERLAY_CUSTOMIZE_LABELS = {
   games: 'Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)',
@@ -25,6 +25,8 @@ export const OVERLAY_CUSTOMIZE_LABELS = {
   // fondo propio, siempre transparente), solo se usa `usernameColor` (ver
   // getUsernameOverride) para el texto. Ver AlertsAdmin.jsx.
   alerts: 'Alertas',
+  goal: 'Objetivo (meta de regalos/seguidores)',
+  chat: 'Chat en vivo + espectadores',
 };
 
 // Tamaños de fuente disponibles para texto/nombre de usuario — multiplicador
@@ -36,10 +38,23 @@ export const OVERLAY_CUSTOMIZE_LABELS = {
 // de cada uno acá.
 export const FONT_SCALES = { normal: 1, large: 1.1, xlarge: 1.2 };
 
+// Animación de entrada de cada mensaje nuevo en el overlay de Chat (pedido
+// explícito) — mismos 5 presets y mismas clases CSS que ya usan las Alertas
+// (`.tkc-alert-anim-in-*`, ver index.css): son transiciones genéricas de
+// opacidad/transform, sin nada específico de alertas en su definición, así
+// que reusarlas tal cual evita duplicar el mismo CSS. Campo OPCIONAL en el
+// `entry` genérico (igual que `background`/`usernameColor`) -- solo lo lee
+// el overlay de Chat, el resto lo ignora sin problema.
+export const VALID_MESSAGE_ANIMATIONS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom', 'bounce'];
+export const MESSAGE_ANIMATION_LABELS = {
+  none: 'Ninguna', fade: 'Fundido', 'slide-up': 'Desde abajo', 'slide-down': 'Desde arriba', zoom: 'Zoom', bounce: 'Rebote',
+};
+
 function defaultEntry() {
   return {
     background: { type: 'solid', from: '#7C3AED', to: '#3B82F6' },
     usernameColor: { type: 'default', color: '#000000', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
+    messageAnimation: 'fade',
   };
 }
 
@@ -49,7 +64,8 @@ export function defaultOverlayCustomizationMap() {
 
 function isValidEntry(e) {
   return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
-    && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type);
+    && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type)
+    && (e.messageAnimation === undefined || VALID_MESSAGE_ANIMATIONS.includes(e.messageAnimation));
 }
 
 export function loadOverlayCustomization() {

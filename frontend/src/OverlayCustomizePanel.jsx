@@ -1,5 +1,5 @@
 import React from 'react';
-import { RAINBOW_GRADIENT } from './overlayCustomization';
+import { RAINBOW_GRADIENT, VALID_MESSAGE_ANIMATIONS, MESSAGE_ANIMATION_LABELS } from './overlayCustomization';
 import OverlayPreviewBox from './OverlayPreviewBox';
 
 const BG_OPTIONS = [
@@ -151,6 +151,28 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
               <input type="color" value={uc.to || '#3B82F6'} onChange={(e) => setUc({ to: e.target.value })} className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0" />
             </label>
           </div>
+        )}
+
+        {/* Pedido explícito: solo el overlay de Chat necesita elegir cómo
+            entra cada mensaje nuevo -- el resto de los overlays no
+            renderiza una lista que crezca mensaje a mensaje, así que esta
+            sección no les aplica. */}
+        {overlayId === 'chat' && (
+          <>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Animación de los mensajes</p>
+            <div className="grid grid-cols-3 gap-2">
+              {VALID_MESSAGE_ANIMATIONS.map((id) => (
+                <button
+                  key={id}
+                  onClick={() => onChange({ ...entry, messageAnimation: id })}
+                  className={['h-9 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-colors', (entry?.messageAnimation || 'fade') === id ? 'theme-nav-btn-active theme-accent-text' : 'text-gray-500'].join(' ')}
+                  style={(entry?.messageAnimation || 'fade') === id ? undefined : { borderColor: 'var(--surface-border-color)' }}
+                >
+                  {MESSAGE_ANIMATION_LABELS[id]}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 mt-5">Tamaño de letra (opcional)</p>

@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
@@ -132,6 +133,11 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="zub">
+        <p>El reloj arranca en cuanto pulsas iniciar. Al terminar el tiempo gana quien <span className="font-bold text-white">más monedas haya regalado</span> en total.</p>
+        <p>Puedes poner un mínimo de monedas para poder ganar y un tiempo de desempate por si hay empate en el primer puesto.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
           <div>
 
@@ -174,6 +180,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               />
               <p className="text-[10px] text-gray-600 mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
             </div>
+
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
             {/* Botones */}
             <div className="flex gap-3 flex-wrap">

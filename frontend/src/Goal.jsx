@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
@@ -154,6 +155,11 @@ export default function Goal({ state, socket, username, connectionStatus }) {
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="goal">
+          <p>Elige si la meta es de <span className="font-bold text-white">monedas en regalos</span> o de <span className="font-bold text-white">seguidores nuevos</span> y cuánto quieres juntar. La barra sube sola con cada regalo o seguidor.</p>
+          <p>El texto que escribas ("¿Para qué es este objetivo?") aparece sobre la barra en el overlay. El progreso no se reinicia solo: solo con el botón Reiniciar progreso.</p>
+        </HowItWorks>
+
         <div className="mb-4">
           <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">
             TIPO DE OBJETIVO {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Bloqueado mientras el objetivo está activo -- deténlo primero para cambiar de tipo">(bloqueado)</span>}
@@ -219,6 +225,8 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
+
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
         <div className="flex gap-4">
           {!state.isActive ? (

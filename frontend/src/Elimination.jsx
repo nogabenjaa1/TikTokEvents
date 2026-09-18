@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
@@ -218,6 +219,11 @@ export default function Elimination({ state, socket, username, connectionStatus,
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="elim">
+        <p>Primero se abre un tiempo para <span className="font-bold text-white">unirse mandando el regalo</span> elegido. Al agotarse, se elimina a un participante al azar.</p>
+        <p>Después se abre una ventana para que cualquiera (re)entre con el mismo regalo. Se repite hasta que queda un sobreviviente. El <span className="font-bold text-white">Insta-Win</span> declara ganador al instante a quien lo mande.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
           <div>
 
@@ -322,6 +328,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
               </div>
               <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
+
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
             {/* Botones */}
             <div className="flex gap-4">

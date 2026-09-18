@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
@@ -184,6 +185,11 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="roulette">
+        <p>Se abre un tiempo para entrar: por <span className="font-bold text-white">chat</span> (comentando una palabra clave) o por <span className="font-bold text-white">regalo</span> (cada regalo suma entradas).</p>
+        <p>Al vencer el tiempo, la ruleta gira sola y va eliminando entradas hasta llegar a la posición ganadora que elegiste (primero, último o un número).</p>
+        </HowItWorks>
+
         <div className="space-y-5">
           <div>
 
@@ -307,6 +313,8 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               )}
               <p className="text-[10px] text-gray-500 mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
             </div>
+
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
             {/* Botones */}
             <div className="flex gap-4">

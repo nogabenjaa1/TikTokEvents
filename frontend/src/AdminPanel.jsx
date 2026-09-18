@@ -1,3 +1,4 @@
+import { HowItWorks, StartRequirement } from './PanelHelp';
 import React, { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
@@ -144,6 +145,11 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
 
+        <HowItWorks storageKey="king">
+        <p>Quien manda el <span className="font-bold text-white">regalo objetivo</span> se queda con el trono y arranca su reloj. Si otra persona manda el regalo antes de que se acabe, le quita el lugar.</p>
+        <p>Gana quien tenga el trono cuando el tiempo llega a cero. El <span className="font-bold text-white">Insta-Win</span> es un regalo que da la victoria al instante.</p>
+        </HowItWorks>
+
         <div className="space-y-5">
           <div>
 
@@ -191,6 +197,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
+
+            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} />
 
             {/* Botones */}
             <div className="flex gap-4">

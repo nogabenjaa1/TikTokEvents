@@ -209,7 +209,7 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'custom'];
 // Overlays, y qué valores son válidos para cada campo — mismo criterio que
 // VALID_THEME_STYLES/VALID_THEME_ACCENTS, para que un socket manipulado a
 // mano no pueda meter un `background` con CSS arbitrario.
-const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'];
+const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'goal', 'chat'];
 const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
 const VALID_USERNAME_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
 const VALID_FONT_SIZES = ['normal', 'large', 'xlarge'];
@@ -420,6 +420,33 @@ class Tenant {
         };
         this.extensibleTimerInterval = null;
 
+        // ── OBJETIVO (meta de regalos o de seguidores, pedido explícito) ──
+        // A diferencia de Extensible (cuenta regresiva con su propio
+        // `setInterval`), acá no hay paso del tiempo -- es un simple
+        // acumulador que suma en cada regalo/seguidor nuevo y se compara
+        // contra `target`, igual de simple que processGiftGifterBoard (ver
+        // más abajo) pero con UN solo total en vez de un ranking por
+        // usuario. Un objetivo a la vez (pedido explícito: "uno a la vez"),
+        // nunca dos corriendo en simultáneo -- `targetType` decide si lo
+        // alimentan los regalos (en monedas) o los seguidores nuevos (de a
+        // uno). `title` es un texto opcional del streamer (ej. "Para la
+        // silla nueva") -- si lo deja vacío, el overlay muestra un título
+        // genérico según `targetType`. No se resetea solo con la conexión
+        // ni con el tiempo -- pedido explícito: el progreso se queda como
+        // está hasta que el streamer lo reinicia a mano (ver reset_goal),
+        // ni siquiera si TikTok se desconecta un rato.
+        this.goalState = {
+            isActive: false, finished: false,
+            targetType: 'coins', // 'coins' | 'followers'
+            target: 0, current: 0, title: '',
+        };
+
+        // ── ESPECTADORES EN VIVO (para el overlay de chat) ──
+        // Ver handleRoomUserEvent más abajo -- viene de un evento de TikTok
+        // que este codebase nunca escuchaba a propósito (ver el comentario
+        // grande en server.js sobre por qué, y por qué ahora ya es seguro).
+        this.viewerCount = 0;
+
         // ── SPOTIFY (cola de canciones vía !play en el chat) ──
         // `queue` guarda TODO lo pedido por chat que todavía no confirmamos
         // como tocado (hasta SPOTIFY_QUEUE_INTERNAL_CAP) — cada entrada
@@ -558,7 +585,7 @@ class Tenant {
     // CONEXIÓN TIKTOK
     // ==========================================
     anyContestNeedsConnection() {
-        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || !!this.desiredUsername;
+        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || this.goalState.isActive || !!this.desiredUsername;
     }
 
     disconnectTikTok() {
@@ -774,6 +801,10 @@ class Tenant {
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
             this.tiktokConnection.on('social', (data) => this.handleSocialEvent(data));
             this.tiktokConnection.on('emote', (data) => this.handleEmoteEvent(data));
+            // 'roomUser' (estadísticas de espectadores, para el overlay de
+            // chat) -- ver handleRoomUserEvent y el comentario grande en
+            // server.js sobre por qué antes nunca se escuchaba esto.
+            this.tiktokConnection.on('roomUser', (data) => this.handleRoomUserEvent(data));
             // Cualquier mensaje (no solo los que procesamos) cuenta como
             // señal de vida -- ver WATCHDOG_TIMEOUT_MS.
             this.tiktokConnection.on('rawData', () => { this.lastTikTokMessageAt = Date.now(); });
@@ -784,7 +815,9 @@ class Tenant {
             this.tiktokConnection.on('disconnected', () => {
                 console.log(`[${this.licenseId}] [TIKTOK] 🔌 Desconectado de @${username}`);
                 this.liveConnected = false;
+                this.viewerCount = 0;
                 this.broadcast.emit('live_disconnected');
+                this.broadcast.emit('viewer_count_update', { viewerCount: 0 });
                 this.scheduleReconnect(username);
             });
 
@@ -942,6 +975,7 @@ class Tenant {
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
         this.processGiftExtensible(event);
+        this.processGiftGoal(event.totalCoins);
         this.processAlertTrigger({
             username: event.username, nickname: event.nickname, key: event.giftName,
             repeatCount: event.repeatCount, giftName: event.giftName, coins: event.totalCoins,
@@ -1220,6 +1254,7 @@ class Tenant {
         if (!data?.uniqueId) return;
         if (String(data.action) !== '1') return; // no es un follow (ej. share -- no soportado, ver el comentario de arriba)
         this.processFollowExtensible();
+        this.processFollowGoal();
         this.processAlertTrigger({
             username: data.uniqueId, nickname: data.nickname || data.uniqueId, key: 'follow',
             repeatCount: 1, giftName: '', coins: 0,
@@ -1271,10 +1306,17 @@ class Tenant {
         // filtran ACÁ (no en el panel) para que ni siquiera crucen el
         // socket como candidato a leerse en voz alta.
         if (!comment.startsWith('!') && !hasFanClubEmote) {
+            // Pedido explícito (overlay de chat en vivo): mismo broadcast
+            // que ya usaba el TTS -- va SIN filtrar por los ajustes de TTS
+            // (esos se aplican del lado del cliente, ver TtsChat.jsx), así
+            // que sirve tal cual para mostrar el chat completo también.
+            // `avatar` es nuevo acá (el TTS no lo necesita, lo ignora sin
+            // problema) -- solo para poder mostrar la fotito en el overlay.
             this.broadcast.emit('tts_chat_message', {
                 id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
                 username: data.nickname || data.uniqueId || 'Usuario',
                 uniqueId: data.uniqueId || '',
+                avatar: data.profilePictureUrl || '',
                 comment: comment.slice(0, 300),
                 isModerator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
                 isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
@@ -1285,6 +1327,19 @@ class Tenant {
 
         this.processPlayCommand(comment, data, identity);
         this.processRouletteComment(data);
+    }
+
+    // Contador de espectadores en vivo (overlay de chat, pedido explícito)
+    // -- TikTok manda WebcastRoomUserSeqMessage cada tanto, sin intervalo
+    // fijo, mientras alguien esté en vivo (ver comentario grande en
+    // server.js sobre por qué antes nunca se escuchaba este evento). Se
+    // queda solo con `viewerCount`; el ranking de top viewers que trae el
+    // mismo mensaje no se usa para nada acá.
+    handleRoomUserEvent(data) {
+        const count = Number(data?.viewerCount);
+        if (!Number.isFinite(count) || count < 0) return;
+        this.viewerCount = Math.round(count);
+        this.broadcast.emit('viewer_count_update', { viewerCount: this.viewerCount });
     }
 
     // ==========================================
@@ -2407,6 +2462,33 @@ class Tenant {
         this.maybeDisconnectTikTok();
     }
 
+    getGoalPublicState() {
+        return { ...this.goalState };
+    }
+
+    // Acumulador simple (igual que processGiftGifterBoard, pero UN total en
+    // vez de un ranking por usuario) -- sin `setInterval` ni paso del
+    // tiempo, a diferencia de Extensible: un objetivo no decae solo, solo
+    // crece con cada regalo/seguidor nuevo hasta llegar a `target`. Se
+    // ignora en silencio si no hay un objetivo activo de este tipo (ej. un
+    // regalo mientras el objetivo activo es de seguidores) -- las dos
+    // categorías nunca se mezclan, pedido explícito ("uno a la vez").
+    processGiftGoal(totalCoins) {
+        const state = this.goalState;
+        if (!state.isActive || state.finished || state.targetType !== 'coins' || !totalCoins) return;
+        state.current = Math.min(state.target, state.current + totalCoins);
+        if (state.current >= state.target) state.finished = true;
+        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+    }
+
+    processFollowGoal() {
+        const state = this.goalState;
+        if (!state.isActive || state.finished || state.targetType !== 'followers') return;
+        state.current = Math.min(state.target, state.current + 1);
+        if (state.current >= state.target) state.finished = true;
+        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+    }
+
     // ==========================================
     // SOCKET.IO: conecta un socket individual de este tenant.
     // El aislamiento entre licencias ya está resuelto por el room de
@@ -2450,6 +2532,8 @@ class Tenant {
         socket.emit('taptap_state_update', this.getTapTapPublicState());
         socket.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
+        socket.emit('goal_state_update', this.getGoalPublicState());
+        socket.emit('viewer_count_update', { viewerCount: this.viewerCount });
         // Pedido explícito: el overlay de Playlist tiene que poder mostrar
         // "now playing" apenas alguien lo abre, sin depender de que ya
         // hubiera un !play pedido antes (ver maybeStartSpotifyPolling).
@@ -2995,6 +3079,55 @@ class Tenant {
         });
 
         socket.on('stop_extensible', () => this.stopExtensible());
+
+        // ── OBJETIVO (meta de regalos o de seguidores) ──
+        // A diferencia de Extensible, arrancar SIEMPRE parte de cero (un
+        // objetivo nuevo, pedido explícito) -- no tiene sentido "seguir"
+        // desde un progreso viejo con un target/tipo distinto. El progreso
+        // en curso NO se toca acá si ya estaba activo (ver
+        // update_goal_settings para eso).
+        socket.on('start_goal', (config) => {
+            const targetType = config?.targetType === 'followers' ? 'followers' : 'coins';
+            const cap = targetType === 'coins' ? 10_000_000 : 1_000_000;
+            const target = Math.max(1, Math.min(cap, Math.round(Number(config?.target)) || 1));
+            const title = typeof config?.title === 'string' ? config.title.trim().slice(0, 60) : '';
+            this.goalState = { isActive: true, finished: false, targetType, target, current: 0, title };
+            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+            if (config?.tiktokUsername) this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
+        });
+
+        // Cambia el título/la meta de un objetivo YA activo sin reiniciar
+        // el progreso acumulado (ej. el streamer quiere subir la meta
+        // porque ya casi la alcanza) -- pedido implícito de simetría con
+        // update_extensible_settings. No permite cambiar `targetType` acá
+        // (eso exige un objetivo nuevo, ver start_goal) para no mezclar un
+        // progreso en monedas con una meta que de repente pasa a ser de
+        // seguidores.
+        socket.on('update_goal_settings', (config) => {
+            if (!this.goalState.isActive) return;
+            if (typeof config?.title === 'string') this.goalState.title = config.title.trim().slice(0, 60);
+            if (config?.target !== undefined) {
+                const cap = this.goalState.targetType === 'coins' ? 10_000_000 : 1_000_000;
+                this.goalState.target = Math.max(1, Math.min(cap, Math.round(Number(config.target)) || this.goalState.target));
+                this.goalState.finished = this.goalState.current >= this.goalState.target;
+            }
+            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        });
+
+        // Botón "Reiniciar progreso" -- pedido explícito: el objetivo (tipo
+        // y meta) se queda igual, solo el contador vuelve a cero. Es la
+        // única forma de resetear el progreso -- nunca se hace solo por
+        // tiempo ni por reconexión (ver comentario del constructor).
+        socket.on('reset_goal', () => {
+            this.goalState.current = 0;
+            this.goalState.finished = false;
+            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        });
+
+        socket.on('stop_goal', () => {
+            this.goalState.isActive = false;
+            this.broadcast.emit('goal_state_update', this.getGoalPublicState());
+        });
 
         // ── TOP GIFTER / TOP TAP-TAP (rankings continuos) ──
         // Sin start/stop: solo un botón de "reiniciar" a mano desde la

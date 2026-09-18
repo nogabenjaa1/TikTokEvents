@@ -48,6 +48,17 @@ export function buildPreviewMock(overlayId) {
       };
     case 'extensible':
       return { state: { isActive: true, finished: false, baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3, timeLeft: 95 } };
+    case 'goal':
+      return { state: { isActive: true, finished: false, targetType: 'coins', target: 500, current: 230, title: '' } };
+    case 'chat':
+      return {
+        viewerCount: 128,
+        messages: [
+          { id: 'm1', username: 'Test1', uniqueId: 'test1', avatar: MOCK_AVATAR, comment: 'jajaja qué bueno', isModerator: false, isSuperFan: true },
+          { id: 'm2', username: 'Test2', uniqueId: 'test2', avatar: MOCK_AVATAR, comment: 'saludos desde México 🇲🇽', isModerator: true, isSuperFan: false },
+          { id: 'm3', username: 'Test3', uniqueId: 'test3', avatar: MOCK_AVATAR, comment: 'primera vez en el directo', isModerator: false, isSuperFan: false },
+        ],
+      };
     case 'musicqueue':
       return {
         state: {

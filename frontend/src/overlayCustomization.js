@@ -10,7 +10,7 @@ const STORAGE_KEY = 'tkc_overlay_customization';
 // que pidió el streamer) — Rey del Trono/Zubastinis/Eliminación/Ruleta
 // comparten una sola URL/fuente de OBS, así que comparten una sola
 // personalización ("games").
-export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts'];
+export const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'goal', 'chat'];
 
 export const OVERLAY_CUSTOMIZE_LABELS = {
   games: 'Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)',
@@ -25,6 +25,8 @@ export const OVERLAY_CUSTOMIZE_LABELS = {
   // fondo propio, siempre transparente), solo se usa `usernameColor` (ver
   // getUsernameOverride) para el texto. Ver AlertsAdmin.jsx.
   alerts: 'Alertas',
+  goal: 'Objetivo (meta de regalos/seguidores)',
+  chat: 'Chat en vivo + espectadores',
 };
 
 // Tamaños de fuente disponibles para texto/nombre de usuario — multiplicador

@@ -1,5 +1,5 @@
 import React from 'react';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, SpotifyQueueOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
 import { buildPreviewMock } from './overlayPreviewMocks';
@@ -20,6 +20,8 @@ const NATURAL_SIZE = {
   taptap: { w: 380, h: 700 },
   gifter: { w: 380, h: 700 },
   musicqueue: { w: 380, h: 700 },
+  goal: { w: 960, h: 260 },
+  chat: { w: 380, h: 700 },
 };
 
 const PREVIEW_SCALE = 0.42;
@@ -78,6 +80,22 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       return (
         <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
           <ExtensibleOverlay state={liveState || mock.state} customize={entry} />
+        </div>
+      );
+    case 'goal':
+      // Mismo criterio que Extensible: el Objetivo tampoco depende del
+      // LIVE para su configuración -- se muestra el progreso REAL que el
+      // streamer ya tiene, no uno inventado (ver liveState en
+      // OverlayLink.jsx).
+      return (
+        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+          <GoalOverlay state={liveState || mock.state} customize={entry} />
+        </div>
+      );
+    case 'chat':
+      return (
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+          <ChatOverlay viewerCount={mock.viewerCount} previewMessages={mock.messages} customize={entry} />
         </div>
       );
     default:

@@ -3,16 +3,18 @@ require('dotenv').config({ quiet: true });
 // Bug conocido de tiktok-live-connector (legacy.js, getTopViewerAttributes):
 // al normalizar CUALQUIER WebcastRoomUserSeqMessage (estadísticas de
 // viewers, las manda TikTok solo cada tanto mientras alguien está en vivo)
-// hace `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
+// hacía `ranksList.map(...)` sin chequear que `ranksList` exista — en salas
 // chicas/nuevas llega undefined y explota. Pasa DENTRO de un emit síncrono
 // disparado por el propio WebSocket interno de la librería, así que no hay
 // forma de envolverlo en un try/catch desde nuestro código (no es un
-// listener nuestro el que revienta). Sin este handler, esa excepción no
-// atrapada tira abajo TODO el proceso — afecta a todas las licencias
-// conectadas en ese momento, no solo a la que recibió el mensaje. Nunca
-// escuchamos el evento 'roomUser' ni usamos esos datos, así que perder ese
-// mensaje puntual no afecta ningún juego — es estrictamente mejor que un
-// reinicio completo del backend.
+// listener nuestro el que revienta). Ya está parcheado (ver
+// patch-tiktok-live-connector.js, `getTopViewerAttributes`) — ahora sí
+// escuchamos 'roomUser' (ver handleRoomUserEvent en tenant.js, para el
+// contador de espectadores del overlay de chat), pero este handler global
+// se deja igual como red de seguridad: cualquier otra excepción no
+// atrapada en cualquier otro punto del proceso (no solo este evento
+// puntual) tira abajo TODO el proceso sin él — afecta a todas las
+// licencias conectadas en ese momento, no solo a una.
 process.on('uncaughtException', (err) => {
     console.error('[UNCAUGHT EXCEPTION] El proceso siguió vivo — no se reinició. Detalle:', err);
 });

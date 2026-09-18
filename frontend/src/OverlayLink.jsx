@@ -105,6 +105,7 @@ const OVERLAY_TABS = [
   { id: 'alerts', label: 'Alertas', icon: '🔔' },
   { id: 'tops', label: 'Tops', icon: '🏆' },
   { id: 'playlist', label: 'Playlist y Extensible', icon: '🎵' },
+  { id: 'goalchat', label: 'Objetivo y Chat', icon: '🎯' },
 ];
 
 const OBS_HELP = {
@@ -137,12 +138,19 @@ const OBS_HELP = {
       'Cola de Spotify: 380×700 (igual que los demás overlays verticales) — necesita tu cuenta de Spotify conectada desde la pestaña Spotify en TikTokEvents.',
     ],
   },
+  goalchat: {
+    title: 'En OBS Studio / TikTok LIVE Studio',
+    steps: [
+      'Objetivo: 960×260 (es horizontal) — inícialo y ajústalo desde su propia pestaña en TikTokEvents.',
+      'Chat en vivo + espectadores: 380×700 (igual que los demás overlays verticales) — no necesita configuración aparte, muestra el chat y el contador de espectadores apenas te conectes a un LIVE.',
+    ],
+  },
 };
 
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, diceState, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, diceState, goalState, viewerCount, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -155,6 +163,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
   const musicQueueUrl = buildOverlayUrl('musicqueue');
+  const goalUrl = buildOverlayUrl('goal');
+  const chatUrl = buildOverlayUrl('chat');
 
   const tapTapCount = (tapTapState?.leaderboard || []).length;
   const gifterCount = (gifterState?.leaderboard || []).length;
@@ -283,6 +293,23 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           </>
         )}
 
+        {tab === 'goalchat' && (
+          <>
+            <OverlayUrlCard
+              title="Objetivo (meta de regalos o de seguidores)"
+              description={`Overlay horizontal aparte, con una barra de progreso${goalState?.isActive ? ` — ${(goalState.current || 0).toLocaleString('es-MX')} / ${(goalState.target || 0).toLocaleString('es-MX')} ahora` : ''}. Inícialo y ajústalo desde su propia pestaña en TikTokEvents.`}
+              url={goalUrl}
+              onCustomize={() => setCustomizingId('goal')}
+            />
+            <OverlayUrlCard
+              title="Chat en vivo + espectadores"
+              description={`Widget angosto aparte con el chat en vivo y el contador de espectadores${typeof viewerCount === 'number' && viewerCount > 0 ? ` — ${viewerCount.toLocaleString('es-MX')} viendo ahora` : ''}. No necesita configuración: se activa solo apenas te conectes a un LIVE.`}
+              url={chatUrl}
+              onCustomize={() => setCustomizingId('chat')}
+            />
+          </>
+        )}
+
         {help && (
           <div className="theme-surface w-full max-w-xl p-6 text-xs text-gray-400 space-y-2">
             <h3 className="theme-heading text-sm font-bold mb-2">{help.title}</h3>
@@ -308,7 +335,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           // que ya configuraron) en vez de datos inventados. El resto de
           // los overlays SÍ dependen del LIVE, así que siguen usando
           // espectadores de prueba (ver overlayPreviewMocks.js).
-          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : null}
+          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : customizingId === 'goal' ? goalState : null}
         />
       )}
     </div>

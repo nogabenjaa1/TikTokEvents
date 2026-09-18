@@ -462,6 +462,7 @@ class Tenant {
         // que este codebase nunca escuchaba a propósito (ver el comentario
         // grande en server.js sobre por qué, y por qué ahora ya es seguro).
         this.viewerCount = 0;
+        this.loggedRoomUserSample = false;
 
         // ── SPOTIFY (cola de canciones vía !play en el chat) ──
         // `queue` guarda TODO lo pedido por chat que todavía no confirmamos
@@ -1353,11 +1354,30 @@ class Tenant {
     // Contador de espectadores en vivo (overlay de chat, pedido explícito)
     // -- TikTok manda WebcastRoomUserSeqMessage cada tanto, sin intervalo
     // fijo, mientras alguien esté en vivo (ver comentario grande en
-    // server.js sobre por qué antes nunca se escuchaba este evento). Se
-    // queda solo con `viewerCount`; el ranking de top viewers que trae el
-    // mismo mensaje no se usa para nada acá.
+    // server.js sobre por qué antes nunca se escuchaba este evento).
+    // BUG real reportado ("los viewers se quedan en 0"): el campo que se
+    // leía acá, `data.viewerCount`, NO EXISTE -- el README de
+    // tiktok-live-connector lo documenta así, pero quedó desactualizado
+    // respecto al esquema real que trae la versión instalada. El tipo real
+    // (node_modules/tiktok-live-proto/dist/node/v3.d.ts,
+    // WebcastRoomUserSeqMessage) es:
+    //   { common, ranks, total, popStr, seats, popularity, totalUser, anonymous }
+    // -- sin ningún `viewerCount`. `total` es el que mejor encaja como
+    // "espectadores actuales" (`totalUser` parece ser un acumulado
+    // histórico de usuarios distintos, no el conteo en vivo). Viene como
+    // string (los campos numéricos grandes del protobuf se serializan como
+    // string para no perder precisión), de ahí el Number(...).
     handleRoomUserEvent(data) {
-        const count = Number(data?.viewerCount);
+        // Log de UNA sola vez por Tenant (no por mensaje -- este evento
+        // puede llegar seguido): si `total` termina siendo el campo
+        // equivocado (ya pasó antes con otros campos de esta librería, ver
+        // handleGiftEvent/handleChatEvent), esto es lo que permite
+        // corregirlo con datos reales en vez de adivinar de nuevo a ciegas.
+        if (!this.loggedRoomUserSample) {
+            this.loggedRoomUserSample = true;
+            console.log(`[${this.licenseId}] [TIKTOK] Muestra de roomUser (una sola vez):`, JSON.stringify(data));
+        }
+        const count = Number(data?.total);
         if (!Number.isFinite(count) || count < 0) return;
         this.viewerCount = Math.round(count);
         this.broadcast.emit('viewer_count_update', { viewerCount: this.viewerCount });

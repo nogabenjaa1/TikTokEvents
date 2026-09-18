@@ -213,6 +213,10 @@ const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensibl
 const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
 const VALID_USERNAME_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
 const VALID_FONT_SIZES = ['normal', 'large', 'xlarge'];
+// Animación de entrada de cada mensaje nuevo en el overlay de Chat (pedido
+// explícito) -- solo lo usa ese overlay, pero vive en el mismo `entry`
+// genérico que el resto (ver defaultEntry en overlayCustomization.js).
+const VALID_MESSAGE_ANIMATIONS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom', 'bounce'];
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 function sanitizeHexColor(value, fallback) {
@@ -268,6 +272,7 @@ function sanitizeOverlayCustomization(raw) {
                 to: sanitizeHexColor(uc.to, '#3B82F6'),
                 fontSize: VALID_FONT_SIZES.includes(uc.fontSize) ? uc.fontSize : 'normal',
             },
+            messageAnimation: VALID_MESSAGE_ANIMATIONS.includes(entry.messageAnimation) ? entry.messageAnimation : 'fade',
         };
     }
     return out;
@@ -440,6 +445,17 @@ class Tenant {
             targetType: 'coins', // 'coins' | 'followers'
             target: 0, current: 0, title: '',
         };
+        // Sonido opcional al completar el objetivo (pedido explícito) --
+        // A DIFERENCIA de goalState de arriba (que se resetea con cada
+        // start_goal), esto es una CONFIGURACIÓN que persiste entre
+        // objetivos (igual que la voz elegida en TTS) -- sobrevive a
+        // start_goal/stop_goal/reset_goal, y a un reinicio del server (ver
+        // loadPersistedSettings/db.setGoalSettings). `goalAudioPath` nunca
+        // se manda al cliente (ver getGoalPublicState) -- es solo la
+        // referencia interna para poder borrar el archivo viejo de
+        // Supabase Storage cuando se sube uno nuevo.
+        this.goalAudioUrl = null;
+        this.goalAudioPath = null;
 
         // ── ESPECTADORES EN VIVO (para el overlay de chat) ──
         // Ver handleRoomUserEvent más abajo -- viene de un evento de TikTok
@@ -1034,6 +1050,11 @@ class Tenant {
                     minFanLevel: Math.max(1, Math.min(50, Number(tt.minFanLevel) || 1)),
                     usernameOverrides: sanitizeUsernameOverrides(tt.usernameOverrides),
                 };
+            }
+            if (license.goal_settings) {
+                const gs = license.goal_settings;
+                this.goalAudioUrl = typeof gs.audioUrl === 'string' ? gs.audioUrl : null;
+                this.goalAudioPath = typeof gs.audioPath === 'string' ? gs.audioPath : null;
             }
         } catch (err) {
             console.error(`[${this.licenseId}] No se pudieron cargar los ajustes guardados:`, err.message);
@@ -2463,7 +2484,16 @@ class Tenant {
     }
 
     getGoalPublicState() {
-        return { ...this.goalState };
+        return { ...this.goalState, audioUrl: this.goalAudioUrl };
+    }
+
+    // Llamado desde server.js justo después de subir/borrar el audio en
+    // Supabase Storage -- mantiene este cache en memoria al día (mismo
+    // criterio que setAlertConfig) y avisa al overlay/panel al instante.
+    setGoalAudio(audioUrl, audioPath) {
+        this.goalAudioUrl = audioUrl || null;
+        this.goalAudioPath = audioPath || null;
+        this.broadcast.emit('goal_state_update', this.getGoalPublicState());
     }
 
     // Acumulador simple (igual que processGiftGifterBoard, pero UN total en

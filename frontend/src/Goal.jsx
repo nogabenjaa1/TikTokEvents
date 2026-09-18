@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { backendUrl, authHeaders } from './auth';
 
 // Mismo patrón que Extensible.jsx (ver su comentario de STORAGE_KEY): los
 // campos del formulario son estado LOCAL, así que sobreviven a cambiar de
@@ -75,6 +76,49 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   const resetProgress = () => socket.emit('reset_goal');
   const stopGoal = () => socket.emit('stop_goal');
 
+  // Sonido al completar (pedido explícito, opcional) -- a diferencia del
+  // tipo/meta/título de arriba, esto es su PROPIA subida independiente (vía
+  // /api/goal/audio, mismo criterio que las Alertas): se sube al elegir el
+  // archivo, sin esperar a ningún botón "Guardar" -- no hay un objetivo que
+  // iniciar/actualizar acá, es una configuración que ya vive aparte del
+  // progreso en curso (ver goalAudioUrl en tenant.js).
+  const audioInputRef = useRef(null);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [audioError, setAudioError] = useState('');
+
+  const uploadAudio = async (file) => {
+    if (!file) return;
+    setAudioUploading(true);
+    setAudioError('');
+    try {
+      const form = new FormData();
+      form.append('audio', file);
+      const res = await fetch(`${backendUrl()}/api/goal/audio`, { method: 'POST', headers: authHeaders(), body: form });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo subir el audio');
+    } catch (err) {
+      setAudioError(err.message);
+    } finally {
+      setAudioUploading(false);
+      if (audioInputRef.current) audioInputRef.current.value = '';
+    }
+  };
+
+  const removeAudio = async () => {
+    setAudioError('');
+    try {
+      const res = await fetch(`${backendUrl()}/api/goal/audio`, { method: 'DELETE', headers: authHeaders() });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo quitar el audio');
+    } catch (err) {
+      setAudioError(err.message);
+    }
+  };
+
+  const testAudio = () => {
+    if (state.audioUrl) new Audio(state.audioUrl).play().catch(() => {});
+  };
+
   const pct = state.isActive ? Math.min(100, Math.round(((state.current || 0) / Math.max(1, state.target || 1)) * 100)) : 0;
 
   return (
@@ -146,6 +190,31 @@ export default function Goal({ state, socket, username, connectionStatus }) {
             className="theme-input w-full p-3 text-sm outline-none"
           />
           <p className="text-[10px] text-gray-500 mt-1">Si lo dejas vacío, el overlay muestra un título genérico según el tipo elegido.</p>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🔊 SONIDO AL COMPLETAR (OPCIONAL)</label>
+          {state.audioUrl && (
+            <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
+              <span className="text-[10px] text-gray-400 truncate">🎧 Ya tiene un sonido guardado</span>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <button type="button" onClick={testAudio} className="text-[10px] font-bold text-sky-400 hover:text-sky-300">▶ Probar</button>
+                <button type="button" onClick={removeAudio} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
+              </div>
+            </div>
+          )}
+          <input
+            ref={audioInputRef}
+            type="file"
+            accept="audio/mpeg,audio/wav,audio/mp3,audio/ogg"
+            disabled={audioUploading}
+            onChange={(e) => uploadAudio(e.target.files?.[0] || null)}
+            className="theme-input w-full p-2 text-xs outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:theme-btn-primary file:text-[10px] file:font-black file:uppercase disabled:opacity-50"
+          />
+          <p className="text-[10px] text-gray-500 mt-1">
+            {audioUploading ? 'Subiendo...' : 'MP3/WAV/OGG — hasta 15MB. Suena una sola vez cuando el objetivo llega a la meta.'}
+          </p>
+          {audioError && <p className="text-[10px] text-red-500 mt-1">{audioError}</p>}
         </div>
 
         {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}

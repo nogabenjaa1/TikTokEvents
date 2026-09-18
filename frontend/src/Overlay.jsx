@@ -939,6 +939,19 @@ export function GoalOverlay({ state, customize }) {
   const defaultTitle = isFollowers ? '👥 Objetivo de seguidores' : '🎁 Objetivo de regalos';
   const unit = isFollowers ? '👤' : '🪙';
   const titleOverride = getUsernameOverride(customize);
+
+  // Sonido al completar (pedido explícito, opcional -- ver Goal.jsx) --
+  // se reproduce UNA sola vez, justo en la transición false -> true, nunca
+  // en cada re-render mientras `finished` ya es true (ej. el overlay se
+  // recarga a mitad de un objetivo ya completado no debe volver a sonar).
+  const wasFinishedRef = useRef(finished);
+  useEffect(() => {
+    if (finished && !wasFinishedRef.current && s.audioUrl) {
+      new Audio(s.audioUrl).play().catch(() => {});
+    }
+    wasFinishedRef.current = finished;
+  }, [finished, s.audioUrl]);
+
   return (
     <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex flex-col justify-center gap-6 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} style={resolveBackgroundStyle(customize)}>
       <div className="flex items-center justify-between gap-6">
@@ -993,6 +1006,14 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
   const messages = previewMessages || liveMessages;
   const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
   const nameOverride = getUsernameOverride(customize);
+  // Animación de entrada por mensaje (pedido explícito) -- mismas clases
+  // que las Alertas (`.tkc-alert-anim-in-*`, ver index.css), reusadas tal
+  // cual. Al ser CSS de animación (no JS), solo se dispara una vez cuando
+  // React monta la fila por primera vez -- las filas viejas ya montadas
+  // nunca la vuelven a reproducir cuando entra una nueva al fondo de la
+  // lista, que es exactamente el efecto buscado.
+  const messageAnim = customize?.messageAnimation || 'fade';
+  const animClass = messageAnim !== 'none' ? `tkc-alert-anim-in-${messageAnim}` : '';
 
   return (
     <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
@@ -1005,7 +1026,7 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
       {messages.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto justify-end">
           {messages.map((m) => (
-            <div key={m.id} className="flex items-start gap-2 rounded-xl px-3 py-2 border" style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
+            <div key={m.id} className={`flex items-start gap-2 rounded-xl px-3 py-2 border ${animClass}`} style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
               {m.avatar ? (
                 <img src={m.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
               ) : (

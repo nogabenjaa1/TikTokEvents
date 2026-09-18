@@ -1,31 +1,36 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import AdminPanel from './AdminPanel';
-import Zubastinis from './Zubastinis';
-import Elimination from './Elimination';
-import Roulette from './Roulette';
-import Extensible from './Extensible';
-import Spotify from './Spotify';
-import ColorSays from './Colorsays';
-import Downloader from './Downloader';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
-import Goal from './Goal';
 import DiceOverlay from './DiceOverlay';
 import Login from './Login';
-import LicenseManager from './LicenseManager';
-import Membership from './Membership';
+import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
 import SystemHealth from './SystemHealth';
-import ThemeSwitcher from './ThemeSwitcher';
 import TtsChat from './TtsChat';
-import OverlayLink from './OverlayLink';
-import AlertsAdmin from './AlertsAdmin';
 import InterstitialAd from './InterstitialAd';
 import logoMark from './assets/logo-mark.png';
 import { ThemedShell, useTheme, accentStyleVars } from './ThemeContext';
 import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
+
+// Paneles pesados cargados bajo demanda (ver lazyPanel.jsx): el overlay de
+// OBS y el primer render del panel ya no descargan pagos, Downloader,
+// licencias, etc. hasta que se abren.
+const AdminPanel = lazyPanel(() => import('./AdminPanel'));
+const Zubastinis = lazyPanel(() => import('./Zubastinis'));
+const Elimination = lazyPanel(() => import('./Elimination'));
+const Roulette = lazyPanel(() => import('./Roulette'));
+const Extensible = lazyPanel(() => import('./Extensible'));
+const Spotify = lazyPanel(() => import('./Spotify'));
+const ColorSays = lazyPanel(() => import('./Colorsays'));
+const Downloader = lazyPanel(() => import('./Downloader'));
+const Goal = lazyPanel(() => import('./Goal'));
+const LicenseManager = lazyPanel(() => import('./LicenseManager'));
+const Membership = lazyPanel(() => import('./Membership'));
+const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
+const OverlayLink = lazyPanel(() => import('./OverlayLink'));
+const AlertsAdmin = lazyPanel(() => import('./AlertsAdmin'));
 
 // Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
 // TikTok (antes eran botones sueltos de primer nivel) detrás de una

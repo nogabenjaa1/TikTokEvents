@@ -236,6 +236,26 @@ app.get('/health', (req, res) => {
 app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(cors({ origin: CORS_ORIGIN }));
+// Los overlays de OBS (?overlay=true) cargan la MISMA página que el panel,
+// pero no necesitan el script de AdSense (los anuncios ni se muestran ahí y
+// solo gastan red y CPU en una fuente de navegador que corre horas). Se les
+// sirve el index.html sin esa etiqueta; el panel normal y el rastreador de
+// AdSense siguen recibiendo el HTML completo, sin cambios.
+const OVERLAY_ADSENSE_TAG = /<script[^>]*pagead2\.googlesyndication\.com[^>]*><\/script>/i;
+let overlayIndexCache = null; // { mtimeMs, html }
+app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.query.overlay !== 'true') return next();
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    try {
+        const { mtimeMs } = fs.statSync(indexPath);
+        if (!overlayIndexCache || overlayIndexCache.mtimeMs !== mtimeMs) {
+            overlayIndexCache = { mtimeMs, html: fs.readFileSync(indexPath, 'utf8').replace(OVERLAY_ADSENSE_TAG, '') };
+        }
+        res.set('Cache-Control', 'no-cache').type('html').send(overlayIndexCache.html);
+    } catch {
+        next(); // sin frontend buildeado acá (se sirve aparte): sigue el flujo normal
+    }
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);

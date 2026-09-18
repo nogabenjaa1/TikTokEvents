@@ -360,8 +360,30 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayMode, sidebarMode, eventsTab]);
 
+  // Bug real reportado ("conectar Spotify me manda al Dashboard y me apaga
+  // el TTS"): la excepción de cameFromSpotifyOAuth de más arriba deja el
+  // ESTADO inicial bien (events/spotify), pero el efecto de "estado -> URL"
+  // de arriba todavía no alcanzó a actualizar `location.pathname` (el
+  // navigate() de React Router recién se refleja en un re-render
+  // posterior) cuando ESTE efecto corre en la misma tanda -- lee el
+  // pathname viejo ("/"), lo traduce a 'dashboard' (la ruta desconocida
+  // cae ahí, ver sectionFromPath) y pisa el estado recién puesto antes de
+  // que el navigate() de arriba llegue a corregir la URL.
+  // La condición de acá abajo salta ese instante puntual -- a propósito
+  // compara `location.pathname` CON `location.search` (los dos de
+  // useLocation, arriba), nunca mezclado con `window.location` directo:
+  // `navigate()` llama a history.pushState de forma SÍNCRONA, así que
+  // `window.location` ya refleja la URL nueva un instante antes de que
+  // React vuelva a renderizar con el `location` de React Router
+  // actualizado -- comparar uno ya corregido contra el otro todavía viejo
+  // hacía que la condición nunca se cumpliera de verdad (bug real
+  // encontrado armando este mismo fix). Atrás/adelante del navegador y
+  // cualquier otra navegación real siguen andando normal -- esa
+  // combinación puntual de pathname+query nunca vuelve a darse después de
+  // la corrección.
   useEffect(() => {
     if (overlayMode) return;
+    if (location.pathname === '/' && location.search.includes('spotify=')) return;
     const { section, tab } = sectionFromPath(location.pathname);
     setSidebarMode(section);
     if (section === 'events' && tab) setEventsTab(tab);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import { HowItWorks } from './PanelHelp';
 
 const DEFAULT_SPOTIFY_SETTINGS = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 };
 function spotifySettingsEqual(a, b) {
@@ -45,6 +46,7 @@ export default function Spotify({ socket, queueState, settingsState }) {
   const [connecting, setConnecting] = useState(false);
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('spotify'));
   const [errorToast, setErrorToast] = useState(null);
+  const [connectError, setConnectError] = useState('');
   const [volume, setVolume] = useState(50);
 
   const fetchStatus = async () => {
@@ -83,13 +85,14 @@ export default function Spotify({ socket, queueState, settingsState }) {
 
   const connect = async () => {
     setConnecting(true);
+    setConnectError('');
     try {
       const res = await fetch(`${backendUrl()}/api/spotify/connect`, { headers: authHeaders() });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo iniciar la conexión');
       window.location.href = data.authUrl;
     } catch (err) {
-      alert(err.message);
+      setConnectError(err.message || 'No se pudo iniciar la conexión con Spotify.');
       setConnecting(false);
     }
   };
@@ -161,13 +164,15 @@ export default function Spotify({ socket, queueState, settingsState }) {
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎵 Spotify</p>
 
       {banner === 'connected' && (
-        <div className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-emerald-500/10 border-emerald-500/40 text-emerald-600">
-          ✅ CUENTA DE SPOTIFY CONECTADA
+        <div role="status" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-emerald-500/10 border-emerald-500/40 text-emerald-600 flex items-start justify-between gap-3">
+          <span>✅ CUENTA DE SPOTIFY CONECTADA. Por seguridad el TTS se apaga al volver: si lo usabas, vuelve a activarlo.</span>
+          <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {banner === 'error' && (
-        <div className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700">
-          ❌ NO SE PUDO CONECTAR CON SPOTIFY. INTENTA DE NUEVO.
+        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+          <span>❌ NO SE PUDO CONECTAR CON SPOTIFY. INTENTA DE NUEVO.</span>
+          <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {errorToast && (
@@ -180,7 +185,17 @@ export default function Spotify({ socket, queueState, settingsState }) {
         <div className="flex items-center gap-3 mb-4">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">CONEXIÓN</h1>
+          {!loading && (
+            <span className={`ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${connected ? 'text-green-300 border-green-500/40 bg-green-500/10' : 'border-gray-600/50 text-gray-400'}`}>
+              {connected ? '● Conectado' : 'Sin conectar'}
+            </span>
+          )}
         </div>
+
+        <HowItWorks storageKey="spotify">
+          <p>Conectas tu cuenta de Spotify y tu chat puede pedir canciones con <code className="theme-chip px-1 py-0.5 rounded text-[10px]">!play nombre</code>. Las canciones pedidas aparecen en el overlay "Cola de Spotify".</p>
+          <p>Necesitas <span className="font-bold text-white">Spotify Premium</span> y tener Spotify <span className="font-bold text-white">abierto y sonando</span> en algún dispositivo mientras transmites.</p>
+        </HowItWorks>
 
         {loading ? (
           <p className="text-gray-500 text-sm italic">Verificando...</p>
@@ -193,9 +208,11 @@ export default function Spotify({ socket, queueState, settingsState }) {
           </>
         ) : (
           <>
-            <p className="text-[11px] text-gray-500 mb-4 leading-snug">
-              Conecta tu cuenta de Spotify (necesitas Premium) para que el chat pueda pedir canciones. Necesitas tener Spotify abierto y sonando en algún dispositivo para que una acción pueda aplicarse.
-            </p>
+            <ol className="text-[11px] text-gray-400 mb-4 leading-snug space-y-1.5 list-decimal list-inside">
+              <li>Ten a la mano tu cuenta de <span className="font-bold text-white">Spotify Premium</span>.</li>
+              <li>Pulsa el botón: irás a Spotify a autorizar el acceso (nunca vemos tu contraseña).</li>
+              <li>Al volver, abre Spotify y deja una canción sonando.</li>
+            </ol>
             <button
               onClick={connect}
               disabled={connecting}
@@ -203,6 +220,7 @@ export default function Spotify({ socket, queueState, settingsState }) {
             >
               {connecting ? 'Redirigiendo...' : 'Conectar con Spotify'}
             </button>
+            {connectError && <p role="alert" className="text-[11px] font-bold text-red-500 mt-3">{connectError}</p>}
           </>
         )}
       </div>
@@ -226,6 +244,10 @@ export default function Spotify({ socket, queueState, settingsState }) {
               {settings.enabled ? 'DESACTIVAR' : 'ACTIVAR'}
             </button>
           </div>
+
+          {settings.enabled && !settings.allUsers && !settings.moderators && !settings.fanMembers && (
+            <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-3">Ahora mismo nadie del chat puede pedir canciones: activa al menos una opción de abajo.</p>
+          )}
 
           <div className={`space-y-3 transition-opacity ${settings.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
             <Toggle checked={settings.allUsers} onChange={(v) => update('allUsers', v)} label="Todos los usuarios" description="Cualquiera del chat puede pedir canciones; anula los filtros de abajo." />

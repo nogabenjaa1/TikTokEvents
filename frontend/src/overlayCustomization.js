@@ -55,6 +55,11 @@ function defaultEntry() {
     background: { type: 'solid', from: '#7C3AED', to: '#3B82F6' },
     usernameColor: { type: 'default', color: '#000000', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
     messageAnimation: 'fade',
+    // Volumen general (pedido explícito) -- solo lo usa el overlay de
+    // Alertas (audio propio + audio del video + el aviso que escucha el
+    // propio streamer en su panel, ver AlertSoundListener), el resto lo
+    // ignora sin problema. 1 = volumen normal del archivo, 0 = mudo.
+    volume: 1,
   };
 }
 
@@ -65,7 +70,8 @@ export function defaultOverlayCustomizationMap() {
 function isValidEntry(e) {
   return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
     && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type)
-    && (e.messageAnimation === undefined || VALID_MESSAGE_ANIMATIONS.includes(e.messageAnimation));
+    && (e.messageAnimation === undefined || VALID_MESSAGE_ANIMATIONS.includes(e.messageAnimation))
+    && (e.volume === undefined || (typeof e.volume === 'number' && e.volume >= 0 && e.volume <= 1));
 }
 
 export function loadOverlayCustomization() {

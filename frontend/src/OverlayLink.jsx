@@ -3,7 +3,7 @@ import { buildOverlayUrl } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
-function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetConfirm, onCustomize }) {
+function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLabel, resetConfirm, onCustomize }) {
   const [copied, setCopied] = useState(false);
 
   const copyUrl = () => {
@@ -29,7 +29,15 @@ function OverlayUrlCard({ title, description, url, onReset, resetLabel, resetCon
           </button>
         )}
       </div>
-      <p className="text-gray-500 text-xs mb-5">{description}</p>
+      <p className="text-gray-500 text-xs mb-2">{description}</p>
+      {/* Pedido explícito: el tamaño exacto de la fuente de navegador tiene
+          que verse en CADA tarjeta, no solo en el cuadro de ayuda genérico
+          de más abajo. */}
+      {dimensions && (
+        <p className="mb-3">
+          <span className="theme-chip inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full">📐 {dimensions}</span>
+        </p>
+      )}
 
       {!url ? (
         <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
@@ -226,12 +234,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
               description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
+              dimensions="380×700 px (vertical)"
               url={gamesUrl}
               onCustomize={() => setCustomizingId('games')}
             />
             <OverlayUrlCard
               title="Overlay de Colores (dados)"
               description="Overlay horizontal aparte, exclusivo para Color Says — no sirve para los otros modos."
+              dimensions="960×260 px (horizontal)"
               url={colorsUrl}
               onCustomize={() => setCustomizingId('colors')}
             />
@@ -245,6 +255,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           <OverlayUrlCard
             title="Overlay de Alertas"
             description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
+            dimensions="1920×1080 px (toda la escena)"
             url={alertsUrl}
           />
         )}
@@ -254,6 +265,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Top Tap-Tap (ranking de likes)"
               description={`Widget angosto aparte con quién más likes mandó en el directo${tapTapCount ? ` — ${tapTapCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+              dimensions="380×700 px (vertical)"
               url={tapTapUrl}
               onReset={() => socket?.emit('reset_taptap_leaderboard')}
               resetLabel="🗑️ Reiniciar ranking de likes"
@@ -264,6 +276,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Top Gifter (ranking de regalos)"
               description={`Widget angosto aparte con quién más regaló en el directo${gifterCount ? ` — ${gifterCount} en el ranking ahora` : ''}. Se actualiza solo, sin partida ni ganador: reinícialo a mano cuando arranques un directo nuevo.`}
+              dimensions="380×700 px (vertical)"
               url={gifterUrl}
               onReset={() => socket?.emit('reset_gifter_leaderboard')}
               resetLabel="🗑️ Reiniciar ranking de regalos"
@@ -278,12 +291,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Modo Extensible (contador que crece con follows/regalos)"
               description="Overlay horizontal aparte, pensado como franja tipo subathon — inícialo y ajústalo desde su propia pestaña en TikTokEvents."
+              dimensions="960×260 px (horizontal)"
               url={extensibleUrl}
               onCustomize={() => setCustomizingId('extensible')}
             />
             <OverlayUrlCard
               title="Cola de Spotify (canciones pedidas con !play)"
               description={`Widget angosto aparte con las próximas canciones pedidas por chat${musicQueueCount ? ` — ${musicQueueCount} en la cola ahora` : ''}. Conecta tu cuenta de Spotify desde la pestaña Spotify en TikTokEvents para que funcione.`}
+              dimensions="380×700 px (vertical)"
               url={musicQueueUrl}
               onReset={() => socket?.emit('clear_spotify_queue')}
               resetLabel="🗑️ Vaciar cola de canciones"
@@ -298,12 +313,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Objetivo (meta de regalos o de seguidores)"
               description={`Overlay horizontal aparte, con una barra de progreso${goalState?.isActive ? ` — ${(goalState.current || 0).toLocaleString('es-MX')} / ${(goalState.target || 0).toLocaleString('es-MX')} ahora` : ''}. Inícialo y ajústalo desde su propia pestaña en TikTokEvents.`}
+              dimensions="960×260 px (horizontal)"
               url={goalUrl}
               onCustomize={() => setCustomizingId('goal')}
             />
             <OverlayUrlCard
               title="Chat en vivo + espectadores"
               description={`Widget angosto aparte con el chat en vivo y el contador de espectadores${typeof viewerCount === 'number' && viewerCount > 0 ? ` — ${viewerCount.toLocaleString('es-MX')} viendo ahora` : ''}. No necesita configuración: se activa solo apenas te conectes a un LIVE.`}
+              dimensions="380×700 px (vertical)"
               url={chatUrl}
               onCustomize={() => setCustomizingId('chat')}
             />

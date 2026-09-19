@@ -336,6 +336,9 @@ class Tenant {
         // Último momento en que hubo (o dejó de haber) un socket conectado a
         // este tenant -- ver isEvictable/disposeTenant.
         this.lastSocketActivityAt = Date.now();
+        // Foto periódica del estado en vivo (ver lib/tenant/runtimeState.js).
+        this.lastRuntimeJson = null;
+        this.runtimeInterval = null;
     }
 
     // Broadcast scopeado: reemplaza los antiguos io.emit(...) globales.
@@ -377,6 +380,17 @@ class Tenant {
             socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             socket.emit('tts_settings_update', this.ttsSettings);
             socket.emit('goal_state_update', this.getGoalPublicState());
+            // Si loadPersistedSettings restauró estado en vivo tras un
+            // reinicio, este cliente lo recibe ahora (los emits de más
+            // abajo salieron antes de que terminara la carga).
+            socket.emit('state_update', this.contestState);
+            socket.emit('zub_state_update', this.getZubPublicState());
+            socket.emit('elim_state_update', this.getElimPublicState());
+            socket.emit('roulette_state_update', this.getRoulettePublicState());
+            socket.emit('gifter_state_update', this.getGifterPublicState());
+            socket.emit('taptap_state_update', this.getTapTapPublicState());
+            socket.emit('extensible_state_update', this.getExtensiblePublicState());
+            this.startRuntimePersistence();
         });
 
         // Sincronizar al nuevo cliente al instante -- todo esto es estado EN
@@ -429,6 +443,7 @@ class Tenant {
 Object.assign(Tenant.prototype, require('./lib/tenant/connection'));
 Object.assign(Tenant.prototype, require('./lib/tenant/events'));
 Object.assign(Tenant.prototype, require('./lib/tenant/persistence'));
+Object.assign(Tenant.prototype, require('./lib/tenant/runtimeState'));
 Object.assign(Tenant.prototype, require('./lib/tenant/alerts'));
 Object.assign(Tenant.prototype, require('./lib/tenant/spotify'));
 Object.assign(Tenant.prototype, require('./lib/tenant/king'));

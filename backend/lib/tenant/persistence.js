@@ -83,6 +83,9 @@ module.exports = {
                     console.log(`[${this.licenseId}] [OBJETIVO] Progreso restaurado tras el reinicio: ${this.goalState.current}/${this.goalState.target}.`);
                 }
             }
+            // Juegos activos, rankings y cola de Spotify de antes del reinicio
+            // (ver runtimeState.js): restaurados en pausa.
+            if (license.runtime_state) this.restoreRuntimeState(license.runtime_state);
             if (license.goal_settings) {
                 const gs = license.goal_settings;
                 this.goalAudioUrl = typeof gs.audioUrl === 'string' ? gs.audioUrl : null;

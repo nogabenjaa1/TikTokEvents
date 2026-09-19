@@ -1872,6 +1872,25 @@ app.use((req, res) => {
 // -- el admin puede volver a guardar el precio despues para reintentar.
 pricing.loadPriceOverrides().catch(err => console.error('[PRICING] No se pudieron cargar los overrides de precio al arrancar:', err.message));
 
+// Render manda SIGTERM antes de reemplazar el proceso en un deploy: se guarda
+// YA el estado en vivo de cada tenant (juegos, rankings, Objetivo) para que el
+// proceso nuevo lo restaure sin perder los últimos segundos (ver
+// lib/tenant/runtimeState.js). Con un tope de 4 s para no trabar el cierre.
+let shuttingDown = false;
+async function flushAndExit(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[${signal}] Guardando el estado de ${tenants.size} tenant(s) antes de cerrar...`);
+    const flush = Promise.all([...tenants.values()].map((t) => Promise.all([
+        t.persistRuntimeState(true).catch(() => {}),
+        t.goalPersistTimer ? t.persistGoalProgress() : Promise.resolve(),
+    ])));
+    await Promise.race([flush, new Promise((resolve) => setTimeout(resolve, 4000))]);
+    process.exit(0);
+}
+process.on('SIGTERM', () => flushAndExit('SIGTERM'));
+process.on('SIGINT', () => flushAndExit('SIGINT'));
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`\n🚀 BACKEND READY ON PORT ${PORT}\n`);

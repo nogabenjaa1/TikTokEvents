@@ -32,6 +32,8 @@ module.exports = {
     dispose() {
         this.disconnectTikTok();
         this.stopSpotifyQueuePolling();
+        this.stopRuntimePersistence();
+        this.persistRuntimeState(true); // deja guardado que ya no hay nada activo
         if (this.goalPersistTimer) this.persistGoalProgress(); // guarda lo último pendiente antes de soltar el tenant
         if (this.tapTapDiagnosticsBroadcastTimer) { clearTimeout(this.tapTapDiagnosticsBroadcastTimer); this.tapTapDiagnosticsBroadcastTimer = null; }
     },

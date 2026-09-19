@@ -130,6 +130,10 @@ const ready = pool.query(`
   // reinicio del servidor (deploy, caída) es de lo más molesto: se guarda
   // acá y se restaura al volver.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_progress JSONB`))
+  // Foto del estado en vivo (juegos activos, Extensible, rankings, cola de
+  // Spotify) para restaurarlo tras un reinicio del servidor -- ver
+  // lib/tenant/runtimeState.js.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS runtime_state JSONB`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_mp_payment
     ON licenses(mp_payment_id) WHERE mp_payment_id IS NOT NULL
@@ -400,6 +404,11 @@ async function setGoalSettings(id, settings) {
 async function setGoalProgress(id, progress) {
     await ready;
     await pool.query('UPDATE licenses SET goal_progress = $1 WHERE id = $2', [JSON.stringify(progress), id]);
+}
+
+async function setRuntimeState(id, snapshot) {
+    await ready;
+    await pool.query('UPDATE licenses SET runtime_state = $1 WHERE id = $2', [snapshot === null ? null : JSON.stringify(snapshot), id]);
 }
 
 async function setGiftCatalog(id, gifts) {
@@ -684,7 +693,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog, setGoalProgress,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

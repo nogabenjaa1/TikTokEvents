@@ -267,12 +267,22 @@ export default function App() {
   // muestran los anuncios. Se calcula UNA vez acá (no en un efecto) para
   // que no haya un parpadeo mostrando la sección por defecto antes de
   // corregirse a la de la URL real. EXCEPCIÓN: si venimos de la vuelta del
-  // OAuth de Spotify (?spotify=connected|error), Spotify.jsx redirige acá
+  // OAuth de Spotify (?spotify=connected|not_registered|error), Spotify.jsx redirige acá
   // con un GET normal del navegador — no hay forma de "recordar" en qué
   // pestaña estaba el streamer antes de irse a autorizar, así que en vez de
   // respetar la URL arrancamos directo en TikTokEvents -> Spotify, que es
   // donde ese aviso se muestra (ver el banner en Spotify.jsx).
   const cameFromSpotifyOAuth = new URLSearchParams(window.location.search).has('spotify');
+  // El resultado en sí (connected|not_registered|error) hay que guardarlo
+  // ACÁ, en el primer render: el efecto de "estado -> URL" de más abajo
+  // reescribe la URL sin la query antes de que el panel de Spotify (carga
+  // perezosa, ver lazyPanel.jsx) llegue a montarse, así que leerla desde
+  // window.location dentro de Spotify.jsx ya no encontraba nada y ningún
+  // aviso de la vuelta del OAuth se mostraba jamás. Spotify.jsx lo consume
+  // una sola vez (onOAuthResultConsumed) para no repetirlo al volver a esa
+  // pestaña.
+  const [spotifyOAuthResult, setSpotifyOAuthResult] = useState(() => new URLSearchParams(window.location.search).get('spotify'));
+  const consumeSpotifyOAuthResult = useCallback(() => setSpotifyOAuthResult(null), []);
   const initialRoute = sectionFromPath(window.location.pathname);
   const [sidebarMode, setSidebarMode] = useState(() => (cameFromSpotifyOAuth ? 'events' : initialRoute.section));
   // Pestaña activa dentro de la sección "TikTokEvents" (ver EVENT_TABS).
@@ -1178,7 +1188,11 @@ export default function App() {
               needsAccess('spotify') ? (
                 <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Spotify." />
               ) : (
-                <Spotify socket={socket} queueState={spotifyQueueState} settingsState={spotifySettingsState} />
+                <Spotify
+                  socket={socket} queueState={spotifyQueueState} settingsState={spotifySettingsState}
+                  oauthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
+                  onWantsMembership={() => setSidebarMode('membership')}
+                />
               )
             )}
             {/* Pedido explicito: el panel de configuración de Alertas se

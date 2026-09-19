@@ -39,12 +39,17 @@ function Toggle({ checked, onChange, label, description }) {
 // en TTS, porque acá la acción real (llamar a la API de Spotify) pasa por
 // el backend.
 // ─────────────────────────────────────────────
-export default function Spotify({ socket, queueState, settingsState }) {
+export default function Spotify({ socket, queueState, settingsState, oauthResult, onOAuthResultConsumed, onWantsMembership }) {
   const [connected, setConnected] = useState(false);
   const [displayName, setDisplayName] = useState(null);
+  // Spotify es solo para licencias Lifetime (ver backend/spotify.js,
+  // isLicenseAllowed): la respuesta de /status manda, no el tipo de licencia
+  // guardado en la sesión, que no se entera de una compra hecha después.
+  // Arranca en true para no parpadear el aviso de bloqueo mientras carga.
+  const [allowed, setAllowed] = useState(true);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
-  const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('spotify'));
+  const [banner, setBanner] = useState(oauthResult || null);
   const [errorToast, setErrorToast] = useState(null);
   const [connectError, setConnectError] = useState('');
   const [volume, setVolume] = useState(50);
@@ -54,6 +59,7 @@ export default function Spotify({ socket, queueState, settingsState }) {
       const res = await fetch(`${backendUrl()}/api/spotify/status`, { headers: authHeaders() });
       const data = await res.json();
       if (data.success) {
+        setAllowed(data.allowed !== false); // un backend anterior no manda `allowed`: se asume permitido
         setConnected(data.connected);
         setDisplayName(data.displayName);
       }
@@ -64,14 +70,17 @@ export default function Spotify({ socket, queueState, settingsState }) {
 
   useEffect(() => { fetchStatus(); }, []);
 
-  // Igual que Membership.jsx con ?payment=...: Spotify redirige de vuelta
-  // acá después del OAuth con ?spotify=connected|error en la URL — App.jsx
-  // ya se encarga de que esta pestaña quede activa apenas se vuelve.
+  // Spotify redirige de vuelta al panel después del OAuth con
+  // ?spotify=connected|not_registered|error — App.jsx deja esta pestaña
+  // activa apenas se vuelve y nos pasa ese valor como `oauthResult`: para
+  // cuando este panel (carga perezosa) monta, App.jsx ya reescribió la URL
+  // sin la query, así que no se puede leer de window.location. Se consume
+  // una sola vez para que volver a esta pestaña no repita el aviso.
   useEffect(() => {
     if (!banner) return;
-    window.history.replaceState({}, '', window.location.pathname);
     if (banner === 'connected') fetchStatus();
-  }, [banner]);
+    onOAuthResultConsumed?.();
+  }, [banner, onOAuthResultConsumed]);
 
   useEffect(() => {
     if (!socket) return;
@@ -175,6 +184,16 @@ export default function Spotify({ socket, queueState, settingsState }) {
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
+      {/* Aparte del genérico de arriba a propósito: reintentar NO lo arregla —
+          Spotify solo deja conectar las cuentas que el administrador cargó a
+          mano en su lista de usuarios (ver backend/spotify.js). Con el mensaje
+          genérico la gente apretaba "Conectar" una y otra vez. */}
+      {banner === 'not_registered' && (
+        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+          <span>❌ TU CUENTA DE SPOTIFY TODAVÍA NO ESTÁ HABILITADA. Spotify solo deja conectar las cuentas que el administrador agregó a la plataforma: envíale el correo con el que inicias sesión en Spotify y, cuando te confirme que ya la agregó, vuelve a intentarlo.</span>
+          <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
+        </div>
+      )}
       {errorToast && (
         <div className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-amber-500/10 border-amber-500/40 text-amber-600">
           ⚠️ {errorToast}
@@ -185,11 +204,14 @@ export default function Spotify({ socket, queueState, settingsState }) {
         <div className="flex items-center gap-3 mb-4">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">CONEXIÓN</h1>
-          {!loading && connected && (
+          {!loading && allowed && connected && (
             <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border text-green-300 border-green-500/40 bg-green-500/10">● Conectado</span>
           )}
-          {!loading && !connected && (
+          {!loading && allowed && !connected && (
             <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">Sin conectar</span>
+          )}
+          {!loading && !allowed && (
+            <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">Solo Lifetime</span>
           )}
         </div>
 
@@ -200,6 +222,21 @@ export default function Spotify({ socket, queueState, settingsState }) {
 
         {loading ? (
           <p className="text-gray-500 text-sm italic">Verificando...</p>
+        ) : !allowed ? (
+          <>
+            <p className="text-sm text-gray-300 mb-4">
+              Los pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded text-[10px]">!play</code> son <span className="font-bold text-white">exclusivos de la membresía Lifetime</span>. Spotify permite conectar muy pocas cuentas a la plataforma, por eso el cupo es limitado.
+            </p>
+            {onWantsMembership && (
+              <button
+                type="button"
+                onClick={onWantsMembership}
+                className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg"
+              >
+                Ver membresías
+              </button>
+            )}
+          </>
         ) : connected ? (
           <>
             <p className="text-sm text-gray-300 mb-4">Conectado como <span className="font-bold text-white">{displayName}</span></p>

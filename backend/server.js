@@ -712,6 +712,11 @@ app.get('/api/admin/pricing/history', auth.requireAuth, auth.requireAdmin, admin
 // callback de más abajo no tiene el header Authorization disponible (es
 // Spotify quien redirige al navegador, no un fetch nuestro).
 app.get('/api/spotify/connect', auth.requireAuth, generalLimiter, (req, res) => {
+    // El panel ya no ofrece el botón a estas licencias (ver `allowed` en
+    // /status), esto cubre a quien llame a la ruta directo.
+    if (!spotify.isLicenseAllowed(req.license)) {
+        return res.status(403).json({ success: false, error: 'Spotify está disponible solo con la membresía Lifetime.' });
+    }
     try {
         const state = auth.signSpotifyState(req.license.id);
         res.json({ success: true, authUrl: spotify.getAuthUrl(state) });
@@ -746,14 +751,31 @@ app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
         });
         res.redirect(`${FRONTEND_URL}/?spotify=connected`);
     } catch (err) {
-        console.error('[Spotify] Error en el callback de OAuth:', err.message);
+        // Mismo identificador que el resto de los logs ("alias/8 primeros del
+        // id"); sin él, todos los intentos fallidos se veían idénticos y no
+        // había forma de saber a qué streamer atender.
+        const who = tenants.get(licenseId)?.logId || String(licenseId).slice(0, 8);
+        if (err instanceof spotify.SpotifyUserNotRegisteredError) {
+            // Reintentar no sirve de nada: mientras la app de Spotify esté en
+            // modo Development (ver spotify.js), esa cuenta tiene que cargarse
+            // a mano en el dashboard — y para eso hace falta su correo de
+            // Spotify, que a nosotros no nos llega (ni /me responde).
+            console.warn(`[${who}] [Spotify] Conexión rechazada: la cuenta de Spotify de este streamer no está en la lista de usuarios de la app (modo Development). Pídele el correo de su cuenta de Spotify y agrégala en developer.spotify.com/dashboard > tu app > Settings > User Management.`);
+            return res.redirect(`${FRONTEND_URL}/?spotify=not_registered`);
+        }
+        console.error(`[${who}] [Spotify] Error en el callback de OAuth:`, err.message);
         res.redirect(`${FRONTEND_URL}/?spotify=error`);
     }
 });
 
 app.get('/api/spotify/status', auth.requireAuth, generalLimiter, async (req, res) => {
-    const account = await db.getSpotifyAccount(req.license.id);
-    res.json({ success: true, connected: !!account, displayName: account?.display_name || null });
+    // Una licencia sin permiso nunca figura como "conectada", aunque haya
+    // quedado una cuenta guardada de antes de que Spotify fuera solo
+    // Lifetime: el comando del chat tampoco la usa (ver
+    // getAllowedSpotifyAccount en tenant/spotify.js).
+    const allowed = spotify.isLicenseAllowed(req.license);
+    const account = allowed ? await db.getSpotifyAccount(req.license.id) : null;
+    res.json({ success: true, allowed, connected: !!account, displayName: account?.display_name || null });
 });
 
 app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req, res) => {

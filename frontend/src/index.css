@@ -331,11 +331,11 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 /* Dock flotante redondeado, igual de "sticker" que el resto del material. */
 .themed-app[data-theme-style="cute"] .theme-sidebar {
   margin: 0.75rem 0 0.75rem 0.75rem;
-  border-radius: 1.75rem;
+  border-radius: var(--radius-cute-dock);
   gap: 0.6rem;
 }
 .themed-app[data-theme-style="cute"] .theme-nav-btn {
-  border-radius: 1.1rem !important;
+  border-radius: var(--radius-cute-nav) !important;
   transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 .themed-app[data-theme-style="cute"] .theme-nav-btn:hover { transform: translateY(-1px); }
@@ -445,6 +445,20 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 }
 .theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
 
+/* Tokens de tinta de estado y radios del material Cute -- documentados en
+   DESIGN.md (Colors › Estado / Shapes). Cada valor vive UNA sola vez acá y
+   el resto del archivo lee la variable. */
+:root {
+  --ink-danger: #B91C1C;
+  --ink-warning: #A16207;
+  --ink-success: #15803D;
+  --ink-premio: #047857;
+  --ink-info: #0369A1;
+  --ink-amber: #B45309;
+  --radius-cute-dock: 1.75rem;
+  --radius-cute-nav: 1.1rem;
+}
+
 /* ==========================================
    NORMALIZACIÓN DE COLORES DE ESTADO (panel de control)
    Muchos textos/badges del panel (insta-win, premio, multi-dispositivo,
@@ -463,23 +477,23 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-panel .text-red-200,
 .themed-panel .text-red-300,
 .themed-panel .text-red-400,
-.themed-panel .text-red-500 { color: #B91C1C !important; }
+.themed-panel .text-red-500 { color: var(--ink-danger) !important; }
 .themed-panel .text-yellow-100,
 .themed-panel .text-yellow-200,
 .themed-panel .text-yellow-300,
 .themed-panel .text-yellow-400,
-.themed-panel .text-yellow-500 { color: #A16207 !important; }
+.themed-panel .text-yellow-500 { color: var(--ink-warning) !important; }
 .themed-panel .text-green-100,
 .themed-panel .text-green-300,
-.themed-panel .text-green-400 { color: #15803D !important; }
+.themed-panel .text-green-400 { color: var(--ink-success) !important; }
 .themed-panel .text-emerald-300,
-.themed-panel .text-emerald-400 { color: #047857 !important; }
-.themed-panel .text-sky-400 { color: #0369A1 !important; }
+.themed-panel .text-emerald-400 { color: var(--ink-premio) !important; }
+.themed-panel .text-sky-400 { color: var(--ink-info) !important; }
 /* Ámbar queda en su propia familia (no rojo): sigue usándose como un
    tercer estado real y distinto de error/éxito (ej. "esperando LIVE" en
    TTS Chat, ni activo ni apagado) — solo se oscurece para que se lea. */
 .themed-panel .text-amber-400,
-.themed-panel .text-amber-500 { color: #B45309 !important; }
+.themed-panel .text-amber-500 { color: var(--ink-amber) !important; }
 .theme-sidebar {
   background: var(--surface-bg);
   border-right: var(--surface-border);

@@ -990,7 +990,7 @@ export default function App() {
       )}
       {serverRestarted && (
         <div role="alert" className="w-full bg-amber-500/10 border-b border-amber-500/40 text-amber-700 text-[11px] font-bold text-center py-1.5 px-3 tracking-wide flex-shrink-0 flex items-center justify-center gap-3">
-          <span>El servidor se reinició: las partidas que estaban activas se detuvieron y los rankings se limpiaron. Tu conexión con TikTok se restablece sola; revisa que todo siga en orden.</span>
+          <span>El servidor se reinició. Tus partidas, rankings y cola de Spotify se restauraron (los juegos quedan en PAUSA: revísalos y reanúdalos). Tu conexión con TikTok se restablece sola; lo ocurrido en los últimos segundos antes del reinicio puede faltar.</span>
           <button type="button" onClick={() => setServerRestarted(false)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}

@@ -30,6 +30,18 @@ colors:
   danger: "#EF4444"
   warning: "#F59E0B"
   success: "#10B981"
+  ink-danger: "#B91C1C"
+  ink-warning: "#A16207"
+  ink-success: "#15803D"
+  ink-premio: "#047857"
+  ink-info: "#0369A1"
+  ink-amber: "#B45309"
+  rainbow-red: "#ff3b3b"
+  rainbow-orange: "#ff9f1c"
+  rainbow-yellow: "#ffe135"
+  rainbow-green: "#3ddc84"
+  rainbow-blue: "#3b82f6"
+  rainbow-purple: "#a855f7"
   neutral-muted: "#6B7280"
   ink: "#FFFFFF"
 typography:
@@ -59,7 +71,9 @@ typography:
     letterSpacing: "0.15em"
 rounded:
   sm: "0.75rem"
+  cute-nav: "1.1rem"
   lg: "1.5rem"
+  cute-dock: "1.75rem"
   pill: "999px"
   flat: "0px"
 spacing:
@@ -143,6 +157,8 @@ Los cuatro materiales viven en la misma familia de luminosidad — pastel claro 
 - **Ámbar Aviso** (`#F59E0B`): avisos de vencimiento de licencia, estados "por vencer" o "verificando".
 - **Esmeralda Premio** (`#10B981`): franja de premio compartida por los tres juegos y estado "activa"/"conectado en vivo" — casualmente comparte hex con el acento verde, pero es un token de estado independiente, no cambia si el streamer elige otro acento.
 - **Gris Apagado** (`#6B7280`): estados offline, deshabilitado, texto secundario de baja prioridad.
+- **Tintas de estado** (`--ink-danger` `#B91C1C`, `--ink-warning` `#A16207`, `--ink-success` `#15803D`, `--ink-premio` `#047857`, `--ink-info` `#0369A1`, `--ink-amber` `#B45309`): versiones oscuras de los colores de estado, usadas SOLO para texto sobre los paneles claros (`.themed-panel`), donde los tonos vivos de arriba no alcanzan contraste. Viven como variables en `index.css` y son la única fuente de estos valores.
+- **Arcoíris** (`#ff3b3b`, `#ff9f1c`, `#ffe135`, `#3ddc84`, `#3b82f6`, `#a855f7`): degradado fijo de la opción "Arcoíris" del fondo/texto de los overlays. Es deliberadamente independiente del acento del tema (no cambia con él) y solo aparece cuando el streamer lo elige.
 
 ### Named Rules
 **La Regla del Faro Único.** El acento vivo es siempre el único color saturado en pantalla fuera de los badges de estado (rojo/ámbar/esmeralda). Ningún otro elemento decorativo compite por atención con él — el fondo teñido (ver regla siguiente) no rompe esto porque es el mismo acento, no un segundo color; solo cambia de intensidad.
@@ -187,7 +203,7 @@ Sistema híbrido: el material Default usa sombra real (glow de acento); Kawaii u
 
 ## Shapes
 
-El radio de esquina es, junto con la sombra, la variable que más cambia entre materiales: de esquinas totalmente vivas (Minimal, `0px`) al extremo más redondeado del sistema (Kawaii, `2rem` en superficies / `1.5rem` en controles, con inputs, botones y chips en píldora completa `999px` — es el único material donde CADA control interactivo es una píldora, no solo algunos). El material Default usa `1.5rem` en superficies y `0.75rem` en controles internos — es el punto de referencia cuando no se especifica material. Cute usa esquinas grandes y parejas (`1.75rem`/`1.25rem`, con borde punteado `2px dashed` como seña de identidad) — deliberadamente un escalón menos extremo que Kawaii, para que los dos materiales "tiernos" se sientan distintos entre sí y no como el mismo look con otro nombre.
+El radio de esquina es, junto con la sombra, la variable que más cambia entre materiales: de esquinas totalmente vivas (Minimal, `0px`) al extremo más redondeado del sistema (Kawaii, `2rem` en superficies / `1.5rem` en controles, con inputs, botones y chips en píldora completa `999px` — es el único material donde CADA control interactivo es una píldora, no solo algunos). El material Default usa `1.5rem` en superficies y `0.75rem` en controles internos — es el punto de referencia cuando no se especifica material. Cute usa esquinas grandes y parejas (`1.75rem`/`1.25rem`, con borde punteado `2px dashed` como seña de identidad) — deliberadamente un escalón menos extremo que Kawaii (el dock lateral de Cute usa `--radius-cute-dock` = `1.75rem` y sus botones de navegación `--radius-cute-nav` = `1.1rem`), para que los dos materiales "tiernos" se sientan distintos entre sí y no como el mismo look con otro nombre.
 
 ### Named Rules
 **La Regla del Radio No Fijo.** A diferencia de un sistema de diseño convencional, el radio de esquina no es un token único: es parte de la identidad seleccionable. Cualquier componente nuevo debe leer `var(--surface-radius)` / `var(--surface-radius-sm)`, nunca un valor de radio hardcodeado, para heredar correctamente los cuatro materiales.

@@ -22,7 +22,7 @@ module.exports = {
         if (this.goalPersistTimer) { clearTimeout(this.goalPersistTimer); this.goalPersistTimer = null; }
         const { isActive, finished, targetType, target, current, title } = this.goalState;
         return db.setGoalProgress(this.licenseId, { isActive, finished, targetType, target, current, title })
-            .catch((err) => console.error(`[${this.licenseId}] [DB] setGoalProgress:`, err.message));
+            .catch((err) => console.error(`[${this.logId}] [DB] setGoalProgress:`, err.message));
     },
 
     // Llamado desde server.js justo después de subir/borrar el audio en

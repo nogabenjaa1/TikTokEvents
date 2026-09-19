@@ -50,7 +50,7 @@ module.exports = {
             await db.setRuntimeState(this.licenseId, snap ? { ...snap, savedAt: Date.now() } : null);
         } catch (err) {
             this.lastRuntimeJson = null; // reintenta en el próximo ciclo
-            console.error(`[${this.licenseId}] [DB] setRuntimeState:`, err.message);
+            console.error(`[${this.logId}] [DB] setRuntimeState:`, err.message);
         }
     },
 
@@ -147,7 +147,7 @@ module.exports = {
             // ensureTikTokConnection).
             this.wasEverConnected = true;
             this.lastRuntimeJson = null;
-            console.log(`[${this.licenseId}] [RESTAURACIÓN] ${restored} elemento(s) de estado en vivo restaurados tras el reinicio (juegos en pausa).`);
+            console.log(`[${this.logId}] [RESTAURACIÓN] ${restored} elemento(s) de estado en vivo restaurados tras el reinicio (juegos en pausa).`);
         }
         return restored > 0;
     },

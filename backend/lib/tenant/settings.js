@@ -32,7 +32,7 @@ module.exports = {
             // Pedido explícito: que el tema sobreviva a un reinicio del
             // server y a entrar desde otro dispositivo.
             db.setThemeSettings(this.licenseId, this.theme).catch((err) => {
-                console.error(`[${this.licenseId}] No se pudo guardar theme_settings:`, err.message);
+                console.error(`[${this.logId}] No se pudo guardar theme_settings:`, err.message);
             });
         });
 
@@ -47,7 +47,7 @@ module.exports = {
             // Pedido explícito: que sobreviva a un reinicio del server y a
             // entrar desde otro dispositivo.
             db.setOverlayCustomization(this.licenseId, this.overlayCustomization).catch((err) => {
-                console.error(`[${this.licenseId}] No se pudo guardar overlay_customization:`, err.message);
+                console.error(`[${this.logId}] No se pudo guardar overlay_customization:`, err.message);
             });
         });
 
@@ -67,7 +67,7 @@ module.exports = {
             };
             this.broadcast.emit('tts_settings_update', this.ttsSettings);
             db.setTtsSettings(this.licenseId, this.ttsSettings).catch((err) => {
-                console.error(`[${this.licenseId}] No se pudo guardar tts_settings:`, err.message);
+                console.error(`[${this.logId}] No se pudo guardar tts_settings:`, err.message);
             });
         });
     },

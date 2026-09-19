@@ -339,6 +339,17 @@ class Tenant {
         // Foto periódica del estado en vivo (ver lib/tenant/runtimeState.js).
         this.lastRuntimeJson = null;
         this.runtimeInterval = null;
+        // Etiqueta legible de la licencia para los logs (se completa al cargar
+        // sus ajustes) y contador de intentos de conexión fallidos seguidos.
+        this.licenseLabel = null;
+        this.reconnectAttempts = 0;
+    }
+
+    // Identificador para los logs: "alias/8 primeros del id" -- el UUID
+    // completo no dice de quién es la licencia.
+    get logId() {
+        const short = String(this.licenseId).slice(0, 8);
+        return this.licenseLabel ? `${this.licenseLabel}/${short}` : short;
     }
 
     // Broadcast scopeado: reemplaza los antiguos io.emit(...) globales.

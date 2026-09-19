@@ -9,7 +9,7 @@ module.exports = {
     // ==========================================
     startKingTimer() {
         if (this.kingTimerInterval) clearInterval(this.kingTimerInterval);
-        console.log(`[${this.licenseId}] [RELOJ-KING] ⏸️ Esperando primer participante...`);
+        console.log(`[${this.logId}] [RELOJ-KING] ⏸️ Esperando primer participante...`);
 
         this.kingTimerInterval = setInterval(() => {
             if (!this.contestState.isActive || this.contestState.mode === 'waiting' || this.contestState.paused) return;
@@ -17,12 +17,12 @@ module.exports = {
 
             if (this.contestState.timeLeft <= 0) {
                 if (this.contestState.mode === 'main') {
-                    console.log(`[${this.licenseId}] [KING] ⚠️ MODO SNIPE`);
+                    console.log(`[${this.logId}] [KING] ⚠️ MODO SNIPE`);
                     this.contestState.mode = 'snipe';
                     this.contestState.timeLeft = this.contestState.snipeTime;
                     this.broadcast.emit('snipe_started', this.contestState);
                 } else if (this.contestState.mode === 'snipe') {
-                    console.log(`[${this.licenseId}] [KING] 🛑 FINALIZADO`);
+                    console.log(`[${this.logId}] [KING] 🛑 FINALIZADO`);
                     this.contestState.mode = 'finished';
                     this.contestState.isActive = false;
                     this.contestState.winner = this.contestState.lastParticipant;
@@ -90,8 +90,8 @@ module.exports = {
     registerKingHandlers(socket) {
         // ── REY DEL TRONO ──────────────────────────
         socket.on('start_contest', (config) => {
-            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO REY DEL TRONO...`);
-            db.incrementUsage(this.licenseId, 'king_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(king_starts):`, err.message));
+            console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO REY DEL TRONO...`);
+            db.incrementUsage(this.licenseId, 'king_starts').catch(err => console.error(`[${this.logId}] [DB] incrementUsage(king_starts):`, err.message));
 
             this.contestState = {
                 ...this.contestState,
@@ -128,7 +128,7 @@ module.exports = {
 
         socket.on('restart_contest', () => {
             if (this.contestState.isActive) {
-                console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO REY DEL TRONO...`);
+                console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO REY DEL TRONO...`);
                 this.contestState.mode = 'waiting';
                 this.contestState.paused = false;
                 this.contestState.timeLeft = this.contestState.mainTime;

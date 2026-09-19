@@ -105,7 +105,7 @@ module.exports = {
         const clampBaseTime = (value, fallback) => Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.max(1, Number(value) || fallback));
 
         socket.on('start_extensible', (config) => {
-            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO MODO EXTENSIBLE...`);
+            console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO MODO EXTENSIBLE...`);
             const baseTime = clampBaseTime(config?.baseTime, 60);
             this.extensibleState = {
                 isActive: true, finished: false, paused: false,
@@ -165,7 +165,7 @@ module.exports = {
 
         socket.on('restart_extensible', (config) => {
             if (!this.extensibleState.isActive) return;
-            console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO MODO EXTENSIBLE...`);
+            console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO MODO EXTENSIBLE...`);
             if (config?.baseTime !== undefined) this.extensibleState.baseTime = clampBaseTime(config.baseTime, this.extensibleState.baseTime);
             if (config?.secondsPerFollow !== undefined) this.extensibleState.secondsPerFollow = Math.max(0, Number(config.secondsPerFollow) || 0);
             if (config?.secondsPerGift !== undefined) this.extensibleState.secondsPerGift = Math.max(0, Number(config.secondsPerGift) || 0);

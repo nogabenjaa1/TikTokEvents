@@ -37,7 +37,7 @@ module.exports = {
         const winnerSlot = pool[0] || null;
         this.elimState.winner = winnerSlot ? { username: winnerSlot.username, avatar: winnerSlot.avatar } : null;
         clearInterval(this.elimTimerInterval);
-        console.log(`[${this.licenseId}] [ELIMINACION] 🛑 FINALIZADO — ${winnerSlot ? `gana @${winnerSlot.username}` : 'nadie participó'}`);
+        console.log(`[${this.logId}] [ELIMINACION] 🛑 FINALIZADO — ${winnerSlot ? `gana @${winnerSlot.username}` : 'nadie participó'}`);
         this.broadcast.emit('elim_winner_declared', this.getElimPublicState());
         this.maybeDisconnectTikTok();
     },
@@ -64,7 +64,7 @@ module.exports = {
         const batch = pickEliminationBatch(pool, maxCount);
         this.elimState.mode = 'revealing';
         this.elimState.revealTargetIds = batch.map(p => p.id);
-        console.log(`[${this.licenseId}] [ELIMINACION] 🎯 SORTEANDO... (${batch.length})`);
+        console.log(`[${this.logId}] [ELIMINACION] 🎯 SORTEANDO... (${batch.length})`);
         this.broadcast.emit('elim_reveal_started', this.getElimPublicState());
 
         if (this.elimRevealTimeout) clearTimeout(this.elimRevealTimeout);
@@ -93,7 +93,7 @@ module.exports = {
             username: slot.username, avatar: slot.avatar,
             final: !pool.some(p => p.username === slot.username),
         }));
-        console.log(`[${this.licenseId}] [ELIMINACION] 💀 ELIMINADOS: ${this.elimState.lastEliminatedList.map(e => '@' + e.username).join(', ') || '(nadie)'}`);
+        console.log(`[${this.logId}] [ELIMINACION] 💀 ELIMINADOS: ${this.elimState.lastEliminatedList.map(e => '@' + e.username).join(', ') || '(nadie)'}`);
 
         this.elimState.mode = 'result';
         this.broadcast.emit('elim_eliminated', this.getElimPublicState());
@@ -118,7 +118,7 @@ module.exports = {
 
             if (this.elimState.timeLeft <= 0) {
                 if (this.elimState.mode === 'joining') {
-                    console.log(`[${this.licenseId}] [ELIMINACION] ⚔️ INICIA LA ELIMINACIÓN`);
+                    console.log(`[${this.logId}] [ELIMINACION] ⚔️ INICIA LA ELIMINACIÓN`);
                     this.beginEliminationReveal();
                 } else if (this.elimState.mode === 'rejoin') {
                     this.beginEliminationReveal();
@@ -170,7 +170,7 @@ module.exports = {
                 this.elimState.revealTargetId = null;
                 this.elimState.winner = { username, avatar };
                 clearInterval(this.elimTimerInterval);
-                console.log(`[${this.licenseId}] [ELIMINACION] 👑 INSTA-WIN: @${username}`);
+                console.log(`[${this.logId}] [ELIMINACION] 👑 INSTA-WIN: @${username}`);
                 this.broadcast.emit('elim_winner_declared', this.getElimPublicState());
                 this.maybeDisconnectTikTok();
                 return;
@@ -208,8 +208,8 @@ module.exports = {
     registerElimHandlers(socket) {
         // ── ELIMINACIÓN ──────────────────────────────
         socket.on('start_elimination', (config) => {
-            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO ELIMINACIÓN...`);
-            db.incrementUsage(this.licenseId, 'elim_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(elim_starts):`, err.message));
+            console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO ELIMINACIÓN...`);
+            db.incrementUsage(this.licenseId, 'elim_starts').catch(err => console.error(`[${this.logId}] [DB] incrementUsage(elim_starts):`, err.message));
 
             if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
             if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
@@ -250,7 +250,7 @@ module.exports = {
 
         socket.on('restart_elimination', () => {
             if (this.elimState.isActive) {
-                console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO ELIMINACIÓN...`);
+                console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO ELIMINACIÓN...`);
                 if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
                 if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
                 this.elimState.mode = 'joining';
@@ -315,7 +315,7 @@ module.exports = {
                 this.elimSlotCounter += 1;
                 this.elimState.participants.push({ id: this.elimSlotCounter, username: uname, avatar });
             }
-            console.log(`[${this.licenseId}] [ELIMINACION] ➕ Entrada manual: @${uname} x${n}`);
+            console.log(`[${this.logId}] [ELIMINACION] ➕ Entrada manual: @${uname} x${n}`);
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
         });
 

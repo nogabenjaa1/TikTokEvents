@@ -188,7 +188,7 @@ module.exports = {
         // corregirlo con datos reales en vez de adivinar de nuevo a ciegas.
         if (!this.loggedRoomUserSample) {
             this.loggedRoomUserSample = true;
-            console.log(`[${this.licenseId}] [TIKTOK] Muestra de roomUser (una sola vez):`, JSON.stringify(data));
+            console.log(`[${this.logId}] [TIKTOK] Muestra de roomUser (una sola vez):`, JSON.stringify(data));
         }
         const count = Number(data?.total);
         if (!Number.isFinite(count) || count < 0) return;

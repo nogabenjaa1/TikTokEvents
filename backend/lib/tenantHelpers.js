@@ -117,32 +117,20 @@ class TikTokConnectTimeoutError extends Error {
 // ranking (ver processLikeTapTap/settleTapTap).
 const TAPTAP_SETTLE_MS = 1500;
 
-// ALERTAS DE REGALOS: un combo de TikTok ya llega consolidado (ver
-// handleGiftEvent, que espera `repeatEnd`), pero un espectador puede mandar
-// el MISMO regalo varias veces seguidas como envíos separados (sin ser un
-// combo nativo de TikTok) — sin este margen, cada envío dispararía su
-// propia alerta apilada encima de la anterior. Mismo mecanismo de
-// "asentamiento" que TAPTAP_SETTLE_MS (ver processAlertTrigger/
-// settleAlertCombo): cada envío nuevo del mismo regalo por la misma
-// persona reinicia la cuenta regresiva y suma al total, y recién cuando
-// pasan ALERT_COMBO_SETTLE_MS sin un envío nuevo se dispara UNA sola
-// alerta con el total acumulado.
-const ALERT_COMBO_SETTLE_MS = 700;
-
 // Tags de texto para las alertas (pedido explícito): {username}/{nickname}/
 // {gift}/{coins}/{count} -- se sustituyen recién al DISPARAR de verdad la
-// alerta (ver settleAlertCombo/testFireAlert), nunca en el texto que se
+// alerta (ver processAlertTrigger/testFireAlert), nunca en el texto que se
 // guarda en la DB (ese se queda con el template literal tal cual lo
 // escribió el streamer, ver AlertsAdmin.jsx). Case-insensitive (\{Username\}
 // funciona igual que \{username\}) para no exigir que lo escriban exacto.
 function applyAlertTextTemplate(text, { username = '', nickname = '', gift = '', coins = 0, count = 1 } = {}) {
     if (!text) return text;
     return text
-        .replace(/\{username\}/gi, username)
-        .replace(/\{nickname\}/gi, nickname || username)
-        .replace(/\{gift\}/gi, gift)
-        .replace(/\{coins\}/gi, String(coins))
-        .replace(/\{count\}/gi, String(count));
+        .replace(/\{username\}/gi, () => username)
+        .replace(/\{nickname\}/gi, () => nickname || username)
+        .replace(/\{gift\}/gi, () => gift)
+        .replace(/\{coins\}/gi, () => String(coins))
+        .replace(/\{count\}/gi, () => String(count));
 }
 
 // ENTRADAS/INSTA-WIN POR VALOR (Rey del Trono/Eliminación/Ruleta): pedido
@@ -150,7 +138,7 @@ function applyAlertTextTemplate(text, { username = '', nickname = '', gift = '',
 // si llegan separados por GIFT_ACCUMULATE_WINDOW_MS o menos; si pasa más
 // tiempo que eso desde su último regalo, lo acumulado hasta ahora se
 // pierde y el siguiente regalo arranca una cuenta nueva de cero. A
-// diferencia de TAPTAP_SETTLE_MS/ALERT_COMBO_SETTLE_MS (esperan el
+// diferencia de TAPTAP_SETTLE_MS (esperan el
 // silencio para recién ahí actuar), acá se evalúa el umbral EN CADA
 // regalo nuevo con el total acumulado hasta ese momento — ver
 // accumulateGiftCoins/processGiftKing/processGiftElim/processGiftRoulette.
@@ -240,7 +228,6 @@ module.exports = {
     MAX_CONSECUTIVE_SHORT_DISCONNECTS,
     TikTokConnectTimeoutError,
     TAPTAP_SETTLE_MS,
-    ALERT_COMBO_SETTLE_MS,
     applyAlertTextTemplate,
     GIFT_ACCUMULATE_WINDOW_MS,
     CONTINUOUS_LEADERBOARD_SIZE,

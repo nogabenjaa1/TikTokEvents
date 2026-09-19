@@ -37,7 +37,7 @@ const VARIANTS = {
 };
 
 export default function GiftPicker({
-  gifts, selected, onSelect, placeholder = 'Elige un regalo...', emptyText = 'Todavía no hay regalos cargados.',
+  gifts, selected, onSelect, placeholder = 'Elige un regalo...', emptyText = 'Conecta TikTok LIVE para cargar los regalos. Puedes configurar los demás ajustes ahora.',
   variant = 'default', renderBadge, showCoinsChip = true,
 }) {
   const [open, setOpen] = useState(false);
@@ -71,8 +71,8 @@ export default function GiftPicker({
   };
 
   return (
-    <div ref={rootRef} className="relative">
-      <button type="button" onClick={toggle} className={v.trigger} aria-haspopup="listbox" aria-expanded={open}>
+    <div ref={rootRef} className="relative" onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}>
+      <button type="button" onClick={toggle} disabled={!gifts.length} className={v.trigger} aria-haspopup="listbox" aria-expanded={open && gifts.length > 0}>
         {selected ? (
           <>
             <span className="flex items-center gap-3 min-w-0">
@@ -89,7 +89,8 @@ export default function GiftPicker({
         )}
       </button>
 
-      {open && (
+      {!gifts.length && <p className="text-xs text-gray-400 mt-2">{emptyText}</p>}
+      {open && gifts.length > 0 && (
         <div className={`${v.panel} absolute top-full left-0 w-full mt-1 z-30 overflow-hidden`}>
           <div className="p-2 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
             <input
@@ -109,12 +110,12 @@ export default function GiftPicker({
             ) : visible.length === 0 ? (
               <p className="p-3 text-[11px] text-gray-500">Sin resultados para "{query.trim()}".</p>
             ) : visible.map((gift, i) => (
-              <div
+              <button type="button"
                 key={`${gift.id ?? 'none'}-${i}`}
                 role="option"
                 aria-selected={selected?.id === gift.id}
                 onClick={() => pick(gift)}
-                className={`p-2 ${v.row} cursor-pointer flex items-center justify-between gap-2`}
+                className={`w-full text-left p-2 ${v.row} cursor-pointer flex items-center justify-between gap-2`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   {gift.icon && <img src={gift.icon} alt="" className="w-6 h-6 flex-shrink-0" />}
@@ -122,7 +123,7 @@ export default function GiftPicker({
                   {renderBadge?.(gift)}
                 </div>
                 {gift.coins > 0 && <span className="text-yellow-400 text-xs flex-shrink-0">{gift.coins} 🪙</span>}
-              </div>
+              </button>
             ))}
           </div>
         </div>

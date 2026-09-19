@@ -121,10 +121,9 @@ const ready = pool.query(`
   // goal_progress (más abajo) -- esta columna es solo la configuración
   // persistente del sonido.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
-  // Catálogo de regalos de TikTok, cargado UNA vez por licencia (pedido
-  // explícito): así los selectores de regalo de juegos/alertas funcionan
-  // aunque todavía no haya un LIVE conectado. Array de { id, name, coins, icon }.
-  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS gift_catalog JSONB`))
+  // El catálogo se consulta de nuevo con cada LIVE. Retira únicamente la
+  // caché antigua; los regalos asignados a alertas y juegos viven aparte.
+  .then(() => pool.query(`ALTER TABLE licenses DROP COLUMN IF EXISTS gift_catalog`))
   // Progreso del Objetivo (meta de monedas/seguidores) -- a diferencia del
   // resto de los "juegos", este acumula durante horas y perderlo por un
   // reinicio del servidor (deploy, caída) es de lo más molesto: se guarda
@@ -414,10 +413,6 @@ async function setRuntimeState(id, snapshot) {
     await pool.query('UPDATE licenses SET runtime_state = $1 WHERE id = $2', [snapshot === null ? null : JSON.stringify(snapshot), id]);
 }
 
-async function setGiftCatalog(id, gifts) {
-    await ready;
-    await pool.query('UPDATE licenses SET gift_catalog = $1 WHERE id = $2', [JSON.stringify(gifts), id]);
-}
 
 const USAGE_FIELDS = ['king_starts', 'zub_starts', 'elim_starts', 'roulette_starts'];
 
@@ -698,7 +693,7 @@ async function getPricingHistory(limit = 50) {
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGiftCatalog, setGoalProgress, setRuntimeState,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

@@ -20,22 +20,11 @@ const NO_INSTA_WIN = {
 // ─────────────────────────────────────────────
 export default function AdminPanel({ state, socket, username, connectionStatus, giftsList, prize }) {
   const [startError, setStartError] = useState('');
-  const [selectedGift, setSelectedGift]         = useState(null);
-  const [selectedInstaWin, setSelectedInstaWin] = useState(NO_INSTA_WIN);
+  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
+  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : NO_INSTA_WIN);
 
-  const [mainTime, setMainTime]   = useState(15);
-  const [snipeTime, setSnipeTime] = useState(5);
-
-
-  // Cuando llega una lista de regalos nueva (usuario conectado), preseleccionar
-  useEffect(() => {
-    if (giftsList.length > 0) {
-      setSelectedGift(giftsList.find(g => g.coins > 0) || null);
-      setSelectedInstaWin(NO_INSTA_WIN);
-    } else {
-      setSelectedGift(null);
-    }
-  }, [giftsList]);
+  const [mainTime, setMainTime]   = useState(state.mainTime ?? 15);
+  const [snipeTime, setSnipeTime] = useState(state.snipeTime ?? 5);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una
@@ -201,13 +190,14 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             </div>
 
             <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+            {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
 
             {/* Botones */}
             <div className="flex gap-4">
               {!state.isActive ? (
                 <button
                   onClick={startContest}
-                  disabled={connectionStatus !== 'connected'}
+                  disabled={connectionStatus !== 'connected' || !selectedGift}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}

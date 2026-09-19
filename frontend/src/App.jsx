@@ -358,19 +358,6 @@ export default function App() {
   const [ttsEngine, setTtsEngine]              = useState('idle');
   const [serverRestarted, setServerRestarted]  = useState(false);
   const bootIdRef = useRef(null);
-  // Catálogo de regalos: se guarda por licencia en el backend (ver
-  // GET /api/gifts), así los selectores funcionan aunque no haya LIVE
-  // conectado. Se conserva la MISMA referencia si el contenido no cambió --
-  // los paneles de juegos re-preseleccionan regalo cada vez que llega una
-  // lista nueva, y eso pisaría lo que el streamer ya eligió.
-  const applyGifts = useCallback((gifts) => {
-    setGiftsList((prev) => {
-      const next = [NO_INSTA_WIN, ...gifts];
-      const same = prev.length === next.length && prev.every((g, i) => g.id === next[i].id && g.coins === next[i].coins && g.name === next[i].name);
-      return same ? prev : next;
-    });
-  }, []);
-
   // ── URLs reales para cada sección (pedido explícito) ──
   // sidebarMode/eventsTab siguen siendo el estado de siempre (todo el
   // render de más abajo sigue leyendo esas dos variables tal cual, sin
@@ -613,7 +600,7 @@ export default function App() {
     // aunque el backend nunca hubiera perdido nada — se refleja acá mismo
     // el estado que el backend YA confirmó, sin ese paso intermedio.
     socket.on('live_status', ({ desiredUsername, connected }) => {
-      if (connected) setConnectionStatus('connected');
+      setConnectionStatus(connected ? 'connected' : desiredUsername ? 'connecting' : 'idle');
       if (desiredUsername && !hasEditedUsernameRef.current) {
         isAdoptingRef.current = true;
         setUsername(desiredUsername);
@@ -773,68 +760,48 @@ export default function App() {
       return;
     }
 
-    // Este `username` vino de adoptar lo que el backend YA tenía conectado
-    // (ver socket.on('live_status')), no de que el streamer lo haya
-    // escrito ahora — saltarse el "checking..."/debounce de 2s/reemitir
-    // set_desired_username: el backend ya sabe que este username está
-    // conectado (o reintentando), no hace falta pasar por todo el flujo de
-    // "recién estoy verificando esto" de nuevo. Solo falta recuperar la
-    // lista de regalos, que sí se pierde al recargar (vive nada más en
-    // este estado de React, no en el backend).
     if (isAdoptingRef.current) {
       isAdoptingRef.current = false;
-      (async () => {
-        try {
-          const res = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
-          const data = await res.json();
-          if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
-        } catch {
-          // Se conserva el catálogo ya guardado (ver applyGifts).
-        }
-      })();
       return;
     }
 
     setConnectionStatus('checking');
 
-    const timeoutId = setTimeout(async () => {
+    const timeoutId = setTimeout(() => {
       // Socket.io guarda el emit incluso si todavía está terminando su propio
       // handshake. El tenant se encarga de reintentar cada 3 segundos.
       setConnectionStatus('connecting');
       setConnectionError('');
       socket.emit('set_desired_username', normalizedUsername);
-
-      try {
-        const res  = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(normalizedUsername)}`, { headers: authHeaders() });
-        const data = await res.json();
-        if (data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
-      } catch {
-        // Si falla, se sigue con el catálogo ya guardado de la licencia (si
-        // hay); la conexión LIVE y el TTS siguen activos de todos modos.
-      }
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [username, socket, overlayMode, applyGifts]);
+  }, [username, socket, overlayMode]);
 
-  // Carga el catálogo de regalos YA guardado de esta licencia apenas hay
-  // sesión (pedido explícito): no depende de ninguna conexión a TikTok. Al
-  // cambiar de licencia (otro login en la misma pestaña) se vacía primero
-  // para no mostrar los regalos de la cuenta anterior.
   const licenseKey = session?.token || null;
+  // El catálogo vive solo en memoria y pertenece a la conexión LIVE actual.
+  // Cancelar evita que una respuesta vieja reemplace el catálogo de otro usuario.
   useEffect(() => {
-    if (overlayMode || !licenseKey) { setGiftsList([]); return; }
-    let cancelled = false;
     setGiftsList([]);
-    (async () => {
+    if (!licenseKey || !socketConnected || overlayMode || connectionStatus !== 'connected' || !username.trim()) return;
+    const controller = new AbortController();
+    let retry;
+    const load = async () => {
       try {
-        const res = await fetch(`${backendUrl()}/api/gifts`, { headers: authHeaders() });
-        const data = await res.json();
-        if (!cancelled && data.success && Array.isArray(data.gifts) && data.gifts.length > 0) applyGifts(data.gifts);
-      } catch { /* sin catálogo guardado todavía: se llena al conectar un LIVE */ }
-    })();
-    return () => { cancelled = true; };
-  }, [overlayMode, licenseKey, applyGifts]);
+        const response = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(username.trim().replace(/^@+/, ''))}`, {
+          headers: authHeaders(), cache: 'no-store', signal: controller.signal,
+        });
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        if (!data.success || !data.gifts?.length) throw new Error('Catálogo no disponible');
+        setGiftsList([NO_INSTA_WIN, ...data.gifts]);
+      } catch {
+        if (!controller.signal.aborted) retry = setTimeout(load, 5000);
+      }
+    };
+    load();
+    return () => { controller.abort(); clearTimeout(retry); };
+  }, [username, connectionStatus, overlayMode, licenseKey, socketConnected]);
 
   // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
   // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO

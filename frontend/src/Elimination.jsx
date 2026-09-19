@@ -53,24 +53,20 @@ const MODE_LABEL = {
 // ─────────────────────────────────────────────
 export default function Elimination({ state, socket, username, connectionStatus, giftsList, prize }) {
   const [startError, setStartError] = useState('');
-  const [selectedGift, setSelectedGift]         = useState(null);
-  const [selectedInstaWin, setSelectedInstaWin] = useState(NO_INSTA_WIN);
-  const [baseTime, setBaseTime]                 = useState(60);
-  const [rejoinTime, setRejoinTime]             = useState(20);
+  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
+  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : NO_INSTA_WIN);
+  const [baseTime, setBaseTime]                 = useState(state.baseTime ?? 60);
+  const [rejoinTime, setRejoinTime]             = useState(state.rejoinTime ?? 20);
   // fastMode: fases de selección/resultado de 1s en vez de 2s.
   // eliminationsPerRound: cuántos slots caen por ronda de sorteo (antes
   // siempre 1). lockedMode: solo entra gente durante la ventana inicial de
   // unirse, nadie se suma ya arrancada la dinámica (ni en "rejoin").
-  const [fastMode, setFastMode]                 = useState(false);
-  const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
-  const [lockedMode, setLockedMode]             = useState(false);
+  const [fastMode, setFastMode]                 = useState(state.fastMode ?? false);
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(state.eliminationsPerRound ?? 1);
+  const [lockedMode, setLockedMode]             = useState(state.lockedMode ?? false);
   const [manualUsername, setManualUsername]     = useState('');
   const [manualCount, setManualCount]           = useState(1);
 
-  useEffect(() => {
-    setSelectedGift(giftsList.find(g => g.coins > 0) || null);
-    setSelectedInstaWin(NO_INSTA_WIN);
-  }, [giftsList]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // Igual que en Zubastinis: solo emitimos si el cambio es en los ajustes
@@ -332,13 +328,14 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </div>
 
             <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+            {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
 
             {/* Botones */}
             <div className="flex gap-4">
               {!state.isActive ? (
                 <button
                   onClick={startElimination}
-                  disabled={connectionStatus !== 'connected'}
+                  disabled={connectionStatus !== 'connected' || !selectedGift}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}

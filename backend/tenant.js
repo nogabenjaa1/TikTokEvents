@@ -262,9 +262,6 @@ class Tenant {
         this.alertConfigs = {};
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
-        // Combos en curso sin asentar todavía (ver ALERT_COMBO_SETTLE_MS /
-        // processAlertTrigger/settleAlertCombo) — { [username:triggerKey]: { alert, count, timer } }.
-        this.pendingAlertCombos = {};
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no

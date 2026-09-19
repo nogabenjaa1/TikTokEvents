@@ -132,7 +132,7 @@ function alertDisplayName(alert) {
     return `Alerta general · desde ${n} moneda${n === 1 ? '' : 's'}`;
   }
   if (alert.triggerType && alert.triggerType !== 'gift') return TRIGGER_LABELS[alert.triggerType] || alert.giftName;
-  return alert.giftName;
+  return alert.giftName || 'Regalo pendiente de seleccionar';
 }
 
 function LivePreview({ draftAlert, customize }) {
@@ -402,7 +402,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     alerts.filter((a) => a.triggerType === 'gift_global').sort((a, b) => (a.minCoins ?? 0) - (b.minCoins ?? 0))
   ), [alerts]);
 
-  // Imagen del regalo de cada alerta específica (catálogo guardado de la licencia).
+  // Imagen del regalo de cada alerta específica (catálogo de la conexión LIVE actual).
   const giftIconFor = (alert) => {
     if (alert.triggerType && alert.triggerType !== 'gift') return null;
     const g = giftsList.find((x) => x.name.toLowerCase() === String(alert.giftName).toLowerCase());
@@ -454,7 +454,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setTriggerType(alert.triggerType || 'gift');
     if (!alert.triggerType || alert.triggerType === 'gift') {
       const gift = giftsList.find((g) => g.name.toLowerCase() === alert.giftName.toLowerCase());
-      setSelectedGift(gift || { name: alert.giftName, icon: '', coins: 0 });
+      setSelectedGift(gift || (alert.giftName ? { name: alert.giftName, icon: '', coins: 0 } : null));
     } else {
       setSelectedGift(null);
     }
@@ -475,7 +475,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   };
 
   const save = async () => {
-    if (triggerType === 'gift' && !selectedGift) return setError('Elige a qué regalo se asigna esta alerta.');
     if (triggerType === 'gift_global') {
       const n = Number(minCoins);
       if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > MIN_COINS_CAP) {
@@ -496,7 +495,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       if (clearAudio) form.append('clearAudio', 'true');
       form.append('visualMuted', String(visualMuted));
       form.append('triggerType', triggerType);
-      if (triggerType === 'gift') form.append('giftName', selectedGift.name);
+      if (triggerType === 'gift') form.append('giftName', selectedGift?.name || '');
       if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
@@ -731,9 +730,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               selected={selectedGift}
               onSelect={setSelectedGift}
               placeholder="Elige un regalo..."
-              emptyText="Aún no hay regalos cargados. Conecta un usuario de TikTok en la barra de arriba una sola vez y quedarán guardados para siempre en tu licencia."
+              emptyText="Conecta TikTok LIVE para cargar los regalos. Puedes guardar esta alerta ahora y asignarle un regalo después."
               renderBadge={(gift) => conflictForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex-shrink-0">ya tiene alerta</span>}
             />
+            {!selectedGift && <p className="text-xs text-gray-400 mt-2">Puedes guardar la alerta sin regalo y editarla para asignarlo cuando estés conectado a TikTok LIVE.</p>}
           </div>
         )}
       </FormSection>

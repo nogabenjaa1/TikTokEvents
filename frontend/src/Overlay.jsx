@@ -1,3 +1,5 @@
+import { createAlertQueue } from './alertQueue';
+export { ANIM_DURATION_MS } from './alertQueue';
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
 import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill, rowBorder, bordersOffStyle, bordersEnabled, FONT_SCALES } from './overlayCustomization';
@@ -1147,24 +1149,11 @@ const ALERT_POSITION_CLASSES = {
   right: 'items-center justify-end pr-10',
 };
 
-// Tope duro de duración en pantalla, sin importar lo guardado — mismo
-// límite que ya aplica el slider y el backend (ver AlertsAdmin.jsx /
-// server.js), repetido acá como última red de seguridad para alertas
-// guardadas antes de que existiera el límite.
-const ALERT_MAX_DURATION_MS = 15000;
-
-// Duración FIJA de las animaciones de entrada/salida — tiene que coincidir
-// con la de las clases `.tkc-alert-anim-*` en index.css: quien coordina las
-// fases (entering/visible/exiting) es JS (acá y en AlertsAdmin.jsx), así
-// que si un lado cambia sin el otro, la animación se corta a mitad de
-// camino o el contenido queda "pegado" un instante antes de ocultarse.
-export const ANIM_DURATION_MS = 400;
-
 // Contenido visual de una alerta — separado de AlertOverlay para poder
 // reusarlo TAL CUAL en la Vista previa del panel de administración (ver
 // AlertsAdmin.jsx) sin depender de un socket real ni de esperar a que un
 // espectador mande el regalo. `alert.count` (> 1 cuando el backend agrupó
-// varios envíos del mismo regalo en un combo, ver settleAlertCombo en
+// un combo nativo de TikTok, ver handleGiftEvent en
 // tenant.js) se muestra como "×N" para dejar claro que fue un combo y no
 // una alerta más apilada.
 // OJO posición: NO se puede usar `fixed inset-0` directo acá — `.themed-app
@@ -1264,119 +1253,43 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
   );
 }
 
-// ALERTAS DE REGALOS: reproduce el recurso (imagen/gif/video/audio)
-// asignado al regalo que acaba de llegar (ver processGiftAlert/
-// settleAlertCombo en tenant.js). Cola propia — si llegan varios regalos
-// con alerta casi juntos, se muestran una atrás de la otra en vez de
-// superponerse; cada una dura exactamente `durationMs` (tope duro
-// ALERT_MAX_DURATION_MS) sin importar el tipo de recurso (el audio/video
-// sigue sonando de fondo si es más largo que eso, pero la alerta visual/
-// el turno de la cola avanza igual).
-export function AlertOverlay({ socket, customize }) {
-  const [queue, setQueue] = useState([]);
-  const [current, setCurrent] = useState(null);
-  const [phase, setPhase] = useState('visible');
-  // Ref (no state): si hay una alerta en pantalla ahora mismo. Separar esto
-  // del efecto que la oculta es lo que arregla el bug real que tenía esto
-  // antes: un solo useEffect con `[queue, current]` de dependencias se
-  // reiniciaba a sí mismo apenas llamaba `setCurrent(next)` en su propio
-  // cuerpo (current pasó de null a `next`), y el cleanup de ESE reinicio
-  // cancelaba el setTimeout recién creado antes de que llegara a disparar
-  // — la alerta quedaba pegada en pantalla para siempre y la cola nunca
-  // avanzaba a la siguiente.
-  const showingRef = useRef(false);
-
+// Overlay y sonido del panel comparten el mismo ciclo FIFO y duración.
+function useAlertPlayback(socket) {
+  const [playback, setPlayback] = useState({ alert: null, phase: 'visible' });
   useEffect(() => {
-    if (!socket) return;
-    const onTrigger = (alert) => setQueue((q) => [...q, alert]);
-    socket.on('alert_triggered', onTrigger);
-    return () => socket.off('alert_triggered', onTrigger);
+    setPlayback({ alert: null, phase: 'visible' });
+    const queue = createAlertQueue((alert, phase) => setPlayback({ alert, phase }));
+    const onTrigger = (alert) => queue.enqueue(alert);
+    socket?.on('alert_triggered', onTrigger);
+    return () => { socket?.off('alert_triggered', onTrigger); queue.dispose(); };
   }, [socket]);
-
-  // Avanza la cola — depende SOLO de `queue`, así que setear `current`
-  // acá adentro no vuelve a disparar este mismo efecto.
-  useEffect(() => {
-    if (showingRef.current || queue.length === 0) return;
-    const [next, ...rest] = queue;
-    showingRef.current = true;
-    setCurrent(next);
-    setQueue(rest);
-  }, [queue]);
-
-  // Oculta la alerta actual — depende SOLO de `current`, así que su
-  // cleanup nunca se dispara por avanzar la cola, solo cuando `current`
-  // cambia de verdad (o el componente se desmonta). Además coordina las 3
-  // fases de la animación (entering -> visible -> exiting) DENTRO de la
-  // misma ventana `duration` configurada — la entrada ocupa los primeros
-  // ANIM_DURATION_MS y la salida los últimos, así la alerta nunca queda
-  // más tiempo en pantalla del que el streamer configuró.
-  useEffect(() => {
-    if (!current) return;
-    const duration = Math.min(ALERT_MAX_DURATION_MS, Math.max(500, current.durationMs || 5000));
-    setPhase('entering');
-    const timers = [
-      setTimeout(() => setPhase('visible'), ANIM_DURATION_MS),
-      setTimeout(() => setPhase('exiting'), Math.max(ANIM_DURATION_MS, duration - ANIM_DURATION_MS)),
-      setTimeout(() => {
-        setCurrent(null);
-        showingRef.current = false;
-      }, duration),
-    ];
-    return () => timers.forEach(clearTimeout);
-  }, [current]);
-
-  return <AlertVisual alert={current} phase={phase} customize={customize} />;
+  return playback;
 }
 
-// Fix real: el streamer nunca escuchaba sus propias alertas -- solo
-// llegaban a los espectadores vía la fuente de OBS, sin forma de
-// enterarse en el momento de que una se disparó bien (reportado: alertas
-// de sonido para regalos puntuales que él nunca oía, aunque el chat sí).
-// El visual ya lo ve en OBS (ahí tiene pegada la URL del overlay real) --
-// esto de acá SOLO reproduce el sonido, en el propio navegador del panel,
-// sin ningún elemento visible. `<audio>`/`<video oculto>` propios (no
-// reusa <AlertVisual>): nunca tocan ninguna fuente que capture OBS, así
-// que es imposible que el espectador lo escuche duplicado. Si llega una
-// alerta nueva mientras la anterior sigue sonando, la corta y arranca la
-// nueva (es solo una notificación para el streamer, no hace falta encolar
-// como si fuera el overlay real).
-export function AlertSoundListener({ socket, customize }) {
+export function AlertOverlay({ socket, customize }) {
+  const { alert, phase } = useAlertPlayback(socket);
+  return <AlertVisual key={alert?.playbackId || 'idle'} alert={alert} phase={phase} customize={customize} />;
+}
+
+function QueuedAlertSound({ alert, customize }) {
   const audioRef = useRef(null);
   const videoRef = useRef(null);
-  // Ref (no dependencia del efecto de abajo): lee el volumen configurado
-  // MÁS RECIENTE sin tener que desuscribir/resuscribir el socket cada vez
-  // que el streamer mueve el control de volumen, mismo criterio que
-  // settingsRef en TtsChat.jsx.
-  const customizeRef = useRef(customize);
-  useEffect(() => { customizeRef.current = customize; }, [customize]);
-
   useEffect(() => {
-    if (!socket) return;
-    const onTrigger = (alert) => {
-      const vol = Math.max(0, Math.min(1, customizeRef.current?.volume ?? 1));
-      if (alert?.audioUrl && audioRef.current) {
-        audioRef.current.src = alert.audioUrl;
-        audioRef.current.volume = vol;
-        audioRef.current.play().catch(() => {});
-      }
-      // Video CON su propio audio (no mudo) -- se reproduce oculto solo
-      // para que suene, sin mostrarse en ningún lado del panel.
-      if (alert?.visualType === 'video' && alert.visualUrl && !alert.visualMuted && videoRef.current) {
-        videoRef.current.src = alert.visualUrl;
-        videoRef.current.volume = vol;
-        videoRef.current.play().catch(() => {});
-      }
-    };
-    socket.on('alert_triggered', onTrigger);
-    return () => socket.off('alert_triggered', onTrigger);
-  }, [socket]);
-
+    const volume = Math.max(0, Math.min(1, customize?.volume ?? 1));
+    if (audioRef.current) audioRef.current.volume = volume;
+    if (videoRef.current) videoRef.current.volume = volume;
+  }, [customize?.volume]);
   return (
-    <>
-      <audio ref={audioRef} />
-      <video ref={videoRef} style={{ display: 'none' }} />
-    </>
+    <div style={{ display: 'none' }}>
+      {alert.audioUrl && <audio ref={audioRef} src={alert.audioUrl} autoPlay />}
+      {alert.visualType === 'video' && alert.visualUrl && !alert.visualMuted && <video ref={videoRef} src={alert.visualUrl} autoPlay />}
+    </div>
   );
+}
+
+export function AlertSoundListener({ socket, customize }) {
+  const { alert } = useAlertPlayback(socket);
+  return alert ? <QueuedAlertSound key={alert.playbackId} alert={alert} customize={customize} /> : null;
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le

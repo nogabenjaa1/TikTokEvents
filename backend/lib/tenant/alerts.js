@@ -3,7 +3,6 @@
 // cual estaban, sin cambios de lógica.
 const db = require('../../db');
 const {
-    ALERT_COMBO_SETTLE_MS,
     applyAlertTextTemplate,
 } = require('../../lib/tenantHelpers');
 
@@ -48,51 +47,33 @@ module.exports = {
         delete this.alertConfigs[giftName.toLowerCase()];
     },
 
-    // Un regalo puede combo-ear (repeatCount > 1) sin que eso deba disparar
-    // la alerta varias veces seguidas — handleGiftEvent ya esperó a que
-    // termine el combo NATIVO de TikTok, pero un espectador puede además
-    // mandar el mismo regalo varias veces seguidas como envíos SEPARADOS
-    // (sin ser un combo de TikTok) — acá se agrupan esos también, por
-    // persona+disparador, con el mismo mecanismo de asentamiento que Top
-    // Tap-Tap (ver ALERT_COMBO_SETTLE_MS/settleAlertCombo): nunca se
-    // apilan dos alertas del mismo disparador+persona, se combinan en una
-    // sola con el total. `key` es el nombre del regalo para triggerType
-    // 'gift', o 'follow'/'sticker' para los demas (ver
-    // handleSocialEvent/handleEmoteEvent mas abajo y NON_GIFT_TRIGGER_TYPES
-    // en server.js) -- mismo mapa `alertConfigs`, sin distinguir el tipo,
-    // porque un regalo real de TikTok jamas se llama literal "follow".
-    // `allowGlobalFallback` (pedido explícito: "alertas globales" además de
-    // las específicas) -- solo tiene sentido para regalos de verdad (nunca
-    // para 'follow'/'sticker', que no mueven monedas): si NO hay una alerta
-    // específica para este triggerKey, busca la alerta general de mayor
-    // mínimo que el regalo todavía alcance (ver findGlobalAlertForCoins).
-    // Las dos categorías nunca se pisan entre sí -- una alerta específica
-    // encontrada acá arriba corta la búsqueda antes de siquiera mirar las
-    // generales.
+    // Cada evento completo se emite inmediatamente con sus propios datos.
+    // El cliente serializa la reproducción; aquí no se agrupan donadores
+    // ni se espera silencio antes de mostrar regalos, follows u otros eventos.
     processAlertTrigger({ username, nickname, key: triggerKey, repeatCount, giftName, coins, allowGlobalFallback = false }) {
-        if (!triggerKey) return;
+        if (!triggerKey || triggerKey.startsWith('__draft_gift__:')) return;
         let alert = this.alertConfigs[triggerKey.toLowerCase()];
         if (!alert && allowGlobalFallback) alert = this.findGlobalAlertForCoins(coins);
         if (!alert) return;
-        const comboKey = `${username || ''}:${triggerKey.toLowerCase()}`;
-        const units = Math.max(1, repeatCount || 1);
-        const pending = this.pendingAlertCombos[comboKey];
-        if (pending) {
-            pending.count += units;
-            // Pedido explicito ({coins} en el texto): si el mismo
-            // regalo+persona llega en varios envios separados antes de
-            // asentarse (ver el comentario de arriba), {coins} tiene que
-            // reflejar el TOTAL acumulado, igual que ya hace `count`.
-            pending.coins += coins || 0;
-            clearTimeout(pending.timer);
-        } else {
-            this.pendingAlertCombos[comboKey] = {
-                alert, count: units, coins: coins || 0,
-                username: username || '', nickname: nickname || username || '', giftName: giftName || '',
-                timer: null,
-            };
-        }
-        this.pendingAlertCombos[comboKey].timer = setTimeout(() => this.settleAlertCombo(comboKey), ALERT_COMBO_SETTLE_MS);
+        const count = Math.max(1, repeatCount || 1);
+        this.broadcast.emit('alert_triggered', {
+            triggerId: ++this.alertTriggerCounter,
+            visualUrl: alert.visualUrl,
+            visualType: alert.visualType,
+            visualMuted: alert.visualMuted,
+            audioUrl: alert.audioUrl,
+            text: applyAlertTextTemplate(alert.text, {
+                username: username || '', nickname: nickname || username || '',
+                gift: giftName || '', coins: coins || 0, count,
+            }),
+            textPosition: alert.textPosition,
+            textColor: alert.textColor || null,
+            durationMs: alert.durationMs,
+            position: alert.position,
+            entranceAnim: alert.entranceAnim,
+            exitAnim: alert.exitAnim,
+            count,
+        });
     },
 
     // Alerta GENERAL de mayor mínimo que el regalo todavía alcance (pedido
@@ -114,41 +95,8 @@ module.exports = {
         return best;
     },
 
-    // El combo terminó (silencio de ALERT_COMBO_SETTLE_MS): recién acá se
-    // dispara la alerta, ya con el total acumulado en `count` — el overlay
-    // (ver AlertOverlay en Overlay.jsx) muestra "×N" cuando count > 1.
-    settleAlertCombo(key) {
-        const pending = this.pendingAlertCombos[key];
-        if (!pending) return;
-        delete this.pendingAlertCombos[key];
-        this.broadcast.emit('alert_triggered', {
-            triggerId: ++this.alertTriggerCounter,
-            visualUrl: pending.alert.visualUrl,
-            visualType: pending.alert.visualType,
-            visualMuted: pending.alert.visualMuted,
-            audioUrl: pending.alert.audioUrl,
-            // Pedido explicito: tags {username}/{nickname}/{gift}/{coins}/
-            // {count} en el texto de la alerta -- se sustituyen ACÁ, recién
-            // al disparar de verdad (con el total ya asentado del combo),
-            // nunca en el texto guardado en la DB (ese se queda con el
-            // template literal, ver AlertsAdmin.jsx).
-            text: applyAlertTextTemplate(pending.alert.text, {
-                username: pending.username, nickname: pending.nickname,
-                gift: pending.giftName, coins: pending.coins, count: pending.count,
-            }),
-            textPosition: pending.alert.textPosition,
-            textColor: pending.alert.textColor || null,
-            durationMs: pending.alert.durationMs,
-            position: pending.alert.position,
-            entranceAnim: pending.alert.entranceAnim,
-            exitAnim: pending.alert.exitAnim,
-            count: pending.count,
-        });
-    },
-
     // Disparo manual desde el panel (botón "🔥 Probar", ver AlertsAdmin.jsx)
-    // -- salta la cola de combo (ALERT_COMBO_SETTLE_MS) a propósito: es una
-    // prueba puntual, no tiene sentido esperar a "asentarla". Llega al mismo
+    // -- entra en la misma cola de reproducción que los eventos LIVE. Usa el
     // 'alert_triggered' que ve el overlay de OBS Y el propio panel del
     // streamer (mismo room, ver attachSocket) -- así el streamer confirma
     // en vivo que la alerta suena/se ve bien sin depender de estar mirando
@@ -172,7 +120,7 @@ module.exports = {
             audioUrl: alert.audioUrl,
             text: applyAlertTextTemplate(alert.text, {
                 username: 'usuario_de_prueba', nickname: 'Usuario de Prueba',
-                gift: isGlobal ? 'Regalo' : (alert.giftName || 'Regalo'),
+                gift: isGlobal || alert.giftName?.startsWith('__draft_gift__:') ? 'Regalo' : (alert.giftName || 'Regalo'),
                 coins: isGlobal ? Math.max(100, alert.minCoins) : 100, count: 1,
             }),
             textPosition: alert.textPosition,

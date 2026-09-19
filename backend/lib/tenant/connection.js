@@ -69,10 +69,6 @@ module.exports = {
         Object.values(this.tapTapPending).forEach((p) => clearTimeout(p.timer));
         this.tapTapPending = {};
 
-        // Mismo criterio: un combo de alerta a medio asentar no debe quedar
-        // con un timer vivo apuntando a una conexión que ya se cerró.
-        Object.values(this.pendingAlertCombos).forEach((p) => clearTimeout(p.timer));
-        this.pendingAlertCombos = {};
 
         // Acumuladores de entradas/insta-win por valor (ver
         // GIFT_ACCUMULATE_WINDOW_MS) — sin timers propios que limpiar, pero

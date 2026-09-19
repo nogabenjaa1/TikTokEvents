@@ -801,7 +801,7 @@ const TEXT_POSITIONS = ['above', 'below', 'beside'];
 
 function serializeAlert(row) {
     return {
-        id: row.id, giftName: row.gift_name,
+        id: row.id, giftName: row.gift_name.startsWith('__draft_gift__:') ? '' : row.gift_name,
         visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
         audioUrl: row.audio_url,
         text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
@@ -846,10 +846,9 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     let triggerKey;
     let minCoins = null;
     if (triggerType === 'gift') {
-        if (!giftName || typeof giftName !== 'string' || !giftName.trim()) {
-            return res.status(400).json({ success: false, error: 'Falta el nombre del regalo' });
-        }
-        triggerKey = giftName.trim();
+        // Clave única por borrador: las alertas existentes no se migran ni modifican.
+        triggerKey = typeof giftName === 'string' && giftName.trim()
+            ? giftName.trim() : `__draft_gift__:${crypto.randomUUID()}`;
     } else if (triggerType === 'gift_global') {
         minCoins = Math.trunc(Number(req.body?.minCoins));
         if (!Number.isFinite(minCoins) || minCoins < 1 || minCoins > MIN_COINS_CAP) {
@@ -892,6 +891,10 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         // ser la misma, otra distinta, o ninguna).
         const editingRow = alertId ? await db.getAlertConfig(alertId) : null;
         const isEditing = !!editingRow && editingRow.license_id === req.license.id;
+        if (alertId && !isEditing) return res.status(404).json({ success: false, error: 'Alerta no encontrada' });
+        if (isEditing && triggerType === 'gift' && !(typeof giftName === 'string' && giftName.trim())) {
+            triggerKey = (editingRow.trigger_type || 'gift') === 'gift' ? editingRow.gift_name : triggerKey;
+        }
         const occupyingRow = (await db.listAlertConfigs(req.license.id))
             .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
 
@@ -957,7 +960,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             getOrCreateTenant(req.license.id, req.license.license_type).removeAlertConfig(editingRow.gift_name);
         }
 
-        const id = crypto.randomUUID();
+        const id = isEditing ? editingRow.id : crypto.randomUUID();
         const row = await db.upsertAlertConfig({
             id, licenseId: req.license.id, giftName: triggerKey,
             visualUrl, visualPath, visualType: finalVisualType, visualMuted,
@@ -1742,35 +1745,29 @@ app.post('/api/stripe/client-error', stripeClientErrorLimiter, (req, res) => {
 // ==========================================
 app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
     try {
+        res.set('Cache-Control', 'no-store');
         const username = req.params.username;
+        const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
+        const connection = tenant.tiktokConnection;
+        if (!tenant.liveConnected || tenant.currentTikTokUsername?.toLowerCase() !== username.toLowerCase()) {
+            return res.status(409).json({ success: false, error: 'Conecta TikTok LIVE para cargar los regalos' });
+        }
         // v1 a propósito acá — ver comentario del import de arriba.
         const tempConn = new WebcastPushConnectionV1(username);
         const gifts = await tempConn.getAvailableGifts();
+        if (!tenant.liveConnected || tenant.tiktokConnection !== connection) {
+            return res.status(409).json({ success: false });
+        }
         const validGifts = gifts
             .filter(g => g.name && g.image?.url_list?.[0])
             .map(g => ({
                 id: g.id, name: g.name, coins: g.diamond_count, icon: g.image.url_list[0]
             }))
             .sort((a, b) => a.coins - b.coins);
-        // Se guarda por licencia para que el resto de la app pueda usar los
-        // selectores de regalo sin un LIVE conectado (ver GET /api/gifts).
-        // Un fallo de DB acá no debe tumbar la respuesta con los regalos.
-        if (validGifts.length > 0) {
-            db.setGiftCatalog(req.license.id, validGifts).catch((err) => {
-                console.error(`[${req.license.id}] No se pudo guardar el catálogo de regalos:`, err.message);
-            });
-        }
         res.json({ success: true, gifts: validGifts });
     } catch (error) {
         res.json({ success: false });
     }
-});
-
-// Catálogo de regalos ya guardado de esta licencia (ver /api/setup arriba).
-// Vacío hasta que el streamer se conecte a un LIVE al menos una vez.
-app.get('/api/gifts', auth.requireAuth, (req, res) => {
-    const gifts = Array.isArray(req.license.gift_catalog) ? req.license.gift_catalog : [];
-    res.json({ success: true, gifts });
 });
 
 // ==========================================

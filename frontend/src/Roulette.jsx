@@ -41,26 +41,23 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', resu
 // ─────────────────────────────────────────────
 export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
   const [startError, setStartError] = useState('');
-  const [entryMode, setEntryMode]         = useState('chat');
-  const [keyword, setKeyword]             = useState('participo');
-  const [entryWindowSec, setEntryWindowSec] = useState(300);
-  const [selectedGift, setSelectedGift]   = useState(null);
-  const [winnerRule, setWinnerRule]       = useState('first');
-  const [winnerPosition, setWinnerPosition] = useState(1);
+  const [entryMode, setEntryMode]         = useState(state.entryMode ?? 'chat');
+  const [keyword, setKeyword]             = useState(state.keyword ?? 'participo');
+  const [entryWindowSec, setEntryWindowSec] = useState(state.entryWindowSec ?? 300);
+  const [selectedGift, setSelectedGift]   = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
+  const [winnerRule, setWinnerRule]       = useState(state.winnerRule ?? 'first');
+  const [winnerPosition, setWinnerPosition] = useState(state.winnerPosition ?? 1);
   // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
   // fases de selección/resultado a la mitad, eliminationsPerRound agrupa
   // varias eliminaciones por paso del sorteo. Sin lockedMode a propósito
   // (pedido explícito, se sacó del panel): en Ruleta las entradas YA solo
   // se aceptan mientras se está "uniendo" gente, tanto en Chat como en
   // Gift — no hay nada que un toggle pudiera cambiar de verdad.
-  const [fastMode, setFastMode]           = useState(false);
-  const [eliminationsPerRound, setEliminationsPerRound] = useState(1);
+  const [fastMode, setFastMode]           = useState(state.fastMode ?? false);
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(state.eliminationsPerRound ?? 1);
   const [manualUsername, setManualUsername] = useState('');
   const [manualCount, setManualCount]       = useState(1);
 
-  useEffect(() => {
-    setSelectedGift(giftsList.find(g => g.coins > 0) || null);
-  }, [giftsList]);
 
   // Compartido por Iniciar/Reiniciar/la actualización en vivo — así los
   // tres mandan siempre exactamente los mismos campos, en el mismo formato.
@@ -317,13 +314,14 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             </div>
 
             <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+            {!state.isActive && connectionStatus === 'connected' && (entryMode === 'gift' && !selectedGift) && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
 
             {/* Botones */}
             <div className="flex gap-4">
               {!state.isActive ? (
                 <button
                   onClick={startRoulette}
-                  disabled={connectionStatus !== 'connected'}
+                  disabled={connectionStatus !== 'connected' || (entryMode === 'gift' && !selectedGift)}
                   className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}

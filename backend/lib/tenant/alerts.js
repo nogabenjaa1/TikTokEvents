@@ -34,7 +34,7 @@ module.exports = {
                 };
             });
         } catch (err) {
-            console.error(`[${this.licenseId}] [ALERTAS] No se pudieron cargar las alertas guardadas:`, err.message);
+            console.error(`[${this.logId}] [ALERTAS] No se pudieron cargar las alertas guardadas:`, err.message);
         }
     },
 

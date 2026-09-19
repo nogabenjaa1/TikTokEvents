@@ -55,44 +55,44 @@ module.exports = {
         if (!/^!(play|skip|revoke)\b/i.test(comment)) return; // ni siquiera es un comando de Spotify, no logueamos nada
 
         if (!this.spotifySettings.enabled) {
-            console.log(`[${this.licenseId}] [SPOTIFY] "${comment}" de @${username} ignorado — el comando está DESACTIVADO en el panel.`);
+            console.log(`[${this.logId}] [SPOTIFY] "${comment}" de @${username} ignorado — el comando está DESACTIVADO en el panel.`);
             return;
         }
         if (!username) return;
 
         if (/^!skip\s*$/i.test(comment)) {
             if (!this.isAuthorizedForSpotifyCommands(data, identity)) {
-                console.log(`[${this.licenseId}] [SPOTIFY] !skip de @${username} RECHAZADO — no cumple los permisos configurados (settings: ${JSON.stringify(this.spotifySettings)}).`);
+                console.log(`[${this.logId}] [SPOTIFY] !skip de @${username} RECHAZADO — no cumple los permisos configurados (settings: ${JSON.stringify(this.spotifySettings)}).`);
                 return;
             }
-            console.log(`[${this.licenseId}] [SPOTIFY] !skip de @${username} autorizado — saltando canción...`);
+            console.log(`[${this.logId}] [SPOTIFY] !skip de @${username} autorizado — saltando canción...`);
             this.skipSpotifyTrack().catch((err) => {
-                console.error(`[${this.licenseId}] [SPOTIFY] Error inesperado en !skip de @${username}:`, err.message);
+                console.error(`[${this.logId}] [SPOTIFY] Error inesperado en !skip de @${username}:`, err.message);
             });
             return;
         }
 
         if (/^!revoke\s*$/i.test(comment)) {
-            console.log(`[${this.licenseId}] [SPOTIFY] !revoke de @${username} — sacando sus pedidos de la lista.`);
+            console.log(`[${this.logId}] [SPOTIFY] !revoke de @${username} — sacando sus pedidos de la lista.`);
             this.revokeSpotifyRequest(username);
             return;
         }
 
         const match = /^!play\s+(.+)/i.exec(comment);
         if (!match) {
-            console.log(`[${this.licenseId}] [SPOTIFY] "${comment}" de @${username} — !play sin texto después, ignorado.`);
+            console.log(`[${this.logId}] [SPOTIFY] "${comment}" de @${username} — !play sin texto después, ignorado.`);
             return;
         }
         const query = match[1].trim();
         if (!query) return;
         if (!this.isAuthorizedForSpotifyCommands(data, identity)) {
-            console.log(`[${this.licenseId}] [SPOTIFY] !play "${query}" de @${username} RECHAZADO — no cumple los permisos configurados (settings: ${JSON.stringify(this.spotifySettings)}, isModerator: ${data.isModerator}, isSubscriber: ${data.isSubscriber}, teamMemberLevel: ${data.teamMemberLevel}).`);
+            console.log(`[${this.logId}] [SPOTIFY] !play "${query}" de @${username} RECHAZADO — no cumple los permisos configurados (settings: ${JSON.stringify(this.spotifySettings)}, isModerator: ${data.isModerator}, isSubscriber: ${data.isSubscriber}, teamMemberLevel: ${data.teamMemberLevel}).`);
             return;
         }
 
-        console.log(`[${this.licenseId}] [SPOTIFY] !play "${query}" de @${username} autorizado — buscando en Spotify...`);
+        console.log(`[${this.logId}] [SPOTIFY] !play "${query}" de @${username} autorizado — buscando en Spotify...`);
         this.requestSpotifySong(username, query).catch((err) => {
-            console.error(`[${this.licenseId}] [SPOTIFY] Error inesperado en !play de @${username}:`, err.message);
+            console.error(`[${this.logId}] [SPOTIFY] Error inesperado en !play de @${username}:`, err.message);
         });
     },
 
@@ -102,22 +102,22 @@ module.exports = {
     async skipSpotifyTrack() {
         const account = await db.getSpotifyAccount(this.licenseId);
         if (!account) {
-            console.log(`[${this.licenseId}] [SPOTIFY] !skip ignorado — no hay ninguna cuenta de Spotify conectada.`);
+            console.log(`[${this.logId}] [SPOTIFY] !skip ignorado — no hay ninguna cuenta de Spotify conectada.`);
             return;
         }
         let accessToken;
         try {
             accessToken = await spotify.getValidAccessToken(account);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] No se pudo renovar el token para !skip:`, err.message);
+            console.error(`[${this.logId}] [SPOTIFY] No se pudo renovar el token para !skip:`, err.message);
             this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció — reconéctala desde el panel.' });
             return;
         }
         try {
             await spotify.skipToNext(accessToken);
-            console.log(`[${this.licenseId}] [SPOTIFY] !skip OK.`);
+            console.log(`[${this.logId}] [SPOTIFY] !skip OK.`);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] !skip falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
+            console.error(`[${this.logId}] [SPOTIFY] !skip falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
             this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
         }
     },
@@ -158,33 +158,33 @@ module.exports = {
     async requestSpotifySong(username, query) {
         const account = await db.getSpotifyAccount(this.licenseId);
         if (!account) {
-            console.log(`[${this.licenseId}] [SPOTIFY] !play ignorado — no hay ninguna cuenta de Spotify conectada.`);
+            console.log(`[${this.logId}] [SPOTIFY] !play ignorado — no hay ninguna cuenta de Spotify conectada.`);
             return; // streamer no conectó Spotify — !play no hace nada, en silencio
         }
 
         let accessToken;
         try {
             accessToken = await spotify.getValidAccessToken(account);
-            console.log(`[${this.licenseId}] [SPOTIFY] Token OK (renovado si hacía falta).`);
+            console.log(`[${this.logId}] [SPOTIFY] Token OK (renovado si hacía falta).`);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] No se pudo renovar el token para !play:`, err.message);
+            console.error(`[${this.logId}] [SPOTIFY] No se pudo renovar el token para !play:`, err.message);
             this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció — reconéctala desde el panel.' });
             return;
         }
 
         const track = await spotify.searchTrack(accessToken, query);
         if (!track) {
-            console.log(`[${this.licenseId}] [SPOTIFY] Búsqueda de "${query}" no encontró ninguna canción.`);
+            console.log(`[${this.logId}] [SPOTIFY] Búsqueda de "${query}" no encontró ninguna canción.`);
             this.broadcast.emit('spotify_error', { message: `@${username} pidió "${query}" — no se encontró ninguna canción.` });
             return;
         }
-        console.log(`[${this.licenseId}] [SPOTIFY] Encontrado: "${track.name}" (${(track.artists || []).map((a) => a.name).join(', ')}) — agregando a la cola...`);
+        console.log(`[${this.logId}] [SPOTIFY] Encontrado: "${track.name}" (${(track.artists || []).map((a) => a.name).join(', ')}) — agregando a la cola...`);
 
         try {
             await spotify.addToQueue(accessToken, track.uri);
-            console.log(`[${this.licenseId}] [SPOTIFY] !play OK — agregada a la cola real de Spotify.`);
+            console.log(`[${this.logId}] [SPOTIFY] !play OK — agregada a la cola real de Spotify.`);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] addToQueue falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
+            console.error(`[${this.logId}] [SPOTIFY] addToQueue falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
             this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
             return;
         }
@@ -265,7 +265,7 @@ module.exports = {
         try {
             accessToken = await spotify.getValidAccessToken(account);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] Polling: no se pudo renovar el token, reintenta en el próximo tick:`, err.message);
+            console.error(`[${this.logId}] [SPOTIFY] Polling: no se pudo renovar el token, reintenta en el próximo tick:`, err.message);
             return;
         }
 
@@ -273,7 +273,7 @@ module.exports = {
         try {
             live = await spotify.getQueue(accessToken);
         } catch (err) {
-            console.error(`[${this.licenseId}] [SPOTIFY] Polling: no se pudo leer la cola real, reintenta en el próximo tick:`, err.message);
+            console.error(`[${this.logId}] [SPOTIFY] Polling: no se pudo leer la cola real, reintenta en el próximo tick:`, err.message);
             return;
         }
 
@@ -345,7 +345,7 @@ module.exports = {
             // memoria ya se actualizó y ya se reenvió arriba, esto solo la
             // deja guardada para la próxima vez que se cree este Tenant.
             db.setSpotifySettings(this.licenseId, this.spotifySettings).catch((err) => {
-                console.error(`[${this.licenseId}] No se pudo guardar spotify_settings:`, err.message);
+                console.error(`[${this.logId}] No se pudo guardar spotify_settings:`, err.message);
             });
         });
 

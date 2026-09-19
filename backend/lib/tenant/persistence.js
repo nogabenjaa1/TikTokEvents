@@ -32,6 +32,7 @@ module.exports = {
         try {
             const license = await db.findById(this.licenseId);
             if (!license) return;
+            this.licenseLabel = license.username || null;
 
             if (license.theme_settings) {
                 const t = license.theme_settings;
@@ -80,7 +81,7 @@ module.exports = {
                         current: Math.max(0, Math.min(target, Math.round(Number(gp.current)) || 0)),
                         title: typeof gp.title === 'string' ? gp.title.slice(0, 60) : '',
                     };
-                    console.log(`[${this.licenseId}] [OBJETIVO] Progreso restaurado tras el reinicio: ${this.goalState.current}/${this.goalState.target}.`);
+                    console.log(`[${this.logId}] [OBJETIVO] Progreso restaurado tras el reinicio: ${this.goalState.current}/${this.goalState.target}.`);
                 }
             }
             // Juegos activos, rankings y cola de Spotify de antes del reinicio
@@ -92,7 +93,7 @@ module.exports = {
                 this.goalAudioPath = typeof gs.audioPath === 'string' ? gs.audioPath : null;
             }
         } catch (err) {
-            console.error(`[${this.licenseId}] No se pudieron cargar los ajustes guardados:`, err.message);
+            console.error(`[${this.logId}] No se pudieron cargar los ajustes guardados:`, err.message);
         }
     },
 };

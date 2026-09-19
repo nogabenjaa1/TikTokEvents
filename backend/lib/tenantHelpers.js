@@ -71,6 +71,13 @@ const TIKTOK_CONNECT_TIMEOUT_MS = 20000;
 // seguido que eso en un LIVE vivo). Una reconexión por esta vía NUNCA borra
 // rankings ni partidas (ver wasEverConnected), así que un falso positivo
 // solo cuesta un par de segundos.
+// Espera entre reintentos de conexión cuando un intento FALLA (cuenta que
+// todavía no está en vivo, servidor de firmas caído...): crece hasta 60 s en
+// vez de golpear cada 3 s para siempre. Tras una conexión exitosa se reinicia.
+const RECONNECT_BACKOFF_MS = [3000, 5000, 10000, 20000, 30000, 60000];
+// Cada cuántos intentos fallidos se repite el aviso en los logs.
+const RECONNECT_LOG_EVERY = 10;
+
 const WATCHDOG_CHECK_INTERVAL_MS = 10000;
 const WATCHDOG_TIMEOUT_MS = 45000;
 
@@ -225,6 +232,8 @@ module.exports = {
     DEFAULT_MANUAL_AVATARS,
     pickDefaultManualAvatar,
     TIKTOK_CONNECT_TIMEOUT_MS,
+    RECONNECT_BACKOFF_MS,
+    RECONNECT_LOG_EVERY,
     WATCHDOG_CHECK_INTERVAL_MS,
     WATCHDOG_TIMEOUT_MS,
     SHORT_CONNECTION_THRESHOLD_MS,

@@ -10,6 +10,8 @@ const {
     SHORT_CONNECTION_THRESHOLD_MS,
     MAX_CONSECUTIVE_SHORT_DISCONNECTS,
     TikTokConnectTimeoutError,
+    RECONNECT_BACKOFF_MS,
+    RECONNECT_LOG_EVERY,
 } = require('../../lib/tenantHelpers');
 
 module.exports = {
@@ -59,6 +61,7 @@ module.exports = {
         this.wasEverConnected = false;
         this.connectedAt = null;
         this.consecutiveShortDisconnects = 0;
+        this.reconnectAttempts = 0;
 
         // Ráfagas de tap-tap en curso quedan huérfanas si la conexión se cae
         // a mitad de una: sin esto, sus timers seguirían vivos apuntando a
@@ -98,7 +101,7 @@ module.exports = {
         if (!this.liveConnected || this.currentTikTokUsername !== username) return;
         const silentForMs = Date.now() - (this.lastTikTokMessageAt || 0);
         if (silentForMs < WATCHDOG_TIMEOUT_MS) return;
-        console.warn(`[${this.licenseId}] [TIKTOK] 🧟 Sin mensajes hace ${Math.round(silentForMs / 1000)}s pese a seguir "conectado" -- se fuerza una reconexión.`);
+        console.warn(`[${this.logId}] [TIKTOK] 🧟 Sin mensajes hace ${Math.round(silentForMs / 1000)}s pese a seguir "conectado" -- se fuerza una reconexión.`);
         this.liveConnected = false;
         if (this.watchdogInterval) { clearInterval(this.watchdogInterval); this.watchdogInterval = null; }
         this.broadcast.emit('live_disconnected');
@@ -116,7 +119,8 @@ module.exports = {
         const now = Date.now();
         if (now - (this.lastForceReconnectAt || 0) < 5000) return;
         this.lastForceReconnectAt = now;
-        console.log(`[${this.licenseId}] [TIKTOK] 🔄 Reconexión manual pedida desde el panel.`);
+        this.reconnectAttempts = 0;
+        console.log(`[${this.logId}] [TIKTOK] 🔄 Reconexión manual pedida desde el panel.`);
         if (this.retryTimeout) { clearTimeout(this.retryTimeout); this.retryTimeout = null; }
         if (this.watchdogInterval) { clearInterval(this.watchdogInterval); this.watchdogInterval = null; }
         this.liveConnected = false;
@@ -187,7 +191,10 @@ module.exports = {
     scheduleReconnect(username) {
         if (!this.anyContestNeedsConnection()) return;
         if (this.retryTimeout) clearTimeout(this.retryTimeout);
-        this.retryTimeout = setTimeout(() => this.ensureTikTokConnection(username).catch(() => {}), 3000);
+        // Espera creciente según los intentos fallidos seguidos (ver
+        // RECONNECT_BACKOFF_MS): 0 o 1 fallo -> 3 s, y sube hasta 60 s.
+        const step = Math.min(Math.max(0, this.reconnectAttempts - 1), RECONNECT_BACKOFF_MS.length - 1);
+        this.retryTimeout = setTimeout(() => this.ensureTikTokConnection(username).catch(() => {}), RECONNECT_BACKOFF_MS[step]);
     },
 
     async ensureTikTokConnection(username) {
@@ -240,12 +247,15 @@ module.exports = {
         }
 
         this.currentTikTokUsername = username;
-        console.log(`[${this.licenseId}] [TIKTOK] 📡 Intentando conectar a @${username}...`);
+        // Con la cuenta todavía sin estar en vivo esto se repetía cada 3 s: se
+        // loguea el primer intento y luego solo cada RECONNECT_LOG_EVERY.
+        const verbose = this.reconnectAttempts === 0 || this.reconnectAttempts % RECONNECT_LOG_EVERY === 0;
+        if (verbose) console.log(`[${this.logId}] [TIKTOK] 📡 Intentando conectar a @${username}...${this.reconnectAttempts > 0 ? ` (intento ${this.reconnectAttempts + 1})` : ''}`);
         // Diagnóstico sin exponer el valor: si esto imprime "false" con la
         // variable YA puesta en Render, el problema es que no está llegando
         // al proceso (nombre mal escrito, falta redeploy, etc.) — no un
         // límite del plan de Euler Stream.
-        console.log(`[${this.licenseId}] [TIKTOK] SIGN_API_KEY presente: ${Boolean(process.env.SIGN_API_KEY)}`);
+        if (this.reconnectAttempts === 0) console.log(`[${this.logId}] [TIKTOK] SIGN_API_KEY presente: ${Boolean(process.env.SIGN_API_KEY)}`);
 
         let timedConnect;
         try {
@@ -291,10 +301,13 @@ module.exports = {
             this.tiktokConnection.on('rawData', () => { this.lastTikTokMessageAt = Date.now(); });
             this.tiktokConnection.on('error', ({ info, exception } = {}) => {
                 const message = exception?.message || info || 'Error interno del conector';
-                console.error(`[${this.licenseId}] [TIKTOK] ⚠️ ${message}`);
+                // "No está en vivo" ya lo reporta el catch de connect() con su
+                // propio mensaje: no se duplica acá.
+                if (/isn't online|offline/i.test(String(message))) return;
+                console.error(`[${this.logId}] [TIKTOK] ⚠️ ${message}`);
             });
             this.tiktokConnection.on('disconnected', () => {
-                console.log(`[${this.licenseId}] [TIKTOK] 🔌 Desconectado de @${username}`);
+                console.log(`[${this.logId}] [TIKTOK] 🔌 Desconectado de @${username}`);
                 this.liveConnected = false;
                 this.viewerCount = 0;
                 this.broadcast.emit('live_disconnected');
@@ -314,7 +327,7 @@ module.exports = {
                 }
 
                 if (this.consecutiveShortDisconnects >= MAX_CONSECUTIVE_SHORT_DISCONNECTS) {
-                    console.log(`[${this.licenseId}] [TIKTOK] 🛑 @${username} se desconectó ${this.consecutiveShortDisconnects} veces seguidas casi al instante — probablemente el LIVE ya terminó, se corta el reintento automático.`);
+                    console.log(`[${this.logId}] [TIKTOK] 🛑 @${username} se desconectó ${this.consecutiveShortDisconnects} veces seguidas casi al instante — probablemente el LIVE ya terminó, se corta el reintento automático.`);
                     this.consecutiveShortDisconnects = 0;
                     this.wasEverConnected = false;
                     this.desiredUsername = null;
@@ -341,7 +354,7 @@ module.exports = {
                 new Promise((_, reject) => setTimeout(() => reject(new TikTokConnectTimeoutError()), TIKTOK_CONNECT_TIMEOUT_MS)),
             ]);
         } catch (err) {
-            console.error(`[${this.licenseId}] [TIKTOK] ❌ Error sincrónico al armar la conexión:`, err);
+            console.error(`[${this.logId}] [TIKTOK] ❌ Error sincrónico al armar la conexión:`, err);
             this.connectingPromise = null;
             this.liveConnected = false;
             this.broadcast.emit('live_connection_error', {
@@ -353,7 +366,8 @@ module.exports = {
         }
 
         this.connectingPromise = timedConnect.then(() => {
-            console.log(`[${this.licenseId}] [TIKTOK] ✅ ¡CONECTADO!`);
+            console.log(`[${this.logId}] [TIKTOK] ✅ ¡CONECTADO!`);
+            this.reconnectAttempts = 0;
             // Ver el comentario de resetContinuousStateForNewSession: si
             // wasEverConnected sigue en false acá, esta conexión es
             // genuinamente nueva (no una reconexión automática sobre el
@@ -371,7 +385,14 @@ module.exports = {
             this.watchdogInterval = setInterval(() => this.checkTikTokWatchdog(username), WATCHDOG_CHECK_INTERVAL_MS);
             this.broadcast.emit('live_connected', username);
         }).catch(err => {
-            console.error(`[${this.licenseId}] [TIKTOK] ❌ Error: ${err.message}`);
+            const offline = this.isUserOfflineError(err);
+            this.reconnectAttempts += 1;
+            // Cuenta sin estar en vivo: se avisa el primer fallo y luego cada
+            // RECONNECT_LOG_EVERY intentos (los demás son ruido idéntico).
+            if (!offline || this.reconnectAttempts === 1 || this.reconnectAttempts % RECONNECT_LOG_EVERY === 0) {
+                const nextS = Math.round(RECONNECT_BACKOFF_MS[Math.min(this.reconnectAttempts - 1, RECONNECT_BACKOFF_MS.length - 1)] / 1000);
+                console.error(`[${this.logId}] [TIKTOK] ❌ Error con @${username}: ${err.message}${offline ? ` — intento ${this.reconnectAttempts}, se reintenta con espera creciente (próximo en ${nextS} s)` : ''}`);
+            }
             this.connectingPromise = null;
             this.liveConnected = false;
             // El WebSocket que se quedó colgado sigue ahí atrás: lo tiramos
@@ -398,7 +419,7 @@ module.exports = {
             // ser que el streamer todavía no salió al aire — ahí sí vale la
             // pena seguir reintentando solo, como siempre.
             if (this.wasEverConnected && this.isUserOfflineError(err)) {
-                console.log(`[${this.licenseId}] [TIKTOK] 🛑 @${username} ya no está en vivo — se corta el reintento automático.`);
+                console.log(`[${this.logId}] [TIKTOK] 🛑 @${username} ya no está en vivo — se corta el reintento automático.`);
                 this.wasEverConnected = false;
                 this.desiredUsername = null;
                 // Bug crítico corregido a propósito: cualquier modo que
@@ -458,6 +479,7 @@ module.exports = {
             // siempre (bug real: logs de "Intentando conectar" sin fin
             // tras limpiar el campo).
             if (this.retryTimeout) { clearTimeout(this.retryTimeout); this.retryTimeout = null; }
+            if (nextDesiredUsername !== this.desiredUsername) this.reconnectAttempts = 0;
             this.desiredUsername = nextDesiredUsername;
             if (this.desiredUsername) {
                 this.ensureTikTokConnection(this.desiredUsername).catch(() => {});

@@ -58,7 +58,7 @@ module.exports = {
 
             if (this.rouletteState.timeLeft <= 0) {
                 clearInterval(this.rouletteTimerInterval);
-                console.log(`[${this.licenseId}] [RULETA] ⏰ SE CERRARON LAS ENTRADAS — arranca el giro solo`);
+                console.log(`[${this.logId}] [RULETA] ⏰ SE CERRARON LAS ENTRADAS — arranca el giro solo`);
                 this.beginRouletteSpin();
                 return;
             }
@@ -78,7 +78,7 @@ module.exports = {
             this.rouletteState.mode = 'finished';
             this.rouletteState.isActive = false;
             this.rouletteState.winner = null;
-            console.log(`[${this.licenseId}] [RULETA] 🛑 FINALIZADA — nadie participó`);
+            console.log(`[${this.logId}] [RULETA] 🛑 FINALIZADA — nadie participó`);
             this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
             this.maybeDisconnectTikTok();
             return;
@@ -97,7 +97,7 @@ module.exports = {
         this.rouletteState.lastEliminatedList = [];
         this.rouletteState.currentSpinIndex = null;
         this.rouletteState.spinQueue = [];
-        console.log(`[${this.licenseId}] [RULETA] 🎡 GIRANDO — ${total} entradas, ganadora en la posición ${winnerPos}`);
+        console.log(`[${this.logId}] [RULETA] 🎡 GIRANDO — ${total} entradas, ganadora en la posición ${winnerPos}`);
         this.broadcast.emit('roulette_spin_started', this.getRoulettePublicState());
         this.beginRouletteStep();
     },
@@ -167,7 +167,7 @@ module.exports = {
         const eliminatedIds = new Set(eliminated.map(e => e.id));
         this.rouletteState.entries = this.rouletteState.entries.filter(e => !eliminatedIds.has(e.id));
         this.rouletteState.mode = 'result';
-        console.log(`[${this.licenseId}] [RULETA] 💀 ELIMINADAS: ${this.rouletteState.lastEliminatedList.map(e => '@' + e.username).join(', ')}`);
+        console.log(`[${this.logId}] [RULETA] 💀 ELIMINADAS: ${this.rouletteState.lastEliminatedList.map(e => '@' + e.username).join(', ')}`);
         this.broadcast.emit('roulette_step', this.getRoulettePublicState());
 
         const resultMs = this.rouletteState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS;
@@ -184,7 +184,7 @@ module.exports = {
         this.rouletteState.isActive = false;
         this.rouletteState.winner = { username: entry.username, avatar: entry.avatar };
         this.rouletteState.lastEliminatedList = [];
-        console.log(`[${this.licenseId}] [RULETA] 👑 GANADORA: @${entry.username}`);
+        console.log(`[${this.logId}] [RULETA] 👑 GANADORA: @${entry.username}`);
         this.broadcast.emit('roulette_winner_declared', this.getRoulettePublicState());
         this.maybeDisconnectTikTok();
     },
@@ -247,8 +247,8 @@ module.exports = {
         // No hay evento de "girar" manual: el giro arranca solo al vencer
         // entryWindowSec (ver startRouletteTimer) — pedido explícito.
         socket.on('start_roulette', (config) => {
-            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO RULETA (${config.entryMode === 'gift' ? 'modo regalo' : 'modo chat'})...`);
-            db.incrementUsage(this.licenseId, 'roulette_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(roulette_starts):`, err.message));
+            console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO RULETA (${config.entryMode === 'gift' ? 'modo regalo' : 'modo chat'})...`);
+            db.incrementUsage(this.licenseId, 'roulette_starts').catch(err => console.error(`[${this.logId}] [DB] incrementUsage(roulette_starts):`, err.message));
 
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             this.rouletteState = {
@@ -282,7 +282,7 @@ module.exports = {
         // config, reutiliza lo que ya tenía, igual que antes.
         socket.on('restart_roulette', (config) => {
             if (!this.rouletteState.isActive) return;
-            console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO RULETA...`);
+            console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO RULETA...`);
             if (this.rouletteRevealTimeout) { clearTimeout(this.rouletteRevealTimeout); this.rouletteRevealTimeout = null; }
             if (config) {
                 this.rouletteState.entryMode = config.entryMode === 'gift' ? 'gift' : 'chat';
@@ -354,7 +354,7 @@ module.exports = {
             for (let i = 0; i < n; i++) {
                 this.rouletteState.entries.push({ id: ++this.rouletteSlotCounter, username: uname, avatar });
             }
-            console.log(`[${this.licenseId}] [RULETA] ➕ Entrada manual: @${uname} x${n}`);
+            console.log(`[${this.logId}] [RULETA] ➕ Entrada manual: @${uname} x${n}`);
             this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
         });
 

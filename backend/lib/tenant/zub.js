@@ -33,7 +33,7 @@ module.exports = {
             // mientras dure este modo, así nadie ajeno puede meterse a "resolver"
             // el empate por los que sí llegaron a la punta.
             this.zubState.tiebreakUsernames = sorted.filter(u => u.coins === top1Coins).map(u => u.username);
-            console.log(`[${this.licenseId}] [ZUBASTINIS] 🤝 EMPATE ENTRE ${this.zubState.tiebreakUsernames.map(u => '@' + u).join(', ')} — DESEMPATE`);
+            console.log(`[${this.logId}] [ZUBASTINIS] 🤝 EMPATE ENTRE ${this.zubState.tiebreakUsernames.map(u => '@' + u).join(', ')} — DESEMPATE`);
             this.zubState.mode = 'tiebreak';
             this.zubState.timeLeft = this.zubState.tiebreakTime;
             this.broadcast.emit('zub_tiebreak_started', this.getZubPublicState());
@@ -48,15 +48,15 @@ module.exports = {
         if (this.zubState.minCoins > 0 && top1Coins < this.zubState.minCoins) {
             this.zubState.winner = null;
             this.zubState.noWinnerReason = 'minimum';
-            console.log(`[${this.licenseId}] [ZUBASTINIS] 🛑 FINALIZADO — nadie alcanzó el mínimo de ${this.zubState.minCoins} 🪙`);
+            console.log(`[${this.logId}] [ZUBASTINIS] 🛑 FINALIZADO — nadie alcanzó el mínimo de ${this.zubState.minCoins} 🪙`);
         } else if (!top1) {
             this.zubState.winner = null;
             this.zubState.noWinnerReason = 'no_gifts';
-            console.log(`[${this.licenseId}] [ZUBASTINIS] 🛑 FINALIZADO — nadie participó`);
+            console.log(`[${this.logId}] [ZUBASTINIS] 🛑 FINALIZADO — nadie participó`);
         } else {
             this.zubState.winner = top1;
             this.zubState.noWinnerReason = null;
-            console.log(`[${this.licenseId}] [ZUBASTINIS] 🛑 FINALIZADO — gana @${top1.username}`);
+            console.log(`[${this.logId}] [ZUBASTINIS] 🛑 FINALIZADO — gana @${top1.username}`);
         }
 
         clearInterval(this.zubTimerInterval);
@@ -73,7 +73,7 @@ module.exports = {
 
             if (this.zubState.timeLeft <= 0) {
                 if (this.zubState.mode === 'main') {
-                    console.log(`[${this.licenseId}] [ZUBASTINIS] ⚠️ MODO SNIPE`);
+                    console.log(`[${this.logId}] [ZUBASTINIS] ⚠️ MODO SNIPE`);
                     this.zubState.mode = 'snipe';
                     this.zubState.timeLeft = this.zubState.snipeTime;
                     this.broadcast.emit('zub_snipe_started', this.getZubPublicState());
@@ -111,8 +111,8 @@ module.exports = {
     registerZubHandlers(socket) {
         // ── ZUBASTINIS ──────────────────────────────
         socket.on('start_zubastinis', (config) => {
-            console.log(`\n[${this.licenseId}] [JUEGO] ▶️ INICIANDO ZUBASTINIS...`);
-            db.incrementUsage(this.licenseId, 'zub_starts').catch(err => console.error(`[${this.licenseId}] [DB] incrementUsage(zub_starts):`, err.message));
+            console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO ZUBASTINIS...`);
+            db.incrementUsage(this.licenseId, 'zub_starts').catch(err => console.error(`[${this.logId}] [DB] incrementUsage(zub_starts):`, err.message));
 
             this.zubState = {
                 isActive: true, mode: 'main', paused: false,
@@ -146,7 +146,7 @@ module.exports = {
 
         socket.on('restart_zubastinis', () => {
             if (this.zubState.isActive) {
-                console.log(`\n[${this.licenseId}] [JUEGO] ⟲ REINICIANDO ZUBASTINIS...`);
+                console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO ZUBASTINIS...`);
                 this.zubState.mode = 'main';
                 this.zubState.paused = false;
                 this.zubState.timeLeft = this.zubState.mainTime;

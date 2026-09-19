@@ -142,9 +142,7 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
                 <span className="block text-sm font-bold text-white">Mostrar bordes</span>
                 <span className="block text-[10px] text-gray-500">Apágalo para quitar el marco y las líneas que separan cada fila: solo se verá la información.</span>
               </span>
-              <span className={['relative w-11 h-6 rounded-full flex-shrink-0 transition-colors', bordersOn ? 'theme-accent-bg' : 'bg-gray-600'].join(' ')}>
-                <span className={['absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all', bordersOn ? 'left-[22px]' : 'left-0.5'].join(' ')} />
-              </span>
+              <span className="tkc-switch" data-on={bordersOn ? 'true' : 'false'} aria-hidden="true" />
             </button>
           </div>
         )}

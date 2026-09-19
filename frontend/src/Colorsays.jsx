@@ -92,7 +92,7 @@ function WinBonusToggle({ checked, onChange }) {
   return (
     <label className="cursor-pointer flex-shrink-0">
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="sr-only peer" />
-      <span aria-hidden="true" className="w-10 h-6 rounded-full bg-gray-700 peer-checked:theme-accent-bg relative inline-flex transition-colors after:absolute after:w-4 after:h-4 after:rounded-full after:bg-white after:left-1 after:top-1 after:transition-transform peer-checked:after:translate-x-4" />
+      <span aria-hidden="true" className="tkc-switch" />
     </label>
   );
 }

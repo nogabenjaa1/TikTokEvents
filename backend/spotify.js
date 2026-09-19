@@ -9,6 +9,16 @@
 // (b) tenga Spotify ABIERTO Y ACTIVO en algún dispositivo en ese momento —
 // sin esto la API devuelve error sin importar qué hagamos acá. Ver
 // requestSpotifySong en tenant.js para cómo se le avisa al streamer.
+//
+// Segunda restricción igual de real: mientras la app siga en modo
+// Development (el default de developer.spotify.com/dashboard), SOLO pueden
+// usarla las cuentas cargadas a mano en Settings > User Management (nombre +
+// correo de la cuenta de Spotify, máximo 5 usuarios según la doc de quota
+// modes de Spotify). Cualquier otra cuenta completa el OAuth sin problema
+// pero recibe 403 "The user is not registered for this application" en el
+// primer request a la API — ver SpotifyUserNotRegisteredError. Salir de ese
+// límite exige que Spotify apruebe "Extended Quota Mode", que hoy solo se
+// concede a organizaciones registradas con 250k usuarios activos al mes.
 const db = require('./db');
 
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
@@ -21,6 +31,21 @@ const REDIRECT_URI = `${BACKEND_URL}/api/spotify/callback`;
 // genérico. user-read-email: nada más para mostrar con qué cuenta quedó
 // conectado el streamer (display_name/email de /me).
 const SCOPES = ['user-modify-playback-state', 'user-read-playback-state', 'user-read-email'].join(' ');
+
+// Quién puede usar Spotify: solo licencias Lifetime (más la de admin, que es
+// la del dueño de la plataforma y no puede quedar afuera). Es el filtro con
+// el que se reparte el cupo de 5 usuarios de la app (ver el encabezado)
+// mientras no haya otra salida — no lo impone Spotify, es una decisión de
+// producto, y por eso vive en un solo lugar: el servidor (conectar, estado),
+// los comandos del chat (tenant) y el panel salen todos de acá.
+const ALLOWED_LICENSE_TYPES = ['lifetime'];
+
+// `license` es una fila de la tabla licenses (license_type / is_admin), no un
+// objeto de sesión del front.
+function isLicenseAllowed(license) {
+    if (!license) return false;
+    return Boolean(license.is_admin) || ALLOWED_LICENSE_TYPES.includes(license.license_type);
+}
 
 function assertConfigured() {
     if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -66,9 +91,35 @@ async function refreshAccessToken(refreshToken) {
     return res.json(); // { access_token, expires_in, ... } — Spotify no siempre manda refresh_token nuevo
 }
 
+// El 403 de "esta cuenta no está en la lista de usuarios de la app" (ver el
+// encabezado) no se arregla reintentando ni reconectando — hace falta que
+// alguien agregue la cuenta en el dashboard de Spotify —, así que se separa
+// de cualquier otro fallo para que el caller no le diga al streamer que
+// "intente de nuevo". Spotify lo manda como texto plano ("The user is not
+// registered for this application...") y no con el JSON habitual
+// { error: { status, message } }, de ahí que se reconozca por el body crudo.
+class SpotifyUserNotRegisteredError extends Error {
+    constructor(message) {
+        super(message);
+        this.code = 'USER_NOT_REGISTERED';
+    }
+}
+
+function isUserNotRegistered(status, body) {
+    return status === 403 && /not registered/i.test(body);
+}
+
+// Error para una respuesta no exitosa de un endpoint que no es de
+// reproducción: mismo mensaje genérico de siempre, salvo el caso de arriba.
+async function apiError(res, label) {
+    const body = await res.text();
+    if (isUserNotRegistered(res.status, body)) return new SpotifyUserNotRegisteredError(`${label} falló (403): ${body}`);
+    return new Error(`${label} falló (${res.status}): ${body}`);
+}
+
 async function getMe(accessToken) {
     const res = await fetch('https://api.spotify.com/v1/me', { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) throw new Error(`Spotify /me falló (${res.status}): ${await res.text()}`);
+    if (!res.ok) throw await apiError(res, 'Spotify /me');
     return res.json();
 }
 
@@ -91,7 +142,7 @@ async function searchTrack(accessToken, query) {
     const res = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) throw new Error(`Spotify search falló (${res.status}): ${await res.text()}`);
+    if (!res.ok) throw await apiError(res, 'Spotify search');
     const data = await res.json();
     return data.tracks?.items?.[0] || null;
 }
@@ -105,7 +156,7 @@ async function getQueue(accessToken) {
     const res = await fetch('https://api.spotify.com/v1/me/player/queue', {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) throw new Error(`Spotify queue-read falló (${res.status}): ${await res.text()}`);
+    if (!res.ok) throw await apiError(res, 'Spotify queue-read');
     return res.json();
 }
 
@@ -116,10 +167,22 @@ class SpotifyPlaybackError extends Error {
     }
 }
 
+// Error para una respuesta no exitosa de un endpoint de reproducción. Spotify
+// no distingue "sin dispositivo" de "sin Premium" con claridad en el body de
+// error, así que se infiere por status: 404 = sin dispositivo activo (el
+// caso más común), 403 = cuenta sin Premium — salvo el 403 de "cuenta no
+// registrada en la app" (ver SpotifyUserNotRegisteredError), que se separa
+// primero por su texto para no culpar a un Premium que sí puede estar bien.
+async function playbackError(res, label) {
+    if (res.status === 404) return new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
+    const body = await res.text();
+    if (isUserNotRegistered(res.status, body)) return new SpotifyUserNotRegisteredError(`${label} falló (403): ${body}`);
+    if (res.status === 403) return new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
+    return new SpotifyPlaybackError('UNKNOWN', `${label} falló (${res.status}): ${body}`);
+}
+
 // POST /me/player/queue — exige Premium Y un dispositivo activo (ver
-// comentario del encabezado). Spotify no distingue estos dos casos con
-// claridad en el body de error, así que se infiere por status: 404 =
-// sin dispositivo activo (el caso más común), 403 = cuenta sin Premium.
+// comentario del encabezado).
 async function addToQueue(accessToken, trackUri) {
     const params = new URLSearchParams({ uri: trackUri });
     const res = await fetch(`https://api.spotify.com/v1/me/player/queue?${params.toString()}`, {
@@ -127,9 +190,7 @@ async function addToQueue(accessToken, trackUri) {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (res.status === 204 || res.ok) return;
-    if (res.status === 404) throw new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
-    if (res.status === 403) throw new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
-    throw new SpotifyPlaybackError('UNKNOWN', `Spotify queue falló (${res.status}): ${await res.text()}`);
+    throw await playbackError(res, 'Spotify queue');
 }
 
 // POST /me/player/next — salta a la siguiente canción de la reproducción
@@ -142,9 +203,7 @@ async function skipToNext(accessToken) {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (res.status === 204 || res.ok) return;
-    if (res.status === 404) throw new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
-    if (res.status === 403) throw new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
-    throw new SpotifyPlaybackError('UNKNOWN', `Spotify skip falló (${res.status}): ${await res.text()}`);
+    throw await playbackError(res, 'Spotify skip');
 }
 
 // PUT /me/player/volume — mismos requisitos que el resto de los endpoints
@@ -156,9 +215,7 @@ async function setVolume(accessToken, volumePercent) {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (res.status === 204 || res.ok) return;
-    if (res.status === 404) throw new SpotifyPlaybackError('NO_ACTIVE_DEVICE', 'No hay un dispositivo de Spotify activo');
-    if (res.status === 403) throw new SpotifyPlaybackError('PREMIUM_REQUIRED', 'Se necesita Spotify Premium');
-    throw new SpotifyPlaybackError('UNKNOWN', `Spotify volume falló (${res.status}): ${await res.text()}`);
+    throw await playbackError(res, 'Spotify volume');
 }
 
-module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, getQueue, skipToNext, setVolume, SpotifyPlaybackError };
+module.exports = { getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, getQueue, skipToNext, setVolume, isLicenseAllowed, SpotifyPlaybackError, SpotifyUserNotRegisteredError };

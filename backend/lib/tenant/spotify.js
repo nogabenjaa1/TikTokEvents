@@ -96,13 +96,28 @@ module.exports = {
         });
     },
 
+    // Única puerta a la cuenta de Spotify de esta licencia. Si la licencia no
+    // puede usar Spotify (ver spotify.isLicenseAllowed — p. ej. una cuenta
+    // que se conectó antes de que la función pasara a ser solo Lifetime) se
+    // comporta como "sin cuenta conectada", un caso que todos los llamadores
+    // ya manejan: los comandos se ignoran y el polling se apaga. Lee la
+    // licencia de la DB en cada llamada a propósito, en vez de fiarse de
+    // `this.licenseType`, que queda fijo desde que se creó el Tenant y no ve
+    // una compra o cambio de plan posterior. Se mira antes que la cuenta para
+    // no descifrar tokens que no se van a usar.
+    async getAllowedSpotifyAccount() {
+        const license = await db.findById(this.licenseId);
+        if (!spotify.isLicenseAllowed(license)) return null;
+        return db.getSpotifyAccount(this.licenseId);
+    },
+
     // Salta a la siguiente canción en la reproducción REAL de Spotify
     // (POST /me/player/next) — a diferencia de !revoke, esto sí actúa sobre
     // la cola de verdad, no solo sobre nuestra lista de "lo pedido".
     async skipSpotifyTrack() {
-        const account = await db.getSpotifyAccount(this.licenseId);
+        const account = await this.getAllowedSpotifyAccount();
         if (!account) {
-            console.log(`[${this.logId}] [SPOTIFY] !skip ignorado — no hay ninguna cuenta de Spotify conectada.`);
+            console.log(`[${this.logId}] [SPOTIFY] !skip ignorado — no hay una cuenta de Spotify conectada (o la licencia no es Lifetime).`);
             return;
         }
         let accessToken;
@@ -147,6 +162,12 @@ module.exports = {
         if (err instanceof spotify.SpotifyPlaybackError && err.code === 'PREMIUM_REQUIRED') {
             return 'Se necesita Spotify Premium para esta acción.';
         }
+        // Una cuenta que conectó bien pero ya no figura en la lista de
+        // usuarios de la app de Spotify (ver spotify.js) — sin este caso
+        // caía en el mensaje genérico, o peor, en "necesita Premium".
+        if (err instanceof spotify.SpotifyUserNotRegisteredError) {
+            return 'Tu cuenta de Spotify ya no está habilitada para esta plataforma — contacta al administrador para que la vuelva a habilitar.';
+        }
         return 'No se pudo completar la acción en Spotify.';
     },
 
@@ -156,9 +177,9 @@ module.exports = {
     // reportan al panel vía `spotify_error` — nunca al chat, el streamer es
     // quien decide si lo comenta en vivo o no.
     async requestSpotifySong(username, query) {
-        const account = await db.getSpotifyAccount(this.licenseId);
+        const account = await this.getAllowedSpotifyAccount();
         if (!account) {
-            console.log(`[${this.logId}] [SPOTIFY] !play ignorado — no hay ninguna cuenta de Spotify conectada.`);
+            console.log(`[${this.logId}] [SPOTIFY] !play ignorado — no hay una cuenta de Spotify conectada (o la licencia no es Lifetime).`);
             return; // streamer no conectó Spotify — !play no hace nada, en silencio
         }
 
@@ -172,7 +193,17 @@ module.exports = {
             return;
         }
 
-        const track = await spotify.searchTrack(accessToken, query);
+        // Antes un fallo de la búsqueda (p. ej. la cuenta ya no figura en la
+        // lista de usuarios de la app) escapaba al .catch de processPlayCommand
+        // y solo dejaba un log: el streamer veía que !play "no hace nada".
+        let track;
+        try {
+            track = await spotify.searchTrack(accessToken, query);
+        } catch (err) {
+            console.error(`[${this.logId}] [SPOTIFY] Búsqueda de "${query}" falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+            return;
+        }
         if (!track) {
             console.log(`[${this.logId}] [SPOTIFY] Búsqueda de "${query}" no encontró ninguna canción.`);
             this.broadcast.emit('spotify_error', { message: `@${username} pidió "${query}" — no se encontró ninguna canción.` });
@@ -231,7 +262,7 @@ module.exports = {
     // corriendo esto ni siquiera llega a golpear la DB de nuevo.
     async maybeStartSpotifyPolling() {
         if (this.spotifyPollInterval) return;
-        const account = await db.getSpotifyAccount(this.licenseId);
+        const account = await this.getAllowedSpotifyAccount();
         if (!account) return;
         this.startSpotifyQueuePolling();
         // Sin esto, el overlay tendría que esperar hasta SPOTIFY_POLL_INTERVAL_MS
@@ -251,7 +282,7 @@ module.exports = {
     // canciones ajenas al chat que el streamer agregó a mano) — la lista
     // de "próximas" sigue siendo solo lo que llegó por !play.
     async pollSpotifyQueue() {
-        const account = await db.getSpotifyAccount(this.licenseId);
+        const account = await this.getAllowedSpotifyAccount();
         if (!account) {
             this.stopSpotifyQueuePolling();
             if (this.spotifyQueueState.nowPlaying) {
@@ -353,7 +384,7 @@ module.exports = {
         // REAL de Spotify (mismos requisitos que !play/!skip: Premium +
         // dispositivo activo), no sobre nada propio de la plataforma.
         socket.on('set_spotify_volume', async (volumePercent) => {
-            const account = await db.getSpotifyAccount(this.licenseId);
+            const account = await this.getAllowedSpotifyAccount();
             if (!account) return;
             try {
                 const accessToken = await spotify.getValidAccessToken(account);

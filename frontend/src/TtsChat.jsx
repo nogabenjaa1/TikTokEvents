@@ -94,7 +94,7 @@ function Toggle({ checked, onChange, label, description }) {
   return (
     <label className="theme-input flex items-center gap-3 px-4 py-3 cursor-pointer transition-opacity hover:opacity-90">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only peer" />
-      <span aria-hidden="true" className="w-10 h-6 rounded-full bg-gray-700 peer-checked:theme-accent-bg relative flex-shrink-0 transition-colors after:absolute after:w-4 after:h-4 after:rounded-full after:bg-white after:left-1 after:top-1 after:transition-transform peer-checked:after:translate-x-4" />
+      <span aria-hidden="true" className="tkc-switch" />
       <span>
         <span className="block text-sm font-black text-white">{label}</span>
         <span className="block text-[11px] text-gray-500 mt-0.5">{description}</span>

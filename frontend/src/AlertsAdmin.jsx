@@ -550,9 +550,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Color, degradado y tamaño del texto de todas las alertas">
-            🎨 Estilo del texto
-          </button>
           <button type="button" onClick={openNew} className="theme-btn-primary px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
             ＋ Nueva alerta
           </button>
@@ -585,9 +582,18 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
       ) : (
         <>
-          <section className="theme-surface w-full max-w-2xl p-5" aria-label="Volumen general de las alertas">
+          <section className="theme-surface w-full max-w-2xl p-5" aria-label="Ajustes generales de las alertas">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="theme-heading text-lg font-semibold">Ajustes generales</h2>
+                <p className="text-[11px] text-gray-500 mt-0.5">Afectan a TODAS tus alertas a la vez. Para algo propio de una alerta (como su color), edítala.</p>
+              </div>
+              <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0" title="Color, degradado y tamaño del texto de todas las alertas">
+                🎨 Personalizar
+              </button>
+            </div>
             <div className="flex items-center justify-between gap-3 mb-2">
-              <h2 className="theme-heading text-lg font-semibold">🔊 Volumen general</h2>
+              <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">🔊 Volumen general</span>
               <span className="theme-chip font-bold px-2 rounded text-xs">{Math.round((customization?.volume ?? 1) * 100)}%</span>
             </div>
             <input
@@ -773,12 +779,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 font-semibold">💬 TEXTO</label>
-            <button type="button" onClick={() => setCustomizingText(true)} className="text-[10px] font-black text-gray-400 hover:text-white underline uppercase tracking-widest whitespace-nowrap">
-              🎨 Personalizar estilo
-            </button>
-          </div>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💬 TEXTO</label>
           <textarea
             value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
             placeholder="Ej: ¡Gracias por el {gift}, {username}!"
@@ -813,7 +814,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
                 />
               )}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">Cada alerta puede tener su propio color. El tamaño y el estilo de todas juntas se cambian en "🎨 Estilo del texto" de la lista.</p>
+            <p className="text-[11px] text-gray-500 mt-1">Este color es solo de esta alerta. El tamaño, el degradado y el estilo general de todas se cambian con "🎨 Personalizar" en los ajustes generales de la lista.</p>
           </div>
           {effectiveVisualUrl && (
             <div className="mt-2">

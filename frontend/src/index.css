@@ -204,6 +204,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --surface-shadow: 0 0 50px color-mix(in oklch,var(--accent) 22%, transparent);
   --surface-blur: none;
   --ink-default: #2E2136;
+  --ink: var(--ink-default);
   /* Mismo motivo que Cute (ver ese bloque): fondo pastel claro de punta a
      punta, así que el blanco/gris global del resto del sistema necesita
      este fallback para no quedar ilegible. */
@@ -263,6 +264,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --surface-shadow: 0 14px 32px -10px oklch(from var(--accent) 0.42 0.12 h / 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   --surface-blur: none;
   --ink-cute: #2A1B2E;
+  --ink: var(--ink-cute);
   /* Fallback de color heredado para texto sin clase Tailwind explícita. */
   color: var(--ink-cute);
   font-weight: 500;
@@ -645,3 +647,70 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
     margin: 0 !important;
   }
 }
+
+/* ==========================================
+   CONTROLES NATIVOS CON LOS COLORES DEL TEMA
+   Casillas, radios, selectores (con su lista desplegable) e interruptores
+   toman el acento y las superficies del skin elegido en vez de los colores
+   por defecto del navegador (azul/gris). Fuera del panel (overlays) los
+   var() caen a valores neutros.
+   ========================================== */
+input[type="checkbox"],
+input[type="radio"] { accent-color: var(--accent, #A855F7); }
+
+select,
+select.theme-input {
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  padding-right: 2.25rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--accent, #A855F7) 50%),
+    linear-gradient(135deg, var(--accent, #A855F7) 50%, transparent 50%);
+  background-position: calc(100% - 1.2rem) 55%, calc(100% - 0.85rem) 55%;
+  background-size: 0.4rem 0.4rem, 0.4rem 0.4rem;
+  background-repeat: no-repeat;
+}
+select:focus-visible { outline: 2px solid var(--accent, #A855F7); outline-offset: 2px; }
+select:disabled { cursor: not-allowed; }
+.themed-app option,
+.themed-app optgroup {
+  background-color: var(--surface-bg);
+  color: var(--ink, inherit);
+}
+
+/* Interruptor: reemplaza al gris fijo de antes. Se usa como
+   <input class="sr-only peer"> + <span class="tkc-switch"> o, en botones
+   role="switch", con data-on="true". */
+.tkc-switch {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border-color, transparent);
+  background: color-mix(in oklch, var(--ink, #2E2136) 28%, var(--surface-bg-alt, transparent));
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.tkc-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+.peer:checked + .tkc-switch,
+.tkc-switch[data-on="true"] {
+  background: linear-gradient(135deg, var(--accent, #A855F7), var(--accent-2, var(--accent, #A855F7)));
+  border-color: var(--accent, #A855F7);
+}
+.peer:checked + .tkc-switch::after,
+.tkc-switch[data-on="true"]::after { transform: translateX(1rem); }
+.peer:focus-visible + .tkc-switch { outline: 2px solid var(--accent, #A855F7); outline-offset: 2px; }
+.peer:disabled + .tkc-switch { opacity: 0.5; cursor: not-allowed; }

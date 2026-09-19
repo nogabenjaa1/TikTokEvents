@@ -702,7 +702,7 @@ select:disabled { cursor: not-allowed; }
   height: 1.125rem;
   border-radius: 50%;
   background: #FFFFFF;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px color-mix(in oklch, var(--ink, #2E2136) 45%, transparent);
   transition: transform 0.2s ease;
 }
 .peer:checked + .tkc-switch,

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import { SkeletonRows } from './PanelHelp';
+import iconFollow from './assets/alert-follow.png';
+import iconGlobal from './assets/alert-global.png';
+import iconSticker from './assets/alert-sticker.png';
 import { backendUrl, authHeaders } from './auth';
 import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
@@ -126,7 +129,7 @@ function applyPreviewTags(text, gift, coins = '100') {
 function alertDisplayName(alert) {
   if (alert.triggerType === 'gift_global') {
     const n = alert.minCoins ?? 0;
-    return `🌐 Alerta general · desde ${n} moneda${n === 1 ? '' : 's'}`;
+    return `Alerta general · desde ${n} moneda${n === 1 ? '' : 's'}`;
   }
   if (alert.triggerType && alert.triggerType !== 'gift') return TRIGGER_LABELS[alert.triggerType] || alert.giftName;
   return alert.giftName;
@@ -167,20 +170,33 @@ function LivePreview({ draftAlert, customize }) {
 
 // Una fila de la lista de "Alertas configuradas" — misma pinta para
 // específicas y generales, solo cambia qué texto arma alertDisplayName.
-function AlertRow({ alert, testFire, previewSaved, startEdit, remove }) {
+// Un ícono por TIPO de alerta (en vez de los de imagen/sonido/texto): la
+// imagen del propio regalo para las de regalo específico, y uno fijo para
+// seguimiento, alerta general y sticker del club de fans.
+const TRIGGER_ICONS = {
+  follow: { src: iconFollow, label: 'Seguimiento' },
+  gift_global: { src: iconGlobal, label: 'Alerta general' },
+  sticker: { src: iconSticker, label: 'Sticker de club de fans' },
+};
+
+function AlertTypeIcon({ alert, giftIcon }) {
+  const fixed = TRIGGER_ICONS[alert.triggerType];
+  const src = fixed ? fixed.src : giftIcon;
+  if (!src) return <span className="w-9 h-9 flex items-center justify-center text-2xl flex-shrink-0" role="img" aria-label="Regalo">🎁</span>;
+  return <img src={src} alt={fixed ? fixed.label : 'Regalo'} className="w-9 h-9 object-contain flex-shrink-0" />;
+}
+
+function AlertRow({ alert, giftIcon, testFire, previewSaved, startEdit, remove }) {
   const name = alertDisplayName(alert);
   return (
     <div className="theme-input flex flex-col gap-3 px-4 py-3">
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <span className="text-lg flex-shrink-0 flex items-center gap-0.5" aria-hidden="true">
-          {alert.visualType && (VISUAL_TYPE_ICON[alert.visualType] || '📎')}
-          {alert.audioUrl && '🎧'}
-          {alert.text && '💬'}
-        </span>
+        <AlertTypeIcon alert={alert} giftIcon={giftIcon} />
         <div className="min-w-0">
           <p className="text-sm font-bold text-white truncate">{name}</p>
           <p className="text-[11px] text-gray-500 truncate">
             {(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}
+            {(alert.visualType || alert.audioUrl || alert.text) ? ` · ${alert.visualType ? (VISUAL_TYPE_ICON[alert.visualType] || '📎') : ''}${alert.audioUrl ? '🎧' : ''}${alert.text ? '💬' : ''}` : ''}
             {alert.text ? ` · "${alert.text}"` : ''}
           </p>
         </div>
@@ -385,6 +401,13 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const globalAlerts = useMemo(() => (
     alerts.filter((a) => a.triggerType === 'gift_global').sort((a, b) => (a.minCoins ?? 0) - (b.minCoins ?? 0))
   ), [alerts]);
+
+  // Imagen del regalo de cada alerta específica (catálogo guardado de la licencia).
+  const giftIconFor = (alert) => {
+    if (alert.triggerType && alert.triggerType !== 'gift') return null;
+    const g = giftsList.find((x) => x.name.toLowerCase() === String(alert.giftName).toLowerCase());
+    return g?.icon || null;
+  };
 
   const alertForTrigger = (triggerKey) => alerts.find((a) => a.giftName.toLowerCase() === triggerKey.toLowerCase());
 
@@ -615,7 +638,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             {specificAlerts.length > 0 ? (
               <div className="flex flex-col gap-2">
                 {specificAlerts.map((alert) => (
-                  <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
                 ))}
               </div>
             ) : (
@@ -632,7 +655,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             {globalAlerts.length > 0 ? (
               <div className="flex flex-col gap-2">
                 {globalAlerts.map((alert) => (
-                  <AlertRow key={alert.id} alert={alert} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
                 ))}
               </div>
             ) : (

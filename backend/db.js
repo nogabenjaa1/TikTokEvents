@@ -251,6 +251,9 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS audio_path TEXT`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS alert_text TEXT`))
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS text_position TEXT NOT NULL DEFAULT 'below'`))
+  // Color de texto propio de CADA alerta (#RRGGBB). NULL = sigue el estilo
+  // general de las alertas ("Estilo y volumen" en el panel).
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS text_color TEXT`))
   // Alertas GENERALES (pedido explícito: "alertas globales" además de las
   // específicas de siempre) -- trigger_type = 'gift_global', sin regalo
   // fijo: se disparan con CUALQUIER regalo que no tenga su propia alerta
@@ -531,13 +534,13 @@ async function upsertAlertConfig({
     id, licenseId, giftName,
     visualUrl, visualPath, visualType, visualMuted,
     audioUrl, audioPath,
-    text, textPosition,
+    text, textPosition, textColor = null,
     durationMs, position, entranceAnim, exitAnim, triggerType, minCoins = null,
 }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             visual_url = EXCLUDED.visual_url,
@@ -548,6 +551,7 @@ async function upsertAlertConfig({
             audio_path = EXCLUDED.audio_path,
             alert_text = EXCLUDED.alert_text,
             text_position = EXCLUDED.text_position,
+            text_color = EXCLUDED.text_color,
             duration_ms = EXCLUDED.duration_ms,
             position = EXCLUDED.position,
             entrance_anim = EXCLUDED.entrance_anim,
@@ -562,6 +566,7 @@ async function upsertAlertConfig({
         text || null, textPosition || 'below',
         durationMs, position, entranceAnim || 'fade', exitAnim || 'fade', triggerType || 'gift', minCoins,
         Date.now(),
+        textColor,
     ]);
     return getAlertConfig(id);
 }

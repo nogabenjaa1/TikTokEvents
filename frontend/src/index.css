@@ -101,6 +101,10 @@ input[type=range]::-moz-range-thumb {
    "Centro" terminaba viéndose arriba de todo (la caja, del alto de la
    imagen, insertada al principio del flujo). `!important` para ganar la
    pelea sin depender del orden de declaración. */
+/* Filas desplazables (ver ScrollRow.jsx): sin barra nativa. */
+.tkc-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.tkc-no-scrollbar::-webkit-scrollbar { display: none; }
+
 .tkc-alert-viewport {
   position: fixed !important;
   inset: 0 !important;

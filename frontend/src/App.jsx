@@ -6,6 +6,7 @@ import Login from './Login';
 import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
 import SystemHealth from './SystemHealth';
+import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
 import InterstitialAd from './InterstitialAd';
 import logoMark from './assets/logo-mark.png';
@@ -1002,7 +1003,7 @@ export default function App() {
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
-      <aside aria-label="Navegación principal" className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[84px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50">
+      <aside aria-label="Navegación principal" className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[84px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50 tkc-no-scrollbar">
         {/* Logo + nombre de marca — chico y sin botón/borde a propósito
             (pedido explícito: "visible pero que no abrume"), primero en la
             fila/columna para que quede como una cabecera sutil del rail de
@@ -1101,7 +1102,8 @@ export default function App() {
           <>
             {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
                 entre igual de bien en mobile que el rail principal. */}
-            <nav aria-label="Eventos de TikTok" className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+            <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+            <ScrollRow label="Eventos de TikTok">
               {EVENT_TABS.map((t) => (
                 <React.Fragment key={t.id}>
                 {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
@@ -1128,8 +1130,9 @@ export default function App() {
                 </button>
                 </React.Fragment>
               ))}
+            </ScrollRow>
               <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />
-            </nav>
+            </div>
 
             {eventsTab === 'king' && (
               needsAccess('king') ? (

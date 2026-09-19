@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
-import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill, rowBorder, bordersOffStyle, bordersEnabled } from './overlayCustomization';
+import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill, rowBorder, bordersOffStyle, bordersEnabled, FONT_SCALES } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';
 import { formatMMSS, formatHHMMSS } from './timeFormat';
 
@@ -1215,25 +1215,37 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
   // no tener audio para nada; ninguna combinación excluye a las otras.
   const hasVisual = !!(alert.visualType && alert.visualUrl);
   const hasText = !!(alert.text && alert.text.trim());
-  const textOverride = getUsernameOverride(customize);
+  // Color: el propio de ESTA alerta (alert.textColor) gana sobre el estilo
+  // general; si no tiene, se usa el de "Estilo y volumen". El tamaño se aplica
+  // como font-size real (no transform) para que el texto ocupe su espacio y
+  // nunca se encime con el recurso: si es más grande o más largo, simplemente
+  // usa más renglones y todo se acomoda (gap fijo entre texto y recurso).
+  const textOverride = alert.textColor
+    ? { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': alert.textColor } }
+    : getUsernameOverride(customize, { scale: false });
+  const textScale = FONT_SCALES[customize?.usernameColor?.fontSize] ?? 1;
+  const beside = hasText && alert.textPosition === 'beside' && !!(alert.visualType && alert.visualUrl);
   const textNode = hasText ? (
-    <p className={`text-3xl font-black text-center drop-shadow-lg ${textOverride.className}`} style={textOverride.cssVars}>
+    <p
+      className={`font-black text-center drop-shadow-lg leading-tight break-words whitespace-pre-wrap ${beside ? 'max-w-[420px]' : 'max-w-[860px]'} ${textOverride.className}`}
+      style={{ ...textOverride.cssVars, fontSize: `${Math.round(30 * textScale)}px`, textWrap: 'balance' }}
+    >
       {alert.text}
     </p>
   ) : null;
   const visualNode = hasVisual ? (
     <>
       {(alert.visualType === 'image' || alert.visualType === 'gif') && (
-        <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain" />
+        <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain flex-shrink-0" />
       )}
       {alert.visualType === 'video' && (
-        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain" autoPlay muted={!!alert.visualMuted} />
+        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted} />
       )}
     </>
   ) : null;
   // Sin visual (alerta solo de texto y/o solo de audio), la posición del
   // texto respecto al recurso no tiene sentido -- se muestra solo, centrado.
-  const layoutClass = !hasVisual ? '' : alert.textPosition === 'beside' ? 'flex-row items-center gap-4' : 'flex-col items-center gap-2';
+  const layoutClass = !hasVisual ? '' : alert.textPosition === 'beside' ? 'flex-row items-center gap-6' : 'flex-col items-center gap-4';
 
   return (
     <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`}>

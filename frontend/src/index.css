@@ -101,6 +101,10 @@ input[type=range]::-moz-range-thumb {
    "Centro" terminaba viéndose arriba de todo (la caja, del alto de la
    imagen, insertada al principio del flujo). `!important` para ganar la
    pelea sin depender del orden de declaración. */
+/* Filas desplazables (ver ScrollRow.jsx): sin barra nativa. */
+.tkc-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.tkc-no-scrollbar::-webkit-scrollbar { display: none; }
+
 .tkc-alert-viewport {
   position: fixed !important;
   inset: 0 !important;
@@ -298,7 +302,16 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: oklch(from var(--accent) 0.42 0.16 h);
 }
 .themed-app[data-theme-style="cute"] .theme-heading { font-weight: 700; letter-spacing: 0.01em; }
+/* La píldora completa solo va en los campos de UNA línea (input/select).
+   Cualquier otra cosa que use .theme-input es una CAJA (recuadros de ayuda
+   plegables, filas de listas, textarea, botones-interruptor de varias
+   líneas): con 999px se veía desproporcionadamente redonda, así que usa un
+   radio moderado -- ver --radius-cute-box en :root. */
 .themed-app[data-theme-style="cute"] .theme-input {
+  border-radius: var(--radius-cute-box);
+}
+.themed-app[data-theme-style="cute"] input.theme-input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.themed-app[data-theme-style="cute"] select.theme-input {
   border-radius: 999px;
 }
 .themed-app[data-theme-style="cute"] .theme-input:focus {
@@ -457,6 +470,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-amber: #B45309;
   --radius-cute-dock: 1.75rem;
   --radius-cute-nav: 1.1rem;
+  --radius-cute-box: 1rem;
 }
 
 /* ==========================================

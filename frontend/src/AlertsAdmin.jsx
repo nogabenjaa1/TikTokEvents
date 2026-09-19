@@ -90,9 +90,11 @@ function fileVisualType(file) {
 // escena del streamer, mismo criterio de escalado que OverlayPreviewBox.jsx
 // (outer div recortado al tamaño final, inner div a tamaño natural con
 // `transform: scale()`).
-const STAGE_W = 960;
-const STAGE_H = 540;
-const STAGE_SCALE = 0.32;
+// Vertical 1080x1920: es la resolución real de una transmisión de TikTok, así
+// que la miniatura muestra las proporciones y tamaños reales.
+const STAGE_W = 1080;
+const STAGE_H = 1920;
+const STAGE_SCALE = 0.22;
 
 // Vista previa en vivo: se actualiza SOLA en cuanto cambia el archivo, la
 // duración, la posición o las animaciones — pedido explícito de que no
@@ -149,13 +151,13 @@ function LivePreview({ draftAlert, customize }) {
   }, [draftAlert, cycle]);
 
   return (
-    <div className="rounded-xl overflow-hidden mx-auto" style={{ width: STAGE_W * STAGE_SCALE, height: STAGE_H * STAGE_SCALE, background: 'repeating-conic-gradient(#1a1625 0% 25%, #150f22 0% 50%) 0 0/24px 24px' }}>
+    <div className="rounded-xl overflow-hidden mx-auto flex-shrink-0" style={{ width: STAGE_W * STAGE_SCALE, height: STAGE_H * STAGE_SCALE, background: 'repeating-conic-gradient(#1a1625 0% 25%, #150f22 0% 50%) 0 0/24px 24px' }}>
       <div className="relative" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${STAGE_SCALE})`, transformOrigin: 'top left' }}>
         {draftAlert ? (
           <AlertVisual alert={draftAlert} phase={phase} embedded customize={customize} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-gray-500 text-sm italic" style={{ transform: `scale(${1 / STAGE_SCALE})` }}>Agrega un recurso o un texto para ver la vista previa</p>
+            <p className="text-gray-500 text-sm italic text-center" style={{ width: STAGE_W * STAGE_SCALE - 24, transform: `scale(${1 / STAGE_SCALE})` }}>Agrega un recurso o un texto para ver la vista previa</p>
           </div>
         )}
       </div>
@@ -259,6 +261,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [clearAudio, setClearAudio] = useState(false);
   const [text, setText] = useState('');
   const [textPosition, setTextPosition] = useState('below');
+  // Color de texto propio de ESTA alerta ('' = sigue el estilo general).
+  const [textColor, setTextColor] = useState('');
 
   const [duration, setDuration] = useState(5);
   const [position, setPosition] = useState('center');
@@ -325,10 +329,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         triggerType === 'gift' ? selectedGift?.name : '',
         triggerType === 'gift_global' && minCoins ? minCoins : '100',
       ),
-      textPosition,
+      textPosition, textColor: textColor || null,
       durationMs: Math.round(duration * 1000), position, entranceAnim, exitAnim,
     };
-  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, duration, position, entranceAnim, exitAnim, triggerType, selectedGift, minCoins]);
+  }, [effectiveVisualUrl, effectiveVisualType, effectiveAudioUrl, visualMuted, text, textPosition, textColor, duration, position, entranceAnim, exitAnim, triggerType, selectedGift, minCoins]);
 
   // Vista previa de una alerta YA GUARDADA (botón "👁️" de la lista de
   // abajo) — a diferencia de la de arriba (en vivo, en bucle, del
@@ -400,6 +404,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setClearAudio(false);
     setText('');
     setTextPosition('below');
+    setTextColor('');
     setDuration(5);
     setPosition('center');
     setEntranceAnim('fade');
@@ -438,6 +443,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setClearAudio(false);
     setText(alert.text || '');
     setTextPosition(alert.textPosition || 'below');
+    setTextColor(alert.textColor || '');
     setDuration((alert.durationMs || 5000) / 1000);
     setPosition(alert.position || 'center');
     setEntranceAnim(alert.entranceAnim || 'fade');
@@ -471,6 +477,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
+      form.append('textColor', textColor);
       form.append('durationMs', String(Math.round(duration * 1000)));
       form.append('position', position);
       form.append('entranceAnim', entranceAnim);
@@ -543,8 +550,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Estilo del texto y volumen general de todas las alertas">
-            🎨 Estilo y volumen
+          <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Color, degradado y tamaño del texto de todas las alertas">
+            🎨 Estilo del texto
           </button>
           <button type="button" onClick={openNew} className="theme-btn-primary px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
             ＋ Nueva alerta
@@ -578,6 +585,21 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
       ) : (
         <>
+          <section className="theme-surface w-full max-w-2xl p-5" aria-label="Volumen general de las alertas">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <h2 className="theme-heading text-lg font-semibold">🔊 Volumen general</h2>
+              <span className="theme-chip font-bold px-2 rounded text-xs">{Math.round((customization?.volume ?? 1) * 100)}%</span>
+            </div>
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={customization?.volume ?? 1}
+              onChange={(e) => onCustomizeChange({ ...customization, volume: Number(e.target.value) })}
+              aria-label="Volumen general de todas las alertas"
+              className="w-full"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">Sube o baja el sonido de TODAS tus alertas a la vez (su audio y el audio de sus videos), sin editarlas una por una.</p>
+          </section>
+
           <section className="theme-surface w-full max-w-2xl p-6">
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <h2 className="theme-heading text-lg font-semibold">Alertas específicas</h2>
@@ -772,6 +794,27 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             {' '}(usuario, su nombre público, el regalo, sus monedas y cuántas veces seguidas lo mandó).
           </p>
           <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
+          <div className="mt-2">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">🎨 COLOR DEL TEXTO DE ESTA ALERTA</label>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
+                <input type="radio" name="alert-text-color" checked={!textColor} onChange={() => setTextColor('')} />
+                Usar el estilo general
+              </label>
+              <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
+                <input type="radio" name="alert-text-color" checked={!!textColor} onChange={() => setTextColor(textColor || '#FFFFFF')} />
+                Color propio
+              </label>
+              {textColor && (
+                <input
+                  type="color" value={textColor} onChange={(e) => setTextColor(e.target.value.toUpperCase())}
+                  aria-label="Elegir el color del texto de esta alerta"
+                  className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent p-0"
+                />
+              )}
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">Cada alerta puede tener su propio color. El tamaño y el estilo de todas juntas se cambian en "🎨 Estilo del texto" de la lista.</p>
+          </div>
           {effectiveVisualUrl && (
             <div className="mt-2">
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">Posición del texto respecto al recurso</label>

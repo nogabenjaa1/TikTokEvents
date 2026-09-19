@@ -804,7 +804,7 @@ function serializeAlert(row) {
         id: row.id, giftName: row.gift_name,
         visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
         audioUrl: row.audio_url,
-        text: row.alert_text || '', textPosition: row.text_position || 'below',
+        text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
         durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
@@ -875,6 +875,9 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
 
     const cleanText = typeof text === 'string' ? text.trim().slice(0, 200) : '';
     const finalTextPosition = TEXT_POSITIONS.includes(req.body?.textPosition) ? req.body.textPosition : 'below';
+    // Color propio de esta alerta (#RRGGBB); vacío/inválido = sigue el estilo
+    // general de las alertas.
+    const finalTextColor = typeof req.body?.textColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(req.body.textColor) ? req.body.textColor : null;
     const visualMuted = req.body?.visualMuted === 'true';
     const clearVisual = req.body?.clearVisual === 'true';
     const clearAudio = req.body?.clearAudio === 'true';
@@ -959,7 +962,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             id, licenseId: req.license.id, giftName: triggerKey,
             visualUrl, visualPath, visualType: finalVisualType, visualMuted,
             audioUrl, audioPath,
-            text: cleanText, textPosition: finalTextPosition,
+            text: cleanText, textPosition: finalTextPosition, textColor: finalTextColor,
             durationMs: finalDuration, position: finalPosition,
             entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType, minCoins,
         });

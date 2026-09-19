@@ -95,27 +95,6 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
           </>
         )}
 
-        {/* Pedido explícito: volumen general de las Alertas -- afecta el
-            audio propio de cada alerta, el audio del video (si no está
-            mudo) y el aviso que escucha el propio streamer en su panel
-            (ver AlertSoundListener en Overlay.jsx). Solo tiene sentido acá,
-            el resto de los overlays no reproduce sonido propio. */}
-        {overlayId === 'alerts' && (
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Volumen general</p>
-              <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{Math.round((entry?.volume ?? 1) * 100)}%</span>
-            </div>
-            <input
-              type="range" min="0" max="1" step="0.05"
-              value={entry?.volume ?? 1}
-              onChange={(e) => onChange({ ...entry, volume: Number(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-[10px] text-gray-500 mt-1">Afecta el audio de cada alerta y el aviso que escuchas en tu propio panel.</p>
-          </div>
-        )}
-
         {/* Pedido explicito: las Alertas nunca tienen fondo propio (siempre
             transparente), así que este panel no le ofrece esa opción. */}
         {!hideBackground && (

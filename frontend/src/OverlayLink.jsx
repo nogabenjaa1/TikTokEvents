@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { buildOverlayUrl } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
+import ScrollRow from './ScrollRow';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
 // La URL lleva la clave de licencia -- si el streamer comparte pantalla o
@@ -106,12 +107,10 @@ function TapTapDiagnosticsBox({ diagnostics }) {
   const d = diagnostics || {};
   const fmt = (ts) => ts ? new Date(ts).toLocaleTimeString() : '—';
   return (
-    // Pedido explícito: `theme-input` toma su radio de `--surface-radius-sm`
-    // (varía según el tema — en Kawaii/Cute puede ser muy grande, "demasiado
-    // redondeado" para este recuadro puntual) — a propósito NO se toca esa
-    // variable global (afectaría a TODOS los inputs/chips del tema), solo
-    // se pisa el radio acá con un valor fijo moderado (10px).
-    <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs" style={{ borderRadius: '10px' }}>
+    // El redondeo de este recuadro (y de cualquier otra caja con `theme-input`)
+    // lo modera el propio tema Cute (ver --radius-cute-box en index.css): ya no
+    // hace falta pisar el radio a mano acá.
+    <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs">
       <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">🩺 Diagnóstico (likes crudos recibidos de TikTok)</p>
       <div className="grid grid-cols-2 gap-2 text-gray-300">
         <p>Total recibidos: <span className="font-black text-white">{d.totalReceived ?? 0}</span></p>
@@ -177,7 +176,7 @@ const OBS_HELP = {
   alerts: {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
-      'Agrega UNA fuente de Navegador con la URL de Alertas — cubre TODA tu escena (1920×1080), ya que cada alerta decide sola en qué parte de la pantalla aparece según la posición que le configuraste.',
+      'Agrega UNA fuente de Navegador con la URL de Alertas — cubre TODA tu escena (1080×1920, vertical como tu transmisión de TikTok), ya que cada alerta decide sola en qué parte de la pantalla aparece según la posición que le configuraste.',
       'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras está sonando/mostrándose.',
     ],
   },
@@ -246,7 +245,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
       {/* Misma fila horizontal scrolleable que EVENT_TABS en App.jsx — el
           botón de refresco YA NO vive acá (ver más abajo), en su propia
           franja aparte. */}
-      <nav aria-label="Tipos de overlay" className="flex flex-row items-center gap-2 w-full px-3 py-3 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <ScrollRow label="Tipos de overlay">
         {OVERLAY_TABS.map((t) => (
           <button
             key={t.id}
@@ -264,7 +264,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             </span>
           </button>
         ))}
-      </nav>
+      </ScrollRow>
+      </div>
 
       {/* Franja propia, en el flujo normal del contenido (no fixed, no
           pegada a ningún borde de la ventana) — a propósito lejos de la
@@ -308,7 +309,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           <OverlayUrlCard
             title="Overlay de Alertas"
             description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
-            dimensions="1920×1080 px (toda la escena)"
+            dimensions="1080×1920 px (vertical, toda la escena)"
             url={alertsUrl}
           />
         )}

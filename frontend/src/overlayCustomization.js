@@ -182,9 +182,13 @@ export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)')
 // lo toca).
 // `{ className: '', cssVars: {} }` (el default con tamaño "normal") no
 // cambia ningún look existente — el caller simplemente no agrega nada.
-export function getUsernameOverride(entry) {
+// `{ scale: false }`: no aplica el tamaño con transform (que NO ocupa espacio
+// real y hace que el texto se encime con lo de al lado). Lo usan las Alertas,
+// que aplican el tamaño con un font-size de verdad para que el diseño se
+// adapte (ver AlertVisual en Overlay.jsx).
+export function getUsernameOverride(entry, { scale: applyScale = true } = {}) {
   const uc = entry?.usernameColor || {};
-  const scale = FONT_SCALES[uc.fontSize] ?? 1;
+  const scale = applyScale ? (FONT_SCALES[uc.fontSize] ?? 1) : 1;
   // `transform: scale()` (no `font-size`) porque cada overlay ya parte de
   // un tamaño de base distinto (ver comentario de FONT_SCALES) — escalar
   // el tamaño YA renderizado funciona igual sin importar cuál sea esa

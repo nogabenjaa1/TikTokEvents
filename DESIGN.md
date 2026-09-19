@@ -72,6 +72,7 @@ typography:
 rounded:
   sm: "0.75rem"
   cute-nav: "1.1rem"
+  cute-box: "1rem"
   lg: "1.5rem"
   cute-dock: "1.75rem"
   pill: "999px"
@@ -203,7 +204,7 @@ Sistema híbrido: el material Default usa sombra real (glow de acento); Kawaii u
 
 ## Shapes
 
-El radio de esquina es, junto con la sombra, la variable que más cambia entre materiales: de esquinas totalmente vivas (Minimal, `0px`) al extremo más redondeado del sistema (Kawaii, `2rem` en superficies / `1.5rem` en controles, con inputs, botones y chips en píldora completa `999px` — es el único material donde CADA control interactivo es una píldora, no solo algunos). El material Default usa `1.5rem` en superficies y `0.75rem` en controles internos — es el punto de referencia cuando no se especifica material. Cute usa esquinas grandes y parejas (`1.75rem`/`1.25rem`, con borde punteado `2px dashed` como seña de identidad) — deliberadamente un escalón menos extremo que Kawaii (el dock lateral de Cute usa `--radius-cute-dock` = `1.75rem` y sus botones de navegación `--radius-cute-nav` = `1.1rem`), para que los dos materiales "tiernos" se sientan distintos entre sí y no como el mismo look con otro nombre.
+El radio de esquina es, junto con la sombra, la variable que más cambia entre materiales: de esquinas totalmente vivas (Minimal, `0px`) al extremo más redondeado del sistema (Kawaii, `2rem` en superficies / `1.5rem` en controles, con inputs, botones y chips en píldora completa `999px` — es el único material donde CADA control interactivo es una píldora, no solo algunos). El material Default usa `1.5rem` en superficies y `0.75rem` en controles internos — es el punto de referencia cuando no se especifica material. Cute usa esquinas grandes y parejas (`1.75rem`/`1.25rem`, con borde punteado `2px dashed` como seña de identidad) — deliberadamente un escalón menos extremo que Kawaii (el dock lateral de Cute usa `--radius-cute-dock` = `1.75rem` y sus botones de navegación `--radius-cute-nav` = `1.1rem`; en Cute la píldora completa `999px` es solo para campos de una línea — input y select —, y cualquier otra caja que use `.theme-input` (recuadros de ayuda, filas de lista, textarea) lleva `--radius-cute-box` = `1rem`, para que no se vea desproporcionadamente redonda), para que los dos materiales "tiernos" se sientan distintos entre sí y no como el mismo look con otro nombre.
 
 ### Named Rules
 **La Regla del Radio No Fijo.** A diferencia de un sistema de diseño convencional, el radio de esquina no es un token único: es parte de la identidad seleccionable. Cualquier componente nuevo debe leer `var(--surface-radius)` / `var(--surface-radius-sm)`, nunca un valor de radio hardcodeado, para heredar correctamente los cuatro materiales.

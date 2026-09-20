@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 
 // Selector de regalo compartido (juegos, Insta-Win y Alertas). Pedido
 // explícito: buscador arriba de la lista que filtra en vivo mientras se

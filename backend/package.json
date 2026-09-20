@@ -24,7 +24,6 @@
     "stripe": "^22.6.2",
     "tiktok-live-connector": "^2.1.1-beta1",
     "tiktok-live-connector-v1": "npm:tiktok-live-connector@1.2.3",
-    "ws": "^8.20.0",
     "yt-dlp-wrap-plus": "^2.5.0"
   },
   "overrides": {

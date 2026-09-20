@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import TimeInput from './TimeInput';
 import { formatHHMMSS } from './timeFormat';
 
@@ -65,7 +65,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
   // Persiste cualquier cambio para que sobreviva a cambiar de pestaña (o
   // recargar la página) sin perder la configuración personalizada.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch { /* sin almacenamiento: solo se pierde recordar la configuración */ }
   }, [baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode]);
 
   const buildConfig = () => ({

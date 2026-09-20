@@ -1,9 +1,8 @@
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createAlertQueue, alertTiming } from './alertQueue';
 import { stopMedia, preloadAlertMedia } from './alertMedia';
 import { createTicker } from './ticker';
 import { routeToSink } from './alertMonitor';
-export { ANIM_DURATION_MS } from './alertQueue';
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { overlayAudioAllowed } from './overlayAudio';
 import { playEventSound } from './eventSounds';
 import {
@@ -100,6 +99,8 @@ function KingOverlay({ state, prize, customize }) {
     const sounds = kingSounds(prevRef.current, state);
     prevRef.current = kingSnapshot(state);
     playOverlaySounds(sounds);
+    // Solo cuando cambia el modo o el ganador: el resto del estado llega a cada rato y no debe repetir el sonido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.lastParticipant?.username, state?.winner]);
 
   if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
@@ -175,6 +176,8 @@ function ZubastinisOverlay({ state, prize, customize }) {
     const sounds = zubSounds(prevModeRef.current, state);
     prevModeRef.current = zubSnapshot(state);
     playOverlaySounds(sounds);
+    // Solo cuando cambia el modo o el ganador: el resto del estado llega a cada rato y no debe repetir el sonido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.winner]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
@@ -248,9 +251,9 @@ function ZubastinisOverlay({ state, prize, customize }) {
 }
 
 // Tope de cuántos eliminados se dibujan en la fase de "resultado" (1
-// grande + hasta 4 burbujas) — mismo valor que ELIM_RESULT_DISPLAY_CAP en
-// tenant.js, pedido explícito. El resto (si eliminationsPerRound trae más)
-// se resume como texto "y N más...".
+// grande + hasta 4 burbujas), pedido explícito. No limita cuántos se pueden
+// eliminar por ronda de verdad (eliminationsPerRound), solo cuántos se dibujan:
+// el resto se resume como texto "y N más...".
 const RESULT_DISPLAY_CAP = 5;
 
 // Resalta hasta RESULT_DISPLAY_CAP índices al azar del pool mientras
@@ -353,9 +356,13 @@ function EliminationOverlay({ state, prize, customize }) {
     const sounds = elimSounds(prevElimRef.current, state);
     prevElimRef.current = elimSnapshot(state);
     playOverlaySounds(sounds);
+    // Solo cuando cambia el modo o el ganador: el resto del estado llega a cada rato y no debe repetir el sonido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.winner]);
 
   const participants = (state && state.participants) || [];
+  const instaWinGiftName = state?.instaWinGiftName;
+  const elimMode = state?.mode;
   // Puramente cosmético — ver comentario de useFlickerHighlight. Los
   // eliminados de VERDAD llegan en state.lastEliminatedList recién en la
   // fase de "resultado", no dependen de esto para nada.
@@ -377,7 +384,7 @@ function EliminationOverlay({ state, prize, customize }) {
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [participants.length, state && state.instaWinGiftName, prize, state && state.mode]);
+  }, [participants.length, instaWinGiftName, prize, elimMode]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 
@@ -660,6 +667,8 @@ function RouletteOverlay({ state, prize, customize }) {
     const sounds = rouletteSounds(prevRef.current, state);
     prevRef.current = rouletteSnapshot(state);
     playOverlaySounds(sounds);
+    // Solo cuando cambia el modo o el ganador: el resto del estado llega a cada rato y no debe repetir el sonido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.winner]);
 
   const entries = (state && state.entries) || [];
@@ -683,6 +692,7 @@ function RouletteOverlay({ state, prize, customize }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.currentSpinIndex, state?.mode]);
 
+  const rouletteMode = state?.mode;
   useLayoutEffect(() => {
     const el = wheelBoxRef.current;
     if (!el) return;
@@ -691,7 +701,7 @@ function RouletteOverlay({ state, prize, customize }) {
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [prize, state && state.mode]);
+  }, [prize, rouletteMode]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
 

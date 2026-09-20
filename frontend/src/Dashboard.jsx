@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import TikTokLoginBar from './TikTokLoginBar';
 import SystemHealth from './SystemHealth';
 import LiveFeed from './LiveFeed';

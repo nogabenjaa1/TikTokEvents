@@ -5,7 +5,7 @@
 // antes de salir al directo. Un avatar SVG inline (no una URL externa como
 // pravatar.cc): la vista previa tiene que funcionar sin internet y sin
 // depender de que un servicio de terceros siga arriba.
-export const MOCK_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+const MOCK_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#888"/><circle cx="50" cy="38" r="18" fill="#ccc"/><ellipse cx="50" cy="88" rx="30" ry="24" fill="#ccc"/></svg>'
 );
 

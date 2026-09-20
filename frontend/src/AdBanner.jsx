@@ -1,4 +1,3 @@
-import React from 'react';
 import AdIframeBanner from './AdIframeBanner';
 import { PERSISTENT_BANNER_ZONE } from './adConfig';
 

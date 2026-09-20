@@ -17,12 +17,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, annual: 365 * DAY_MS, lifetime: null, trial: 7 * DAY_MS };
 const LIFETIME_JWT_EXPIRY = '365d'; // las licencias lifetime igual reautentican una vez al año
 
-// La key es el único "password": alta entropía (192 bits), codificada en
-// base64url para que se pueda meter tal cual en la URL del overlay.
-function generateLicenseKey() {
-    return crypto.randomBytes(24).toString('base64url');
-}
-
 // La key ya tiene entropía criptográfica propia, así que alcanza con un HMAC
 // (más simple y liviano que bcrypt, que está pensado para passwords humanas).
 function hashKey(key) {
@@ -197,7 +191,7 @@ async function socketAuthMiddleware(socket, next) {
 }
 
 module.exports = {
-    generateLicenseKey, hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
+    hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
     generateSessionId, signSession, verifySession, signSpotifyState, verifySpotifyState, checkTokenStatus, resolveFromToken, resolveFromRawKey,
     requireAuth, requireAdmin, socketAuthMiddleware,
 };

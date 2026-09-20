@@ -37,10 +37,6 @@ export function addBankedHour() {
   return capped;
 }
 
-export function isBankFull() {
-  return getBankedRemainingMs() >= GUEST_BANK_CAP_MS;
-}
-
 // "2h 15min" / "40min" — para mostrar el tiempo restante del banco en la UI.
 export function formatBankedDuration(ms) {
   const totalMinutes = Math.ceil(ms / 60_000);

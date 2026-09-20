@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { loginWithKey, saveSession } from './auth';
 import logoMark from './assets/logo-mark.png';
 

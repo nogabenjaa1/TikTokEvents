@@ -57,7 +57,7 @@ module.exports = {
     // no en el ranking final). El broadcast al panel se throttlea a 1 vez
     // por segundo como mucho, para no saturar el socket si hay una ráfaga
     // de cientos de likes en simultáneo.
-    recordTapTapEvent(username, likeCount) {
+    recordTapTapEvent(username) {
         const d = this.tapTapDiagnostics;
         d.totalReceived += 1;
         d.lastEventAt = Date.now();

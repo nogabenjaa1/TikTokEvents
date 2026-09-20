@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -48,6 +48,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
     if (state.isActive) {
       socket.emit('update_zub_settings', { mainTime, snipeTime, tiebreakTime, minCoins });
     }
+    // Cambiar de socket (reconexión) no debe re-enviar los ajustes: solo cuando el streamer los cambia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainTime, snipeTime, tiebreakTime, minCoins, state.isActive]);
 
   const startZubastinis = () => {

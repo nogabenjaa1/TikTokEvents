@@ -26,7 +26,7 @@ export function isOverlayMode() {
   return window.location.hash.includes('overlay') || window.location.search.includes('overlay=true');
 }
 
-export function getOverlayKeyFromUrl() {
+function getOverlayKeyFromUrl() {
   return new URLSearchParams(window.location.search).get('key');
 }
 

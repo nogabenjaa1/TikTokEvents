@@ -1,4 +1,3 @@
-import React from 'react';
 import { RAINBOW_GRADIENT, VALID_MESSAGE_ANIMATIONS, MESSAGE_ANIMATION_LABELS, bordersEnabled } from './overlayCustomization';
 import OverlayPreviewBox from './OverlayPreviewBox';
 

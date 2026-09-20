@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { AD_SCRIPT_HOST } from './adConfig';
 
 // Banner de Adsterra (formato "atOptions" + invoke.js). Ese script arma el

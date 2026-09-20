@@ -1,5 +1,5 @@
 import { SkeletonRows } from './PanelHelp';
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import AdminStats from './AdminStats';
 
@@ -194,9 +194,8 @@ export default function LicenseManager({ onSessionInvalid }) {
 
   useEffect(() => { fetchLicenses(); }, [fetchLicenses]);
 
-  // Publica a proposito (mismo endpoint que usa la vitrina de Membership.jsx)
-  // -- no hace falta authHeaders acá, pero no molesta tenerlos: si mas
-  // adelante este endpoint pidiera auth, seguiria andando sin tocar esto.
+  // Endpoint público (el mismo que usa la vitrina de Membership.jsx): no
+  // necesita authHeaders.
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch(`${backendUrl()}/api/pricing`);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import { SkeletonRows } from './PanelHelp';
 import iconFollow from './assets/alert-follow.png';
@@ -159,7 +159,6 @@ function LivePreview({ draftAlert, customize }) {
       setTimeout(() => setCycle((c) => c + 1), duration + LOOP_PAUSE_MS),
     ];
     return () => timers.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftAlert, cycle]);
 
   return (

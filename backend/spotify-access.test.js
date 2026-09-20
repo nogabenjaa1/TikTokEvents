@@ -122,7 +122,7 @@ test('parseAppCredentials trims pasted values and rejects anything that is not a
     { clientId: 'corto', clientSecret: OWN_APP.clientSecret },
     { clientId: OWN_APP.clientId, clientSecret: 'con espacios adentro de la cadena que no debe pasar' },
     { clientId: `${OWN_APP.clientId}'; DROP TABLE licenses;--`, clientSecret: OWN_APP.clientSecret },
-    { clientId: 12345678901234567890, clientSecret: OWN_APP.clientSecret },
+    { clientId: 1234567890123456, clientSecret: OWN_APP.clientSecret },
   ]) {
     assert.equal(spotify.parseAppCredentials(body), null, JSON.stringify(body));
   }

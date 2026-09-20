@@ -1,9 +1,11 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
+
+const NO_PARTICIPANTS = [];
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -92,6 +94,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
         baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode,
       });
     }
+    // Cambiar de socket (reconexión) no debe re-enviar los ajustes: solo cuando el streamer los cambia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, state.isActive]);
 
   const startElimination = () => {
@@ -135,7 +139,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
   // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
   // explícito); solo el botón START exige "connected" a secas.
-  const participants = state.participants || [];
+  const participants = state.participants || NO_PARTICIPANTS;
   const size = sizeFor(participants.length);
   const distinctCount = new Set(participants.map(p => p.username)).size;
   // Cuántos slots tiene EXACTAMENTE cada participante (alguien con 3 slots

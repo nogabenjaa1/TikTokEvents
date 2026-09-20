@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { HowItWorks } from './PanelHelp';
 import SpotifyAppGuide from './SpotifyAppGuide';

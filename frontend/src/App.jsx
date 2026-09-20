@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
 import DiceOverlay from './DiceOverlay';
@@ -678,6 +678,8 @@ export default function App() {
     });
 
     return () => socket.off();
+    // overlayMode no cambia en toda la vida de la página, y handleSessionInvalid y setSkin no usan estado viejo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
   // Emite el skin del panel al backend cada vez que cambia (y una vez al
@@ -1138,7 +1140,7 @@ export default function App() {
             <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
             <ScrollRow label="Eventos de TikTok">
               {EVENT_TABS.map((t) => (
-                <React.Fragment key={t.id}>
+                <Fragment key={t.id}>
                 {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
                 <button
                   type="button"
@@ -1161,7 +1163,7 @@ export default function App() {
                     {t.label}
                   </span>
                 </button>
-                </React.Fragment>
+                </Fragment>
               ))}
             </ScrollRow>
               <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />

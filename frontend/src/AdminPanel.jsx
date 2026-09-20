@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
@@ -54,6 +54,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
         snipeTime,
       });
     }
+    // Cambiar de socket (reconexión) no debe re-enviar los ajustes: solo cuando el streamer los cambia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGift, selectedInstaWin, mainTime, snipeTime, state.isActive]);
 
   const startContest = () => {

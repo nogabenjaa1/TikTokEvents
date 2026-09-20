@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Política de reembolsos/contracargos -- pedido explícito: reducir el
 // riesgo de que un contracargo de mala fe (alguien que sí recibió el

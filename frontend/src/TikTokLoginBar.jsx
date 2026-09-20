@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Tarjeta de conexión a TikTok -- pedido explícito: antes era una barra
 // flotante fija en la esquina superior derecha, visible en CUALQUIER

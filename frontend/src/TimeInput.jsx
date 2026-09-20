@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Reemplaza los sliders de tiempo por un input numérico (pedido explícito)
 // — dos campos chicos de minutos/segundos en vez de un único campo con

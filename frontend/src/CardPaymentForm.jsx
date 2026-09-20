@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { loadMercadoPagoSdk, loadMercadoPagoSecurityScript } from './mercadopagoSdk';
 

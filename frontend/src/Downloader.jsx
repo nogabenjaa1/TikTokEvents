@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
 const MP3_QUALITIES = [{ label: '320 kbps', value: '320' }, { label: '192 kbps', value: '192' }, { label: '128 kbps', value: '128' }];

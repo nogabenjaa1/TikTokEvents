@@ -10,7 +10,7 @@ export function rollFair(n) {
   return Array.from({ length: n }, () => Math.floor(Math.random() * COLORS.length));
 }
 
-export function hasRepeat(results) {
+function hasRepeat(results) {
   const counts = {};
   results.forEach(r => { counts[r] = (counts[r] || 0) + 1; });
   return Object.values(counts).some(c => c >= 2);
@@ -18,8 +18,7 @@ export function hasRepeat(results) {
 
 // Ver el comentario original en Colorsays.jsx: con 1-2 dados el sesgo no
 // aplica (con 2, "forzar un par" es forzar el comodín de reroll automático).
-export const ADMIN_DEFAULT_BIAS = 1.0;
-export const PRO_WIN_BONUS = 0.2; // intensidad fija que compra el addon PRO
+const ADMIN_DEFAULT_BIAS = 1.0;
 
 export function rollWithPairBias(n, biasChance = ADMIN_DEFAULT_BIAS) {
   const results = rollFair(n);

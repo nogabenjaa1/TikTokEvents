@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Indicador de salud del sistema (mejora de estabilidad): en un vistazo, si
 // el panel está hablando con el servidor, si hay un LIVE conectado y si el

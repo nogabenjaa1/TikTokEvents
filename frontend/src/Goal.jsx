@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
 // Mismo patrón que Extensible.jsx (ver su comentario de STORAGE_KEY): los
@@ -50,7 +50,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   }, [state.isActive, state.targetType, state.target, state.title]);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ targetType, targetInput, title })); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ targetType, targetInput, title })); } catch { /* sin almacenamiento: solo se pierde recordar la configuración */ }
   }, [targetType, targetInput, title]);
 
   const cap = targetType === 'coins' ? 10_000_000 : 1_000_000;

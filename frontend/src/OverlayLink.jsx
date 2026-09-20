@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { buildOverlayUrl } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import ScrollRow from './ScrollRow';

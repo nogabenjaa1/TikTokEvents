@@ -140,7 +140,6 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const recentTextsRef = useRef([]); // [{ text, ts }] — para "ignorar repetidos"
 
   const connected = connectionStatus === 'connected';
-  const active = settings.enabled && connected;
 
   // El padre (App.jsx) muestra el estado del motor en el indicador de salud.
   useEffect(() => { onEngineStatusChange?.(engineStatus); }, [engineStatus, onEngineStatusChange]);
@@ -259,7 +258,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // comentario original tal cual lo escribió la persona, esto solo afecta
   // lo que se dice en voz alta.
   const stripEmojis = (text) => text
-    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/[\u{FE0F}\u{200D}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -454,7 +454,6 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   useEffect(() => {
     if (!settings.enabled || connected) return;
     resetEngine();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.enabled, connected]);
 
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));

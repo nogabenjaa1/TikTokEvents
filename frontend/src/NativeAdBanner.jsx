@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { NATIVE_BANNER_SCRIPT_SRC, NATIVE_BANNER_CONTAINER_ID } from './adConfig';
 
 // Banner nativo de Adsterra, apilado junto a AdBanner.jsx (zona distinta,

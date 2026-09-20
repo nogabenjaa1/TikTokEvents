@@ -41,9 +41,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
-// Ver comentario equivalente en tenant.js: WebcastPushConnection vive en el
-// subpath '/legacy' en esta versión de la librería, no en el paquete raíz.
-const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 // El catálogo de regalos (para el selector del panel) usa a propósito la
 // versión 1.2.3 vieja de la librería, instalada aparte con un alias en
 // package.json (tiktok-live-connector-v1) — su getAvailableGifts() pega un
@@ -63,7 +60,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const compression = require('compression');
 
-const { MercadoPagoConfig, WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
+const { WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 const Stripe = require('stripe');
 
 const multer = require('multer');
@@ -132,11 +129,7 @@ function getMpAccessToken() {
     return accessToken;
 }
 
-function getMpClient() {
-    return new MercadoPagoConfig({ accessToken: getMpAccessToken() });
-}
-
-// Mismo criterio perezoso que getMpClient: no revienta el arranque del
+// Mismo criterio perezoso que getMpAccessToken: no revienta el arranque del
 // server si todavia no se configuro STRIPE_SECRET_KEY -- solo fallan las
 // rutas de pago con Stripe hasta que se agregue. A diferencia de MP, la
 // propia llave de Stripe ya indica si es de prueba o en vivo por su

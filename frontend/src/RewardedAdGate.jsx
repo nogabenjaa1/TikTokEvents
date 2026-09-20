@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SMARTLINK_URL, REWARD_MIN_WAIT_MS } from './adConfig';
 
 // Gate de recompensa: Adsterra no tiene un formato de rewarded-video nativo

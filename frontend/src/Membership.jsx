@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import { useState, useEffect, useRef } from 'react';
+import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';

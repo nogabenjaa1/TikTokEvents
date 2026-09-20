@@ -418,12 +418,26 @@ function purchaseContext() {
 test('an MP order reference carries the add-on, and references created before the add-on existed still parse', () => {
   const { context } = purchaseContext();
   const built = context.buildExternalReference({ licenseId: 'aaaa-bbbb-cccc', planType: 'month', diceTier: undefined, spotifyAddon: true });
-  assert.match(built, /^aaaa-bbbb-cccc_month_none_spotify_\d+$/);
+  assert.match(built, /^aaaa-bbbb-cccc_month_none_sp_[0-9a-z]+$/);
   assert.ok(!built.includes(':'), 'the Orders API rejects ":" in external_reference');
   assert.deepEqual({ ...context.parseExternalReference(built) }, { licenseId: 'aaaa-bbbb-cccc', planType: 'month', diceTier: undefined, spotifyAddon: true });
 
   const addonOnly = context.buildExternalReference({ licenseId: 'x-y', planType: undefined, diceTier: undefined, spotifyAddon: true });
   assert.deepEqual({ ...context.parseExternalReference(addonOnly) }, { licenseId: 'x-y', planType: undefined, diceTier: undefined, spotifyAddon: true });
+
+  // The Orders API caps external_reference at 64 characters: check the worst case (real UUID, longest plan, tier and add-on).
+  const uuid = '123e4567-e89b-12d3-a456-426614174000';
+  for (const planType of ['lifetime', 'annual', 'month', undefined]) {
+    for (const diceTier of ['pro', 'vip', undefined]) {
+      for (const spotifyAddon of [true, false]) {
+        const ref = context.buildExternalReference({ licenseId: uuid, planType, diceTier, spotifyAddon });
+        assert.ok(ref.length <= 64, `${ref} has ${ref.length} characters`);
+        assert.deepEqual({ ...context.parseExternalReference(ref) }, { licenseId: uuid, planType, diceTier, spotifyAddon });
+      }
+    }
+  }
+  // Legacy reference that spelled the add-on out ("spotify") still parses.
+  assert.equal(context.parseExternalReference('aaaa-bbbb-cccc_month_none_spotify_1788000000000').spotifyAddon, true);
 
   // Orders already in flight: the 4th segment was a timestamp, which must never switch the add-on on.
   assert.deepEqual({ ...context.parseExternalReference('aaaa-bbbb-cccc_annual_pro_1788000000000') }, { licenseId: 'aaaa-bbbb-cccc', planType: 'annual', diceTier: 'pro', spotifyAddon: false });

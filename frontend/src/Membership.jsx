@@ -289,6 +289,8 @@ export default function Membership({ session, onSessionUpdate }) {
   // Qué incluye Spotify cada licencia, para el resumen y el bloque de
   // complementos (ver backend/spotify.js, isLicenseAllowed).
   const spotifyIncluded = !!session && (session.isAdmin || session.licenseType === 'annual' || session.licenseType === 'lifetime');
+  // Solo el plan Mensual (o menor) sin el complemento puede comprarlo; se resalta arriba.
+  const canBuyAddon = !!session && !spotifyIncluded && !session.spotifyAddon && session.licenseType === 'month';
   const spotifyStatusLabel = spotifyIncluded ? 'Incluido' : session?.spotifyAddon ? 'Complemento activo' : 'No incluido';
 
   const emailValid = EMAIL_RE.test(email.trim());
@@ -718,6 +720,38 @@ export default function Membership({ session, onSessionUpdate }) {
         </>
       )}
 
+      {/* Complemento de Spotify: pago único para quien está en el plan
+          Mensual (Anual y Lifetime ya lo incluyen, ver backend/spotify.js).
+          Se paga por el mismo formulario de tarjeta que un plan. Sin sesión
+          no hay a qué licencia sumarlo todavía: solo informa. */}
+      {!payingPlan && (
+        <div className="w-full max-w-2xl">
+          <p className="theme-label text-[10px] mb-3">Complementos</p>
+          <div className={`theme-surface p-4 flex items-center justify-between flex-wrap gap-3 ${canBuyAddon ? 'ring-2 ring-[var(--accent)]' : ''}`}>
+            <div className="min-w-0 flex-1 basis-64">
+              <p className="text-xs font-black uppercase tracking-widest">🎵 Spotify · pago único</p>
+              <p className="text-2xl font-black mt-1">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
+              <p className="text-[10px] text-gray-400 leading-snug mt-1">
+                Pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded">!play</code>. Se paga una sola vez y queda en tu licencia:
+                conectas con tu propia app de Spotify (te guiamos paso a paso) y necesitas Spotify Premium. Ya viene incluido en los planes Anual y Lifetime.
+              </p>
+            </div>
+            {spotifyIncluded ? (
+              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Incluido en tu plan</p>
+            ) : session?.spotifyAddon ? (
+              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Activo</p>
+            ) : canBuyAddon ? (
+              <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
+                className="theme-btn-primary px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
+              </button>
+            ) : (
+              <p className="text-[10px] text-gray-500 leading-snug max-w-[12rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {!payingPlan && (
       <div className="w-full max-w-2xl">
         <p className="theme-label text-[10px] mb-3">Elige tu plan</p>
@@ -772,38 +806,6 @@ export default function Membership({ session, onSessionUpdate }) {
           })}
         </div>
       </div>
-      )}
-
-      {/* Complemento de Spotify: pago único para quien está en el plan
-          Mensual (Anual y Lifetime ya lo incluyen, ver backend/spotify.js).
-          Se paga por el mismo formulario de tarjeta que un plan. Sin sesión
-          no hay a qué licencia sumarlo todavía: solo informa. */}
-      {!payingPlan && (
-        <div className="w-full max-w-2xl">
-          <p className="theme-label text-[10px] mb-3">Complementos</p>
-          <div className="theme-surface p-4 flex items-center justify-between flex-wrap gap-3">
-            <div className="min-w-0 flex-1 basis-64">
-              <p className="text-xs font-black uppercase tracking-widest">🎵 Spotify · pago único</p>
-              <p className="text-2xl font-black mt-1">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
-              <p className="text-[10px] text-gray-400 leading-snug mt-1">
-                Pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded">!play</code>. Se paga una sola vez y queda en tu licencia:
-                conectas con tu propia app de Spotify (te guiamos paso a paso) y necesitas Spotify Premium. Ya viene incluido en los planes Anual y Lifetime.
-              </p>
-            </div>
-            {spotifyIncluded ? (
-              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Incluido en tu plan</p>
-            ) : session?.spotifyAddon ? (
-              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Activo</p>
-            ) : session?.licenseType === 'month' ? (
-              <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
-                className="theme-btn-primary px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
-              </button>
-            ) : (
-              <p className="text-[10px] text-gray-500 leading-snug max-w-[12rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>
-            )}
-          </div>
-        </div>
       )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}

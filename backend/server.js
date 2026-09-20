@@ -681,6 +681,43 @@ app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin,
     res.json({ success: true });
 });
 
+// Edición completa de una licencia en UNA sola llamada (formulario "Editar" del
+// panel de Licencias): cualquier campo que no venga se deja como está.
+//   licenseType  -> renueva: nuevo plan y vencimiento calculado desde ahora
+//   diceTier     -> nivel de Color Says
+//   multiDevice / spotifyAddon / winBonus -> interruptores
+// La licencia admin solo admite los interruptores: su plan y su nivel no se
+// tocan desde aquí. El complemento de Spotify se puede dar a CUALQUIER licencia.
+app.post('/api/licenses/:id/edit', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const { licenseType, diceTier, multiDevice, spotifyAddon, winBonus } = req.body || {};
+    if (licenseType !== undefined && !VALID_LICENSE_TYPES.includes(licenseType)) {
+        return res.status(400).json({ success: false, error: 'Tipo de licencia inválido' });
+    }
+    if (diceTier !== undefined && !VALID_DICE_TIERS.includes(diceTier)) {
+        return res.status(400).json({ success: false, error: 'Nivel de Color Says inválido' });
+    }
+    for (const [name, value] of Object.entries({ multiDevice, spotifyAddon, winBonus })) {
+        if (value !== undefined && typeof value !== 'boolean') {
+            return res.status(400).json({ success: false, error: `Valor inválido: ${name}` });
+        }
+    }
+    if (row.is_admin && (licenseType !== undefined || (diceTier !== undefined && diceTier !== row.dice_tier))) {
+        return res.status(400).json({ success: false, error: 'El plan y el nivel de una licencia admin no se cambian desde aquí' });
+    }
+    if (licenseType !== undefined) {
+        await db.extendLicense(row.id, licenseType, auth.computeExpiresAt(licenseType), diceTier ?? row.dice_tier);
+    } else if (diceTier !== undefined && diceTier !== row.dice_tier) {
+        await db.setDiceTier(row.id, diceTier);
+    }
+    if (multiDevice !== undefined && multiDevice !== !!row.multi_device) await db.setMultiDevice(row.id, multiDevice);
+    if (spotifyAddon !== undefined && spotifyAddon !== !!row.spotify_addon) await db.setSpotifyAddon(row.id, spotifyAddon);
+    if (winBonus !== undefined && winBonus !== !!row.dice_win_bonus_unlocked) await db.setWinBonusUnlocked(row.id, winBonus);
+    console.log(`[Licencias] ${req.license.username} editó la licencia ${row.id} (@${row.username}).`);
+    res.json({ success: true });
+});
+
 // Cambia el tipo/duración de una licencia existente (ej. convertir una
 // prueba gratis en una licencia paga sin generar una key nueva). Reusa
 // auth.computeExpiresAt igual que la creación, calculando desde ahora.
@@ -1269,8 +1306,16 @@ setInterval(() => {
 // en el 4º lugar: las órdenes de antes (que en esa posición traen el
 // timestamp) se leen igual, como "sin complemento" — el único valor que lo
 // enciende es la palabra exacta `spotify`.
+// Límite de la Orders API: 64 caracteres. El peor caso es UUID (36) + 'lifetime'
+// (8) + 'none' (4) + 'sp' (2) + timestamp en base 36 (8) + 4 '_' = 62. Con
+// 'spotify' y el timestamp en decimal (13) llegaba a 71 y MP rechazaba el pago.
 function buildExternalReference({ licenseId, planType, diceTier, spotifyAddon }) {
-    return `${licenseId}_${planType || 'none'}_${diceTier || 'none'}_${spotifyAddon ? 'spotify' : 'none'}_${Date.now()}`;
+    const maxLength = 64;
+    const reference = `${licenseId}_${planType || 'none'}_${diceTier || 'none'}_${spotifyAddon ? 'sp' : 'none'}_${Date.now().toString(36)}`;
+    if (reference.length > maxLength) {
+        throw new Error(`external_reference de ${reference.length} caracteres (máximo ${maxLength})`);
+    }
+    return reference;
 }
 
 function parseExternalReference(reference) {
@@ -1279,7 +1324,8 @@ function parseExternalReference(reference) {
         licenseId,
         planType: planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined,
         diceTier: diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined,
-        spotifyAddon: spotifyRaw === 'spotify',
+        // 'spotify' es el formato anterior (pagos ya creados con esa referencia).
+        spotifyAddon: spotifyRaw === 'sp' || spotifyRaw === 'spotify',
     };
 }
 

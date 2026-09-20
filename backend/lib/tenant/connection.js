@@ -33,6 +33,8 @@ module.exports = {
     // quitarlo del Map de server.js.
     dispose() {
         this.disconnectTikTok();
+        this.openGiftCombos.forEach(({ timer }) => clearTimeout(timer));
+        this.openGiftCombos.clear();
         this.stopSpotifyQueuePolling();
         this.stopRuntimePersistence();
         this.persistRuntimeState(true); // deja guardado que ya no hay nada activo

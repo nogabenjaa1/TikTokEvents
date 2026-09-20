@@ -5,6 +5,7 @@ const db = require('../../db');
 const {
     applyAlertTextTemplate,
 } = require('../../lib/tenantHelpers');
+const { giftNameKey } = require('../../lib/giftCatalog');
 
 module.exports = {
     // ==========================================
@@ -27,6 +28,7 @@ module.exports = {
                     visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
                     audioUrl: row.audio_url,
                     text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
+                    giftId: row.gift_id || null,
                     durationMs: row.duration_ms, position: row.position,
                     entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
                     minCoins: row.min_coins != null ? Number(row.min_coins) : null,
@@ -47,12 +49,42 @@ module.exports = {
         delete this.alertConfigs[giftName.toLowerCase()];
     },
 
+    // La alerta de un regalo se guarda con el nombre tal como lo mostró el
+    // selector; el evento en vivo puede traerlo con otra capitalización, con
+    // acentos distintos o con espacios de más. Primero la coincidencia exacta
+    // (la de siempre) y, si no hay, una comparación sin eso.
+    // Antes que el nombre se busca el id del regalo: el catálogo sale de una
+    // librería y el evento en vivo de otra, y no siempre nombran igual al
+    // mismo regalo, pero su id de TikTok sí es el mismo.
+    findAlertConfig(key, giftId) {
+        if (giftId !== undefined && giftId !== null && giftId !== '') {
+            const wanted = String(giftId);
+            for (const config of Object.values(this.alertConfigs)) {
+                if (config.minCoins == null && config.giftId && String(config.giftId) === wanted) return config;
+            }
+        }
+        const exact = this.alertConfigs[String(key).toLowerCase()];
+        if (exact) return exact;
+        const wanted = giftNameKey(key);
+        if (!wanted) return null;
+        for (const [configKey, config] of Object.entries(this.alertConfigs)) {
+            if (config.minCoins == null && giftNameKey(configKey) === wanted) return config;
+        }
+        return null;
+    },
+
+    // Avisa al panel si hay (o no) un overlay de alertas abierto: con uno
+    // conectado, el sonido lo pone él (OBS) y el panel no debe repetirlo.
+    emitAlertOverlayStatus() {
+        this.broadcast.emit('alerts_overlay_status', { connected: this.alertOverlaySockets.size > 0, count: this.alertOverlaySockets.size });
+    },
+
     // Cada evento completo se emite inmediatamente con sus propios datos.
     // El cliente serializa la reproducción; aquí no se agrupan donadores
     // ni se espera silencio antes de mostrar regalos, follows u otros eventos.
-    processAlertTrigger({ username, nickname, key: triggerKey, repeatCount, giftName, coins, allowGlobalFallback = false }) {
+    processAlertTrigger({ username, nickname, key: triggerKey, giftId, repeatCount, giftName, coins, allowGlobalFallback = false }) {
         if (!triggerKey || triggerKey.startsWith('__draft_gift__:')) return;
-        let alert = this.alertConfigs[triggerKey.toLowerCase()];
+        let alert = this.findAlertConfig(triggerKey, giftId);
         if (!alert && allowGlobalFallback) alert = this.findGlobalAlertForCoins(coins);
         if (!alert) return;
         const count = Math.max(1, repeatCount || 1);
@@ -135,6 +167,21 @@ module.exports = {
 
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
     registerAlertHandlers(socket) {
+        // Presencia del overlay de alertas: el overlay de OBS se autentica con
+        // la clave y se declara con `overlayScreen: 'alerts'` (ver auth.js del
+        // frontend). Al panel que se conecta se le dice cómo está ahora.
+        const declaredScreen = socket.handshake?.auth?.overlayScreen;
+        if (socket.authMethod === 'key' && declaredScreen === 'alerts') {
+            this.alertOverlaySockets.add(socket.id);
+            this.emitAlertOverlayStatus();
+            socket.on('disconnect', () => {
+                this.alertOverlaySockets.delete(socket.id);
+                this.emitAlertOverlayStatus();
+            });
+        } else {
+            socket.emit('alerts_overlay_status', { connected: this.alertOverlaySockets.size > 0, count: this.alertOverlaySockets.size });
+        }
+
         // Botón "🔥 Probar" del panel de Alertas (ver AlertsAdmin.jsx) —
         // dispara la alerta real, id de por medio, sin esperar ningún
         // evento de TikTok.

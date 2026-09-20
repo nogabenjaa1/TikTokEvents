@@ -144,6 +144,18 @@ function applyAlertTextTemplate(text, { username = '', nickname = '', gift = '',
 // accumulateGiftCoins/processGiftKing/processGiftElim/processGiftRoulette.
 const GIFT_ACCUMULATE_WINDOW_MS = 10000;
 
+// Un regalo con racha (x7 rosas) llega como varios mensajes y TikTok manda el
+// último con repeatEnd para cerrarla; se cuenta y se dispara UNA vez, al
+// cierre. Si ese cierre no llega nunca (pasa), la racha quedaría muerta y
+// cobraría vida con el siguiente evento: pasado este tiempo sin mensajes
+// nuevos de la misma racha se da por cerrada con lo último recibido.
+const GIFT_COMBO_TIMEOUT_MS = 12000;
+// Cuánto se recuerda una racha ya cerrada por tiempo, por si el cierre real
+// llega tarde (no se cuenta dos veces).
+const GIFT_COMBO_MEMORY_MS = 60000;
+// Tope de regalos distintos vistos en el directo (para el catálogo).
+const MAX_SEEN_GIFTS = 600;
+
 // Cuántos puestos exponen los rankings continuos (Top Gifter / Top Tap-Tap)
 // — no son partidas con inicio/fin, así que no hace falta acotarlos a un
 // top 3 como Zubastinis.
@@ -230,6 +242,9 @@ module.exports = {
     TAPTAP_SETTLE_MS,
     applyAlertTextTemplate,
     GIFT_ACCUMULATE_WINDOW_MS,
+    GIFT_COMBO_TIMEOUT_MS,
+    GIFT_COMBO_MEMORY_MS,
+    MAX_SEEN_GIFTS,
     CONTINUOUS_LEADERBOARD_SIZE,
     SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT,
     SPOTIFY_QUEUE_INTERNAL_CAP,

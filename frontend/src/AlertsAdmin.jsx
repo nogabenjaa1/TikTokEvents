@@ -7,6 +7,7 @@ import iconSticker from './assets/alert-sticker.png';
 import { backendUrl, authHeaders } from './auth';
 import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
+import AlertMonitorSettings from './AlertMonitorSettings';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
 const POSITIONS = [
@@ -254,7 +255,7 @@ function FormSection({ step, title, hint, children }) {
 // Overlay.jsx / alert_triggered y test_alert en tenant.js —, esto de acá
 // es solo la configuración.
 // ─────────────────────────────────────────────
-export default function AlertsAdmin({ giftsList, socket, customization, onCustomizeChange, onApplyToAll }) {
+export default function AlertsAdmin({ giftsList, socket, customization, onCustomizeChange, onApplyToAll, monitor }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [triggerType, setTriggerType] = useState('gift');
@@ -496,6 +497,9 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       form.append('visualMuted', String(visualMuted));
       form.append('triggerType', triggerType);
       if (triggerType === 'gift') form.append('giftName', selectedGift?.name || '');
+      // El id evita que la alerta no dispare cuando el nombre del regalo en
+      // vivo no coincide con el del catálogo.
+      if (triggerType === 'gift' && selectedGift?.id != null) form.append('giftId', String(selectedGift.id));
       if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
@@ -626,6 +630,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               className="w-full"
             />
             <p className="text-[11px] text-gray-500 mt-1">Sube o baja el sonido de TODAS tus alertas a la vez (su audio y el audio de sus videos), sin editarlas una por una.</p>
+            {monitor && <AlertMonitorSettings {...monitor} />}
           </section>
 
           <section className="theme-surface w-full max-w-2xl p-6">

@@ -76,6 +76,7 @@ const storage = require('./storage');
 const Tenant = require('./tenant');
 const downloader = require('./downloader');
 const { computeAdminStats } = require('./lib/adminStats');
+const { mergeGiftCatalogs } = require('./lib/giftCatalog');
 
 // Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
 // nunca tocan disco: van directo de la request a Supabase Storage (ver
@@ -1060,6 +1061,7 @@ function serializeAlert(row) {
         visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
         audioUrl: row.audio_url,
         text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
+        giftId: row.gift_id || null,
         durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
@@ -1132,6 +1134,10 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     // Color propio de esta alerta (#RRGGBB); vacío/inválido = sigue el estilo
     // general de las alertas.
     const finalTextColor = typeof req.body?.textColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(req.body.textColor) ? req.body.textColor : null;
+    // Id numérico del regalo elegido en el selector: con él la alerta se
+    // encuentra aunque el nombre del evento en vivo no coincida con el del
+    // catálogo (ver findAlertConfig en lib/tenant/alerts.js).
+    const bodyGiftId = /^\d{1,20}$/.test(String(req.body?.giftId ?? '')) ? String(req.body.giftId) : null;
     const visualMuted = req.body?.visualMuted === 'true';
     const clearVisual = req.body?.clearVisual === 'true';
     const clearAudio = req.body?.clearAudio === 'true';
@@ -1221,6 +1227,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             visualUrl, visualPath, visualType: finalVisualType, visualMuted,
             audioUrl, audioPath,
             text: cleanText, textPosition: finalTextPosition, textColor: finalTextColor,
+            // Solo las alertas de un regalo puntual llevan id. Al editar sin
+            // cambiar de regalo se conserva el que tenía; si se elige otro
+            // regalo, vale el del nuevo (o ninguno, nunca el del anterior).
+            giftId: triggerType !== 'gift' ? null
+                : bodyGiftId ?? (isEditing && !(typeof giftName === 'string' && giftName.trim()) ? (editingRow.gift_id ?? null) : null),
             durationMs: finalDuration, position: finalPosition,
             entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType, minCoins,
         });
@@ -2087,17 +2098,29 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
             return res.status(409).json({ success: false, error: 'Conecta TikTok LIVE para cargar los regalos' });
         }
         // v1 a propósito acá — ver comentario del import de arriba.
-        const tempConn = new WebcastPushConnectionV1(username);
-        const gifts = await tempConn.getAvailableGifts();
+        // Ninguna fuente trae todos los regalos, así que se juntan tres:
+        //   1) la lista de ESTA sala (con room_id), la más fiel; puede fallar;
+        //   2) la lista genérica de TikTok (lo de siempre);
+        //   3) los regalos que ya llegaron en este directo.
+        // Antes solo se usaba la 2) y se descartaban los que no traían imagen,
+        // por eso faltaban regalos (nuevos, regionales o sin ícono).
+        const roomId = connection?.roomId;
+        let roomGifts = [];
+        if (roomId) {
+            try {
+                roomGifts = await new WebcastPushConnectionV1(username, { clientParams: { room_id: String(roomId) } }).getAvailableGifts();
+            } catch (err) {
+                console.warn(`[${req.license.id}] Lista de regalos de la sala no disponible, se usa la genérica: ${err.message}`);
+            }
+        }
+        const gifts = await new WebcastPushConnectionV1(username).getAvailableGifts().catch((err) => {
+            if (roomGifts.length === 0) throw err;
+            return [];
+        });
         if (!tenant.liveConnected || tenant.tiktokConnection !== connection) {
             return res.status(409).json({ success: false });
         }
-        const validGifts = gifts
-            .filter(g => g.name && g.image?.url_list?.[0])
-            .map(g => ({
-                id: g.id, name: g.name, coins: g.diamond_count, icon: g.image.url_list[0]
-            }))
-            .sort((a, b) => a.coins - b.coins);
+        const validGifts = mergeGiftCatalogs(roomGifts, gifts, tenant.getSeenGifts());
         res.json({ success: true, gifts: validGifts });
     } catch (error) {
         res.json({ success: false });

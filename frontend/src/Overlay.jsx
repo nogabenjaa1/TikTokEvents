@@ -1,4 +1,6 @@
 import { createAlertQueue } from './alertQueue';
+import { createTicker } from './ticker';
+import { routeToSink } from './alertMonitor';
 export { ANIM_DURATION_MS } from './alertQueue';
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
@@ -1260,8 +1262,25 @@ function useAlertPlayback(socket) {
     setPlayback({ alert: null, phase: 'visible' });
     const queue = createAlertQueue((alert, phase) => setPlayback({ alert, phase }));
     const onTrigger = (alert) => queue.enqueue(alert);
+    // La cola avanza por el reloj real; estos avisos la despiertan aunque el
+    // navegador de OBS / TikTok Studio haya frenado los temporizadores de una
+    // fuente que no se está pintando (ver alertQueue.js y ticker.js).
+    const wake = () => queue.tick();
     socket?.on('alert_triggered', onTrigger);
-    return () => { socket?.off('alert_triggered', onTrigger); queue.dispose(); };
+    socket?.on('connect', wake);
+    const stopTicker = createTicker(wake, 250);
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('pageshow', wake);
+    return () => {
+      socket?.off('alert_triggered', onTrigger);
+      socket?.off('connect', wake);
+      stopTicker();
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('pageshow', wake);
+      queue.dispose();
+    };
   }, [socket]);
   return playback;
 }
@@ -1271,7 +1290,7 @@ export function AlertOverlay({ socket, customize }) {
   return <AlertVisual key={alert?.playbackId || 'idle'} alert={alert} phase={phase} customize={customize} />;
 }
 
-function QueuedAlertSound({ alert, customize }) {
+function QueuedAlertSound({ alert, customize, sinkId }) {
   const audioRef = useRef(null);
   const videoRef = useRef(null);
   useEffect(() => {
@@ -1279,6 +1298,11 @@ function QueuedAlertSound({ alert, customize }) {
     if (audioRef.current) audioRef.current.volume = volume;
     if (videoRef.current) videoRef.current.volume = volume;
   }, [customize?.volume]);
+  // Salida elegida por el streamer (p. ej. sus audífonos) para que no entre al directo.
+  useEffect(() => {
+    routeToSink(audioRef.current, sinkId);
+    routeToSink(videoRef.current, sinkId);
+  }, [sinkId, alert]);
   return (
     <div style={{ display: 'none' }}>
       {alert.audioUrl && <audio ref={audioRef} src={alert.audioUrl} autoPlay />}
@@ -1287,9 +1311,9 @@ function QueuedAlertSound({ alert, customize }) {
   );
 }
 
-export function AlertSoundListener({ socket, customize }) {
+export function AlertSoundListener({ socket, customize, sinkId }) {
   const { alert } = useAlertPlayback(socket);
-  return alert ? <QueuedAlertSound key={alert.playbackId} alert={alert} customize={customize} /> : null;
+  return alert ? <QueuedAlertSound key={alert.playbackId} alert={alert} customize={customize} sinkId={sinkId} /> : null;
 }
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le

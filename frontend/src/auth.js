@@ -81,7 +81,9 @@ export function buildAuthenticatedSocket() {
   if (isOverlayMode()) {
     const key = getOverlayKeyFromUrl();
     if (!key) return null;
-    return io(backendUrl(), { auth: { licenseKey: key } });
+    // `overlayScreen` le dice al servidor QUÉ overlay es (el de alertas cuenta
+    // para saber si el panel debe sonar o no, ver alerts.js del backend).
+    return io(backendUrl(), { auth: { licenseKey: key, overlayScreen: getOverlayScreen() } });
   }
   const session = loadSession();
   if (!session?.token) return null;

@@ -5,6 +5,8 @@ const vm = require('node:vm');
 
 // Carga el módulo real de eventos sin DB, Spotify ni TikTok, con un reloj de mentira.
 function load() {
+  const recorded = [];
+  const directory = { record: (gift) => { recorded.push(gift); return true; }, list: () => [] };
   const timers = new Map();
   let nextId = 1;
   let now = 1_000_000;
@@ -18,7 +20,7 @@ function load() {
   };
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : {}),
+    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? directory : {}),
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     Date: { now: () => now }, console, Math, Number, String, Map, Set, Object, Array,
   };
@@ -35,7 +37,7 @@ function load() {
     tenant[method] = (event) => games.push({ method, event });
   }
   tenant.processAlertTrigger = (payload) => alerts.push(payload);
-  return { tenant, clock, alerts, emitted, games };
+  return { tenant, clock, alerts, emitted, games, recorded };
 }
 
 const rose = (extra) => ({ uniqueId: 'ana', userId: '1', nickname: 'Ana', giftId: 5655, name: 'Rose', diamondCount: 1, type: 1, repeatCount: 1, repeatEnd: false, giftPictureUrl: 'https://x/rose.png', ...extra });
@@ -90,6 +92,17 @@ test('a gift with no streak fires immediately, every time', () => {
   tenant.handleGiftEvent(rose({ type: 0, name: 'Perfume', giftId: 9, repeatEnd: false }));
   tenant.handleGiftEvent(rose({ type: 0, name: 'Perfume', giftId: 9, repeatEnd: false }));
   assert.equal(alerts.length, 2);
+});
+
+test('every gift received is saved with its id, name, coins and icon, once per gift', () => {
+  const { tenant, recorded } = load();
+  tenant.handleGiftEvent(rose({ type: 0, name: 'Super GG', giftId: 55, diamondCount: 30, giftPictureUrl: 'https://x/gg.png' }));
+  tenant.handleGiftEvent(rose({ type: 0, name: 'super gg', giftId: 55, diamondCount: 30, giftPictureUrl: 'https://x/gg.png' }));
+  tenant.handleGiftEvent(rose({ type: 0, name: 'Perfume', giftId: 56, diamondCount: 20, giftPictureUrl: '' }));
+  assert.deepEqual(recorded.map((g) => ({ ...g })), [
+    { id: 55, name: 'Super GG', coins: 30, icon: 'https://x/gg.png' },
+    { id: 56, name: 'Perfume', coins: 20, icon: '' },
+  ]);
 });
 
 test('every gift seen in the LIVE is remembered and announced to the panel once', () => {

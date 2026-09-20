@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
-import { GiftCatalogContext } from './GiftCatalogContext';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 // Selector de regalo compartido (juegos, Insta-Win y Alertas). Pedido
 // explícito: buscador arriba de la lista que filtra en vivo mientras se
@@ -8,8 +7,8 @@ import { GiftCatalogContext } from './GiftCatalogContext';
 // cerrado (se cierra al hacer clic afuera), por eso dos selectores en el
 // mismo panel ya no necesitan coordinarse entre sí.
 //
-// La lista de TikTok viene incompleta (le faltan regalos, como "Super GG"), así
-// que abajo hay una salida: escribir el regalo a mano (ver giftCatalog.js).
+// Solo ofrece los regalos que TikTok devuelve (más los que llegan en el
+// directo, ver giftCatalog.js): no se pueden crear regalos a mano.
 
 const normalize = (text) => String(text || '')
   .toLowerCase()
@@ -40,56 +39,22 @@ const VARIANTS = {
   },
 };
 
-// Formulario para un regalo que la lista no trae.
-function ManualGiftForm({ initialName, onAdd }) {
-  const [name, setName] = useState(initialName || '');
-  const [coins, setCoins] = useState('');
-  const [error, setError] = useState('');
-
-  const submit = (event) => {
-    event.preventDefault();
-    if (name.trim().length < 2) { setError('Escribe el nombre del regalo.'); return; }
-    onAdd({ name, coins });
-  };
-
-  return (
-    <form onSubmit={submit} className="p-3 flex flex-col gap-2" aria-label="Agregar un regalo a mano">
-      <p className="text-[11px] text-gray-500 leading-snug">
-        Escríbelo tal como aparece en TikTok (por ejemplo «Super GG»). No importan mayúsculas ni acentos. Se guarda en este navegador. Para los
-        juegos pon también sus monedas.
-      </p>
-      <div className="flex gap-2">
-        <input
-          type="text" value={name} maxLength={60} placeholder="Nombre del regalo"
-          onChange={(e) => { setName(e.target.value); setError(''); }}
-          aria-label="Nombre del regalo" className="theme-input flex-1 min-w-0 px-3 py-2 text-sm outline-none"
-        />
-        <input
-          type="number" min="0" max="9999999" inputMode="numeric" value={coins} placeholder="Monedas"
-          onChange={(e) => setCoins(e.target.value)}
-          aria-label="Monedas del regalo" className="theme-input w-24 px-3 py-2 text-sm outline-none"
-        />
-      </div>
-      {error && <p role="alert" className="text-[11px] text-red-700">{error}</p>}
-      <button type="submit" className="theme-btn-primary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest self-start">
-        Agregar y elegir
-      </button>
-    </form>
-  );
+// Un regalo sin ícono (pasa con los que TikTok no trae con imagen) se muestra igual.
+function GiftIcon({ icon }) {
+  return icon
+    ? <img src={icon} alt="" className="w-6 h-6 flex-shrink-0" />
+    : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>;
 }
 
 export default function GiftPicker({
   gifts, selected, onSelect, placeholder = 'Elige un regalo...', emptyText = 'Conecta TikTok LIVE para cargar los regalos. Puedes configurar los demás ajustes ahora.',
   variant = 'default', renderBadge, showCoinsChip = true,
 }) {
-  const { addGift } = useContext(GiftCatalogContext);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [adding, setAdding] = useState(false);
   const rootRef = useRef(null);
   const searchRef = useRef(null);
   const v = VARIANTS[variant] || VARIANTS.default;
-  const hasGifts = gifts.length > 0;
 
   useEffect(() => {
     if (!open) return;
@@ -99,36 +64,29 @@ export default function GiftPicker({
   }, [open]);
 
   useEffect(() => {
-    if (open && !adding) searchRef.current?.focus();
-  }, [open, adding]);
+    if (open) searchRef.current?.focus();
+  }, [open]);
 
   const visible = useMemo(() => filterGifts(gifts, query), [gifts, query]);
 
   const toggle = () => {
     setOpen((o) => !o);
     setQuery('');
-    setAdding(false);
   };
 
   const pick = (gift) => {
     onSelect(gift);
     setOpen(false);
     setQuery('');
-    setAdding(false);
-  };
-
-  const addByHand = (raw) => {
-    const gift = addGift?.(raw);
-    if (gift) pick(gift);
   };
 
   return (
     <div ref={rootRef} className="relative" onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}>
-      <button type="button" onClick={toggle} disabled={!hasGifts && !addGift} className={v.trigger} aria-haspopup="listbox" aria-expanded={open && (hasGifts || !!addGift)}>
+      <button type="button" onClick={toggle} disabled={!gifts.length} className={v.trigger} aria-haspopup="listbox" aria-expanded={open && gifts.length > 0}>
         {selected ? (
           <>
             <span className="flex items-center gap-3 min-w-0">
-              {selected.icon ? <img src={selected.icon} alt="" className="w-6 h-6 flex-shrink-0" /> : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>}
+              <GiftIcon icon={selected.icon} />
               <span className={`${v.name} truncate`}>{selected.name}</span>
               {renderBadge?.(selected)}
             </span>
@@ -137,58 +95,45 @@ export default function GiftPicker({
             )}
           </>
         ) : (
-          <span className="text-gray-500 text-sm">{!hasGifts && addGift ? 'Escribe un regalo a mano...' : placeholder}</span>
+          <span className="text-gray-500 text-sm">{placeholder}</span>
         )}
       </button>
 
-      {!hasGifts && <p className="text-xs text-gray-400 mt-2">{emptyText}</p>}
-      {open && (hasGifts || addGift) && (
+      {!gifts.length && <p className="text-xs text-gray-400 mt-2">{emptyText}</p>}
+      {open && gifts.length > 0 && (
         <div className={`${v.panel} absolute top-full left-0 w-full mt-1 z-30 overflow-hidden`}>
-          {adding || !hasGifts ? (
-            <ManualGiftForm initialName={query.trim()} onAdd={addByHand} />
-          ) : (
-            <>
-              <div className="p-2 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter' && visible.length > 0) { e.preventDefault(); pick(visible[0]); } }}
-                  placeholder="Buscar por nombre o monedas..."
-                  aria-label="Buscar regalo"
-                  className="theme-input w-full px-3 py-2 text-sm outline-none"
-                />
-              </div>
-              <div role="listbox" className="overflow-y-auto max-h-48">
-                {visible.length === 0 ? (
-                  <p className="p-3 text-[11px] text-gray-500">Sin resultados para "{query.trim()}".</p>
-                ) : visible.map((gift, i) => (
-                  <button type="button"
-                    key={`${gift.id ?? 'none'}-${i}`}
-                    role="option"
-                    aria-selected={selected?.id === gift.id}
-                    onClick={() => pick(gift)}
-                    className={`w-full text-left p-2 ${v.row} cursor-pointer flex items-center justify-between gap-2`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {gift.icon ? <img src={gift.icon} alt="" className="w-6 h-6 flex-shrink-0" /> : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>}
-                      <span className={`${v.name} truncate`}>{gift.name}</span>
-                      {renderBadge?.(gift)}
-                    </div>
-                    {gift.coins > 0 && <span className="text-yellow-400 text-xs flex-shrink-0">{gift.coins} 🪙</span>}
-                  </button>
-                ))}
-              </div>
-              {addGift && (
-                <div className="p-2 border-t" style={{ borderColor: 'var(--surface-border-color)' }}>
-                  <button type="button" onClick={() => setAdding(true)} className="w-full text-left text-[11px] font-bold text-gray-300 hover:text-white underline py-1.5 px-1">
-                    ¿No encuentras el regalo? Escríbelo a mano
-                  </button>
+          <div className="p-2 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter' && visible.length > 0) { e.preventDefault(); pick(visible[0]); } }}
+              placeholder="Buscar por nombre o monedas..."
+              aria-label="Buscar regalo"
+              className="theme-input w-full px-3 py-2 text-sm outline-none"
+            />
+          </div>
+          <div role="listbox" className="overflow-y-auto max-h-48">
+            {visible.length === 0 ? (
+              <p className="p-3 text-[11px] text-gray-500">Sin resultados para "{query.trim()}".</p>
+            ) : visible.map((gift, i) => (
+              <button type="button"
+                key={`${gift.id ?? 'none'}-${i}`}
+                role="option"
+                aria-selected={selected?.id === gift.id}
+                onClick={() => pick(gift)}
+                className={`w-full text-left p-2 ${v.row} cursor-pointer flex items-center justify-between gap-2`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <GiftIcon icon={gift.icon} />
+                  <span className={`${v.name} truncate`}>{gift.name}</span>
+                  {renderBadge?.(gift)}
                 </div>
-              )}
-            </>
-          )}
+                {gift.coins > 0 && <span className="text-yellow-400 text-xs flex-shrink-0">{gift.coins} 🪙</span>}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

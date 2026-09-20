@@ -288,6 +288,18 @@ const ready = pool.query(`
   // Id del regalo de TikTok (estable entre las dos librerías, a diferencia del
   // nombre, que a veces no coincide entre el catálogo y el evento en vivo).
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS gift_id TEXT`))
+  // Regalos que TikTok ha entregado en algún directo, con su id, nombre, monedas
+  // e ícono (ver lib/giftDirectoryCore.js). Global, no por licencia.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS seen_gifts (
+      gift_id BIGINT PRIMARY KEY,
+      name TEXT NOT NULL,
+      coins INTEGER NOT NULL DEFAULT 0,
+      icon TEXT NOT NULL DEFAULT '',
+      first_seen BIGINT NOT NULL,
+      last_seen BIGINT NOT NULL
+    )
+  `))
   // Alertas GENERALES (pedido explícito: "alertas globales" además de las
   // específicas de siempre) -- trigger_type = 'gift_global', sin regalo
   // fijo: se disparan con CUALQUIER regalo que no tenga su propia alerta
@@ -830,6 +842,29 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Directorio de regalos vistos (ver lib/giftDirectoryCore.js): se guarda cada
+// regalo por su id de TikTok; si ya existía se actualizan sus datos y `icon`
+// solo se pisa cuando llega uno (nunca se borra un ícono conocido).
+async function upsertSeenGift({ id, name, coins, icon }) {
+    await ready;
+    const now = Date.now();
+    await pool.query(`
+        INSERT INTO seen_gifts (gift_id, name, coins, icon, first_seen, last_seen)
+        VALUES ($1, $2, $3, $4, $5, $5)
+        ON CONFLICT (gift_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            coins = EXCLUDED.coins,
+            icon = CASE WHEN EXCLUDED.icon <> '' THEN EXCLUDED.icon ELSE seen_gifts.icon END,
+            last_seen = EXCLUDED.last_seen
+    `, [id, name, coins, icon || '', now]);
+}
+
+async function listSeenGifts() {
+    await ready;
+    const { rows } = await pool.query('SELECT gift_id::text AS gift_id, name, coins, icon FROM seen_gifts ORDER BY coins, name');
+    return rows;
+}
+
 // Todos los pagos, solo las columnas que usa el panel de estadísticas del admin.
 async function listPaymentsForStats() {
     await ready;
@@ -907,7 +942,7 @@ module.exports = {
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
-    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats,
+    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

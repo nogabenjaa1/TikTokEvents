@@ -77,6 +77,7 @@ const Tenant = require('./tenant');
 const downloader = require('./downloader');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
+const giftDirectory = require('./lib/giftDirectory');
 
 // Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
 // nunca tocan disco: van directo de la request a Supabase Storage (ver
@@ -2101,7 +2102,8 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
         // Ninguna fuente trae todos los regalos, así que se juntan tres:
         //   1) la lista de ESTA sala (con room_id), la más fiel; puede fallar;
         //   2) la lista genérica de TikTok (lo de siempre);
-        //   3) los regalos que ya llegaron en este directo.
+        //   3) los regalos que ya llegaron en este directo y en cualquier otro
+        //      (directorio global de regalos vistos, con su id e ícono).
         // Antes solo se usaba la 2) y se descartaban los que no traían imagen,
         // por eso faltaban regalos (nuevos, regionales o sin ícono).
         const roomId = connection?.roomId;
@@ -2120,7 +2122,9 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
         if (!tenant.liveConnected || tenant.tiktokConnection !== connection) {
             return res.status(409).json({ success: false });
         }
-        const validGifts = mergeGiftCatalogs(roomGifts, gifts, tenant.getSeenGifts());
+        // Más los que TikTok ya entregó en cualquier directo (ver giftDirectory).
+        await giftDirectory.load();
+        const validGifts = mergeGiftCatalogs(roomGifts, gifts, giftDirectory.list(), tenant.getSeenGifts());
         res.json({ success: true, gifts: validGifts });
     } catch (error) {
         res.json({ success: false });

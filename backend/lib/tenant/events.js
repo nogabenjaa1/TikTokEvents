@@ -8,6 +8,7 @@ const {
     MAX_SEEN_GIFTS,
 } = require('../../lib/tenantHelpers');
 const { giftNameKey } = require('../../lib/giftCatalog');
+const giftDirectory = require('../../lib/giftDirectory');
 
 module.exports = {
     // ==========================================
@@ -101,6 +102,9 @@ module.exports = {
         const gift = { id: data.giftId ?? null, name, coins: data.diamondCount || 0, icon: data.giftPictureUrl || '' };
         this.seenGifts.set(key, gift);
         this.broadcast.emit('gift_seen', gift);
+        // Queda guardado con su id, nombre, monedas e ícono para todas las
+        // licencias (ver giftDirectoryCore.js): así el próximo directo ya lo trae.
+        giftDirectory.record(gift);
     },
 
     getSeenGifts() {

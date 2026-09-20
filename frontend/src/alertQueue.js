@@ -3,6 +3,15 @@ export const ANIM_DURATION_MS = 400;
 const MIN_DURATION_MS = 500;
 const MAX_DURATION_MS = 15000;
 
+// Tiempos de una alerta: la duración configurada (entre 0.5 y 15 s) y lo que
+// duran las animaciones de entrada y de salida, que se acortan si la alerta es
+// corta para que las dos quepan dentro. Es la única fuente de estos números: la
+// cola, la vista previa y el CSS (--tkc-anim-ms) leen la misma.
+export function alertTiming(alert) {
+  const duration = Math.min(MAX_DURATION_MS, Math.max(MIN_DURATION_MS, Number(alert?.durationMs) || 5000));
+  return { duration, animation: Math.min(ANIM_DURATION_MS, duration / 2) };
+}
+
 function phaseAt(elapsed, duration, animation) {
   if (elapsed < animation) return 'entering';
   if (elapsed < duration - animation) return 'visible';
@@ -48,8 +57,8 @@ export function createAlertQueue(onChange, schedule = setTimeout, cancel = clear
   }
 
   function begin(alert) {
-    const duration = Math.min(MAX_DURATION_MS, Math.max(MIN_DURATION_MS, Number(alert.durationMs) || 5000));
-    current = { alert, startedAt: now(), duration, animation: Math.min(ANIM_DURATION_MS, duration / 2), phase: 'entering' };
+    const { duration, animation } = alertTiming(alert);
+    current = { alert, startedAt: now(), duration, animation, phase: 'entering' };
     onChange(alert, 'entering');
     arm();
   }

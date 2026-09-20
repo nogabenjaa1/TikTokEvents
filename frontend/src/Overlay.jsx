@@ -1,4 +1,5 @@
-import { createAlertQueue } from './alertQueue';
+import { createAlertQueue, alertTiming } from './alertQueue';
+import { stopMedia, preloadAlertMedia } from './alertMedia';
 import { createTicker } from './ticker';
 import { routeToSink } from './alertMonitor';
 export { ANIM_DURATION_MS } from './alertQueue';
@@ -1181,7 +1182,7 @@ const ALERT_POSITION_CLASSES = {
 // arcoíris/tamaño) para el texto opcional; `background` no aplica acá
 // porque una alerta nunca tiene fondo propio (ver OverlayCustomizePanel.jsx,
 // que por eso oculta esa sección para este overlay).
-export function AlertVisual({ alert, phase = 'visible', embedded = false, customize }) {
+export function AlertVisual({ alert, phase = 'visible', embedded = false, customize, previewMuted = false }) {
   // Volumen general (pedido explícito, ver OverlayCustomizePanel.jsx) --
   // `volume` de HTMLMediaElement es una propiedad JS, no un atributo HTML,
   // así que no alcanza con pasarlo como prop de JSX -- se aplica a mano vía
@@ -1194,8 +1195,24 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
     if (audioElRef.current) audioElRef.current.volume = vol;
     if (videoElRef.current) videoElRef.current.volume = vol;
   }, [customize?.volume, alert?.audioUrl, alert?.visualUrl]);
+  // La duración de la alerta manda sobre el recurso: si el audio o el video
+  // duran más, se cortan cuando la alerta cumple su tiempo (los elementos se
+  // leen al disparar, no antes: para entonces el elemento pudo haber cambiado o
+  // desaparecido). Es un temporizador y no la limpieza de un efecto a propósito:
+  // el modo estricto de React simula desmontajes de efectos y de refs, y cortar
+  // ahí dejaría el audio sin fuente en desarrollo. Al quitar la alerta de la
+  // página el navegador ya pausa el elemento; esto cubre el resto.
+  const alertDurationMs = alert ? alertTiming(alert).duration : 0;
+  useEffect(() => {
+    if (!alert) return undefined;
+    const timer = setTimeout(() => { stopMedia(audioElRef.current); stopMedia(videoElRef.current); }, alertDurationMs);
+    return () => clearTimeout(timer);
+  }, [alert, alertDurationMs]);
 
   if (!alert) return null;
+  // Las animaciones de entrada y salida se adaptan a la duración de la alerta
+  // (una corta las acorta) para que quepan las dos y no se pierdan.
+  const { animation: animationMs } = alertTiming(alert);
   const positionClass = ALERT_POSITION_CLASSES[alert.position] || ALERT_POSITION_CLASSES.center;
   const preset = phase === 'exiting' ? (alert.exitAnim || 'none') : (alert.entranceAnim || 'none');
   const animClass = phase !== 'visible' && preset !== 'none' ? `tkc-alert-anim-${phase === 'exiting' ? 'out' : 'in'}-${preset}` : '';
@@ -1230,7 +1247,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
         <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain flex-shrink-0" />
       )}
       {alert.visualType === 'video' && (
-        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted} />
+        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted || previewMuted} />
       )}
     </>
   ) : null;
@@ -1240,11 +1257,11 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
 
   return (
     <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`}>
-      <div className={`relative flex ${layoutClass} ${animClass}`}>
+      <div className={`relative flex ${layoutClass} ${animClass}`} style={{ '--tkc-anim-ms': `${animationMs}ms` }}>
         {hasVisual && alert.textPosition === 'above' && textNode}
         {visualNode}
         {(!hasVisual || alert.textPosition !== 'above') && textNode}
-        {alert.audioUrl && <audio ref={audioElRef} src={alert.audioUrl} autoPlay />}
+        {alert.audioUrl && <audio ref={audioElRef} src={alert.audioUrl} autoPlay muted={previewMuted} />}
         {alert.count > 1 && (
           <span className="absolute -top-3 -right-3 bg-yellow-400 text-black text-lg font-black px-3 py-1 rounded-full shadow-lg">
             ×{alert.count}
@@ -1261,7 +1278,7 @@ function useAlertPlayback(socket) {
   useEffect(() => {
     setPlayback({ alert: null, phase: 'visible' });
     const queue = createAlertQueue((alert, phase) => setPlayback({ alert, phase }));
-    const onTrigger = (alert) => queue.enqueue(alert);
+    const onTrigger = (alert) => { preloadAlertMedia(alert); queue.enqueue(alert); };
     // La cola avanza por el reloj real; estos avisos la despiertan aunque el
     // navegador de OBS / TikTok Studio haya frenado los temporizadores de una
     // fuente que no se está pintando (ver alertQueue.js y ticker.js).
@@ -1303,6 +1320,11 @@ function QueuedAlertSound({ alert, customize, sinkId }) {
     routeToSink(audioRef.current, sinkId);
     routeToSink(videoRef.current, sinkId);
   }, [sinkId, alert]);
+  // Al cumplirse la duración de la alerta, el sonido también se corta (ver AlertVisual).
+  useEffect(() => {
+    const timer = setTimeout(() => { stopMedia(audioRef.current); stopMedia(videoRef.current); }, alertTiming(alert).duration);
+    return () => clearTimeout(timer);
+  }, [alert]);
   return (
     <div style={{ display: 'none' }}>
       {alert.audioUrl && <audio ref={audioRef} src={alert.audioUrl} autoPlay />}

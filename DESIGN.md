@@ -44,6 +44,10 @@ colors:
   rainbow-purple: "#a855f7"
   neutral-muted: "#6B7280"
   ink: "#FFFFFF"
+  page-black: "#05030A"
+  scrollbar-track: "#0A0614"
+  scrollbar-thumb: "#3E266E"
+  scrollbar-thumb-hover: "#6B21A8"
 typography:
   title:
     fontFamily: "ui-sans-serif, system-ui, sans-serif"
@@ -75,6 +79,7 @@ rounded:
   cute-box: "1rem"
   lg: "1.5rem"
   cute-dock: "1.75rem"
+  scrollbar: "10px"
   pill: "999px"
   flat: "0px"
 spacing:
@@ -152,6 +157,10 @@ Los cuatro materiales viven en la misma familia de luminosidad — pastel claro 
 - **Tinta de Material** (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — hoy los cuatro en `#2E2136`/`#2A1B2E`, violeta casi negro): en los cuatro materiales, TODO el texto blanco/gris del resto del sistema se sobreescribe a esta tinta oscura (selector `.themed-app[data-theme-style="X"] .text-white`, etc., con `!important` porque compite con utilidades de Tailwind en una capa distinta) — un fondo pastel claro no tiene contraste suficiente para texto blanco. Antes esto era una excepción exclusiva de Kawaii/Cute; ahora es la regla del sistema completo.
 - **Acento Suave** (`accent-soft`, uno por acento — `#A78BFA` morado, `#93C5FD` azul, `#F9A8D4` rosa, `#6EE7B7` verde): versión desaturada del acento activo. Ya no se usa para texto de énfasis sobre el fondo claro (quedaba ilegible ahí) — `theme-label`/`theme-accent-text`/`theme-btn-secondary`/`theme-chip` usan en su lugar un tono oscuro construido al vuelo (`oklch(from var(--accent) 0.42 0.16 h)`) en Default y Minimal, igual que Kawaii/Cute. `accent-soft` sigue vivo como color base de acentos alternos en el selector de Tema.
 - **Acento Pastel** (`--accent-pastel`, solo en Kawaii — `oklch(from var(--accent) 0.6 0.15 h)`): un tono del acento más saturado que el fondo pastel del material, usado para rellenar botones/chips por completo y darles presencia sobre un fondo que ya es claro. Construido con la misma sintaxis de color relativo que el resto — no mezclado hacia blanco, para no perder croma nativo del acento.
+
+### Barra de desplazamiento y fondo base
+
+El fondo del `body` (`page-black`, `#05030A`) solo se ve mientras carga la página y detrás de los overlays transparentes; encima va siempre el fondo temático de cada skin. La barra de desplazamiento del navegador es oscura y morada en todos los skins (`scrollbar-track` `#0A0614`, `scrollbar-thumb` `#3E266E`, al pasar el mouse `#6B21A8`, esquinas de `10px`): los navegadores no le pasan variables CSS del tema, así que no sigue el acento.
 
 ### Estado (fijos, no siguen el acento elegido)
 - **Rojo Alerta** (`#EF4444`): ventanas de snipe/peligro, licencias revocadas, errores. Siempre en pares badge (fondo `red-950/70` + borde `red-500/70` + texto claro).

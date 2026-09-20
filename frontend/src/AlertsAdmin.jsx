@@ -5,7 +5,8 @@ import iconFollow from './assets/alert-follow.png';
 import iconGlobal from './assets/alert-global.png';
 import iconSticker from './assets/alert-sticker.png';
 import { backendUrl, authHeaders } from './auth';
-import { AlertVisual, ANIM_DURATION_MS } from './Overlay';
+import { AlertVisual } from './Overlay';
+import { alertTiming } from './alertQueue';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import AlertMonitorSettings from './AlertMonitorSettings';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
@@ -139,15 +140,22 @@ function alertDisplayName(alert) {
 function LivePreview({ draftAlert, customize }) {
   const [phase, setPhase] = useState('entering');
   const [cycle, setCycle] = useState(0);
+  // La alerta se monta al empezar cada vuelta y se DESMONTA al terminar su
+  // duración: así el audio y el video se cortan ahí (antes la vista previa dejaba
+  // el mismo elemento montado y el sonido seguía hasta el final del archivo).
+  const [playing, setPlaying] = useState(true);
+  const [soundOn, setSoundOn] = useState(true);
 
   useEffect(() => {
     if (!draftAlert) return;
     setPhase('entering');
-    const duration = Math.min(MAX_DURATION_S * 1000, Math.max(500, draftAlert.durationMs || 5000));
+    setPlaying(true);
+    const { duration, animation } = alertTiming(draftAlert);
     const LOOP_PAUSE_MS = 600;
     const timers = [
-      setTimeout(() => setPhase('visible'), ANIM_DURATION_MS),
-      setTimeout(() => setPhase('exiting'), Math.max(ANIM_DURATION_MS, duration - ANIM_DURATION_MS)),
+      setTimeout(() => setPhase('visible'), animation),
+      setTimeout(() => setPhase('exiting'), duration - animation),
+      setTimeout(() => setPlaying(false), duration),
       setTimeout(() => setCycle((c) => c + 1), duration + LOOP_PAUSE_MS),
     ];
     return () => timers.forEach(clearTimeout);
@@ -155,16 +163,23 @@ function LivePreview({ draftAlert, customize }) {
   }, [draftAlert, cycle]);
 
   return (
+    <div className="flex flex-col items-center gap-2">
     <div className="rounded-xl overflow-hidden mx-auto flex-shrink-0" style={{ width: STAGE_W * STAGE_SCALE, height: STAGE_H * STAGE_SCALE, background: 'repeating-conic-gradient(#1a1625 0% 25%, #150f22 0% 50%) 0 0/24px 24px' }}>
       <div className="relative" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${STAGE_SCALE})`, transformOrigin: 'top left' }}>
         {draftAlert ? (
-          <AlertVisual alert={draftAlert} phase={phase} embedded customize={customize} />
+          playing && <AlertVisual key={cycle} alert={draftAlert} phase={phase} embedded customize={customize} previewMuted={!soundOn} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <p className="text-gray-500 text-sm italic text-center" style={{ width: STAGE_W * STAGE_SCALE - 24, transform: `scale(${1 / STAGE_SCALE})` }}>Agrega un recurso o un texto para ver la vista previa</p>
           </div>
         )}
       </div>
+    </div>
+    {/* La vista previa repite en bucle, y con audio suena en cada vuelta: se puede silenciar sin tocar la alerta. */}
+    <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
+      <input type="checkbox" checked={soundOn} onChange={(e) => setSoundOn(e.target.checked)} />
+      Sonido de la vista previa
+    </label>
     </div>
   );
 }
@@ -366,10 +381,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setSavedPreviewPhase('entering');
     const isGlobal = alert.triggerType === 'gift_global';
     setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, isGlobal ? '' : alert.giftName, isGlobal ? (alert.minCoins ?? 100) : '100') });
-    const dur = Math.min(MAX_DURATION_S * 1000, Math.max(500, alert.durationMs || 5000));
+    const { duration: dur, animation } = alertTiming(alert);
     const timers = [
-      setTimeout(() => setSavedPreviewPhase('visible'), ANIM_DURATION_MS),
-      setTimeout(() => setSavedPreviewPhase('exiting'), Math.max(ANIM_DURATION_MS, dur - ANIM_DURATION_MS)),
+      setTimeout(() => setSavedPreviewPhase('visible'), animation),
+      setTimeout(() => setSavedPreviewPhase('exiting'), dur - animation),
       setTimeout(() => setSavedPreview(null), dur),
     ];
     savedPreviewTimer.current = timers[timers.length - 1];

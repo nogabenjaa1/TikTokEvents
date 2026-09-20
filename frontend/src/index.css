@@ -392,7 +392,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --surface-bg: oklch(from var(--accent) 0.235 0.06 h);
   --surface-bg-alt: oklch(from var(--accent) 0.2 0.05 h);
   --surface-border-color: color-mix(in oklch, var(--accent) 50%, transparent);
-  --surface-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.6), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
+  --surface-shadow: 0 10px 30px -12px var(--page-bg), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
   --ink-default: #F3EEFB;
   --ink-cute: #F3EEFB;
   --ink: #F3EEFB;
@@ -450,7 +450,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    superficie oscura; pasan a las tintas claras de estado. */
 .themed-app[data-theme-style][data-mode="dark"] .theme-btn-danger:not([data-mode="light"] *) { color: var(--ink-danger); }
 .themed-app[data-theme-style][data-mode="dark"] .theme-btn-warning:not([data-mode="light"] *) { color: var(--ink-warning); }
-.themed-app[data-mode="dark"] .tkc-switch::after { box-shadow: 0 1px 3px rgb(0 0 0 / 0.5); }
+.themed-app[data-mode="dark"] .tkc-switch::after { box-shadow: 0 1px 3px var(--page-bg); }
 
 /* ==========================================================
    ACCESIBILIDAD
@@ -472,7 +472,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   border-radius: 0.75rem;
   background: var(--accent, #7C3AED);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 11px;
   font-weight: 800;
   transform: translateY(-200%);
 }

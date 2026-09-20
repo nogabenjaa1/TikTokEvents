@@ -262,6 +262,10 @@ class Tenant {
         this.alertConfigs = {};
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
+        // Feed de actividad en vivo (ver lib/tenant/feed.js): lo último que
+        // pasó en el directo, para el Dashboard.
+        this.feed = [];
+        this.feedCounter = 0;
         // Rachas de regalos abiertas (esperan su cierre) y recién cerradas por
         // tiempo, y regalos vistos en este directo -- ver events.js.
         this.openGiftCombos = new Map();
@@ -452,6 +456,7 @@ class Tenant {
         this.registerSpotifyHandlers(socket);
         this.registerSettingsHandlers(socket);
         this.registerAlertHandlers(socket);
+        this.registerFeedHandlers(socket);
     }
 }
 
@@ -461,6 +466,7 @@ Object.assign(Tenant.prototype, require('./lib/tenant/events'));
 Object.assign(Tenant.prototype, require('./lib/tenant/persistence'));
 Object.assign(Tenant.prototype, require('./lib/tenant/runtimeState'));
 Object.assign(Tenant.prototype, require('./lib/tenant/alerts'));
+Object.assign(Tenant.prototype, require('./lib/tenant/feed'));
 Object.assign(Tenant.prototype, require('./lib/tenant/spotify'));
 Object.assign(Tenant.prototype, require('./lib/tenant/king'));
 Object.assign(Tenant.prototype, require('./lib/tenant/zub'));

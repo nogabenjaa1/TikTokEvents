@@ -171,13 +171,16 @@ const OBS_HELP = {
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
       'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal).',
+      'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
     ],
   },
   alerts: {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
       'Agrega UNA fuente de Navegador con la URL de Alertas — cubre TODA tu escena (1080×1920, vertical como tu transmisión de TikTok), ya que cada alerta decide sola en qué parte de la pantalla aparece según la posición que le configuraste.',
-      'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras está sonando/mostrándose.',
+      'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras se está mostrando.',
+      'Este overlay es SOLO visual (imagen, video y texto): el sonido de la alerta y el de sus videos lo reproduce tu panel en el navegador, y tu directo lo capta junto con el audio de la computadora. Así todos lo oyen una sola vez. Deja el panel abierto mientras transmites.',
+      'Si OBS está en otra computadora y no puedes dejar el panel abierto ahí, agrega &audio=1 al final de esta URL: ese overlay sí reproducirá el sonido. En ese caso apaga el sonido del panel en Alertas → Ajustes generales.',
     ],
   },
   tops: {

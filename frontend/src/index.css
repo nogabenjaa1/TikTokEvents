@@ -489,6 +489,15 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   }
 }
 
+/* Fila nueva del feed de actividad (Dashboard): entra de arriba suavemente. Con
+   "backwards" la fila es visible aunque la animación no corra; el movimiento
+   reducido ya lo apaga la regla de accesibilidad de más arriba. */
+@keyframes tkc-feed-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+.tkc-feed-in { animation: tkc-feed-in 0.28s ease-out backwards; }
+
 /* ---- Utilidades que consumen las variables ---- */
 .theme-surface {
   background: var(--surface-bg);

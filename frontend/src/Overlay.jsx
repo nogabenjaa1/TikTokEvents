@@ -4,7 +4,20 @@ import { createTicker } from './ticker';
 import { routeToSink } from './alertMonitor';
 export { ANIM_DURATION_MS } from './alertQueue';
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { playThroneSteal, playSelecting, playEliminate, playWinner } from './sounds';
+import { overlayAudioAllowed } from './overlayAudio';
+import { playEventSound } from './eventSounds';
+import {
+  kingSnapshot, kingSounds, zubSnapshot, zubSounds, elimSnapshot, elimSounds,
+  rouletteSnapshot, rouletteSounds, goalSnapshot, goalSounds,
+} from './eventSoundRules';
+
+// El sonido de los eventos lo reproduce el PANEL (ver overlayAudio.js): un
+// overlay de OBS es solo visual y queda en silencio, salvo que su URL lleve
+// &audio=1. En el panel y en sus vistas previas esto nunca suena.
+function playOverlaySounds(ids, options) {
+  if (!overlayAudioAllowed()) return;
+  ids.forEach((id, index) => setTimeout(() => playEventSound(id, options), index * 150));
+}
 import { resolveBackgroundStyle, getUsernameOverride, getUsernameFill, rowBorder, bordersOffStyle, bordersEnabled, FONT_SCALES } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';
 import { formatMMSS, formatHHMMSS } from './timeFormat';
@@ -81,19 +94,12 @@ function KingOverlay({ state, prize, customize }) {
   // Detecta transiciones para disparar sonido: robo de trono (cambia el
   // lastParticipant mientras está en 'main') y ganador. El guard `mounted`
   // evita que sonar apenas se abre/recarga el overlay a mitad de una ronda.
-  const prevRef = useRef({ mounted: false, mode: null, lastUsername: null });
+  const prevRef = useRef(null);
   useEffect(() => {
     if (!state) return;
-    const prev = prevRef.current;
-    if (prev.mounted) {
-      if (state.mode === 'main' && state.lastParticipant?.username && state.lastParticipant.username !== prev.lastUsername) {
-        playThroneSteal();
-      }
-      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) {
-        playWinner();
-      }
-    }
-    prevRef.current = { mounted: true, mode: state.mode, lastUsername: state.lastParticipant?.username || null };
+    const sounds = kingSounds(prevRef.current, state);
+    prevRef.current = kingSnapshot(state);
+    playOverlaySounds(sounds);
   }, [state?.mode, state?.lastParticipant?.username, state?.winner]);
 
   if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
@@ -162,14 +168,12 @@ function KingOverlay({ state, prize, customize }) {
 function ZubastinisOverlay({ state, prize, customize }) {
   // Mismo sonido de ganador que King/Eliminación, para que el momento se
   // sienta igual sin importar el modo.
-  const prevModeRef = useRef({ mounted: false, mode: null });
+  const prevModeRef = useRef(null);
   useEffect(() => {
     if (!state) return;
-    const prev = prevModeRef.current;
-    if (prev.mounted && state.mode === 'finished' && prev.mode !== 'finished' && state.winner) {
-      playWinner();
-    }
-    prevModeRef.current = { mounted: true, mode: state.mode };
+    const sounds = zubSounds(prevModeRef.current, state);
+    prevModeRef.current = zubSnapshot(state);
+    playOverlaySounds(sounds);
   }, [state?.mode, state?.winner]);
 
   if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
@@ -342,16 +346,12 @@ function EliminationOverlay({ state, prize, customize }) {
   // Sonidos: arranca el sorteo ('revealing'), se resuelve la ronda
   // ('revealing' -> 'result', el momento real en que el backend ya sacó a
   // los eliminados), y el mismo sonido de ganador que King/Zub.
-  const prevElimRef = useRef({ mounted: false, mode: null });
+  const prevElimRef = useRef(null);
   useEffect(() => {
     if (!state) return;
-    const prev = prevElimRef.current;
-    if (prev.mounted) {
-      if (state.mode === 'revealing' && prev.mode !== 'revealing') playSelecting();
-      if (state.mode === 'result' && prev.mode === 'revealing') playEliminate();
-      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
-    }
-    prevElimRef.current = { mounted: true, mode: state.mode };
+    const sounds = elimSounds(prevElimRef.current, state);
+    prevElimRef.current = elimSnapshot(state);
+    playOverlaySounds(sounds);
   }, [state?.mode, state?.winner]);
 
   const participants = (state && state.participants) || [];
@@ -651,16 +651,12 @@ function RouletteOverlay({ state, prize, customize }) {
   // Sonidos: arranca el sorteo ('spinning'), se resuelve un paso
   // ('spinning' -> 'result', el momento real en que el backend ya sacó a
   // los eliminados), y el mismo sonido de ganador que los demás modos.
-  const prevRef = useRef({ mounted: false, mode: null });
+  const prevRef = useRef(null);
   useEffect(() => {
     if (!state) return;
-    const prev = prevRef.current;
-    if (prev.mounted) {
-      if (state.mode === 'spinning' && prev.mode !== 'spinning') playSelecting();
-      if (state.mode === 'result' && prev.mode === 'spinning') playEliminate();
-      if (state.mode === 'finished' && prev.mode !== 'finished' && state.winner) playWinner();
-    }
-    prevRef.current = { mounted: true, mode: state.mode };
+    const sounds = rouletteSounds(prevRef.current, state);
+    prevRef.current = rouletteSnapshot(state);
+    playOverlaySounds(sounds);
   }, [state?.mode, state?.winner]);
 
   const entries = (state && state.entries) || [];
@@ -949,12 +945,11 @@ export function GoalOverlay({ state, customize }) {
   // se reproduce UNA sola vez, justo en la transición false -> true, nunca
   // en cada re-render mientras `finished` ya es true (ej. el overlay se
   // recarga a mitad de un objetivo ya completado no debe volver a sonar).
-  const wasFinishedRef = useRef(finished);
+  const goalPrevRef = useRef(null);
   useEffect(() => {
-    if (finished && !wasFinishedRef.current && s.audioUrl) {
-      new Audio(s.audioUrl).play().catch(() => {});
-    }
-    wasFinishedRef.current = finished;
+    const sounds = goalSounds(goalPrevRef.current, { finished, audioUrl: s.audioUrl });
+    goalPrevRef.current = goalSnapshot({ finished });
+    playOverlaySounds(sounds, { audioUrl: s.audioUrl });
   }, [finished, s.audioUrl]);
 
   return (
@@ -1182,7 +1177,7 @@ const ALERT_POSITION_CLASSES = {
 // arcoíris/tamaño) para el texto opcional; `background` no aplica acá
 // porque una alerta nunca tiene fondo propio (ver OverlayCustomizePanel.jsx,
 // que por eso oculta esa sección para este overlay).
-export function AlertVisual({ alert, phase = 'visible', embedded = false, customize, previewMuted = false }) {
+export function AlertVisual({ alert, phase = 'visible', embedded = false, customize, previewMuted = false, silent = false }) {
   // Volumen general (pedido explícito, ver OverlayCustomizePanel.jsx) --
   // `volume` de HTMLMediaElement es una propiedad JS, no un atributo HTML,
   // así que no alcanza con pasarlo como prop de JSX -- se aplica a mano vía
@@ -1247,7 +1242,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
         <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain flex-shrink-0" />
       )}
       {alert.visualType === 'video' && (
-        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted || previewMuted} />
+        <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted || previewMuted || silent} />
       )}
     </>
   ) : null;
@@ -1261,7 +1256,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
         {hasVisual && alert.textPosition === 'above' && textNode}
         {visualNode}
         {(!hasVisual || alert.textPosition !== 'above') && textNode}
-        {alert.audioUrl && <audio ref={audioElRef} src={alert.audioUrl} autoPlay muted={previewMuted} />}
+        {alert.audioUrl && !silent && <audio ref={audioElRef} src={alert.audioUrl} autoPlay muted={previewMuted} />}
         {alert.count > 1 && (
           <span className="absolute -top-3 -right-3 bg-yellow-400 text-black text-lg font-black px-3 py-1 rounded-full shadow-lg">
             ×{alert.count}
@@ -1273,12 +1268,13 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
 }
 
 // Overlay y sonido del panel comparten el mismo ciclo FIFO y duración.
-function useAlertPlayback(socket) {
+function useAlertPlayback(socket, { silent = false } = {}) {
   const [playback, setPlayback] = useState({ alert: null, phase: 'visible' });
   useEffect(() => {
     setPlayback({ alert: null, phase: 'visible' });
     const queue = createAlertQueue((alert, phase) => setPlayback({ alert, phase }));
-    const onTrigger = (alert) => { preloadAlertMedia(alert); queue.enqueue(alert); };
+    // Un overlay silencioso no descarga el audio que no va a reproducir.
+    const onTrigger = (alert) => { preloadAlertMedia(silent ? { ...alert, audioUrl: null } : alert); queue.enqueue(alert); };
     // La cola avanza por el reloj real; estos avisos la despiertan aunque el
     // navegador de OBS / TikTok Studio haya frenado los temporizadores de una
     // fuente que no se está pintando (ver alertQueue.js y ticker.js).
@@ -1298,13 +1294,16 @@ function useAlertPlayback(socket) {
       window.removeEventListener('pageshow', wake);
       queue.dispose();
     };
-  }, [socket]);
+  }, [socket, silent]);
   return playback;
 }
 
 export function AlertOverlay({ socket, customize }) {
-  const { alert, phase } = useAlertPlayback(socket);
-  return <AlertVisual key={alert?.playbackId || 'idle'} alert={alert} phase={phase} customize={customize} />;
+  // Solo visual: el sonido de la alerta y de su video lo reproduce el panel
+  // (ver overlayAudio.js); con &audio=1 en la URL este overlay sí suena.
+  const silent = !overlayAudioAllowed();
+  const { alert, phase } = useAlertPlayback(socket, { silent });
+  return <AlertVisual key={alert?.playbackId || 'idle'} alert={alert} phase={phase} customize={customize} silent={silent} />;
 }
 
 function QueuedAlertSound({ alert, customize, sinkId }) {

@@ -77,6 +77,13 @@ module.exports = {
         };
         event.totalCoins = event.diamondCount * event.repeatCount;
 
+        // Al feed del Dashboard: una fila por regalo (una racha x7 es UNA fila).
+        this.pushFeed({
+            type: 'gift', username: event.username, nickname: event.nickname, avatar: event.avatar,
+            giftName: event.giftName, giftId: event.giftId, icon: data.giftPictureUrl,
+            count: event.repeatCount, coins: event.totalCoins,
+        });
+
         this.processGiftKing(event);
         this.processGiftZub(event);
         this.processGiftElim(event);
@@ -149,6 +156,7 @@ module.exports = {
     handleSocialEvent(data) {
         if (!data?.uniqueId) return;
         if (String(data.action) !== '1') return; // no es un follow (ej. share -- no soportado, ver el comentario de arriba)
+        this.pushFeed({ type: 'follow', username: data.uniqueId, nickname: data.nickname, avatar: data.profilePictureUrl });
         this.processFollowExtensible();
         this.processFollowGoal();
         this.processAlertTrigger({
@@ -164,6 +172,7 @@ module.exports = {
             emote?.emoteType === 2 || emote?.emoteScene === 2 || emote?.rewardCondition === 2
         ));
         if (!isFanClubSticker) return;
+        this.pushFeed({ type: 'sticker', username: data.uniqueId, nickname: data.nickname, avatar: data.profilePictureUrl });
         this.processAlertTrigger({
             username: data.uniqueId, nickname: data.nickname || data.uniqueId, key: 'sticker',
             repeatCount: 1, giftName: '', coins: 0,

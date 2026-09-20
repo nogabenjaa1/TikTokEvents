@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TikTokLoginBar from './TikTokLoginBar';
 import SystemHealth from './SystemHealth';
+import LiveFeed from './LiveFeed';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
@@ -94,7 +95,7 @@ function SectionTitle({ children, hint }) {
 export default function Dashboard({
   session, connectionStatus, username, setUsername, connectionError, usernameLocked, onDisconnectTikTok,
   anyGameActive, ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab,
-  socketConnected, ttsEngine, onResetVoice, onReconnectTikTok,
+  socketConnected, ttsEngine, onResetVoice, onReconnectTikTok, feed = [],
 }) {
   const connected = connectionStatus === 'connected';
   const daysLeft = session?.expiresAt
@@ -219,6 +220,9 @@ export default function Dashboard({
           </ol>
         </section>
       )}
+
+      {/* Lo último que pasó en el directo: regalos (con su imagen y cuántos), seguidores y stickers. */}
+      {session && <LiveFeed feed={feed} connected={connected} />}
 
       {session && (
         <section className="w-full max-w-4xl" aria-label="Estado de tu cuenta">

@@ -32,12 +32,14 @@ function load() {
   const alerts = [];
   const emitted = [];
   const games = [];
+  const feed = [];
+  tenant.pushFeed = (item) => feed.push(item);
   tenant.broadcast = { emit: (name, payload) => emitted.push({ name, payload }) };
   for (const method of ['processGiftKing', 'processGiftZub', 'processGiftElim', 'processGiftRoulette', 'processGiftGifterBoard', 'processGiftExtensible', 'processGiftGoal']) {
     tenant[method] = (event) => games.push({ method, event });
   }
   tenant.processAlertTrigger = (payload) => alerts.push(payload);
-  return { tenant, clock, alerts, emitted, games, recorded };
+  return { tenant, clock, alerts, emitted, games, recorded, feed };
 }
 
 const rose = (extra) => ({ uniqueId: 'ana', userId: '1', nickname: 'Ana', giftId: 5655, name: 'Rose', diamondCount: 1, type: 1, repeatCount: 1, repeatEnd: false, giftPictureUrl: 'https://x/rose.png', ...extra });
@@ -85,6 +87,18 @@ test('different people and different gifts never merge, and each one fires in th
   tenant.handleGiftEvent(rose({ uniqueId: 'ana', userId: '1', giftId: 7, name: 'Heart', repeatCount: 1, repeatEnd: true }));
   tenant.handleGiftEvent(rose({ uniqueId: 'ana', userId: '1', repeatCount: 2, repeatEnd: true }));
   assert.deepEqual(alerts.map((a) => `${a.username}:${a.giftName}:${a.repeatCount}`), ['bob:Rose:3', 'ana:Heart:1', 'ana:Rose:2']);
+});
+
+test('a streak of x7 roses is ONE row in the live feed, with its final count, coins, icon and sender', () => {
+  const { tenant, feed } = load();
+  for (let n = 1; n <= 6; n++) tenant.handleGiftEvent(rose({ repeatCount: n }));
+  assert.equal(feed.length, 0, 'nothing in the feed while the streak is open');
+  tenant.handleGiftEvent(rose({ repeatCount: 7, repeatEnd: true, diamondCount: 1 }));
+  assert.equal(feed.length, 1);
+  assert.deepEqual({ ...feed[0] }, {
+    type: 'gift', username: 'ana', nickname: 'Ana', avatar: '', giftName: 'Rose', giftId: 5655,
+    icon: 'https://x/rose.png', count: 7, coins: 7,
+  });
 });
 
 test('a gift with no streak fires immediately, every time', () => {

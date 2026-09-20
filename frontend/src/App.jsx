@@ -7,8 +7,11 @@ import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
 import ExpiryBanner from './ExpiryBanner';
 import useAutoLabels from './useAutoLabels';
-import { shouldMonitorInPanel, loadMonitorMode, saveMonitorMode, loadMonitorSink, saveMonitorSink } from './alertMonitor';
+import { loadSoundEnabled, saveSoundEnabled, loadMonitorSink, saveMonitorSink } from './alertMonitor';
+import useEventSounds from './useEventSounds';
+import AudioUnlockBanner from './AudioUnlockBanner';
 import { addSeenGift, mergeCatalog } from './giftCatalog';
+import { addFeedItem, FEED_MAX } from './feedLogic';
 import SystemHealth from './SystemHealth';
 import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
@@ -373,19 +376,37 @@ export default function App() {
   // giftCatalog.js). `allGifts` es lo que ven todos los selectores. No hay
   // forma de crear regalos a mano.
   const [seenGifts, setSeenGifts]                 = useState([]);
+  // Actividad en vivo del Dashboard (regalos, seguidores, stickers): el servidor
+  // manda un resumen al conectar y luego cada evento (ver LiveFeed.jsx).
+  const [feed, setFeed]                           = useState([]);
   const allGifts = useMemo(() => mergeCatalog(giftsList, seenGifts), [giftsList, seenGifts]);
   // Versión anterior: regalos escritos a mano en este navegador. Ya no existen.
   useEffect(() => { try { localStorage.removeItem('tkc_extra_gifts'); } catch { /* sin almacenamiento */ } }, []);
-  // Sonido de las alertas en ESTA pestaña (ver alertMonitor.js): modo, salida
-  // de audio elegida y si hay un overlay de alertas abierto (lo avisa el servidor).
-  const [monitorMode, setMonitorModeState]        = useState(loadMonitorMode);
+  // Sonido en ESTA pestaña (ver alertMonitor.js y overlayAudio.js): el panel
+  // reproduce todo el sonido y los overlays de OBS son solo visuales. Activado,
+  // salida de audio elegida y si hay un overlay de alertas abierto (lo avisa el
+  // servidor).
+  const [soundEnabled, setSoundEnabledState]      = useState(loadSoundEnabled);
   const [monitorSink, setMonitorSinkState]        = useState(loadMonitorSink);
   const [alertsOverlayConnected, setAlertsOverlayConnected] = useState(false);
-  const setMonitorMode = (mode) => { setMonitorModeState(mode); saveMonitorMode(mode); };
+  const setSoundEnabled = (on) => { setSoundEnabledState(on); saveSoundEnabled(on); };
   const setMonitorSink = (id, label) => { const sink = { id, label }; setMonitorSinkState(sink); saveMonitorSink(sink); };
   // Salud del sistema (ver SystemHealth.jsx): estado real del socket con el
   // servidor y del motor de voz, más el aviso de "el servidor se reinició".
   const [socketConnected, setSocketConnected]  = useState(false);
+  // Efectos de los juegos y sonido de Objetivo: los reproduce el panel. "Listo"
+  // llega un momento después de conectar, para que el estado que entra de golpe
+  // al conectar (o tras un reinicio del servidor) no dispare efectos viejos.
+  const [soundsReady, setSoundsReady]             = useState(false);
+  useEffect(() => {
+    if (!socketConnected) { setSoundsReady(false); return undefined; }
+    const timer = setTimeout(() => setSoundsReady(true), 2500);
+    return () => clearTimeout(timer);
+  }, [socketConnected]);
+  useEventSounds(
+    { king: state, zub: zubState, elim: elimState, roulette: rouletteState, goal: goalState },
+    { enabled: soundEnabled && !overlayMode, ready: soundsReady, sinkId: monitorSink.id },
+  );
   const [ttsEngine, setTtsEngine]              = useState('idle');
   const [serverRestarted, setServerRestarted]  = useState(false);
   const bootIdRef = useRef(null);
@@ -843,7 +864,16 @@ export default function App() {
     const onGiftSeen = (gift) => setSeenGifts((prev) => addSeenGift(prev, gift));
     socket.on('alerts_overlay_status', onOverlayStatus);
     socket.on('gift_seen', onGiftSeen);
-    return () => { socket.off('alerts_overlay_status', onOverlayStatus); socket.off('gift_seen', onGiftSeen); };
+    const onFeedSnapshot = (items) => setFeed(Array.isArray(items) ? items.slice(0, FEED_MAX) : []);
+    const onFeedItem = (item) => setFeed((prev) => addFeedItem(prev, item));
+    socket.on('feed_snapshot', onFeedSnapshot);
+    socket.on('feed_item', onFeedItem);
+    return () => {
+      socket.off('alerts_overlay_status', onOverlayStatus);
+      socket.off('gift_seen', onGiftSeen);
+      socket.off('feed_snapshot', onFeedSnapshot);
+      socket.off('feed_item', onFeedItem);
+    };
   }, [socket, overlayMode]);
 
   // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
@@ -1001,6 +1031,8 @@ export default function App() {
       )}
       {/* Recordatorio de vencimiento (ver expiry.js): lleva directo a renovar. */}
       <ExpiryBanner session={session} hidden={sidebarMode === 'membership'} onRenew={() => setSidebarMode('membership')} />
+      {/* El sonido de alertas y eventos lo pone este panel: hay que avisar si el navegador aún lo bloquea. */}
+      <AudioUnlockBanner enabled={soundEnabled} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
@@ -1083,7 +1115,7 @@ export default function App() {
             anyGameActive={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
             ttsEnabled={ttsEnabled} ttsLocked={needsAccess('tts')}
             onToggleTts={() => ttsRef.current?.toggleEnabled()}
-            socketConnected={socketConnected} ttsEngine={ttsEngine}
+            socketConnected={socketConnected} ttsEngine={ttsEngine} feed={feed}
             onResetVoice={() => ttsRef.current?.resetEngine()}
             onReconnectTikTok={() => socket?.emit('force_reconnect')}
             onGoSection={setSidebarMode}
@@ -1233,7 +1265,7 @@ export default function App() {
                   onCustomizeChange={(entry) => updateOverlayCustomization('alerts', entry)}
                   onApplyToAll={() => applyOverlayCustomizationToAll('alerts')}
                   monitor={{
-                    mode: monitorMode, onModeChange: setMonitorMode, overlayConnected: alertsOverlayConnected,
+                    enabled: soundEnabled, onEnabledChange: setSoundEnabled, overlayConnected: alertsOverlayConnected,
                     sinkId: monitorSink.id, sinkLabel: monitorSink.label, onSinkChange: setMonitorSink,
                   }}
                 />
@@ -1258,7 +1290,7 @@ export default function App() {
             en SU navegador sin importar en qué pestaña del panel esté, no
             solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
             tiene pegada esa URL aparte). */}
-        {shouldMonitorInPanel(monitorMode, alertsOverlayConnected) && (
+        {soundEnabled && (
           <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} />
         )}
 

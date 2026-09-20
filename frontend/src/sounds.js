@@ -55,3 +55,18 @@ export function playWinner() {
   const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
   notes.forEach((freq, i) => tone(freq, freq, 0.16, { type: 'triangle', gain: 0.3, delay: i * 0.12 }));
 }
+
+// El navegador no deja sonar nada hasta que hay una interacción con la página;
+// esto crea/reanuda el motor de audio dentro de un gesto (ver AudioUnlockBanner).
+export function unlockSounds() {
+  try { getCtx(); } catch { /* sin audio disponible */ }
+}
+
+// Manda los efectos sintetizados al dispositivo de salida elegido ('' = el
+// predeterminado). AudioContext.setSinkId solo existe en Chrome/Edge recientes.
+export function setSoundSink(sinkId) {
+  try {
+    const audioCtx = getCtx();
+    if (typeof audioCtx.setSinkId === 'function') audioCtx.setSinkId(sinkId || '').catch(() => {});
+  } catch { /* sin audio disponible */ }
+}

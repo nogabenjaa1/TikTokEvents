@@ -143,6 +143,7 @@ function KingOverlay({ state, prize, customize }) {
         {state.lastParticipant ? (
           <div key={state.lastParticipant.username + state.timeLeft} className="flex flex-col items-center animate-pop">
             <div className="relative">
+              {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
               {state.mode === 'finished' && <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>}
               <div className={`absolute inset-0 rounded-full blur-xl opacity-60 ${state.mode === 'finished' ? 'bg-yellow-500' : ''}`} style={state.mode === 'finished' ? undefined : { background: 'var(--accent)' }} />
               <img src={state.lastParticipant.avatar} className={`w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl ${state.mode === 'finished' ? 'border-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { borderColor: 'var(--accent)' }} />
@@ -296,7 +297,7 @@ function PhaseProgressBar({ active, durationMs, colorClass }) {
   if (!active) return null;
   return (
     <div className="w-full h-1.5 rounded-full overflow-hidden bg-black/30 mt-3">
-      <div className={`h-full ${colorClass}`} style={{ width: full ? '100%' : '0%', transition: `width ${durationMs}ms linear` }} />
+      <div className={`h-full w-full ${colorClass}`} style={{ transform: `scaleX(${full ? 1 : 0})`, transformOrigin: 'left center', transition: `transform ${durationMs}ms linear` }} />
     </div>
   );
 }
@@ -389,6 +390,7 @@ function EliminationOverlay({ state, prize, customize }) {
     // cambia de tamaño se rompe el recorte/captura ya encuadrado en OBS.
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       {state.mode === 'rejoin' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-red-600 to-red-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">⚠️ REINGRESO ⚠️</div>}
+      {/* impeccable-disable-next-line ai-color-palette: el morado es el color de marca del sitio (acento #7C3AED); franja de estado del sorteo en curso */}
       {state.mode === 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎯 ¿QUIÉN SERÁ? 🎯</div>}
       {state.paused && state.mode !== 'finished' && state.mode !== 'revealing' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-gray-600 to-gray-800 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 shadow-lg">⏸ PAUSADO ⏸</div>}
 
@@ -438,6 +440,7 @@ function EliminationOverlay({ state, prize, customize }) {
           state.winner && (
             <div className="flex flex-col items-center animate-pop">
               <div className="relative">
+                {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
                 <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
@@ -698,6 +701,7 @@ function RouletteOverlay({ state, prize, customize }) {
 
   return (
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+      {/* impeccable-disable-next-line ai-color-palette: el morado es el color de marca del sitio (acento #7C3AED); franja de estado del sorteo en curso */}
       {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
@@ -729,6 +733,7 @@ function RouletteOverlay({ state, prize, customize }) {
           state.winner && (
             <div className="flex flex-col items-center animate-pop">
               <div className="relative">
+                {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
                 <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
@@ -962,7 +967,7 @@ export function GoalOverlay({ state, customize }) {
           {unit} {current.toLocaleString('es-MX')} <span className="text-gray-400">/ {target.toLocaleString('es-MX')}</span>
         </p>
       </div>
-      <div className="w-full h-10 rounded-full overflow-hidden border" style={{ borderColor: bordersEnabled(customize) ? 'var(--surface-border-color)' : 'transparent', background: 'rgba(0,0,0,0.25)' }}>
+      <div className="w-full h-10 rounded-full overflow-hidden border bg-black/25" style={{ borderColor: bordersEnabled(customize) ? 'var(--surface-border-color)' : 'transparent' }}>
         <div
           className={`h-full rounded-full transition-[width] duration-700 ease-out ${finished ? 'bg-yellow-400' : 'theme-accent-bg'}`}
           style={{ width: `${pct}%` }}

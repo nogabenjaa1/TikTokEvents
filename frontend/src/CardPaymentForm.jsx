@@ -47,7 +47,7 @@ function friendlyDeclineMessage(statusDetail) {
 // hosteado de MP) el redirect de create-preference. El Brick tokeniza la
 // tarjeta en un iframe de MercadoPago; acá nunca se ve el número real, solo
 // el token + payment_method_id que arma en su callback onSubmit.
-export default function CardPaymentForm({ planType, diceTier, amount, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt, onSuccess, onCancel }) {
+export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amount, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt, onSuccess, onCancel }) {
   const [sdkState, setSdkState] = useState('loading'); // loading | ready | error | no-key
   const [submitError, setSubmitError] = useState('');
   const [pending, setPending] = useState(false);
@@ -62,9 +62,9 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, fir
   // y el backend rechazaba con "correo invalido" pese a que en pantalla
   // ya se veia el correo correcto). Este ref se actualiza en cada render
   // para que onSubmit siempre lea el valor mas reciente.
-  const latestRef = useRef({ planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt });
+  const latestRef = useRef({ planType, diceTier, spotifyAddon, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt });
   useEffect(() => {
-    latestRef.current = { planType, diceTier, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt };
+    latestRef.current = { planType, diceTier, spotifyAddon, email, firstName, lastName, zipCode, streetName, streetNumber, policyAcceptedAt };
   });
   // Challenge 3DS (checklist de calidad de MP, "Protocolo de seguridad
   // 3DS"): cuando MercadoPago quiere una segunda verificacion con el banco
@@ -176,6 +176,10 @@ export default function CardPaymentForm({ planType, diceTier, amount, email, fir
             body: JSON.stringify({
               planType: current.planType,
               diceTier: current.diceTier,
+              // Complemento de Spotify (ver Membership.jsx): solo se manda
+              // cuando se compra, para que el cobro de un plan siga
+              // llegando exactamente igual que antes.
+              spotifyAddon: current.spotifyAddon ? true : undefined,
               email: current.email,
               // Pedido explicito de MercadoPago (checklist de calidad,
               // "Nombre/Apellido del comprador"): campos propios (ver

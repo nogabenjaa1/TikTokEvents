@@ -203,6 +203,33 @@ const ready = pool.query(`
       connected_at BIGINT NOT NULL
     )
   `))
+  // App de Spotify PROPIA de una licencia (ver spotify.js, "Quién puede
+  // usarlo"): las licencias sin cupo en la app de la plataforma crean la suya
+  // en developer.spotify.com y pegan aquí su client id/secret. El secreto se
+  // guarda cifrado (tokenCrypto), igual que los tokens. Sin fila = usa la app
+  // de la plataforma. Los tokens de spotify_accounts solo sirven con la app
+  // que los emitió, por eso guardar o quitar una app borra la cuenta
+  // conectada (ver upsertSpotifyApp/deleteSpotifyApp).
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS spotify_apps (
+      license_id TEXT PRIMARY KEY REFERENCES licenses(id),
+      client_id TEXT NOT NULL,
+      client_secret TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )
+  `))
+  // Cuándo pasó la licencia a Lifetime: reparte los cupos de la app de la
+  // plataforma a "los primeros en conseguirlo" (ver
+  // getSharedSpotifySlotHolders). Las que ya eran Lifetime antes de esta
+  // columna no guardaban el dato: se usa su fecha de creación, lo más
+  // cercano que hay (guard `IS NULL`: idempotente, no pisa un valor real).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_at BIGINT`))
+  .then(() => pool.query(`UPDATE licenses SET lifetime_at = created_at WHERE license_type = 'lifetime' AND lifetime_at IS NULL`))
+  // Complemento de Spotify (pago único, para el plan Mensual): una vez TRUE
+  // se queda aunque la licencia se renueve. `payments.spotify_addon` deja
+  // constancia de que ese pago lo incluía (el monto ya lo suma).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS spotify_addon BOOLEAN NOT NULL DEFAULT FALSE`))
+  .then(() => pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS spotify_addon BOOLEAN NOT NULL DEFAULT FALSE`))
   // Alertas de regalos: qué recurso (imagen/gif/video/audio, ver storage.js)
   // se reproduce en el overlay al llegar un regalo puntual. Un solo alert
   // por (licencia, regalo) — UNIQUE habilita el upsert desde el panel sin
@@ -309,13 +336,38 @@ const ready = pool.query(`
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null }) {
+async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null, spotifyAddon = false }) {
     await ready;
     await pool.query(`
-        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12)
-    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint]);
+        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint, lifetime_at, spotify_addon)
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12, $13, $14)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint, licenseType === 'lifetime' ? createdAt : null, !!spotifyAddon]);
     return findById(id);
+}
+
+// Cambia la clave de una licencia existente (panel de Licencias, "Regenerar
+// clave"): la vieja deja de servir al instante — también para los overlays de
+// OBS, que se autentican con la key cruda — y se cierran las sesiones abiertas
+// (session_id NULL) y cualquier key pendiente de mostrar. No toca nada más:
+// el id, el plan y los ajustes siguen igual.
+async function setLicenseKey(id, { keyHash, keyPrefix }) {
+    await ready;
+    await pool.query('UPDATE licenses SET key_hash = $1, key_prefix = $2, session_id = NULL, pending_key_reveal = NULL WHERE id = $3', [keyHash, keyPrefix, id]);
+    return findById(id);
+}
+
+// lifetime_at al cambiar el plan de una licencia existente (ver el comentario
+// de la columna, arriba): si pasa A Lifetime desde otro tipo, es ahora; si ya
+// era Lifetime, conserva su fecha (COALESCE cubre filas sin dato); si deja de
+// serlo, se limpia. Dentro de un UPDATE, `license_type` es el valor ANTERIOR,
+// por eso alcanza para distinguir "pasa a" de "ya era". Los parámetros llevan
+// cast explícito porque Postgres no infiere su tipo dentro de un CASE.
+function lifetimeAtSql(typeParam, nowParam) {
+    return `CASE
+        WHEN ${typeParam}::text <> 'lifetime' THEN NULL
+        WHEN license_type = 'lifetime' THEN COALESCE(lifetime_at, ${nowParam}::bigint)
+        ELSE ${nowParam}::bigint
+    END`;
 }
 
 async function findByKeyHash(keyHash) {
@@ -461,16 +513,103 @@ async function deleteLicense(id) {
 // aca, en el UNICO lugar que lee esta tabla, para que el resto del
 // backend (spotify.js/tenant.js) siga trabajando con el token en texto
 // plano como siempre, sin tener que saber nada de cifrado.
+// Junto con la cuenta viene `app`: la app de Spotify PROPIA de esa licencia
+// (ver spotify_apps, secreto descifrado aquí mismo) o null si conecta con la
+// de la plataforma. spotify.getValidAccessToken la necesita para refrescar,
+// y el tenant para saber si el cupo de la app de la plataforma importa.
 async function getSpotifyAccount(licenseId) {
     await ready;
-    const { rows } = await pool.query('SELECT * FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+    const { rows } = await pool.query(`
+        SELECT sa.*, ap.client_id AS app_client_id, ap.client_secret AS app_client_secret
+        FROM spotify_accounts sa
+        LEFT JOIN spotify_apps ap ON ap.license_id = sa.license_id
+        WHERE sa.license_id = $1
+    `, [licenseId]);
     const row = rows[0];
     if (!row) return row;
+    const { app_client_id: appClientId, app_client_secret: appClientSecret, ...account } = row;
     return {
-        ...row,
+        ...account,
         access_token: tokenCrypto.decrypt(row.access_token),
         refresh_token: tokenCrypto.decrypt(row.refresh_token),
+        app: appClientId ? { clientId: appClientId, clientSecret: tokenCrypto.decrypt(appClientSecret) } : null,
     };
+}
+
+// La app propia por sí sola: el OAuth necesita sus credenciales ANTES de que
+// exista la cuenta (a diferencia de getSpotifyAccount, que devuelve algo
+// solo si ya se conectó).
+async function getSpotifyApp(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT client_id, client_secret FROM spotify_apps WHERE license_id = $1', [licenseId]);
+    const row = rows[0];
+    return row ? { clientId: row.client_id, clientSecret: tokenCrypto.decrypt(row.client_secret) } : null;
+}
+
+// Guarda (o reemplaza) la app propia y borra la cuenta conectada: sus tokens
+// los emitió otra app y ya no sirven. Se cifra ANTES de tocar nada, así una
+// TOKEN_ENCRYPTION_KEY faltante no deja al streamer desconectado sin app.
+async function upsertSpotifyApp(licenseId, { clientId, clientSecret }) {
+    await ready;
+    const encryptedSecret = tokenCrypto.encrypt(clientSecret);
+    await pool.query('DELETE FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+    await pool.query(`
+        INSERT INTO spotify_apps (license_id, client_id, client_secret, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (license_id) DO UPDATE SET
+            client_id = EXCLUDED.client_id,
+            client_secret = EXCLUDED.client_secret,
+            created_at = EXCLUDED.created_at
+    `, [licenseId, clientId, encryptedSecret, Date.now()]);
+}
+
+// Quita la app propia y también la cuenta conectada (mismo motivo de arriba).
+async function deleteSpotifyApp(licenseId) {
+    await ready;
+    await pool.query('DELETE FROM spotify_accounts WHERE license_id = $1', [licenseId]);
+    await pool.query('DELETE FROM spotify_apps WHERE license_id = $1', [licenseId]);
+}
+
+// Ids de las licencias que hoy tienen cupo en la app de la plataforma: los
+// primeros `limit` Lifetime por fecha en que lo consiguieron (lifetime_at;
+// created_at e id desempatan para que el orden sea siempre el mismo). Deja
+// afuera a la licencia admin (no consume cupo) y a las revocadas (liberan el
+// suyo). Se calcula al vuelo en cada consulta: si un cupo se libera pasa al
+// siguiente Lifetime sin ningún paso manual.
+async function getSharedSpotifySlotHolders(limit) {
+    await ready;
+    const { rows } = await pool.query(`
+        SELECT id FROM licenses
+        WHERE license_type = 'lifetime' AND is_admin = FALSE AND revoked = FALSE
+        ORDER BY lifetime_at ASC NULLS LAST, created_at ASC, id ASC
+        LIMIT $1
+    `, [limit]);
+    return rows.map((row) => row.id);
+}
+
+// A qué cuenta de Spotify está vinculada cada licencia, SIN tokens: el panel de
+// Licencias lo muestra para que el dueño vea quién comparte cuenta (dos
+// licencias pueden vincular la misma, ver el comentario de SHARED_SLOTS_TOTAL
+// en spotify.js). `own_app` distingue las que usan su propia app de Spotify de
+// las que usan la de la plataforma, que son las que cuentan para el tope.
+async function listSpotifyAccountLinks() {
+    await ready;
+    const { rows } = await pool.query(`
+        SELECT sa.license_id, sa.spotify_user_id, sa.display_name, sa.connected_at,
+               (ap.license_id IS NOT NULL) AS own_app
+        FROM spotify_accounts sa
+        LEFT JOIN spotify_apps ap ON ap.license_id = sa.license_id
+    `);
+    return rows;
+}
+
+// Encender/apagar el complemento a mano (panel de Licencias): cubre un pago
+// hecho por fuera o un reembolso. Las compras normales lo encienden por
+// applyPurchase.
+async function setSpotifyAddon(id, spotifyAddon) {
+    await ready;
+    await pool.query('UPDATE licenses SET spotify_addon = $1 WHERE id = $2', [!!spotifyAddon, id]);
+    return findById(id);
 }
 
 // Se usa tanto para la primera conexión (con spotifyUserId/displayName)
@@ -492,10 +631,18 @@ async function upsertSpotifyAccount(licenseId, { accessToken, refreshToken, expi
 }
 
 // Refresh silencioso de un access_token vencido (ver spotify.getValidAccessToken)
-// — a propósito NO toca refresh_token: Spotify no manda uno nuevo en cada
-// refresh, y pisarlo con undefined invalidaría la cuenta conectada.
-async function updateSpotifyTokens(licenseId, { accessToken, expiresAt }) {
+// — el refresh_token solo se toca cuando Spotify manda uno nuevo (`refreshToken`
+// definido): no lo manda en cada refresh, y pisarlo con undefined dejaría la
+// cuenta conectada sin forma de renovarse.
+async function updateSpotifyTokens(licenseId, { accessToken, expiresAt, refreshToken }) {
     await ready;
+    if (refreshToken) {
+        await pool.query(
+            'UPDATE spotify_accounts SET access_token = $1, expires_at = $2, refresh_token = $3 WHERE license_id = $4',
+            [tokenCrypto.encrypt(accessToken), expiresAt, tokenCrypto.encrypt(refreshToken), licenseId],
+        );
+        return;
+    }
     await pool.query('UPDATE spotify_accounts SET access_token = $1, expires_at = $2 WHERE license_id = $3', [tokenCrypto.encrypt(accessToken), expiresAt, licenseId]);
 }
 
@@ -573,7 +720,10 @@ async function deleteAlertConfig(id, licenseId) {
 
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
     await ready;
-    await pool.query('UPDATE licenses SET license_type = $1, expires_at = $2, revoked = FALSE, dice_tier = $3 WHERE id = $4', [licenseType, expiresAt, diceTier, id]);
+    await pool.query(
+        `UPDATE licenses SET license_type = $1, expires_at = $2, revoked = FALSE, dice_tier = $3, lifetime_at = ${lifetimeAtSql('$1', '$5')} WHERE id = $4`,
+        [licenseType, expiresAt, diceTier, id, Date.now()],
+    );
     return findById(id);
 }
 
@@ -585,19 +735,28 @@ async function extendLicense(id, licenseType, expiresAt, diceTier) {
 // rota la key al mismo tiempo que se aplica la compra (ver generateLabeledKey
 // en auth.js) para que el streamer vea su plan nuevo reflejado en el
 // prefijo de la key, sin generar una licencia nueva ni tocar el id/sesión.
-async function applyPurchase(id, { licenseType, expiresAt, diceTier, keyHash, keyPrefix, pendingKeyReveal } = {}) {
+async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddon, keyHash, keyPrefix, pendingKeyReveal } = {}) {
     await ready;
     const sets = ['revoked = FALSE'];
     const params = [];
     if (licenseType !== undefined) {
         params.push(licenseType);
-        sets.push(`license_type = $${params.length}`);
+        const typeParam = `$${params.length}`;
+        sets.push(`license_type = ${typeParam}`);
         params.push(expiresAt);
         sets.push(`expires_at = $${params.length}`);
+        params.push(Date.now());
+        sets.push(`lifetime_at = ${lifetimeAtSql(typeParam, `$${params.length}`)}`);
     }
     if (diceTier !== undefined) {
         params.push(diceTier);
         sets.push(`dice_tier = $${params.length}`);
+    }
+    // Complemento de Spotify: solo se enciende con una compra (undefined = no
+    // tocar), nunca se apaga por aquí.
+    if (spotifyAddon !== undefined) {
+        params.push(!!spotifyAddon);
+        sets.push(`spotify_addon = $${params.length}`);
     }
     if (keyHash !== undefined) {
         params.push(keyHash);
@@ -626,14 +785,14 @@ async function consumePendingKeyReveal(id) {
 // devuelve true la primera vez que se ve ese pago, false en cualquier
 // reintento posterior de la misma notificación — así el webhook sabe si
 // tiene que aplicar la compra o si ya la aplicó antes.
-async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTier, amountCents, status, createdAt }) {
+async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTier, spotifyAddon, amountCents, status, createdAt }) {
     await ready;
     const { rows } = await pool.query(`
-        INSERT INTO payments (id, license_id, mp_payment_id, plan_type, dice_tier, amount_cents, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO payments (id, license_id, mp_payment_id, plan_type, dice_tier, spotify_addon, amount_cents, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (mp_payment_id) DO NOTHING
         RETURNING id
-    `, [id, licenseId, mpPaymentId, planType || null, diceTier || null, amountCents, status, createdAt]);
+    `, [id, licenseId, mpPaymentId, planType || null, diceTier || null, !!spotifyAddon, amountCents, status, createdAt]);
     return rows.length > 0;
 }
 
@@ -641,14 +800,14 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
 // UNIQUE parcial sobre stripe_payment_id (ver migración arriba) es lo que
 // hace esto idempotente ante un reintento (ej. /confirm ya lo aplicó y
 // después llega el webhook con el mismo PaymentIntent).
-async function insertStripePaymentIfNew({ id, licenseId, stripePaymentId, planType, diceTier, amountCents, status, createdAt }) {
+async function insertStripePaymentIfNew({ id, licenseId, stripePaymentId, planType, diceTier, spotifyAddon, amountCents, status, createdAt }) {
     await ready;
     const { rows } = await pool.query(`
-        INSERT INTO payments (id, license_id, stripe_payment_id, provider, plan_type, dice_tier, amount_cents, status, created_at)
-        VALUES ($1, $2, $3, 'stripe', $4, $5, $6, $7, $8)
+        INSERT INTO payments (id, license_id, stripe_payment_id, provider, plan_type, dice_tier, spotify_addon, amount_cents, status, created_at)
+        VALUES ($1, $2, $3, 'stripe', $4, $5, $6, $7, $8, $9)
         ON CONFLICT (stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
         RETURNING id
-    `, [id, licenseId, stripePaymentId, planType || null, diceTier || null, amountCents, status, createdAt]);
+    `, [id, licenseId, stripePaymentId, planType || null, diceTier || null, !!spotifyAddon, amountCents, status, createdAt]);
     return rows.length > 0;
 }
 
@@ -695,6 +854,8 @@ module.exports = {
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
+    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon,
+    setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,
 };

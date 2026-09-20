@@ -51,6 +51,11 @@ const { WebcastPushConnection } = require('tiktok-live-connector/legacy');
 // diferencia de fetchAvailableGifts() en la v2, que sí y quedó bloqueada
 // detrás de un plan pago (ver /api/setup/:username más abajo). La conexión
 // LIVE de verdad sigue siendo la v2 de arriba, sin tocar.
+// Las dependencias de ese alias (axios 0.25 y protobufjs 6) tenían
+// vulnerabilidades sin arreglo dentro de sus propios rangos: se fuerzan a
+// axios 0.34 y protobufjs 7 con `overrides` en package.json, solo para el
+// alias (la v2 no se toca). Verificado con una llamada real: la lista de
+// getAvailableGifts() es idéntica a la de antes.
 const { WebcastPushConnection: WebcastPushConnectionV1 } = require('tiktok-live-connector-v1');
 const path = require('path');
 const fs = require('fs');
@@ -148,8 +153,11 @@ const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
 const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 
 // Etiqueta que va en el medio de la key legible (alias-etiqueta-hash, ver
-// auth.generateLabeledKey) cuando se compra ese plan.
-const PLAN_KEY_LABELS = { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
+// auth.generateLabeledKey): al comprar un plan, al crear o regenerar una
+// licencia desde el panel de Licencias (todos los tipos, no solo los que se
+// venden: day/week las emite el admin) y la de la prueba gratis, que conserva
+// su etiqueta de siempre.
+const PLAN_KEY_LABELS = { trial: 'FREE7DAY', day: 'daily', week: 'weekly', month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
 // Formato de email valido para el cobro directo (charge).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -282,6 +290,10 @@ function getOrCreateTenant(licenseId, licenseType) {
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 const adminLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+// Guardar la app de Spotify propia dispara una llamada a Spotify para
+// verificar las credenciales (ver /api/spotify/app): presupuesto aparte y
+// bajo, para que no sirva de trampolín contra su API.
+const spotifyAppLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 // Estricto a propósito: es la única barrera contra scripts pidiendo
 // pruebas gratis en cadena (la barrera real es el bloqueo por usuario de
 // TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
@@ -355,6 +367,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
             diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
+            spotifyAddon: !!row.spotify_addon,
         },
     });
 });
@@ -468,6 +481,7 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
             diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
+            spotifyAddon: !!row.spotify_addon,
         },
     });
 });
@@ -498,6 +512,7 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) =
             expiresAt: row.expires_at,
             diceTier: row.dice_tier,
             diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
+            spotifyAddon: !!row.spotify_addon,
         },
         newKey: row.pending_key_reveal || undefined,
     });
@@ -510,6 +525,24 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) =
 // ==========================================
 app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const rows = await db.listAll();
+    // Quiénes tienen hoy cupo en la app de Spotify de la plataforma: el admin
+    // necesita saber a quién cargar en User Management del dashboard.
+    const slotHolders = await db.getSharedSpotifySlotHolders(spotify.SHARED_SLOTS_TOTAL);
+    // A qué cuenta de Spotify está vinculada cada licencia (solo el nombre, sin
+    // tokens) y quién más usa esa MISMA cuenta con la app de la plataforma: el
+    // tope de Spotify cuenta cuentas distintas, así que dos licencias con la
+    // misma cuenta valen un solo lugar (ver SHARED_SLOTS_TOTAL en spotify.js).
+    const links = await db.listSpotifyAccountLinks();
+    const usernameById = new Map(rows.map(row => [row.id, row.username]));
+    const spotifyAccountOf = (row) => {
+        const link = links.find(l => l.license_id === row.id);
+        if (!link) return null;
+        const sharedWith = (link.own_app || !link.spotify_user_id) ? [] : links
+            .filter(other => other.license_id !== row.id && !other.own_app && other.spotify_user_id === link.spotify_user_id)
+            .map(other => usernameById.get(other.license_id))
+            .filter(Boolean);
+        return { displayName: link.display_name, connectedAt: link.connected_at, ownApp: !!link.own_app, sharedWith };
+    };
     const licenses = rows.map(row => ({
         id: row.id,
         keyPrefix: row.key_prefix,
@@ -530,12 +563,16 @@ app.get('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asyn
         trialConnectedUsername: row.trial_connected_username,
         diceTier: row.dice_tier,
         diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
+        spotifyAddon: !!row.spotify_addon,
+        lifetimeAt: row.lifetime_at,
+        spotifySharedSlot: slotHolders.includes(row.id),
+        spotifyAccount: spotifyAccountOf(row),
     }));
     res.json({ success: true, licenses });
 });
 
 app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
-    const { username, licenseType, diceTier } = req.body || {};
+    const { username, licenseType, diceTier, spotifyAddon } = req.body || {};
 
     if (!username || typeof username !== 'string' || !username.trim()) {
         return res.status(400).json({ success: false, error: 'Falta el usuario' });
@@ -546,8 +583,14 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
     if (diceTier !== undefined && !VALID_DICE_TIERS.includes(diceTier)) {
         return res.status(400).json({ success: false, error: 'Nivel de Color Says inválido' });
     }
+    if (spotifyAddon !== undefined && typeof spotifyAddon !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'Complemento de Spotify inválido' });
+    }
 
-    const key = auth.generateLicenseKey();
+    // Mismo formato legible que las claves de prueba y de compra
+    // (alias-etiqueta-hash, ver auth.generateLabeledKey) en vez de un hash
+    // suelto: el admin las entrega a mano y tienen que poder leerse/dictarse.
+    const key = auth.generateLabeledKey(username.trim(), PLAN_KEY_LABELS[licenseType]);
     const row = await db.insertLicense({
         id: crypto.randomUUID(),
         keyHash: auth.hashKey(key),
@@ -558,6 +601,9 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
         createdAt: Date.now(),
         expiresAt: auth.computeExpiresAt(licenseType),
         diceTier: diceTier || 'regular',
+        // Complemento de Spotify de regalo (o cobrado por fuera): la licencia
+        // nace con acceso aunque sea Mensual, sin pasar por el checkout.
+        spotifyAddon: spotifyAddon === true,
     });
 
     // La key en claro se devuelve UNA sola vez: a partir de acá solo vive hasheada.
@@ -566,9 +612,31 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
         key,
         license: {
             id: row.id, username: row.username, licenseType: row.license_type,
-            createdAt: row.created_at, expiresAt: row.expires_at,
+            createdAt: row.created_at, expiresAt: row.expires_at, spotifyAddon: !!row.spotify_addon,
         },
     });
+});
+
+// Regenera la clave de una licencia ya creada: la forma de darle el formato
+// alias-etiqueta-hash a las que se emitieron con el hash suelto de antes (o
+// de reemplazar una clave que se filtró). La vieja deja de servir para
+// cualquier conexión NUEVA — login y las URLs de overlay de OBS, que llevan la
+// key cruda, en cuanto se recargan — y se invalidan sus sesiones (JWT), salvo
+// en las multi-dispositivo, cuyos tokens no dependen de session_id (ver
+// checkTokenStatus en auth.js): el panel avisa antes de confirmar. Igual que
+// al revocar, un socket que YA está abierto sigue hasta que se corte. La nueva
+// se devuelve UNA sola vez, como al crear. La licencia admin queda afuera a
+// propósito (perder su clave = perder el panel; se regenera con seed-admin.js).
+app.post('/api/licenses/:id/regenerate-key', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    if (row.is_admin) {
+        return res.status(400).json({ success: false, error: 'La clave de una licencia admin se regenera con seed-admin.js' });
+    }
+    const key = auth.generateLabeledKey(row.username, PLAN_KEY_LABELS[row.license_type] || String(row.license_type).toLowerCase());
+    await db.setLicenseKey(row.id, { keyHash: auth.hashKey(key), keyPrefix: auth.keyPrefix(key) });
+    console.log(`[Licencias] ${req.license.username} regeneró la clave de la licencia ${row.id} (@${row.username}).`);
+    res.json({ success: true, key, license: { id: row.id, username: row.username } });
 });
 
 app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
@@ -599,6 +667,17 @@ app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adm
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
     await db.setWinBonusUnlocked(row.id, !!enabled);
+    res.json({ success: true });
+});
+
+// Complemento de Spotify a mano (ver spotify.js, "Quién puede usarlo"): para
+// un pago hecho por fuera de la plataforma o para quitarlo tras un reembolso
+// — las compras normales lo encienden solas (ver applyApprovedPaymentIfNew).
+app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    const { enabled } = req.body || {};
+    await db.setSpotifyAddon(row.id, !!enabled);
     res.json({ success: true });
 });
 
@@ -670,14 +749,19 @@ app.post('/api/licenses/bulk-delete', auth.requireAuth, auth.requireAdmin, admin
 // ==========================================
 app.post('/api/admin/pricing', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const { planType, amountCents } = req.body || {};
-    if (!pricing.isValidPlan(planType)) {
+    // `spotify_addon` no es un plan (ver pricing.js): se acepta aparte para
+    // que su precio se edite desde el mismo panel que los otros tres.
+    const isSpotifyAddon = planType === pricing.SPOTIFY_ADDON_KEY;
+    if (!isSpotifyAddon && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
     if (!Number.isInteger(amountCents) || amountCents < pricing.MIN_PLAN_PRICE_CENTS) {
         return res.status(400).json({ success: false, error: `El precio mínimo es de ${(pricing.MIN_PLAN_PRICE_CENTS / 100).toFixed(2)} MXN` });
     }
     try {
-        const { oldAmountCents } = await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
+        const { oldAmountCents } = isSpotifyAddon
+            ? await pricing.setSpotifyAddonPriceCents(amountCents, req.license.username)
+            : await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
         res.json({ success: true, planType, oldAmountCents, newAmountCents: amountCents });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -707,19 +791,46 @@ app.get('/api/admin/pricing/history', auth.requireAuth, auth.requireAdmin, admin
 // comando en sí.
 // ==========================================
 
+// Todo lo que hace falta saber del acceso de una licencia a Spotify (ver
+// spotify.evaluateAccess): su app propia, quiénes tienen hoy cupo en la app
+// de la plataforma y el veredicto. Lo comparten conectar, estado y guardar
+// app, así los tres deciden igual.
+async function spotifyAccessFor(license) {
+    const [ownApp, slotHolders] = await Promise.all([
+        db.getSpotifyApp(license.id),
+        db.getSharedSpotifySlotHolders(spotify.SHARED_SLOTS_TOTAL),
+    ]);
+    const access = spotify.evaluateAccess({ license, hasOwnApp: !!ownApp, sharedSlotHolderIds: slotHolders });
+    return { ownApp, slotHolders, access };
+}
+
+// Mensaje para quien no tiene derecho a Spotify (lo usan las rutas que lo
+// rechazan): distingue al Mensual, que sí puede comprar el complemento.
+function spotifyNotEntitledMessage(access) {
+    return access.addonRequired
+        ? 'Tu plan Mensual no incluye Spotify: activa el complemento de pago único.'
+        : 'Spotify está incluido en los planes Anual y Lifetime.';
+}
+
 // Devuelve la URL de Spotify a la que el panel redirige (window.location.href
 // del lado del cliente) — el `state` lleva la licencia firmada porque el
 // callback de más abajo no tiene el header Authorization disponible (es
-// Spotify quien redirige al navegador, no un fetch nuestro).
-app.get('/api/spotify/connect', auth.requireAuth, generalLimiter, (req, res) => {
-    // El panel ya no ofrece el botón a estas licencias (ver `allowed` en
-    // /status), esto cubre a quien llame a la ruta directo.
-    if (!spotify.isLicenseAllowed(req.license)) {
-        return res.status(403).json({ success: false, error: 'Spotify está disponible solo con la membresía Lifetime.' });
-    }
+// Spotify quien redirige al navegador, no un fetch nuestro). Conecta con la
+// app propia de la licencia si la tiene, o con la de la plataforma si le
+// toca cupo.
+app.get('/api/spotify/connect', auth.requireAuth, generalLimiter, async (req, res) => {
     try {
+        // El panel ya no ofrece el botón a quien no puede (ver /status), esto
+        // cubre a quien llame a la ruta directo.
+        const { ownApp, access } = await spotifyAccessFor(req.license);
+        if (!access.entitled) {
+            return res.status(403).json({ success: false, error: spotifyNotEntitledMessage(access) });
+        }
+        if (access.needsOwnApp) {
+            return res.status(409).json({ success: false, error: 'Primero crea tu propia app de Spotify y guarda sus credenciales.' });
+        }
         const state = auth.signSpotifyState(req.license.id);
-        res.json({ success: true, authUrl: spotify.getAuthUrl(state) });
+        res.json({ success: true, authUrl: spotify.getAuthUrl(state, ownApp) });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -739,8 +850,13 @@ app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
     } catch {
         return res.redirect(`${FRONTEND_URL}/?spotify=error`);
     }
+    // Fuera del try para que el catch de abajo sepa con cuál app fue.
+    let ownApp = null;
     try {
-        const tokens = await spotify.exchangeCodeForTokens(code);
+        // El código de autorización solo se canjea con la app que lo emitió:
+        // la propia de esta licencia si la tiene, la de la plataforma si no.
+        ownApp = await db.getSpotifyApp(licenseId);
+        const tokens = await spotify.exchangeCodeForTokens(code, ownApp);
         const me = await spotify.getMe(tokens.access_token);
         await db.upsertSpotifyAccount(licenseId, {
             accessToken: tokens.access_token,
@@ -755,6 +871,12 @@ app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
         // id"); sin él, todos los intentos fallidos se veían idénticos y no
         // había forma de saber a qué streamer atender.
         const who = tenants.get(licenseId)?.logId || String(licenseId).slice(0, 8);
+        if (err instanceof spotify.SpotifyUserNotRegisteredError && ownApp) {
+            // En su PROPIA app no hay a quién pedirle nada: le falta agregar su
+            // correo en User Management de esa app (paso de la guía del panel).
+            console.warn(`[${who}] [Spotify] Conexión rechazada: la cuenta de Spotify no está en la lista de usuarios de SU PROPIA app (modo Development). Le falta agregar su correo en User Management de esa app.`);
+            return res.redirect(`${FRONTEND_URL}/?spotify=not_registered_own`);
+        }
         if (err instanceof spotify.SpotifyUserNotRegisteredError) {
             // Reintentar no sirve de nada: mientras la app de Spotify esté en
             // modo Development (ver spotify.js), esa cuenta tiene que cargarse
@@ -768,14 +890,74 @@ app.get('/api/spotify/callback', generalLimiter, async (req, res) => {
     }
 });
 
+// Lo que el panel necesita para decidir qué mostrar (ver Spotify.jsx):
+// `access` (derecho, con qué app conecta, si le toca crear la suya o comprar
+// el complemento), los cupos de la app de la plataforma, su app propia (solo
+// el Client ID: el secreto nunca vuelve al navegador), el Redirect URI que
+// tiene que registrar en su app y el precio del complemento.
 app.get('/api/spotify/status', auth.requireAuth, generalLimiter, async (req, res) => {
-    // Una licencia sin permiso nunca figura como "conectada", aunque haya
-    // quedado una cuenta guardada de antes de que Spotify fuera solo
-    // Lifetime: el comando del chat tampoco la usa (ver
-    // getAllowedSpotifyAccount en tenant/spotify.js).
-    const allowed = spotify.isLicenseAllowed(req.license);
-    const account = allowed ? await db.getSpotifyAccount(req.license.id) : null;
-    res.json({ success: true, allowed, connected: !!account, displayName: account?.display_name || null });
+    const { ownApp, slotHolders, access } = await spotifyAccessFor(req.license);
+    // Sin con qué conectar (plan sin derecho, o sin app propia ni cupo) nunca
+    // figura como "conectada", aunque haya quedado una cuenta guardada de
+    // antes: el comando del chat tampoco la usa (ver getAllowedSpotifyAccount
+    // en tenant/spotify.js).
+    const canConnect = access.entitled && access.source !== null;
+    const account = canConnect ? await db.getSpotifyAccount(req.license.id) : null;
+    res.json({
+        success: true,
+        allowed: canConnect,
+        access,
+        sharedSlots: { total: spotify.SHARED_SLOTS_TOTAL, used: slotHolders.length },
+        ownApp: ownApp ? { clientId: ownApp.clientId } : null,
+        redirectUri: spotify.REDIRECT_URI,
+        addonPriceCents: pricing.getSpotifyAddonPriceCents(),
+        connected: !!account,
+        displayName: account?.display_name || null,
+        // Cuándo autorizó: Spotify caduca la conexión a los 6 meses de esta
+        // fecha (ver SpotifyRefreshTokenExpiredError), el panel avisa antes.
+        connectedAt: account?.connected_at ?? null,
+    });
+});
+
+// Guarda la app de Spotify propia del streamer (client id + secret que pegó
+// del dashboard). Antes de guardar se comprueba con Spotify que el par sea
+// real, para que se entere ahora y no después de un OAuth que falla. El
+// secreto se cifra en la DB y nunca se devuelve ni se loguea. Guardarla borra
+// la cuenta conectada (sus tokens eran de otra app): hay que volver a
+// conectar.
+app.post('/api/spotify/app', auth.requireAuth, spotifyAppLimiter, async (req, res) => {
+    const { access } = await spotifyAccessFor(req.license);
+    if (!access.entitled) {
+        return res.status(403).json({ success: false, error: spotifyNotEntitledMessage(access) });
+    }
+    const credentials = spotify.parseAppCredentials(req.body);
+    if (!credentials) {
+        return res.status(400).json({ success: false, error: 'Pega el Client ID y el Client secret tal como aparecen en el dashboard de Spotify.' });
+    }
+    const who = tenants.get(req.license.id)?.logId || String(req.license.id).slice(0, 8);
+    try {
+        await spotify.verifyAppCredentials(credentials);
+    } catch (err) {
+        if (err instanceof spotify.SpotifyInvalidCredentialsError) {
+            return res.status(400).json({ success: false, error: 'Spotify no reconoció ese Client ID y Client secret. Revisa que los copiaste completos y que son de la misma app.' });
+        }
+        console.error(`[${who}] [Spotify] No se pudieron verificar las credenciales de la app propia:`, err.message);
+        return res.status(502).json({ success: false, error: 'No se pudo verificar con Spotify. Intenta de nuevo en un momento.' });
+    }
+    try {
+        await db.upsertSpotifyApp(req.license.id, credentials);
+    } catch (err) {
+        console.error(`[${who}] [Spotify] No se pudo guardar la app propia:`, err.message);
+        return res.status(500).json({ success: false, error: 'No se pudo guardar la app. Intenta de nuevo en un momento.' });
+    }
+    res.json({ success: true });
+});
+
+// Quita la app propia (y la cuenta conectada con ella): la licencia vuelve a
+// depender de su cupo en la app de la plataforma, si lo tiene.
+app.delete('/api/spotify/app', auth.requireAuth, generalLimiter, async (req, res) => {
+    await db.deleteSpotifyApp(req.license.id);
+    res.json({ success: true });
 });
 
 app.post('/api/spotify/disconnect', auth.requireAuth, generalLimiter, async (req, res) => {
@@ -1078,12 +1260,63 @@ setInterval(() => {
     }
 }, RECENT_CHARGE_COOLDOWN_MS).unref();
 
+// external_reference de una orden de MercadoPago: qué se compró y para quién,
+// para que el webhook y el polling de status puedan aplicar el pago sin
+// depender del navegador. Formato:
+//   `${licenseId}_${planType|none}_${diceTier|none}_${spotify|none}_${timestamp}`
+// Sin ':' (la Orders API no lo acepta) y con '_' de separador porque
+// licenseId es un UUID que ya trae '-'. El complemento de Spotify se agregó
+// en el 4º lugar: las órdenes de antes (que en esa posición traen el
+// timestamp) se leen igual, como "sin complemento" — el único valor que lo
+// enciende es la palabra exacta `spotify`.
+function buildExternalReference({ licenseId, planType, diceTier, spotifyAddon }) {
+    return `${licenseId}_${planType || 'none'}_${diceTier || 'none'}_${spotifyAddon ? 'spotify' : 'none'}_${Date.now()}`;
+}
+
+function parseExternalReference(reference) {
+    const [licenseId, planTypeRaw, diceTierRaw, spotifyRaw] = String(reference || '').split('_');
+    return {
+        licenseId,
+        planType: planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined,
+        diceTier: diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined,
+        spotifyAddon: spotifyRaw === 'spotify',
+    };
+}
+
+// Validación común del cuerpo de compra (MercadoPago y Stripe): devuelve el
+// mensaje de rechazo o null. `spotifyAddon` tiene que ser un booleano; si es
+// true se aplican las reglas de spotify.addonPurchaseError sobre la licencia
+// que paga.
+function purchaseItemsError(license, { planType, diceTier, spotifyAddon }) {
+    if (planType !== undefined && !pricing.isValidPlan(planType)) return 'Plan invalido';
+    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) return 'Addon invalido';
+    if (spotifyAddon !== undefined && typeof spotifyAddon !== 'boolean') return 'Addon invalido';
+    if (!planType && !diceTier && spotifyAddon !== true) return 'Elige al menos un plan o un addon';
+    if (spotifyAddon === true) return spotify.addonPurchaseError(license, planType);
+    return null;
+}
+
 // Precios vigentes de los 3 planes (override del admin si existe, default
 // de pricing.js si no) -- publica a proposito, sin auth: la vitrina de
 // Membership.jsx la necesita ANTES de que exista una sesion (ver el
 // comentario de "Anonymous purchase flow" en Membership.jsx).
-app.get('/api/pricing', (req, res) => {
-    res.json({ success: true, prices: pricing.getAllPlanPricesCents() });
+app.get('/api/pricing', async (req, res) => {
+    // Cupos de Spotify en la app de la plataforma (solo el conteo: la
+    // vitrina avisa cuántos quedan para los primeros Lifetime). Si la
+    // consulta falla los precios se siguen sirviendo, sin ese dato.
+    let spotifySlots = null;
+    try {
+        const holders = await db.getSharedSpotifySlotHolders(spotify.SHARED_SLOTS_TOTAL);
+        spotifySlots = { total: spotify.SHARED_SLOTS_TOTAL, used: holders.length };
+    } catch (err) {
+        console.error('[Pricing] No se pudieron leer los cupos de Spotify:', err.message);
+    }
+    res.json({
+        success: true,
+        prices: pricing.getAllPlanPricesCents(),
+        spotifyAddon: pricing.getSpotifyAddonPriceCents(),
+        spotifySlots,
+    });
 });
 
 // Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
@@ -1156,13 +1389,9 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
         }
         const { orderPayment, approved } = evaluateOrderStatus(order);
         if (!approved) return;
-        // Separador '_' a proposito (ver donde se arma external_reference en
-        // /api/payments/charge): licenseId es un UUID con '-' adentro, asi
-        // que '_' es el unico separador que se puede partir sin ambiguedad.
-        const [licenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
-        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
-        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
-        await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
+        // Formato y separador de external_reference: ver buildExternalReference.
+        const { licenseId, planType, diceTier, spotifyAddon } = parseExternalReference(order.external_reference);
+        await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, mpPaymentId: orderPayment?.id || order.id });
     } catch (err) {
         console.error('[MP] Error procesando webhook:', err.message);
     }
@@ -1184,7 +1413,7 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
 // upgrade de dice_tier sin duplicarla -- es la parte mas delicada de todo
 // el flujo de pagos, asi que un solo lugar que la calcule para ambos
 // proveedores.
-function computeLicenseUpdateForPurchase(license, { planType, diceTier }) {
+function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon }) {
     const update = {};
     if (planType) {
         update.licenseType = planType;
@@ -1204,12 +1433,15 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier }) {
         const newRank = pricing.DICE_TIER_RANK[diceTier] ?? 0;
         if (newRank > currentRank) update.diceTier = diceTier;
     }
+    // Complemento de Spotify: pago único, se queda para siempre en la
+    // licencia (no depende de la renovación del plan Mensual).
+    if (spotifyAddon) update.spotifyAddon = true;
     return update;
 }
 
-async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaymentId }) {
-    if (!licenseId || (!planType && !diceTier)) {
-        console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
+async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, mpPaymentId }) {
+    if (!licenseId || (!planType && !diceTier && !spotifyAddon)) {
+        console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier/spotifyAddon', { licenseId, planType, diceTier, spotifyAddon });
         return { applied: false };
     }
 
@@ -1222,7 +1454,8 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
         mpPaymentId: String(mpPaymentId),
         planType: planType || null,
         diceTier: diceTier || null,
-        amountCents: pricing.computeAmountCents({ planType, diceTier }),
+        spotifyAddon: !!spotifyAddon,
+        amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         status: 'approved',
         createdAt: Date.now(),
     });
@@ -1234,7 +1467,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
         return { applied: false };
     }
 
-    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier });
+    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
     if (Object.keys(update).length > 0) {
         await db.applyPurchase(licenseId, update);
         console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
@@ -1247,9 +1480,9 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, mpPaym
 // paralela a mp_payment_id, ver db.js) -- llamarla dos veces con el mismo
 // PaymentIntent (ej. /api/payments/stripe/confirm ya lo aplico y despues
 // llega el webhook) no aplica el cambio dos veces.
-async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, stripePaymentId }) {
-    if (!licenseId || (!planType && !diceTier)) {
-        console.error('[Stripe] applyApprovedStripePaymentIfNew: faltan licenseId/planType/diceTier', { licenseId, planType, diceTier });
+async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId }) {
+    if (!licenseId || (!planType && !diceTier && !spotifyAddon)) {
+        console.error('[Stripe] applyApprovedStripePaymentIfNew: faltan licenseId/planType/diceTier/spotifyAddon', { licenseId, planType, diceTier, spotifyAddon });
         return { applied: false };
     }
 
@@ -1259,7 +1492,8 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
         stripePaymentId: String(stripePaymentId),
         planType: planType || null,
         diceTier: diceTier || null,
-        amountCents: pricing.computeAmountCents({ planType, diceTier }),
+        spotifyAddon: !!spotifyAddon,
+        amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         status: 'approved',
         createdAt: Date.now(),
     });
@@ -1271,7 +1505,7 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
         return { applied: false };
     }
 
-    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier });
+    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
     if (Object.keys(update).length > 0) {
         await db.applyPurchase(licenseId, update);
         console.log(`[Stripe] ✅ Pago aplicado — licencia ${licenseId}:`, update);
@@ -1310,15 +1544,10 @@ function evaluateOrderStatus(order) {
 // verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
-    if (planType !== undefined && !pricing.isValidPlan(planType)) {
-        return res.status(400).json({ success: false, error: 'Plan invalido' });
-    }
-    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
-        return res.status(400).json({ success: false, error: 'Addon invalido' });
-    }
-    if (!planType && !diceTier) {
-        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
+    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
+    if (itemsError) {
+        return res.status(400).json({ success: false, error: itemsError });
     }
     const cleanEmail = typeof email === 'string' ? email.trim() : '';
     if (!EMAIL_RE.test(cleanEmail)) {
@@ -1348,13 +1577,13 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 
     // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
     // un transaction_amount que pueda venir del formData del Brick.
-    const amountCents = pricing.computeAmountCents({ planType, diceTier });
+    const amountCents = pricing.computeAmountCents({ planType, diceTier, spotifyAddon });
 
     // Pedido explicito de MercadoPago: frena reintentos idénticos (mismo
     // payer + mismos items + mismo monto) antes de gastar otro intento
     // real contra su antifraude -- ver el comentario de
     // recentChargeAttempts más arriba.
-    const chargeAttemptKey = `${req.license.id}:${planType || ''}:${diceTier || ''}:${amountCents}`;
+    const chargeAttemptKey = `${req.license.id}:${planType || ''}:${diceTier || ''}:${spotifyAddon ? 'spotify' : ''}:${amountCents}`;
     const lastAttemptAt = recentChargeAttempts.get(chargeAttemptKey);
     if (lastAttemptAt && Date.now() - lastAttemptAt < RECENT_CHARGE_COOLDOWN_MS) {
         return res.status(429).json({
@@ -1376,10 +1605,11 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     // plan en ese caso), pero cuando MP tarda mas en confirmar, el UNICO
     // aviso de que se aprobo llega despues via ese webhook, no en esta
     // respuesta.
-    const externalReference = `${req.license.id}_${planType || 'none'}_${diceTier || 'none'}_${Date.now()}`;
+    const externalReference = buildExternalReference({ licenseId: req.license.id, planType, diceTier, spotifyAddon });
     const titleParts = [];
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
+    if (spotifyAddon) titleParts.push('Complemento Spotify');
 
     // El prefijo "deb" (debmaster/debvisa) indica una tarjeta de DEBITO.
     // Confirmado en logs de produccion, en ese orden:
@@ -1540,6 +1770,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 licenseId: req.license.id,
                 planType,
                 diceTier,
+                spotifyAddon,
                 mpPaymentId: orderPayment?.id || result.id,
             });
         }
@@ -1576,16 +1807,14 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
         if (!orderRes.ok) {
             return res.status(404).json({ success: false, error: 'Orden no encontrada' });
         }
-        const [ownerLicenseId, planTypeRaw, diceTierRaw] = String(order.external_reference || '').split('_');
+        const { licenseId: ownerLicenseId, planType, diceTier, spotifyAddon } = parseExternalReference(order.external_reference);
         if (ownerLicenseId !== req.license.id) {
             return res.status(404).json({ success: false, error: 'Orden no encontrada' });
         }
-        const planType = planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined;
-        const diceTier = diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined;
 
         const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(order);
         if (approved) {
-            await applyApprovedPaymentIfNew({ licenseId: ownerLicenseId, planType, diceTier, mpPaymentId: orderPayment?.id || order.id });
+            await applyApprovedPaymentIfNew({ licenseId: ownerLicenseId, planType, diceTier, spotifyAddon, mpPaymentId: orderPayment?.id || order.id });
         }
         res.json({
             success: true,
@@ -1615,15 +1844,10 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
 // ==========================================
 
 app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
-    if (planType !== undefined && !pricing.isValidPlan(planType)) {
-        return res.status(400).json({ success: false, error: 'Plan invalido' });
-    }
-    if (diceTier !== undefined && !pricing.isValidAddon(diceTier)) {
-        return res.status(400).json({ success: false, error: 'Addon invalido' });
-    }
-    if (!planType && !diceTier) {
-        return res.status(400).json({ success: false, error: 'Elige al menos un plan o un addon' });
+    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
+    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
+    if (itemsError) {
+        return res.status(400).json({ success: false, error: itemsError });
     }
     const cleanEmail = typeof email === 'string' ? email.trim() : '';
     if (!EMAIL_RE.test(cleanEmail)) {
@@ -1645,10 +1869,11 @@ app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async 
         return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
 
-    const amountCents = pricing.computeAmountCents({ planType, diceTier });
+    const amountCents = pricing.computeAmountCents({ planType, diceTier, spotifyAddon });
     const titleParts = [];
     if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
+    if (spotifyAddon) titleParts.push('Complemento Spotify');
 
     try {
         const stripe = getStripeClient();
@@ -1667,6 +1892,9 @@ app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async 
                 licenseId: req.license.id,
                 planType: planType || '',
                 diceTier: diceTier || '',
+                // Los metadata de Stripe son texto: 'true' enciende el
+                // complemento al confirmar/recibir el webhook, vacío no.
+                spotifyAddon: spotifyAddon ? 'true' : '',
                 policyAcceptedAt,
             },
         });
@@ -1697,8 +1925,9 @@ app.post('/api/payments/stripe/confirm', auth.requireAuth, paymentStatusLimiter,
         }
         const planType = intent.metadata?.planType || undefined;
         const diceTier = intent.metadata?.diceTier || undefined;
+        const spotifyAddon = intent.metadata?.spotifyAddon === 'true';
         if (intent.status === 'succeeded') {
-            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, stripePaymentId: intent.id });
+            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, spotifyAddon, stripePaymentId: intent.id });
         }
         res.json({
             success: true,
@@ -1742,8 +1971,9 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
         const licenseId = intent.metadata?.licenseId;
         const planType = intent.metadata?.planType || undefined;
         const diceTier = intent.metadata?.diceTier || undefined;
+        const spotifyAddon = intent.metadata?.spotifyAddon === 'true';
         if (!licenseId) return;
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, stripePaymentId: intent.id });
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId: intent.id });
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }

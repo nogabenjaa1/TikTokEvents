@@ -267,7 +267,7 @@ export default function App() {
   // muestran los anuncios. Se calcula UNA vez acá (no en un efecto) para
   // que no haya un parpadeo mostrando la sección por defecto antes de
   // corregirse a la de la URL real. EXCEPCIÓN: si venimos de la vuelta del
-  // OAuth de Spotify (?spotify=connected|not_registered|error), Spotify.jsx redirige acá
+  // OAuth de Spotify (?spotify=connected|not_registered|not_registered_own|error), Spotify.jsx redirige aquí
   // con un GET normal del navegador — no hay forma de "recordar" en qué
   // pestaña estaba el streamer antes de irse a autorizar, así que en vez de
   // respetar la URL arrancamos directo en TikTokEvents -> Spotify, que es

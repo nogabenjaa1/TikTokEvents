@@ -1,5 +1,5 @@
 import { SkeletonRows } from './PanelHelp';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 
 // Tipos que el admin puede elegir a mano (crear o extender). Las pruebas
@@ -16,10 +16,13 @@ const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000; // 3 días
 const DICE_TIERS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'Admin' };
 
 // Precios editables (pedido explicito: "Modificacion manual de precios de
-// licencias desde el panel de administracion") -- a proposito SOLO los 3
-// planes de venta autoservicio (Mensual/Anual/Lifetime, ver backend/pricing.js
-// PLAN_PRICES_CENTS); los addons de Color Says quedan afuera del pedido.
-const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
+// licencias desde el panel de administracion") -- los 3 planes de venta
+// autoservicio (Mensual/Anual/Lifetime, ver backend/pricing.js
+// PLAN_PRICES_CENTS) y el complemento de Spotify (pago unico, tambien en
+// pricing.js: no es un plan, por eso /api/pricing lo manda aparte y aca se
+// junta con los planes para editarlo en la misma lista); los addons de Color
+// Says quedan afuera del pedido.
+const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', spotify_addon: 'Complemento Spotify' };
 const MIN_PRICE_MXN = 1; // piso pedido explicitamente: 1 peso
 
 const STATUS_FILTERS = [
@@ -96,8 +99,17 @@ export default function LicenseManager({ onSessionInvalid }) {
   const [username, setUsername] = useState('');
   const [licenseType, setLicenseType] = useState('week');
   const [diceTier, setDiceTier] = useState('regular');
+  // Complemento de Spotify de regalo al crear la licencia (ver backend/spotify.js:
+  // un Mensual solo tiene Spotify con el complemento).
+  const [spotifyAddon, setSpotifyAddon] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newKey, setNewKey] = useState(null); // se muestra una sola vez
+  const [newKey, setNewKey] = useState(null); // se muestra una sola vez: { key, username, regenerated? }
+  // El panel de la clave nueva vive arriba de todo y la lista de licencias
+  // queda muy abajo: al regenerar una clave hay que llevarlo a la vista.
+  const newKeyPanelRef = useRef(null);
+  useEffect(() => {
+    if (newKey) newKeyPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [newKey]);
   const [copied, setCopied] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -173,8 +185,11 @@ export default function LicenseManager({ onSessionInvalid }) {
       const res = await fetch(`${backendUrl()}/api/pricing`);
       const data = await res.json();
       if (data.success) {
-        setPrices(data.prices);
-        setPriceInputs(Object.fromEntries(Object.entries(data.prices).map(([k, cents]) => [k, (cents / 100).toString()])));
+        // El complemento de Spotify viaja aparte de los planes (ver
+        // PRICING_PLAN_LABELS): se junta aquí para editarlo con los demás.
+        const all = data.spotifyAddon != null ? { ...data.prices, spotify_addon: data.spotifyAddon } : data.prices;
+        setPrices(all);
+        setPriceInputs(Object.fromEntries(Object.entries(all).map(([k, cents]) => [k, (cents / 100).toString()])));
       }
     } catch { /* el panel sigue funcionando sin precios cargados */ }
   }, []);
@@ -234,13 +249,14 @@ export default function LicenseManager({ onSessionInvalid }) {
       const res = await fetch(`${backendUrl()}/api/licenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ username: username.trim(), licenseType, diceTier }),
+        body: JSON.stringify({ username: username.trim(), licenseType, diceTier, spotifyAddon: spotifyAddon ? true : undefined }),
       });
       if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo crear la licencia');
       setNewKey({ key: data.key, username: data.license.username });
       setUsername('');
+      setSpotifyAddon(false);
       fetchLicenses();
     } catch (err) {
       pushToast(err.message, 'error');
@@ -381,6 +397,46 @@ export default function LicenseManager({ onSessionInvalid }) {
     }
   };
 
+  // Regenera la clave con el formato alias-etiqueta-hash (ver el endpoint en
+  // backend/server.js): la forma de arreglar las licencias que se emitieron
+  // con el hash suelto de antes. La clave vieja deja de servir para cualquier
+  // conexión nueva, también las URLs de overlay de OBS (llevan la key cruda),
+  // por eso se pide confirmación.
+  const regenerateKey = async (lic) => {
+    if (!window.confirm(`¿Regenerar la clave de @${lic.username}? La clave actual deja de servir: tendrá que entrar con la nueva y volver a pegar la URL de sus overlays en OBS.`)) return;
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/regenerate-key`, { method: 'POST', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo regenerar la clave');
+      setNewKey({ key: data.key, username: data.license.username, regenerated: true });
+      fetchLicenses();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
+  // Complemento de Spotify a mano: un pago hecho por fuera de la plataforma, o
+  // quitarlo tras un reembolso (las compras normales lo prenden solas, ver
+  // backend/server.js applyApprovedPaymentIfNew).
+  const toggleSpotifyAddon = async (lic) => {
+    const turningOn = !lic.spotifyAddon;
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/spotify-addon`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ enabled: turningOn }),
+      });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
+      pushToast(turningOn ? 'Complemento de Spotify activado para esta licencia' : 'Complemento de Spotify desactivado para esta licencia');
+      fetchLicenses();
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
   const copyKey = () => {
     navigator.clipboard.writeText(newKey.key);
     setCopied(true);
@@ -414,9 +470,14 @@ export default function LicenseManager({ onSessionInvalid }) {
 
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
-        <div className="w-full max-w-lg bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-5">
+        <div ref={newKeyPanelRef} className="w-full max-w-lg bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-5">
           <p className="text-xs font-black uppercase tracking-widest text-red-700 mb-2">Guarda esta clave ahora — no se vuelve a mostrar</p>
-          <p className="text-sm text-gray-300 mb-2">Licencia para <strong className="text-white">@{newKey.username}</strong>:</p>
+          <p className="text-sm text-gray-300 mb-2">
+            {newKey.regenerated ? 'Clave nueva' : 'Licencia'} para <strong className="text-white">@{newKey.username}</strong>:
+          </p>
+          {newKey.regenerated && (
+            <p className="text-[11px] text-gray-400 mb-2">La clave anterior ya no sirve: hay que entregarle esta y volver a pegar la URL de sus overlays en OBS.</p>
+          )}
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{newKey.key}</code>
             <button onClick={copyKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
@@ -456,6 +517,13 @@ export default function LicenseManager({ onSessionInvalid }) {
             ))}
           </select>
         </div>
+        {/* Complemento de Spotify de regalo (o cobrado por fuera): la licencia
+            nace con acceso a Spotify aunque sea Mensual. Anual y Lifetime ya
+            lo incluyen, así que ahí no cambia nada. */}
+        <label className="flex items-start gap-2 text-[11px] text-gray-400 cursor-pointer">
+          <input type="checkbox" checked={spotifyAddon} onChange={e => setSpotifyAddon(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+          <span>Incluir el complemento de Spotify (pago único). Sirve sobre todo para el plan Mensual: Anual y Lifetime ya lo incluyen.</span>
+        </label>
         <button type="submit" disabled={creating || !username.trim()}
           className="theme-btn-primary py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed">
           {creating ? 'CREANDO...' : 'CREAR LICENCIA'}
@@ -471,15 +539,19 @@ export default function LicenseManager({ onSessionInvalid }) {
           <p className="text-gray-600 text-sm italic">Cargando precios...</p>
         ) : (
           <div className="flex flex-col gap-2">
+            {/* En pantallas angostas la etiqueta (la más larga es "Complemento
+                Spotify") ocupa su propia línea y el campo se puede encoger
+                (min-w-0): con el ancho fijo de antes el botón Guardar se salía
+                de la pantalla. */}
             {Object.keys(PRICING_PLAN_LABELS).map((planType) => (
-              <div key={planType} className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-300 w-16 shrink-0">{PRICING_PLAN_LABELS[planType]}</span>
+              <div key={planType} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-gray-300 w-full sm:w-36 shrink-0">{PRICING_PLAN_LABELS[planType]}</span>
                 <span className="text-[11px] text-gray-500 shrink-0">MX$</span>
                 <input
                   type="number" min={MIN_PRICE_MXN} step="0.01"
                   value={priceInputs[planType] ?? ''}
                   onChange={e => setPriceInputs(p => ({ ...p, [planType]: e.target.value }))}
-                  className="theme-input flex-1 p-2 outline-none text-sm"
+                  className="theme-input flex-1 min-w-0 p-2 outline-none text-sm"
                 />
                 <button
                   onClick={() => savePrice(planType)}
@@ -490,7 +562,7 @@ export default function LicenseManager({ onSessionInvalid }) {
                 </button>
               </div>
             ))}
-            <p className="text-[9px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
+            <p className="text-[10px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
             <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start mt-1">
               {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
             </button>
@@ -572,8 +644,11 @@ export default function LicenseManager({ onSessionInvalid }) {
           const status = statusOf(lic);
           return (
             <div key={lic.id} className="theme-surface p-4 flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-100 flex items-center gap-2">
+              {/* Con las insignias de Spotify el nombre puede llevar bastante texto:
+                  el grupo baja de línea (flex-wrap + min-w-0) en vez de empujar
+                  la etiqueta de estado fuera de la tarjeta. */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-gray-100 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                   {!lic.isAdmin && (
                     <input
                       type="checkbox"
@@ -585,8 +660,23 @@ export default function LicenseManager({ onSessionInvalid }) {
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
                   {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">🔓 MULTI-DISPOSITIVO</span>}
                   {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">🎲 WIN BONUS</span>}
+                  {/* Quién tiene hoy cupo en la app de Spotify de la
+                      plataforma: es a quien hay que cargar en User
+                      Management del dashboard de Spotify (ver
+                      backend/spotify.js). El resto conecta con su propia app. */}
+                  {lic.spotifySharedSlot && <span className="text-green-400 text-[10px] ml-1">🎵 CUPO SPOTIFY</span>}
+                  {lic.spotifyAddon && <span className="text-green-400 text-[10px] ml-1">🎵 COMPLEMENTO</span>}
+                  {/* A qué cuenta de Spotify está vinculada. El tope de Spotify
+                      cuenta cuentas DISTINTAS: dos licencias con la misma cuenta
+                      valen un solo lugar, y aquí se ve quién la comparte. */}
+                  {lic.spotifyAccount && (
+                    <span className="text-green-400 text-[10px] ml-1">
+                      🎵 {lic.spotifyAccount.displayName || 'cuenta vinculada'}{lic.spotifyAccount.ownApp ? ' (app propia)' : ''}
+                      {lic.spotifyAccount.sharedWith?.length > 0 && ` · misma cuenta que ${lic.spotifyAccount.sharedWith.map(name => `@${name}`).join(', ')}`}
+                    </span>
+                  )}
                 </span>
-                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${status.className}`}>{status.label}</span>
+                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border shrink-0 ${status.className}`}>{status.label}</span>
               </div>
               <p className="text-[11px] text-gray-500">clave: {lic.keyPrefix}••••••••• · tipo: {DURATION_LABELS[lic.licenseType] || lic.licenseType} · nivel Color Says: {DICE_TIERS[lic.diceTier] || lic.diceTier}</p>
               <p className="text-[11px] text-gray-500">creada: {fmtDate(lic.createdAt)} · expira: {lic.expiresAt ? fmtDate(lic.expiresAt) : 'Nunca'}</p>
@@ -615,6 +705,20 @@ export default function LicenseManager({ onSessionInvalid }) {
                 {!lic.revoked && (
                   <button onClick={() => toggleWinBonus(lic)} className="text-[10px] font-bold text-pink-400 hover:text-pink-300 underline">
                     {lic.diceWinBonusUnlocked ? 'Quitar Win Bonus' : 'Dar Win Bonus'}
+                  </button>
+                )}
+                {/* La licencia admin queda afuera a propósito: perder su clave es
+                    perder el panel, se regenera con seed-admin.js. */}
+                {!lic.isAdmin && !lic.revoked && (
+                  <button onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline">
+                    Regenerar clave
+                  </button>
+                )}
+                {/* Solo tiene sentido en Mensual (Anual/Lifetime ya incluyen
+                    Spotify), y siempre se puede quitar si quedó prendido. */}
+                {!lic.revoked && (lic.licenseType === 'month' || lic.spotifyAddon) && (
+                  <button onClick={() => toggleSpotifyAddon(lic)} className="text-[10px] font-bold text-green-400 hover:text-green-300 underline">
+                    {lic.spotifyAddon ? 'Quitar complemento Spotify' : 'Dar complemento Spotify'}
                   </button>
                 )}
                 {!lic.isAdmin && (

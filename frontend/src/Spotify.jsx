@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { HowItWorks } from './PanelHelp';
+import SpotifyAppGuide from './SpotifyAppGuide';
+
+// Días de conexión a partir de los cuales el panel avisa que hay que renovarla
+// (Spotify la caduca a los 180, ver normalizeStatus).
+const RENEW_WARNING_DAYS = 150;
 
 const DEFAULT_SPOTIFY_SETTINGS = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 };
 function spotifySettingsEqual(a, b) {
@@ -39,30 +44,73 @@ function Toggle({ checked, onChange, label, description }) {
 // en TTS, porque acá la acción real (llamar a la API de Spotify) pasa por
 // el backend.
 // ─────────────────────────────────────────────
+// Quién puede usar Spotify y con cuál app (ver backend/spotify.js, "Quién
+// puede usarlo"): lo decide SIEMPRE la respuesta de /status, no el tipo de
+// licencia guardado en la sesión, que no se entera de una compra hecha
+// después. Un backend anterior (que solo mandaba allowed/connected/
+// displayName) se lee como "con derecho y con la app de la plataforma" para
+// no romper el panel mientras un despliegue está a medias.
+function normalizeStatus(data) {
+  const access = data.access || {
+    entitled: data.allowed !== false,
+    reason: 'lifetime',
+    source: data.allowed === false ? null : 'shared',
+    needsOwnApp: false,
+    addonRequired: false,
+    holdsSharedSlot: data.allowed !== false,
+  };
+  // Spotify caduca la conexión a los 6 meses de autorizarla (y refrescar el
+  // token NO la extiende): se avisa desde los 150 días para renovarla antes de
+  // que deje de funcionar en pleno directo. Se calcula aquí, y no al renderizar,
+  // porque leer la hora en el render no es puro.
+  const daysConnected = data.connectedAt ? Math.floor((Date.now() - data.connectedAt) / 86400000) : null;
+  const renewSoon = !!data.connected && daysConnected !== null && daysConnected >= RENEW_WARNING_DAYS;
+  return { ...data, access, daysConnected, renewSoon };
+}
+
+// Por qué a esta licencia le toca crear su propia app (intro de la guía).
+// `total` es la cantidad de cupos que informa el backend (sharedSlots.total,
+// ver backend/spotify.js): así el número no queda escrito a mano aquí. Si un
+// backend anterior no lo manda, el texto sale sin número.
+function ownAppReason(reason, total) {
+  if (reason === 'lifetime') {
+    return `${total ? `Los ${total} cupos` : 'Los cupos'} de la app de Spotify de la plataforma son para los primeros Lifetime y ya están ocupados, así que tu licencia conecta con su propia app.`;
+  }
+  if (reason === 'addon') return 'Tu complemento de Spotify se conecta con tu propia app de Spotify, no con la de la plataforma.';
+  return 'Tu plan Anual incluye Spotify: se conecta con tu propia app de Spotify, no con la de la plataforma.';
+}
+const SWITCH_TO_OWN_APP_REASON = 'Vas a conectar con tu propia app en lugar de la de la plataforma. Al guardarla se desconecta tu cuenta actual y hay que volver a conectarla.';
+const CHANGE_OWN_APP_REASON = 'Pega las credenciales de otra app de Spotify. Al guardarla se desconecta tu cuenta actual y hay que volver a conectarla.';
+
 export default function Spotify({ socket, queueState, settingsState, oauthResult, onOAuthResultConsumed, onWantsMembership }) {
-  const [connected, setConnected] = useState(false);
-  const [displayName, setDisplayName] = useState(null);
-  // Spotify es solo para licencias Lifetime (ver backend/spotify.js,
-  // isLicenseAllowed): la respuesta de /status manda, no el tipo de licencia
-  // guardado en la sesión, que no se entera de una compra hecha después.
-  // Arranca en true para no parpadear el aviso de bloqueo mientras carga.
-  const [allowed, setAllowed] = useState(true);
+  // Respuesta de /api/spotify/status (null mientras carga): acceso, cupos,
+  // app propia, Redirect URI, precio del complemento y si está conectado.
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [banner, setBanner] = useState(oauthResult || null);
   const [errorToast, setErrorToast] = useState(null);
   const [connectError, setConnectError] = useState('');
+  // Guía de "crea tu propia app" abierta por decisión del streamer (a quien no
+  // le queda otra, `access.needsOwnApp`, se le muestra sola).
+  const [showGuide, setShowGuide] = useState(false);
   const [volume, setVolume] = useState(50);
+
+  const access = status?.access || null;
+  const connected = status?.connected ?? false;
+  const displayName = status?.displayName ?? null;
+  // Cupos de la app de la plataforma (ver backend/spotify.js); null si un
+  // backend anterior no lo informa.
+  const slotsTotal = status?.sharedSlots?.total ?? null;
+  // Precio vigente del complemento (centavos -> pesos); 18000 es solo el
+  // respaldo si un backend anterior no lo manda (ver backend/pricing.js).
+  const addonPriceMxn = (status?.addonPriceCents ?? 18000) / 100;
 
   const fetchStatus = async () => {
     try {
       const res = await fetch(`${backendUrl()}/api/spotify/status`, { headers: authHeaders() });
       const data = await res.json();
-      if (data.success) {
-        setAllowed(data.allowed !== false); // un backend anterior no manda `allowed`: se asume permitido
-        setConnected(data.connected);
-        setDisplayName(data.displayName);
-      }
+      if (data.success) setStatus(normalizeStatus(data));
     } finally {
       setLoading(false);
     }
@@ -71,7 +119,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
   useEffect(() => { fetchStatus(); }, []);
 
   // Spotify redirige de vuelta al panel después del OAuth con
-  // ?spotify=connected|not_registered|error — App.jsx deja esta pestaña
+  // ?spotify=connected|not_registered|not_registered_own|error — App.jsx deja esta pestaña
   // activa apenas se vuelve y nos pasa ese valor como `oauthResult`: para
   // cuando este panel (carga perezosa) monta, App.jsx ya reescribió la URL
   // sin la query, así que no se puede leer de window.location. Se consume
@@ -109,8 +157,22 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
   const disconnect = async () => {
     if (!window.confirm('¿Desconectar tu cuenta de Spotify? !play/!skip dejan de funcionar hasta que la vuelvas a conectar.')) return;
     await fetch(`${backendUrl()}/api/spotify/disconnect`, { method: 'POST', headers: authHeaders() });
-    setConnected(false);
-    setDisplayName(null);
+    setStatus((current) => (current ? { ...current, connected: false, displayName: null } : current));
+  };
+
+  // La app propia se guardó bien (ver SpotifyAppGuide): el backend borró la
+  // cuenta conectada, que era de otra app — se vuelve a leer el estado y el
+  // streamer solo tiene que pulsar "Conectar".
+  const onAppSaved = async () => {
+    setShowGuide(false);
+    setBanner('app_saved');
+    await fetchStatus();
+  };
+
+  const removeOwnApp = async () => {
+    if (!window.confirm('¿Quitar tu app de Spotify? Se desconecta tu cuenta y !play/!skip dejan de funcionar hasta que conectes otra.')) return;
+    await fetch(`${backendUrl()}/api/spotify/app`, { method: 'DELETE', headers: authHeaders() });
+    await fetchStatus();
   };
 
   const clearQueue = () => socket?.emit('clear_spotify_queue');
@@ -194,6 +256,20 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
+      {/* Mismo caso que el de arriba pero con la app PROPIA del streamer: aquí
+          no hay a quién pedirle nada, el arreglo es suyo (paso 4 de la guía). */}
+      {banner === 'not_registered_own' && (
+        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+          <span>❌ TU CUENTA DE SPOTIFY NO ESTÁ EN LOS USUARIOS DE TU APP. En el dashboard de Spotify abre tu app, entra a Settings → User Management → Add new user, agrega tu nombre y el correo de tu cuenta de Spotify, y vuelve a intentarlo.</span>
+          <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
+        </div>
+      )}
+      {banner === 'app_saved' && (
+        <div role="status" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-emerald-500/10 border-emerald-500/40 text-emerald-600 flex items-start justify-between gap-3">
+          <span>✅ TU APP DE SPOTIFY QUEDÓ GUARDADA. Ahora pulsa "Conectar con Spotify" para autorizar tu cuenta.</span>
+          <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
+        </div>
+      )}
       {errorToast && (
         <div className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-amber-500/10 border-amber-500/40 text-amber-600">
           ⚠️ {errorToast}
@@ -204,14 +280,14 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
         <div className="flex items-center gap-3 mb-4">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">CONEXIÓN</h1>
-          {!loading && allowed && connected && (
+          {!loading && access?.entitled && connected && (
             <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border text-green-300 border-green-500/40 bg-green-500/10">● Conectado</span>
           )}
-          {!loading && allowed && !connected && (
+          {!loading && access?.entitled && !connected && (
             <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">Sin conectar</span>
           )}
-          {!loading && !allowed && (
-            <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">Solo Lifetime</span>
+          {!loading && access && !access.entitled && (
+            <span className="ml-auto text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-gray-600/50 text-gray-400">{access.addonRequired ? 'Requiere complemento' : 'Anual y Lifetime'}</span>
           )}
         </div>
 
@@ -220,32 +296,87 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           <p>Necesitas <span className="font-bold text-white">Spotify Premium</span> y tener Spotify <span className="font-bold text-white">abierto y sonando</span> en algún dispositivo mientras transmites.</p>
         </HowItWorks>
 
-        {loading ? (
+        {loading || !access ? (
           <p className="text-gray-500 text-sm italic">Verificando...</p>
-        ) : !allowed ? (
-          <>
-            <p className="text-sm text-gray-300 mb-4">
-              Los pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded text-[10px]">!play</code> son <span className="font-bold text-white">exclusivos de la membresía Lifetime</span>. Spotify permite conectar muy pocas cuentas a la plataforma, por eso el cupo es limitado.
-            </p>
-            {onWantsMembership && (
-              <button
-                type="button"
-                onClick={onWantsMembership}
-                className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg"
-              >
-                Ver membresías
-              </button>
-            )}
-          </>
+        ) : !access.entitled ? (
+          access.addonRequired ? (
+            <>
+              <p className="text-sm text-gray-300 mb-4">
+                Tu plan Mensual no incluye los pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded text-[10px]">!play</code>. Con el{' '}
+                <span className="font-bold text-white">complemento de Spotify</span> (un solo pago de MX${addonPriceMxn.toLocaleString('es-MX')}, sin renovación) los activas en tu licencia:
+                conectas con tu propia app de Spotify y te guiamos paso a paso.
+              </p>
+              {onWantsMembership && (
+                <button type="button" onClick={onWantsMembership} className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg">
+                  Ver el complemento
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-300 mb-4">
+                Los pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded text-[10px]">!play</code> están incluidos en los planes{' '}
+                <span className="font-bold text-white">Anual</span> y <span className="font-bold text-white">Lifetime</span>, y como complemento de pago único en el plan{' '}
+                <span className="font-bold text-white">Mensual</span>.
+              </p>
+              {onWantsMembership && (
+                <button type="button" onClick={onWantsMembership} className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg">
+                  Ver membresías
+                </button>
+              )}
+            </>
+          )
+        ) : showGuide || (!connected && access.needsOwnApp) ? (
+          <SpotifyAppGuide
+            redirectUri={status.redirectUri}
+            intro={showGuide
+              ? (access.source === 'own' ? CHANGE_OWN_APP_REASON : SWITCH_TO_OWN_APP_REASON)
+              : ownAppReason(access.reason, slotsTotal)}
+            existingClientId={status.ownApp?.clientId || ''}
+            onSaved={onAppSaved}
+            onCancel={access.needsOwnApp ? undefined : () => setShowGuide(false)}
+          />
         ) : connected ? (
           <>
-            <p className="text-sm text-gray-300 mb-4">Conectado como <span className="font-bold text-white">{displayName}</span></p>
+            <p className="text-sm text-gray-300 mb-1">Conectado como <span className="font-bold text-white">{displayName}</span></p>
+            <p className="text-[11px] text-gray-500 mb-4">
+              {access.source === 'own' ? 'Con tu propia app de Spotify.' : 'Con la app de Spotify de la plataforma (cupo reservado a los primeros Lifetime).'}
+            </p>
+            {status.renewSoon && (
+              <>
+                <p role="status" className="theme-input text-[11px] text-amber-500 leading-snug px-3 py-2 mb-3">
+                  Spotify caduca la conexión a los 6 meses de autorizarla y la tuya ya lleva {status.daysConnected} días. Renuévala ahora para empezar otros 6 meses; si no, dejará de funcionar sola y tendrás que volver a conectarla.
+                </p>
+                <button
+                  onClick={connect}
+                  disabled={connecting}
+                  className="theme-btn-primary w-full py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg mb-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {connecting ? 'Redirigiendo...' : 'Renovar conexión'}
+                </button>
+                {connectError && <p role="alert" className="text-[11px] font-bold text-red-500 mb-3">{connectError}</p>}
+              </>
+            )}
             <button onClick={disconnect} className="theme-btn-danger w-full py-3 rounded-xl font-bold tracking-wide transition-all">
               Desconectar
             </button>
+            {access.source === 'own' ? (
+              <button type="button" onClick={removeOwnApp} className="block mx-auto mt-3 text-[11px] font-bold text-gray-400 underline hover:text-white">
+                Quitar mi app de Spotify
+              </button>
+            ) : access.reason !== 'admin' && (
+              <button type="button" onClick={() => setShowGuide(true)} className="block mx-auto mt-3 text-[11px] font-bold text-gray-400 underline hover:text-white">
+                Prefiero usar mi propia app
+              </button>
+            )}
           </>
         ) : (
           <>
+            {access.source === 'shared' && access.reason !== 'admin' && (
+              <p role="status" className="theme-input text-[11px] text-gray-400 leading-snug px-3 py-2 mb-4">
+                Tienes uno de los {slotsTotal ? `${slotsTotal} cupos` : 'cupos'} de la app de Spotify de la plataforma, reservados a los primeros Lifetime.
+              </p>
+            )}
             <ol className="text-[11px] text-gray-400 mb-4 leading-snug space-y-1.5 list-decimal list-inside">
               <li>Ten a la mano tu cuenta de <span className="font-bold text-white">Spotify Premium</span>.</li>
               <li>Pulsa el botón: irás a Spotify a autorizar el acceso (nunca vemos tu contraseña).</li>
@@ -259,6 +390,15 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
               {connecting ? 'Redirigiendo...' : 'Conectar con Spotify'}
             </button>
             {connectError && <p role="alert" className="text-[11px] font-bold text-red-500 mt-3">{connectError}</p>}
+            {access.source === 'own' ? (
+              <button type="button" onClick={() => setShowGuide(true)} className="block mx-auto mt-3 text-[11px] font-bold text-gray-400 underline hover:text-white">
+                Cambiar mi app de Spotify
+              </button>
+            ) : access.reason !== 'admin' && (
+              <button type="button" onClick={() => setShowGuide(true)} className="block mx-auto mt-3 text-[11px] font-bold text-gray-400 underline hover:text-white">
+                Prefiero usar mi propia app
+              </button>
+            )}
           </>
         )}
       </div>
@@ -348,7 +488,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                   {nowPlaying.requestedBy && ` · pedido por @${nowPlaying.requestedBy}`}
                 </p>
               </div>
-              <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
             </div>
           ) : (
             <p className="text-gray-600 text-xs italic">Nada sonando en este momento.</p>
@@ -376,7 +516,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                     <p className="text-[10px] text-gray-500 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
                   </div>
                   {song.playing && (
-                    <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
                   )}
                 </div>
               ))}

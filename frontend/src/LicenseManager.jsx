@@ -68,6 +68,20 @@ function ToastStack({ toasts }) {
   );
 }
 
+// Fila de interruptor con título y ayuda, para el formulario de edición.
+function EditSwitch({ label, hint, checked, onChange }) {
+  return (
+    <label className="flex items-center justify-between gap-3 cursor-pointer">
+      <span className="min-w-0">
+        <span className="block text-xs font-bold text-gray-200">{label}</span>
+        {hint && <span className="block text-[10px] text-gray-500 leading-snug">{hint}</span>}
+      </span>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="sr-only peer" />
+      <span aria-hidden="true" className="tkc-switch flex-shrink-0" />
+    </label>
+  );
+}
+
 // Panel de administración de licencias — solo visible si la sesión actual
 // tiene isAdmin (hoy, la única es notbenjaa1). No confundir con
 // AdminPanel.jsx, que es el panel de juego de Rey del Trono.
@@ -114,9 +128,11 @@ export default function LicenseManager({ onSessionInvalid }) {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [extendingId, setExtendingId] = useState(null);
-  const [extendType, setExtendType] = useState('week');
-  const [extendDiceTier, setExtendDiceTier] = useState('regular');
+  // Edición de una licencia: un solo formulario con todas sus opciones (ver
+  // openEditor / saveEdit). `renew` vacío = no cambiar plan ni vencimiento.
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Selección para eliminar en bloque (pedido explícito: evitar revocar +
   // eliminar licencia por licencia una por una). Un Set de ids, filtrado
@@ -337,63 +353,45 @@ export default function LicenseManager({ onSessionInvalid }) {
     }
   };
 
-  const extendLicense = async (id) => {
-    try {
-      const res = await fetch(`${backendUrl()}/api/licenses/${id}/extend`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ licenseType: extendType, diceTier: extendDiceTier }),
-      });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo extender');
-      pushToast('Licencia actualizada');
-      setExtendingId(null);
-      fetchLicenses();
-    } catch (err) {
-      pushToast(err.message, 'error');
-    }
+  const openEditor = (lic) => {
+    if (editingId === lic.id) { setEditingId(null); return; }
+    setEditingId(lic.id);
+    setEditForm({
+      multiDevice: !!lic.multiDevice,
+      spotifyAddon: !!lic.spotifyAddon,
+      winBonus: !!lic.diceWinBonusUnlocked,
+      diceTier: lic.diceTier || 'regular',
+      renew: '',
+    });
   };
 
-  // "Todopoderosa": se salta la restricción de un solo dispositivo por
-  // completo. Pensado para el owner (notbenjaa1), no para licencias de pago.
-  const toggleMultiDevice = async (lic) => {
-    const turningOn = !lic.multiDevice;
-    if (turningOn && !window.confirm(`¿Convertir la licencia de @${lic.username} en "todopoderosa"? Va a poder usarse en cualquier cantidad de dispositivos a la vez, sin restricciones.`)) return;
+  // Un solo request con lo que cambió (ver POST /api/licenses/:id/edit).
+  const saveEdit = async (lic) => {
+    const body = {};
+    if (editForm.renew) body.licenseType = editForm.renew;
+    if (editForm.diceTier !== (lic.diceTier || 'regular')) body.diceTier = editForm.diceTier;
+    if (editForm.multiDevice !== !!lic.multiDevice) body.multiDevice = editForm.multiDevice;
+    if (editForm.spotifyAddon !== !!lic.spotifyAddon) body.spotifyAddon = editForm.spotifyAddon;
+    if (editForm.winBonus !== !!lic.diceWinBonusUnlocked) body.winBonus = editForm.winBonus;
+    if (Object.keys(body).length === 0) { setEditingId(null); return; }
+    if (body.multiDevice && !window.confirm(`¿Convertir la licencia de @${lic.username} en "todopoderosa"? Va a poder usarse en cualquier cantidad de dispositivos a la vez, sin restricciones.`)) return;
+    setSavingEdit(true);
     try {
-      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/multi-device`, {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ enabled: turningOn }),
+        body: JSON.stringify(body),
       });
       if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
-      pushToast(turningOn ? 'Licencia convertida en multi-dispositivo' : 'Multi-dispositivo desactivado');
+      if (!data.success) throw new Error(data.error || 'No se pudo guardar');
+      pushToast(`Licencia de @${lic.username} actualizada`);
+      setEditingId(null);
       fetchLicenses();
     } catch (err) {
       pushToast(err.message, 'error');
-    }
-  };
-
-  // Excepción manual al WIN BONUS de Color Says (dejó de venderse por
-  // dice_tier, ver Colorsays.jsx/db.js) — se prende/apaga por licencia
-  // puntual, independiente de qué dice_tier tenga.
-  const toggleWinBonus = async (lic) => {
-    const turningOn = !lic.diceWinBonusUnlocked;
-    try {
-      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/win-bonus`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ enabled: turningOn }),
-      });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
-      pushToast(turningOn ? 'Win Bonus activado para esta licencia' : 'Win Bonus desactivado para esta licencia');
-      fetchLicenses();
-    } catch (err) {
-      pushToast(err.message, 'error');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -410,27 +408,6 @@ export default function LicenseManager({ onSessionInvalid }) {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo regenerar la clave');
       setNewKey({ key: data.key, username: data.license.username, regenerated: true });
-      fetchLicenses();
-    } catch (err) {
-      pushToast(err.message, 'error');
-    }
-  };
-
-  // Complemento de Spotify a mano: un pago hecho por fuera de la plataforma, o
-  // quitarlo tras un reembolso (las compras normales lo prenden solas, ver
-  // backend/server.js applyApprovedPaymentIfNew).
-  const toggleSpotifyAddon = async (lic) => {
-    const turningOn = !lic.spotifyAddon;
-    try {
-      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/spotify-addon`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ enabled: turningOn }),
-      });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo actualizar');
-      pushToast(turningOn ? 'Complemento de Spotify activado para esta licencia' : 'Complemento de Spotify desactivado para esta licencia');
       fetchLicenses();
     } catch (err) {
       pushToast(err.message, 'error');
@@ -520,10 +497,8 @@ export default function LicenseManager({ onSessionInvalid }) {
         {/* Complemento de Spotify de regalo (o cobrado por fuera): la licencia
             nace con acceso a Spotify aunque sea Mensual. Anual y Lifetime ya
             lo incluyen, así que ahí no cambia nada. */}
-        <label className="flex items-start gap-2 text-[11px] text-gray-400 cursor-pointer">
-          <input type="checkbox" checked={spotifyAddon} onChange={e => setSpotifyAddon(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-          <span>Incluir el complemento de Spotify (pago único). Sirve sobre todo para el plan Mensual: Anual y Lifetime ya lo incluyen.</span>
-        </label>
+        <EditSwitch label="Complemento de Spotify" hint="Pago único. Sirve sobre todo para el plan Mensual: Anual y Lifetime ya lo incluyen."
+          checked={spotifyAddon} onChange={setSpotifyAddon} />
         <button type="submit" disabled={creating || !username.trim()}
           className="theme-btn-primary py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed">
           {creating ? 'CREANDO...' : 'CREAR LICENCIA'}
@@ -692,72 +667,79 @@ export default function LicenseManager({ onSessionInvalid }) {
               )}
 
               <div className="flex flex-wrap items-center gap-3 mt-1">
-                {!lic.revoked && !lic.isAdmin && (
-                  <button onClick={() => revoke(lic.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">
-                    Revocar
-                  </button>
-                )}
-                {!lic.revoked && (
-                  <button onClick={() => toggleMultiDevice(lic)} className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 underline">
-                    {lic.multiDevice ? 'Quitar multi-dispositivo' : 'Hacer multi-dispositivo'}
-                  </button>
-                )}
-                {!lic.revoked && (
-                  <button onClick={() => toggleWinBonus(lic)} className="text-[10px] font-bold text-pink-400 hover:text-pink-300 underline">
-                    {lic.diceWinBonusUnlocked ? 'Quitar Win Bonus' : 'Dar Win Bonus'}
-                  </button>
-                )}
-                {/* La licencia admin queda afuera a propósito: perder su clave es
-                    perder el panel, se regenera con seed-admin.js. */}
-                {!lic.isAdmin && !lic.revoked && (
-                  <button onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline">
-                    Regenerar clave
-                  </button>
-                )}
-                {/* Solo tiene sentido en Mensual (Anual/Lifetime ya incluyen
-                    Spotify), y siempre se puede quitar si quedó prendido. */}
-                {!lic.revoked && (lic.licenseType === 'month' || lic.spotifyAddon) && (
-                  <button onClick={() => toggleSpotifyAddon(lic)} className="text-[10px] font-bold text-green-400 hover:text-green-300 underline">
-                    {lic.spotifyAddon ? 'Quitar complemento Spotify' : 'Dar complemento Spotify'}
-                  </button>
-                )}
-                {!lic.isAdmin && (
-                  <button onClick={() => {
-                    setExtendingId(extendingId === lic.id ? null : lic.id);
-                    setExtendType('week');
-                    setExtendDiceTier(lic.diceTier || 'regular');
-                  }} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline">
-                    Extender
-                  </button>
-                )}
-                {!lic.isAdmin && (
-                  <button onClick={() => deleteLicenseRow(lic)} className="text-[10px] font-bold text-gray-400 hover:text-red-400 underline">
-                    Eliminar
-                  </button>
-                )}
+                <button type="button" onClick={() => openEditor(lic)} aria-expanded={editingId === lic.id}
+                  className="theme-btn-secondary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                  {editingId === lic.id ? 'Cerrar' : '✏️ Editar'}
+                </button>
               </div>
 
-              {extendingId === lic.id && (
-                <div className="theme-input flex items-center gap-2 p-2 mt-1">
-                  <select
-                    value={extendType} onChange={e => setExtendType(e.target.value)}
-                    className="flex-1 bg-transparent outline-none text-xs"
-                  >
-                    {Object.entries(CREATE_TYPES).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={extendDiceTier} onChange={e => setExtendDiceTier(e.target.value)}
-                    className="flex-1 bg-transparent outline-none text-xs"
-                  >
-                    {Object.entries(DICE_TIERS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                  <button onClick={() => extendLicense(lic.id)} className="theme-btn-primary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                    Confirmar
-                  </button>
+              {editingId === lic.id && editForm && (
+                <div className="theme-input p-4 mt-2 flex flex-col gap-4" role="group" aria-label={`Editar la licencia de @${lic.username}`}>
+                  <div className="flex flex-col gap-3">
+                    <EditSwitch label="Multi-dispositivo" hint="Se puede usar en cualquier cantidad de dispositivos a la vez."
+                      checked={editForm.multiDevice} onChange={v => setEditForm(f => ({ ...f, multiDevice: v }))} />
+                    <EditSwitch label="Complemento de Spotify" hint={lic.licenseType === 'month' || lic.licenseType === 'day' || lic.licenseType === 'week' || lic.licenseType === 'trial' ? 'Da acceso a Spotify a esta licencia sin que lo compre.' : 'Anual y Lifetime ya incluyen Spotify; se conserva si cambia de plan.'}
+                      checked={editForm.spotifyAddon} onChange={v => setEditForm(f => ({ ...f, spotifyAddon: v }))} />
+                    <EditSwitch label="Win Bonus (Color Says)" hint="Excepción manual del bono de victoria."
+                      checked={editForm.winBonus} onChange={v => setEditForm(f => ({ ...f, winBonus: v }))} />
+                  </div>
+
+                  {!lic.isAdmin && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1">
+                        <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">Nivel Color Says</span>
+                        <select value={editForm.diceTier} onChange={e => setEditForm(f => ({ ...f, diceTier: e.target.value }))}
+                          className="theme-input p-2.5 outline-none text-xs">
+                          {Object.entries(DICE_TIERS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">Membresía</span>
+                        <select value={editForm.renew} onChange={e => setEditForm(f => ({ ...f, renew: e.target.value }))}
+                          className="theme-input p-2.5 outline-none text-xs">
+                          <option value="">Sin cambios ({lic.expiresAt ? `vence ${fmtDate(lic.expiresAt)}` : 'no vence'})</option>
+                          {Object.entries(CREATE_TYPES).map(([value, label]) => (
+                            <option key={value} value={value}>Renovar: {label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => saveEdit(lic)} disabled={savingEdit}
+                      className="theme-btn-primary px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                      {savingEdit ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                    <button type="button" onClick={() => setEditingId(null)}
+                      className="theme-btn-secondary px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                      Cancelar
+                    </button>
+                    {!lic.isAdmin && (
+                      <button type="button" onClick={() => deleteLicenseRow(lic)}
+                        className="ml-auto px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/50 text-red-700 hover:bg-red-500/10">
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+
+                  {!lic.isAdmin && (
+                    <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--surface-border-color)]">
+                      {!lic.revoked && (
+                        <button type="button" onClick={() => revoke(lic.id)} className="text-[10px] font-bold text-red-700 hover:underline">
+                          Revocar acceso
+                        </button>
+                      )}
+                      {!lic.revoked && (
+                        <button type="button" onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-700 hover:underline">
+                          Regenerar clave
+                        </button>
+                      )}
+                      <span className="text-[10px] text-gray-500">Eliminar revoca la licencia automáticamente antes de borrarla.</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

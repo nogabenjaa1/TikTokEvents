@@ -419,6 +419,14 @@ async function setMultiDevice(id, enabled) {
 
 // Excepción manual del WIN BONUS de Color Says para una licencia puntual —
 // ver comentario de la migración de dice_win_bonus_unlocked más arriba.
+// Solo el nivel de Color Says, sin tocar el plan ni el vencimiento (el
+// formulario de edición del admin puede cambiar el nivel sin renovar).
+async function setDiceTier(id, diceTier) {
+    await ready;
+    await pool.query('UPDATE licenses SET dice_tier = $1 WHERE id = $2', [diceTier, id]);
+    return findById(id);
+}
+
 async function setWinBonusUnlocked(id, enabled) {
     await ready;
     await pool.query('UPDATE licenses SET dice_win_bonus_unlocked = $1 WHERE id = $2', [!!enabled, id]);
@@ -854,7 +862,7 @@ module.exports = {
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
-    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon,
+    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

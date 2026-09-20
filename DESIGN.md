@@ -168,6 +168,12 @@ Los cuatro materiales viven en la misma familia de luminosidad — pastel claro 
 
 **La Regla del Color Construido, No Mezclado.** `--page-bg`, `--surface-bg` y `--surface-bg-alt` se escriben `oklch(from var(--accent) L C h)` — nunca `color-mix()` hacia una base oscura. `color-mix()` diluye luminosidad Y croma en proporción al % mezclado, y el croma nativo de cada acento en OKLCH no es igual (rosa y verde parten con menos croma que morado/azul), así que un mismo % de mezcla deja algunos acentos más "lavados" que otros — es el bug real detrás de "se ve grisáceo en rosa y verde, pero bien en morado/azul": no era casualidad, morado y azul tienen más croma nativo y disimulaban el problema. Tomar solo el matiz (`h`) del acento y fijar `L`/`C` a mano garantiza la misma intensidad para los 4. `color-mix()` sigue siendo la herramienta correcta para todo lo demás (sombras y bordes hacia `transparent`, `--accent-pastel` hacia `white`) — ahí no hay croma nativo que perder, así que mezclar no diluye nada. La regla es específica a fondos/superficies, no un rechazo general de `color-mix()`.
 
+### Modo oscuro (apariencia del panel)
+
+Independiente del skin (material + acento): el streamer elige **Claro**, **Oscuro** o **Automático** (sigue `prefers-color-scheme`) en la pantalla Tema, y se guarda por navegador (`tkc_theme_mode`). Lo aplica `ThemedShell` con `data-mode`; el overlay de OBS no lo lleva, así que lo que ve la audiencia no cambia, y las vistas previas de overlay embebidas en el panel se marcan `data-mode="light"` como "islas claras".
+
+El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de página `L 0.17`, superficie `L 0.235` y superficie alterna `L 0.20` en OKLCH con el tinte del acento (mismo criterio de matiz que el modo claro), tinta `--ink-default`/`--ink-cute` = `#F3EEFB`, y las tintas de estado pasan a sus versiones claras: `--ink-danger #FCA5A5`, `--ink-warning #FCD34D`, `--ink-success #86EFAC`, `--ink-premio #6EE7B7`, `--ink-info #7DD3FC`, `--ink-amber #FBBF24`. Las sombras se derivan de `--page-bg`, no de un negro literal. Títulos y etiquetas usan el acento a `L 0.87` en vez de `L 0.42`.
+
 ## Typography
 
 **Display/Body Font:** Tailwind `font-sans` (system UI stack — sin fuente custom cargada).

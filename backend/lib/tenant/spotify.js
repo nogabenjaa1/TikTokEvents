@@ -97,18 +97,59 @@ module.exports = {
     },
 
     // Única puerta a la cuenta de Spotify de esta licencia. Si la licencia no
-    // puede usar Spotify (ver spotify.isLicenseAllowed — p. ej. una cuenta
-    // que se conectó antes de que la función pasara a ser solo Lifetime) se
-    // comporta como "sin cuenta conectada", un caso que todos los llamadores
-    // ya manejan: los comandos se ignoran y el polling se apaga. Lee la
-    // licencia de la DB en cada llamada a propósito, en vez de fiarse de
-    // `this.licenseType`, que queda fijo desde que se creó el Tenant y no ve
-    // una compra o cambio de plan posterior. Se mira antes que la cuenta para
-    // no descifrar tokens que no se van a usar.
+    // puede usar Spotify (ver spotify.isLicenseAllowed — p. ej. un plan sin
+    // derecho) o conecta con la app de la plataforma sin tener ya cupo en
+    // ella, se comporta como "sin cuenta conectada", un caso que todos los
+    // llamadores ya manejan: los comandos se ignoran y el polling se apaga.
+    // Lee la licencia de la DB en cada llamada a propósito, en vez de fiarse
+    // de `this.licenseType`, que queda fijo desde que se creó el Tenant y no
+    // ve una compra o cambio de plan posterior. Se mira antes que la cuenta
+    // para no descifrar tokens que no se van a usar.
     async getAllowedSpotifyAccount() {
         const license = await db.findById(this.licenseId);
         if (!spotify.isLicenseAllowed(license)) return null;
-        return db.getSpotifyAccount(this.licenseId);
+        const account = await db.getSpotifyAccount(this.licenseId);
+        if (!account) return null;
+        // Una cuenta con app propia (`account.app`) no depende de ningún
+        // cupo. Con la de la plataforma solo sirve mientras la licencia
+        // conserve su lugar entre los primeros Lifetime (o sea admin).
+        if (!account.app && !license.is_admin) {
+            const slotHolders = await db.getSharedSpotifySlotHolders(spotify.SHARED_SLOTS_TOTAL);
+            if (!slotHolders.includes(this.licenseId)) return null;
+        }
+        return account;
+    },
+
+    // Access token vigente de la cuenta, o null si la conexión ya no existe
+    // (en ese caso ya se borró y se avisó al panel: el llamador solo tiene que
+    // salir). Cualquier otro fallo se vuelve a lanzar, para que cada llamador
+    // conserve su manejo de siempre.
+    async getSpotifyAccessTokenOrDrop(account) {
+        try {
+            return await spotify.getValidAccessToken(account);
+        } catch (err) {
+            if (!(err instanceof spotify.SpotifyRefreshTokenExpiredError)) throw err;
+            await this.dropExpiredSpotifyAccount();
+            return null;
+        }
+    },
+
+    // Spotify caduca la conexión a los 6 meses de la autorización (o antes, si
+    // el streamer revoca el acceso desde su cuenta de Spotify): el refresh
+    // responde invalid_grant y reintentar no sirve. Se borra la cuenta guardada
+    // (la app propia, si tiene, se queda) para que el panel pase a "Sin
+    // conectar" con el botón de volver a conectar — antes seguía diciendo
+    // "Conectado" sin que nada funcionara —, se apaga el polling y se avisa UNA
+    // vez.
+    async dropExpiredSpotifyAccount() {
+        console.warn(`[${this.logId}] [SPOTIFY] La conexión con Spotify venció o el streamer revocó el acceso — se borra la cuenta guardada, hay que volver a conectarla.`);
+        await db.deleteSpotifyAccount(this.licenseId);
+        this.stopSpotifyQueuePolling();
+        if (this.spotifyQueueState.nowPlaying) {
+            this.spotifyQueueState.nowPlaying = null;
+            this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+        }
+        this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció (Spotify la renueva cada 6 meses): vuelve a conectarla desde el panel.' });
     },
 
     // Salta a la siguiente canción en la reproducción REAL de Spotify
@@ -117,12 +158,13 @@ module.exports = {
     async skipSpotifyTrack() {
         const account = await this.getAllowedSpotifyAccount();
         if (!account) {
-            console.log(`[${this.logId}] [SPOTIFY] !skip ignorado — no hay una cuenta de Spotify conectada (o la licencia no es Lifetime).`);
+            console.log(`[${this.logId}] [SPOTIFY] !skip ignorado — no hay una cuenta de Spotify utilizable (sin conectar, sin derecho por el plan o sin cupo).`);
             return;
         }
         let accessToken;
         try {
-            accessToken = await spotify.getValidAccessToken(account);
+            accessToken = await this.getSpotifyAccessTokenOrDrop(account);
+            if (!accessToken) return; // la conexión caducó: ya se borró y se avisó
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] No se pudo renovar el token para !skip:`, err.message);
             this.broadcast.emit('spotify_error', { message: 'Tu conexión con Spotify venció — reconéctala desde el panel.' });
@@ -133,7 +175,7 @@ module.exports = {
             console.log(`[${this.logId}] [SPOTIFY] !skip OK.`);
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] !skip falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
-            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err, account) });
         }
     },
 
@@ -155,7 +197,9 @@ module.exports = {
 
     // Traduce los errores esperables de la API de Spotify (ver spotify.js)
     // a un mensaje que el streamer entienda — reusado por skip/volumen.
-    describeSpotifyError(err) {
+    // `account` (opcional) dice con qué app conectó: el arreglo de "cuenta
+    // no habilitada" es distinto si es la suya o la de la plataforma.
+    describeSpotifyError(err, account) {
         if (err instanceof spotify.SpotifyPlaybackError && err.code === 'NO_ACTIVE_DEVICE') {
             return 'Abre Spotify y dale play en algún dispositivo para poder controlarlo.';
         }
@@ -166,6 +210,9 @@ module.exports = {
         // usuarios de la app de Spotify (ver spotify.js) — sin este caso
         // caía en el mensaje genérico, o peor, en "necesita Premium".
         if (err instanceof spotify.SpotifyUserNotRegisteredError) {
+            if (account?.app) {
+                return 'Tu cuenta de Spotify ya no figura en los usuarios de tu app — agrégala en User Management, dentro de tu app en el dashboard de Spotify.';
+            }
             return 'Tu cuenta de Spotify ya no está habilitada para esta plataforma — contacta al administrador para que la vuelva a habilitar.';
         }
         return 'No se pudo completar la acción en Spotify.';
@@ -179,13 +226,14 @@ module.exports = {
     async requestSpotifySong(username, query) {
         const account = await this.getAllowedSpotifyAccount();
         if (!account) {
-            console.log(`[${this.logId}] [SPOTIFY] !play ignorado — no hay una cuenta de Spotify conectada (o la licencia no es Lifetime).`);
+            console.log(`[${this.logId}] [SPOTIFY] !play ignorado — no hay una cuenta de Spotify utilizable (sin conectar, sin derecho por el plan o sin cupo).`);
             return; // streamer no conectó Spotify — !play no hace nada, en silencio
         }
 
         let accessToken;
         try {
-            accessToken = await spotify.getValidAccessToken(account);
+            accessToken = await this.getSpotifyAccessTokenOrDrop(account);
+            if (!accessToken) return; // la conexión caducó: ya se borró y se avisó
             console.log(`[${this.logId}] [SPOTIFY] Token OK (renovado si hacía falta).`);
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] No se pudo renovar el token para !play:`, err.message);
@@ -201,7 +249,7 @@ module.exports = {
             track = await spotify.searchTrack(accessToken, query);
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] Búsqueda de "${query}" falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
-            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err, account) });
             return;
         }
         if (!track) {
@@ -216,7 +264,7 @@ module.exports = {
             console.log(`[${this.logId}] [SPOTIFY] !play OK — agregada a la cola real de Spotify.`);
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] addToQueue falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
-            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+            this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err, account) });
             return;
         }
 
@@ -294,7 +342,8 @@ module.exports = {
 
         let accessToken;
         try {
-            accessToken = await spotify.getValidAccessToken(account);
+            accessToken = await this.getSpotifyAccessTokenOrDrop(account);
+            if (!accessToken) return; // la conexión caducó: ya se borró, se avisó y el polling se apagó
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] Polling: no se pudo renovar el token, reintenta en el próximo tick:`, err.message);
             return;
@@ -387,10 +436,11 @@ module.exports = {
             const account = await this.getAllowedSpotifyAccount();
             if (!account) return;
             try {
-                const accessToken = await spotify.getValidAccessToken(account);
+                const accessToken = await this.getSpotifyAccessTokenOrDrop(account);
+                if (!accessToken) return; // la conexión caducó: ya se borró y se avisó
                 await spotify.setVolume(accessToken, Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0))));
             } catch (err) {
-                this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err) });
+                this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err, account) });
             }
         });
 

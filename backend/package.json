@@ -26,5 +26,11 @@
     "tiktok-live-connector-v1": "npm:tiktok-live-connector@1.2.3",
     "ws": "^8.20.0",
     "yt-dlp-wrap-plus": "^2.5.0"
+  },
+  "overrides": {
+    "tiktok-live-connector-v1": {
+      "axios": "^0.34.0",
+      "protobufjs": "^7.6.6"
+    }
   }
 }

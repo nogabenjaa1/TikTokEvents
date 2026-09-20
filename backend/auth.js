@@ -42,8 +42,16 @@ function sanitizeAlias(alias) {
     return String(alias || '').trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
+// El alias se limpia igual que el de la prueba gratis (sanitizeAlias, tras
+// quitarle los acentos): el usuario de una licencia creada por el admin es
+// texto libre ("María López") y en la key acabaría con espacios o acentos, que
+// no sirven para pegarla ni para la URL del overlay. Si no queda nada útil,
+// 'user'. Para los alias que ya eran válidos (todos los de prueba y compra)
+// no cambia nada.
 function generateLabeledKey(alias, label) {
-    return `${alias.toLowerCase()}-${label}-${crypto.randomBytes(9).toString('base64url')}`;
+    const plain = String(alias || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const cleanAlias = sanitizeAlias(plain).toLowerCase() || 'user';
+    return `${cleanAlias}-${label}-${crypto.randomBytes(9).toString('base64url')}`;
 }
 
 function computeExpiresAt(licenseType, fromMs = Date.now()) {

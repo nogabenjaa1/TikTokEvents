@@ -122,7 +122,7 @@ function CheckoutInner({ pending, setPending, submitError, setSubmitError, onSuc
 // CREADO en el backend antes de poder montar <Elements> -- por eso acá
 // primero se pide /api/payments/stripe/intent y recién con la respuesta se
 // arma el formulario real.
-export default function StripePaymentForm({ planType, diceTier, amount, email, firstName, lastName, policyAcceptedAt, onSuccess, onCancel }) {
+export default function StripePaymentForm({ planType, diceTier, spotifyAddon, amount, email, firstName, lastName, policyAcceptedAt, onSuccess, onCancel }) {
   const [clientSecret, setClientSecret] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
@@ -139,7 +139,8 @@ export default function StripePaymentForm({ planType, diceTier, amount, email, f
     fetch(`${backendUrl()}/api/payments/stripe/intent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ planType, diceTier, email, firstName, lastName, policyAcceptedAt }),
+      // spotifyAddon solo viaja al comprar el complemento (ver Membership.jsx).
+      body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, email, firstName, lastName, policyAcceptedAt }),
     })
       .then(res => res.json())
       .then(data => {

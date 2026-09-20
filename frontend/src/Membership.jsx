@@ -13,6 +13,14 @@ const PLANS = [
   { id: 'lifetime', label: 'Lifetime', mxn: 1800, period: 'pago único' },
 ];
 const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
+// El complemento de Spotify (pago único, solo para el plan Mensual — Anual y
+// Lifetime ya lo incluyen) se compra por el mismo flujo de tarjeta que un
+// plan, con este id de mentira en `payingPlan`: nunca se manda como planType
+// al backend (ver `buyingAddon` más abajo, va como `spotifyAddon`). El precio
+// real lo manda /api/pricing; este es solo el de respaldo (ver
+// backend/pricing.js).
+const SPOTIFY_ADDON_ID = 'spotify_addon';
+const DEFAULT_SPOTIFY_ADDON_MXN = 180;
 // Chequeo minimo de formato -- solo para decidir cuando ya hay un correo
 // utilizable con el que crear el Card Payment Brick (ver mas abajo); el
 // backend sigue siendo quien de verdad valida el formato antes de cobrar.
@@ -215,12 +223,23 @@ export default function Membership({ session, onSessionUpdate }) {
   // GET /api/pricing) -- null mientras no llego la respuesta, ahi se usa el
   // default como fallback para no dejar la vitrina en blanco un instante.
   const [livePrices, setLivePrices] = useState(null);
+  // Lo demás que trae /api/pricing: el precio vigente del complemento de
+  // Spotify (centavos) y los cupos de la app de Spotify de la plataforma
+  // ({ total, used }) para avisar cuántos quedan a los primeros Lifetime.
+  const [pricingExtras, setPricingExtras] = useState({ spotifyAddon: null, spotifySlots: null });
   useEffect(() => {
     fetch(`${backendUrl()}/api/pricing`)
       .then(res => res.json())
-      .then(data => { if (data.success) setLivePrices(data.prices); })
+      .then(data => {
+        if (!data.success) return;
+        setLivePrices(data.prices);
+        setPricingExtras({ spotifyAddon: data.spotifyAddon ?? null, spotifySlots: data.spotifySlots ?? null });
+      })
       .catch(() => {}); // sin precios en vivo, se sigue viendo el default
   }, []);
+  const spotifyAddonMxn = pricingExtras.spotifyAddon != null ? pricingExtras.spotifyAddon / 100 : DEFAULT_SPOTIFY_ADDON_MXN;
+  const spotifySlots = pricingExtras.spotifySlots;
+  const spotifySlotsLeft = spotifySlots ? Math.max(0, spotifySlots.total - spotifySlots.used) : null;
 
   // Ingresar con una clave que ya tienes (admin, prueba gratis guardada de
   // antes, etc.) sin tener que entrar a un panel de juego bloqueado primero
@@ -261,6 +280,16 @@ export default function Membership({ session, onSessionUpdate }) {
   }, [banner, onSessionUpdate]);
 
   const currentPlanRank = PLAN_RANK[session?.licenseType] ?? -1;
+  // Lo que se está pagando ahora: un plan, o el complemento de Spotify (que
+  // viaja al backend como `spotifyAddon`, nunca como planType).
+  const buyingAddon = payingPlan === SPOTIFY_ADDON_ID;
+  const payingAmountMxn = buyingAddon
+    ? spotifyAddonMxn
+    : (livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn);
+  // Qué incluye Spotify cada licencia, para el resumen y el bloque de
+  // complementos (ver backend/spotify.js, isLicenseAllowed).
+  const spotifyIncluded = !!session && (session.isAdmin || session.licenseType === 'annual' || session.licenseType === 'lifetime');
+  const spotifyStatusLabel = spotifyIncluded ? 'Incluido' : session?.spotifyAddon ? 'Complemento activo' : 'No incluido';
 
   const emailValid = EMAIL_RE.test(email.trim());
   const firstNameValid = !!firstName.trim();
@@ -391,6 +420,10 @@ export default function Membership({ session, onSessionUpdate }) {
             <p className="theme-label text-[9px] mb-1">Color Says</p>
             <p className="text-sm font-black">{DICE_TIER_LABELS[session?.diceTier] || 'Regular'}</p>
           </div>
+          <div>
+            <p className="theme-label text-[9px] mb-1">Spotify</p>
+            <p className="text-sm font-black">{spotifyStatusLabel}</p>
+          </div>
         </div>
       )}
 
@@ -515,11 +548,11 @@ export default function Membership({ session, onSessionUpdate }) {
             <div className="min-w-0">
               <p className="theme-label text-[9px]">Vas a pagar</p>
               <p className="text-sm font-black truncate">
-                Plan {PLAN_LABELS[payingPlan] || payingPlan} · MX$ {(livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn)?.toLocaleString('es-MX')}
+                {buyingAddon ? 'Complemento de Spotify (pago único)' : `Plan ${PLAN_LABELS[payingPlan] || payingPlan}`} · MX$ {payingAmountMxn?.toLocaleString('es-MX')}
               </p>
             </div>
             <button type="button" onClick={() => setPayingPlan(null)} className="theme-btn-secondary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0">
-              Cambiar plan
+              {buyingAddon ? 'Volver' : 'Cambiar plan'}
             </button>
           </div>
 
@@ -650,8 +683,9 @@ export default function Membership({ session, onSessionUpdate }) {
           {readyToPay ? (
             paymentProvider === 'stripe' ? (
               <StripePaymentForm
-                planType={payingPlan}
-                amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+                planType={buyingAddon ? undefined : payingPlan}
+                spotifyAddon={buyingAddon}
+                amount={payingAmountMxn}
                 email={email.trim()}
                 firstName={firstName.trim()}
                 lastName={lastName.trim()}
@@ -661,8 +695,9 @@ export default function Membership({ session, onSessionUpdate }) {
               />
             ) : (
               <CardPaymentForm
-                planType={payingPlan}
-                amount={livePrices?.[payingPlan] != null ? livePrices[payingPlan] / 100 : PLANS.find(p => p.id === payingPlan)?.mxn}
+                planType={buyingAddon ? undefined : payingPlan}
+                spotifyAddon={buyingAddon}
+                amount={payingAmountMxn}
                 email={email.trim()}
                 firstName={firstName.trim()}
                 lastName={lastName.trim()}
@@ -709,6 +744,20 @@ export default function Membership({ session, onSessionUpdate }) {
                 {plan.id === 'lifetime' && (
                   <p className="text-[9px] text-gray-500 leading-snug mt-2">{LIFETIME_LEGEND}</p>
                 )}
+                {/* Aviso de Spotify por plan (ver backend/spotify.js, "Quién
+                    puede usarlo"): la app de Spotify de la plataforma solo
+                    admite unos pocos usuarios, así que el resto conecta con
+                    su propia app. El total y los cupos que quedan vienen de
+                    /api/pricing (sin número si un backend anterior no lo manda). */}
+                <p className="text-[10px] text-gray-400 leading-snug mt-2">
+                  {plan.id === 'lifetime' && (
+                    <>🎵 Incluye Spotify. {spotifySlots ? `Los ${spotifySlots.total} primeros Lifetime usan` : 'Los primeros Lifetime usan'} la app de Spotify de la plataforma
+                      {spotifySlotsLeft != null && (spotifySlotsLeft > 0 ? ` (quedan ${spotifySlotsLeft} de ${spotifySlots.total})` : ' (cupos agotados)')};
+                      el resto conecta con su propia app de Spotify, con guía paso a paso.</>
+                  )}
+                  {plan.id === 'annual' && <>🎵 Incluye Spotify: conectas con tu propia app de Spotify, con guía paso a paso.</>}
+                  {plan.id === 'month' && <>🎵 Spotify es opcional: complemento de pago único (MX${spotifyAddonMxn.toLocaleString('es-MX')}).</>}
+                </p>
                 <div className="flex-1" />
                 {isCurrent ? (
                   <p className="theme-chip text-[9px] font-black uppercase tracking-widest text-center mt-3 py-2">Plan actual</p>
@@ -723,6 +772,38 @@ export default function Membership({ session, onSessionUpdate }) {
           })}
         </div>
       </div>
+      )}
+
+      {/* Complemento de Spotify: pago único para quien está en el plan
+          Mensual (Anual y Lifetime ya lo incluyen, ver backend/spotify.js).
+          Se paga por el mismo formulario de tarjeta que un plan. Sin sesión
+          no hay a qué licencia sumarlo todavía: solo informa. */}
+      {!payingPlan && (
+        <div className="w-full max-w-2xl">
+          <p className="theme-label text-[10px] mb-3">Complementos</p>
+          <div className="theme-surface p-4 flex items-center justify-between flex-wrap gap-3">
+            <div className="min-w-0 flex-1 basis-64">
+              <p className="text-xs font-black uppercase tracking-widest">🎵 Spotify · pago único</p>
+              <p className="text-2xl font-black mt-1">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
+              <p className="text-[10px] text-gray-400 leading-snug mt-1">
+                Pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded">!play</code>. Se paga una sola vez y queda en tu licencia:
+                conectas con tu propia app de Spotify (te guiamos paso a paso) y necesitas Spotify Premium. Ya viene incluido en los planes Anual y Lifetime.
+              </p>
+            </div>
+            {spotifyIncluded ? (
+              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Incluido en tu plan</p>
+            ) : session?.spotifyAddon ? (
+              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Activo</p>
+            ) : session?.licenseType === 'month' ? (
+              <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
+                className="theme-btn-primary px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
+              </button>
+            ) : (
+              <p className="text-[10px] text-gray-500 leading-snug max-w-[12rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>
+            )}
+          </div>
+        </div>
       )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}

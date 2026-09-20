@@ -316,7 +316,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
             </div>
           </div>
         )) : (
-          <p className="text-gray-700 text-xs italic text-center mt-2">Sin tiradas todavía...</p>
+          <p className="text-gray-600 text-xs italic text-center mt-2">Sin tiradas todavía...</p>
         )}
       </div>
 

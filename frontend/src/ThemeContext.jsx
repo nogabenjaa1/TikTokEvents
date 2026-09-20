@@ -1,6 +1,42 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'tkc_theme';
+// Apariencia (claro / oscuro / automático según el sistema): independiente
+// del skin, se guarda aparte para no tocar los "últimos usados" ni el formato
+// de `tkc_theme`. Es preferencia de ESTE navegador y solo afecta al panel: el
+// overlay de OBS no la lee, así que lo que ve la audiencia no cambia.
+const MODE_KEY = 'tkc_theme_mode';
+export const THEME_MODES = [
+  { id: 'light', label: 'Claro',      hint: 'El aspecto pastel de siempre' },
+  { id: 'dark',  label: 'Oscuro',     hint: 'Fondo oscuro, ideal de noche' },
+  { id: 'auto',  label: 'Automático', hint: 'Sigue el modo de tu sistema' },
+];
+const DEFAULT_MODE = 'light';
+
+function loadMode() {
+  try {
+    const saved = localStorage.getItem(MODE_KEY);
+    return THEME_MODES.some(m => m.id === saved) ? saved : DEFAULT_MODE;
+  } catch {
+    return DEFAULT_MODE;
+  }
+}
+
+// ¿El sistema está en modo oscuro? Se re-evalúa solo cuando el sistema cambia
+// (por ejemplo, el cambio automático de tarde/noche de Windows y macOS).
+function useSystemDark() {
+  const query = '(prefers-color-scheme: dark)';
+  const [dark, setDark] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false));
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const media = window.matchMedia(query);
+    const onChange = (event) => setDark(event.matches);
+    setDark(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return dark;
+}
 const RECENTS_KEY = 'tkc_theme_recents';
 const DEFAULT_CUSTOM_COLOR = '#7C3AED';
 const DEFAULT_THEME = { style: 'default', accent: 'purple', customColor: DEFAULT_CUSTOM_COLOR };
@@ -80,6 +116,14 @@ export function ThemeProvider({ children }) {
   const [theme, setTheme]     = useState(loadTheme);
   const [previous, setPrevious] = useState(null); // último skin anterior, para "Volver al anterior" — no persiste entre sesiones
   const [recents, setRecents] = useState(() => loadRecents(loadTheme()));
+  const [mode, setModeState] = useState(loadMode);
+  const systemDark = useSystemDark();
+  const resolvedMode = mode === 'auto' ? (systemDark ? 'dark' : 'light') : mode;
+  const setMode = (next) => {
+    if (!THEME_MODES.some(m => m.id === next)) return;
+    setModeState(next);
+    try { localStorage.setItem(MODE_KEY, next); } catch { /* sin almacenamiento: dura solo esta sesión */ }
+  };
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
@@ -119,7 +163,7 @@ export function ThemeProvider({ children }) {
   const setAccent = (accent) => setSkin(theme.style, accent, theme.customColor);
 
   return (
-    <ThemeContext.Provider value={{ ...theme, previous, recents, setSkin, setStyle, setAccent, revertToPrevious }}>
+    <ThemeContext.Provider value={{ ...theme, previous, recents, setSkin, setStyle, setAccent, revertToPrevious, mode, resolvedMode, setMode }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -159,7 +203,7 @@ export function accentStyleVars({ accent, customColor } = {}) {
 // la ventana aunque adentro solo haya una tarjeta chica. `fitContent` lo
 // desactiva para que el alto sea el del contenido real.
 export function ThemedShell({ children, className = '', style, styleOverride, accentOverride, customColorOverride, fitContent = false }) {
-  const { style: currentStyle, accent, customColor } = useTheme();
+  const { style: currentStyle, accent, customColor, resolvedMode } = useTheme();
   const effectiveAccent = accentOverride ?? accent;
   const effectiveCustomColor = customColorOverride ?? customColor;
   return (
@@ -168,6 +212,7 @@ export function ThemedShell({ children, className = '', style, styleOverride, ac
       style={{ ...(fitContent ? { minHeight: 0 } : null), ...accentStyleVars({ accent: effectiveAccent, customColor: effectiveCustomColor }), ...style }}
       data-theme-style={styleOverride ?? currentStyle}
       data-accent={effectiveAccent}
+      data-mode={resolvedMode}
     >
       {children}
     </div>

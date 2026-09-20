@@ -76,7 +76,9 @@ export default function PrizeEditor({ socket, prize }) {
         🎁 Premio <span className="text-gray-500 normal-case tracking-normal font-semibold">(visible en el overlay, opcional)</span>
       </label>
       <div className="flex items-center gap-3">
-        <div
+        <button
+          type="button"
+          aria-label="Elegir la imagen del premio"
           onClick={() => fileRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
@@ -87,8 +89,8 @@ export default function PrizeEditor({ socket, prize }) {
             dragOver ? 'border-emerald-400 bg-emerald-900/30' : 'border-gray-600 hover:border-emerald-500',
           ].join(' ')}
         >
-          {image ? <img src={image} className="w-full h-full object-cover" /> : <span className="text-lg opacity-50">🖼️</span>}
-        </div>
+          {image ? <img src={image} alt="Imagen del premio" className="w-full h-full object-cover" /> : <span className="text-lg opacity-50" aria-hidden="true">🖼️</span>}
+        </button>
         <input
           type="file" accept="image/*" ref={fileRef} className="hidden"
           onChange={(e) => { handleFile(e.target.files[0]); e.target.value = ''; }}

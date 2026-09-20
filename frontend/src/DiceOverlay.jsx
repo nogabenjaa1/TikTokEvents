@@ -22,7 +22,7 @@ export default function DiceOverlay({ diceState, theme = { style: 'default', acc
   const titleOverride = getUsernameOverride(customize);
 
   return (
-    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} style={{ ...(embedded ? { minHeight: 0 } : null), ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} style={{ ...(embedded ? { minHeight: 0 } : null), ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
       <div className="theme-die-frame w-[960px] h-[260px] px-10 flex items-center gap-10 font-sans overflow-hidden" style={resolveBackgroundStyle(customize)}>
         <div className="flex flex-col items-start gap-3 flex-shrink-0">
           <p className={`theme-accent-text text-2xl font-black uppercase tracking-[0.2em] ${titleOverride.className}`} style={titleOverride.cssVars}>ColorSays</p>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useTheme, THEME_STYLES, THEME_ACCENTS, ThemedShell, skinName } from './ThemeContext';
+import { useTheme, THEME_STYLES, THEME_ACCENTS, THEME_MODES, ThemedShell, skinName } from './ThemeContext';
 
 // ─────────────────────────────────────────────
 // SELECTOR DE SKIN — cada tile ya es la combinación completa (material +
@@ -20,7 +20,7 @@ import { useTheme, THEME_STYLES, THEME_ACCENTS, ThemedShell, skinName } from './
 //     "Volver al anterior" que alterna con el skin previo.
 // ─────────────────────────────────────────────
 export default function ThemeSwitcher() {
-  const { style, accent, customColor, recents, previous, setSkin, revertToPrevious } = useTheme();
+  const { style, accent, customColor, recents, previous, setSkin, revertToPrevious, mode, setMode } = useTheme();
   const [previewSkin, setPreviewSkin] = useState(null); // { style, accent, customColor? } | null — solo hover/arrastre, no se aplica
   const [toast, setToast] = useState(null);
 
@@ -50,6 +50,34 @@ export default function ThemeSwitcher() {
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🎨 TEMA</p>
         <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
         <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. En computadora pasa el mouse (o usa el teclado) sobre un skin para probarlo antes de confirmarlo; en el celular solo tócalo.</p>
+      </div>
+
+      {/* ── Apariencia: claro / oscuro / automático según el sistema ── */}
+      <div role="radiogroup" aria-label="Apariencia del panel" className="flex flex-col gap-2">
+        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Apariencia</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {THEME_MODES.map(m => {
+            const selected = mode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setMode(m.id)}
+                className="theme-input p-3 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                style={selected ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : undefined}
+              >
+                <span className="flex items-center gap-2 text-sm font-bold text-gray-200">
+                  {m.label}
+                  {selected && <span className="ml-auto text-[10px] theme-accent-text" aria-hidden>✓</span>}
+                </span>
+                <span className="block text-[10px] text-gray-500 leading-snug mt-0.5">{m.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-gray-500 leading-snug">Solo cambia cómo ves tú el panel en este navegador. Los overlays de OBS y lo que ve tu audiencia no cambian.</p>
       </div>
 
       {/* ── 1. Vista previa en vivo — domina la pantalla, no un preview chico al final ── */}
@@ -83,7 +111,7 @@ export default function ThemeSwitcher() {
         <span className="text-xs text-gray-500 font-semibold flex-shrink-0">Últimos usados:</span>
         <span
           className="theme-chip px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
-          style={{ background: accentHex(accent), color: '#fff' }}
+          style={{ background: `color-mix(in oklch, ${accentHex(accent)} 68%, black)`, color: '#fff' }}
           title="Skin que estás usando ahora"
         >
           <span aria-hidden>✓</span> {skinName(current)}
@@ -106,7 +134,7 @@ export default function ThemeSwitcher() {
           type="button"
           onClick={revertToPrevious}
           disabled={!previous}
-          className="text-[11px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors flex items-center gap-1.5"
+          className="text-[11px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors flex items-center gap-1.5 py-2"
         >
           ↩ Volver al anterior
         </button>
@@ -149,7 +177,7 @@ export default function ThemeSwitcher() {
                         aria-hidden
                       />
                       <span className="text-[11px] font-bold text-gray-200 truncate">{a.label}</span>
-                      {selected && <span className="ml-auto text-[10px] flex-shrink-0" style={{ color: hex }}>✓</span>}
+                      {selected && <span className="ml-auto text-[10px] flex-shrink-0 theme-accent-text">✓</span>}
                     </div>
                   </button>
                 );
@@ -187,7 +215,7 @@ export default function ThemeSwitcher() {
                         aria-hidden
                       />
                       <span className="text-[11px] font-bold text-gray-200 truncate">Personalizado</span>
-                      {selected && <span className="ml-auto text-[10px] flex-shrink-0" style={{ color: hex }}>✓</span>}
+                      {selected && <span className="ml-auto text-[10px] flex-shrink-0 theme-accent-text">✓</span>}
                     </div>
                   </label>
                 );

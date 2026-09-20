@@ -37,7 +37,7 @@ const EVENT_GROUPS = [
     title: 'Interacción con tu chat',
     items: [
       { id: 'alerts', label: 'Alertas', icon: '🔔', hint: 'Imagen, sonido y texto cuando llega un regalo' },
-      { id: 'tts', label: 'TTS (BETA)', icon: '🔊', hint: 'Lee el chat en voz alta' },
+      { id: 'tts', label: 'TTS', icon: '🔊', hint: 'Lee el chat en voz alta' },
       { id: 'spotify', label: 'Spotify', icon: '🎵', hint: 'Cola de canciones para tu directo' },
     ],
   },
@@ -192,7 +192,7 @@ export default function Dashboard({
               <h2 id="onboarding-title" className="theme-heading text-lg font-black">Primeros pasos</h2>
               <p className="text-xs text-gray-400 mt-0.5">{doneCount} de {steps.length} listos — sigue el orden o salta al que quieras.</p>
             </div>
-            <button type="button" onClick={() => updateOnboarding({ dismissed: true })} className="text-[10px] font-bold text-gray-400 hover:text-white underline whitespace-nowrap">
+            <button type="button" onClick={() => updateOnboarding({ dismissed: true })} className="text-[10px] font-bold text-gray-400 hover:text-white underline whitespace-nowrap py-2">
               Ocultar guía
             </button>
           </div>
@@ -262,13 +262,13 @@ export default function Dashboard({
               <h2 className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">Tu plan</h2>
               <p className="text-sm font-black capitalize">{session.licenseType === 'trial' ? 'Prueba gratis' : session.licenseType || '—'}</p>
               {daysLeft !== null ? (
-                <p className={`text-[11px] font-bold ${daysLeft <= 3 ? 'text-red-400' : 'text-gray-500'}`}>
+                <p className={`text-[11px] font-bold ${daysLeft <= 3 ? 'text-red-700' : 'text-gray-500'}`}>
                   {daysLeft <= 0 ? 'Vence hoy' : `Vence en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`}
                 </p>
               ) : (
                 <p className="text-[11px] text-gray-500">Sin fecha de vencimiento</p>
               )}
-              <button type="button" onClick={() => onGoSection('membership')} className="text-[11px] font-bold text-sky-400 hover:text-sky-300 underline mt-1 text-left">
+              <button type="button" onClick={() => onGoSection('membership')} className="text-[11px] font-bold text-sky-400 hover:text-sky-300 underline text-left py-1.5">
                 Ver planes
               </button>
             </div>

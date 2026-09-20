@@ -171,6 +171,11 @@ const ready = pool.query(`
       created_at BIGINT NOT NULL
     )
   `))
+  // El historial de pagos NO debe impedir eliminar una licencia (antes la FK
+  // hacía fallar el borrado de cualquier licencia que hubiera pagado) ni
+  // desaparecer con ella (son los ingresos): se quita la FK y el pago conserva
+  // su license_id como dato.
+  .then(() => pool.query(`ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_license_id_fkey`))
   // Segunda forma de pago (Stripe, seleccionable junto a MercadoPago desde
   // Membership.jsx): mp_payment_id ya no puede ser NOT NULL porque un pago
   // de Stripe no tiene uno -- stripe_payment_id es su columna paralela,
@@ -508,9 +513,25 @@ async function claimTrialConnection(id, targetUsername) {
     }
 }
 
+// Borra la licencia y lo que cuelga de ella (alertas y cuentas/apps de
+// Spotify, que tienen FK a licenses) en una sola transacción. Los pagos se
+// conservan (ver la migración de payments más arriba).
 async function deleteLicense(id) {
     await ready;
-    await pool.query('DELETE FROM licenses WHERE id = $1', [id]);
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM alert_configs WHERE license_id = $1', [id]);
+        await client.query('DELETE FROM spotify_accounts WHERE license_id = $1', [id]);
+        await client.query('DELETE FROM spotify_apps WHERE license_id = $1', [id]);
+        await client.query('DELETE FROM licenses WHERE id = $1', [id]);
+        await client.query('COMMIT');
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* la conexión ya falló */ }
+        throw err;
+    } finally {
+        client.release();
+    }
 }
 
 // ==========================================
@@ -804,6 +825,25 @@ async function insertPaymentIfNew({ id, licenseId, mpPaymentId, planType, diceTi
     return rows.length > 0;
 }
 
+// Todos los pagos, solo las columnas que usa el panel de estadísticas del admin.
+async function listPaymentsForStats() {
+    await ready;
+    const { rows } = await pool.query(
+        'SELECT license_id, provider, stripe_payment_id, plan_type, dice_tier, spotify_addon, amount_cents, status, created_at FROM payments',
+    );
+    return rows;
+}
+
+// Olvida el registro de un pago cuyo efecto NO se pudo aplicar a la licencia
+// (ver applyPaymentWithRetry en server.js): sin esto, el reintento del webhook
+// o del sondeo lo vería como "ya procesado" y el cliente quedaría cobrado sin
+// su plan. `provider` es 'mp' o 'stripe'.
+async function deletePaymentRecord(provider, providerPaymentId) {
+    await ready;
+    const column = provider === 'stripe' ? 'stripe_payment_id' : 'mp_payment_id';
+    await pool.query(`DELETE FROM payments WHERE ${column} = $1`, [String(providerPaymentId)]);
+}
+
 // Mismo patrón que insertPaymentIfNew de arriba, pero para Stripe -- el
 // UNIQUE parcial sobre stripe_payment_id (ver migración arriba) es lo que
 // hace esto idempotente ante un reintento (ej. /confirm ya lo aplicó y
@@ -862,7 +902,7 @@ module.exports = {
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
-    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier,
+    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

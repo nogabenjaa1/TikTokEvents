@@ -75,6 +75,7 @@ const spotify = require('./spotify');
 const storage = require('./storage');
 const Tenant = require('./tenant');
 const downloader = require('./downloader');
+const { computeAdminStats } = require('./lib/adminStats');
 
 // Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
 // nunca tocan disco: van directo de la request a Supabase Storage (ver
@@ -679,6 +680,19 @@ app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin,
     const { enabled } = req.body || {};
     await db.setSpotifyAddon(row.id, !!enabled);
     res.json({ success: true });
+});
+
+// Resumen del negocio para el panel de Licencias: licencias por estado y plan,
+// por vencer, conversión de pruebas e ingresos (ver lib/adminStats.js).
+app.get('/api/admin/stats', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    try {
+        const [licenses, payments] = await Promise.all([db.listAll(), db.listPaymentsForStats()]);
+        res.set('Cache-Control', 'no-store');
+        res.json({ success: true, stats: computeAdminStats(licenses, payments) });
+    } catch (err) {
+        console.error('[Admin] No se pudieron calcular las estadísticas:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudieron calcular las estadísticas' });
+    }
 });
 
 // Edición completa de una licencia en UNA sola llamada (formulario "Editar" del
@@ -1463,11 +1477,15 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
     const update = {};
     if (planType) {
         update.licenseType = planType;
-        const remainingTrialMs = (license.license_type === 'trial' && license.expires_at && license.expires_at > Date.now())
+        // Los días que le sobraban a una licencia vigente se SUMAN al nuevo
+        // periodo (antes solo se conservaban en la prueba gratis, así que
+        // renovar antes de tiempo hacía perder lo ya pagado). Una licencia
+        // revocada o ya vencida empieza de cero.
+        const remainingMs = (!license.revoked && license.expires_at && license.expires_at > Date.now())
             ? (license.expires_at - Date.now())
             : 0;
         const baseExpiresAt = auth.computeExpiresAt(planType);
-        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingTrialMs;
+        update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingMs;
 
         const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
         update.keyHash = auth.hashKey(newRawKey);
@@ -1483,6 +1501,40 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
     // licencia (no depende de la renovación del plan Mensual).
     if (spotifyAddon) update.spotifyAddon = true;
     return update;
+}
+
+// Aplica el efecto de un pago YA registrado sobre la licencia. Si la DB falla
+// en ese momento se reintenta (3 veces); si sigue fallando se OLVIDA el registro
+// del pago (`forget`) para que el siguiente reintento (sondeo de la orden,
+// /confirm de Stripe) lo aplique, en vez de dejarlo como "ya procesado" con el
+// cliente cobrado y sin plan. Devuelve como antes; relanza el error si no pudo.
+async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget }) {
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const license = await db.findById(licenseId);
+            if (!license) {
+                console.error(`[${label}] Pago para una licencia inexistente:`, licenseId);
+                return { applied: false };
+            }
+            const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
+            if (Object.keys(update).length > 0) {
+                await db.applyPurchase(licenseId, update);
+                console.log(`[${label}] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+            }
+            return { applied: true, licenseId };
+        } catch (err) {
+            lastError = err;
+            console.error(`[${label}] Intento ${attempt}/3 de aplicar el pago a la licencia ${licenseId} falló: ${err.message}`);
+            if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+        }
+    }
+    try { await forget(); } catch (err) {
+        console.error(`[${label}] ⚠️ PAGO COBRADO SIN APLICAR y sin poder olvidarlo (licencia ${licenseId}); aplícalo a mano desde Licencias > Editar:`, err.message);
+        throw lastError;
+    }
+    console.error(`[${label}] ⚠️ PAGO COBRADO SIN APLICAR (licencia ${licenseId}): se olvidó el registro para que el próximo reintento lo aplique.`);
+    throw lastError;
 }
 
 async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, mpPaymentId }) {
@@ -1507,18 +1559,10 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotif
     });
     if (!isNew) return { applied: false, alreadyProcessed: true };
 
-    const license = await db.findById(licenseId);
-    if (!license) {
-        console.error('[MP] Pago para una licencia inexistente:', licenseId);
-        return { applied: false };
-    }
-
-    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
-    if (Object.keys(update).length > 0) {
-        await db.applyPurchase(licenseId, update);
-        console.log(`[MP] ✅ Pago aplicado — licencia ${licenseId}:`, update);
-    }
-    return { applied: true, licenseId };
+    return applyPaymentWithRetry({
+        label: 'MP', licenseId, planType, diceTier, spotifyAddon,
+        forget: () => db.deletePaymentRecord('mp', mpPaymentId),
+    });
 }
 
 // Mismo patron que applyApprovedPaymentIfNew de arriba, pero para Stripe:
@@ -1545,18 +1589,10 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
     });
     if (!isNew) return { applied: false, alreadyProcessed: true };
 
-    const license = await db.findById(licenseId);
-    if (!license) {
-        console.error('[Stripe] Pago para una licencia inexistente:', licenseId);
-        return { applied: false };
-    }
-
-    const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
-    if (Object.keys(update).length > 0) {
-        await db.applyPurchase(licenseId, update);
-        console.log(`[Stripe] ✅ Pago aplicado — licencia ${licenseId}:`, update);
-    }
-    return { applied: true, licenseId };
+    return applyPaymentWithRetry({
+        label: 'Stripe', licenseId, planType, diceTier, spotifyAddon,
+        forget: () => db.deletePaymentRecord('stripe', stripePaymentId),
+    });
 }
 
 // Interpreta el estado real de una orden de la Orders API -- compartido

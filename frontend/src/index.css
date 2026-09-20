@@ -376,6 +376,119 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --accent-soft: oklch(from var(--accent) 0.78 0.1 h);
 }
 
+/* ==========================================================
+   MODO OSCURO (panel de control)
+   Todo el sistema de temas lee sus colores de tokens, así que el modo oscuro
+   los redefine en vez de tocar cada componente: superficies oscuras con el
+   tinte del acento, y la "tinta" (--ink-*) pasa a ser clara, con lo que las
+   reglas que remapean text-white/text-gray-* (y las tintas de estado) se
+   vuelven claras solas. Solo lo activa ThemedShell (data-mode); el overlay de
+   OBS nunca lo lleva, así que lo que ve la audiencia no cambia.
+   Especificidad a propósito mayor que la de cada material (Clásico/Cute).
+   ========================================================== */
+.themed-app[data-theme-style][data-mode="dark"] {
+  color-scheme: dark;
+  --page-bg: oklch(from var(--accent) 0.17 0.045 h);
+  --surface-bg: oklch(from var(--accent) 0.235 0.06 h);
+  --surface-bg-alt: oklch(from var(--accent) 0.2 0.05 h);
+  --surface-border-color: color-mix(in oklch, var(--accent) 50%, transparent);
+  --surface-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.6), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
+  --ink-default: #F3EEFB;
+  --ink-cute: #F3EEFB;
+  --ink: #F3EEFB;
+  --ink-danger: #FCA5A5;
+  --ink-warning: #FCD34D;
+  --ink-success: #86EFAC;
+  --ink-premio: #6EE7B7;
+  --ink-info: #7DD3FC;
+  --ink-amber: #FBBF24;
+  color: var(--ink);
+}
+/* Isla clara: la vista previa de un overlay embebida en el panel (data-mode="light"
+   en su propio wrapper). Un panel oscuro heredaría sus tintas claras hacia adentro
+   (--ink-* son variables heredables), así que se restablecen aquí. */
+.themed-app[data-theme-style][data-mode="light"] {
+  color-scheme: light;
+  --ink-default: #2E2136;
+  --ink-cute: #2A1B2E;
+  --ink-danger: #B91C1C;
+  --ink-warning: #A16207;
+  --ink-success: #15803D;
+  --ink-premio: #047857;
+  --ink-info: #0369A1;
+  --ink-amber: #B45309;
+}
+/* Títulos, etiquetas y botones secundarios: en claro usan un tono oscuro del
+   acento; en oscuro, uno claro. */
+.themed-app[data-theme-style][data-mode="dark"] .theme-heading:not([data-mode="light"] *),
+.themed-app[data-theme-style][data-mode="dark"] .theme-label:not([data-mode="light"] *),
+.themed-app[data-theme-style][data-mode="dark"] .theme-accent-text:not([data-mode="light"] *),
+.themed-app[data-theme-style][data-mode="dark"] .theme-btn-secondary:not([data-mode="light"] *),
+.themed-app[data-theme-style][data-mode="dark"] .theme-chip:not([data-mode="light"] *) {
+  color: oklch(from var(--accent) 0.87 0.08 h);
+}
+/* El chip de Cute es de un tono medio sólido: en oscuro se baja para que el
+   texto claro contraste. */
+.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-chip:not([data-mode="light"] *) {
+  background: oklch(from var(--accent) 0.38 0.12 h);
+}
+/* Los puntitos de Cute eran oscuros para verse sobre pastel claro. */
+.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-surface:not([data-mode="light"] *),
+.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-surface-featured:not([data-mode="light"] *) {
+  background-image: radial-gradient(oklch(from var(--accent) 0.7 0.12 h / 0.25) 1px, transparent 1.5px);
+}
+/* Tonos -600/-700 que el panel usa para texto de estado sobre fondo claro:
+   en oscuro pasan a las tintas claras de estado. */
+.themed-panel[data-mode="dark"] .text-red-600:not([data-mode="light"] *),
+.themed-panel[data-mode="dark"] .text-red-700:not([data-mode="light"] *) { color: var(--ink-danger) !important; }
+.themed-panel[data-mode="dark"] .text-amber-600:not([data-mode="light"] *),
+.themed-panel[data-mode="dark"] .text-amber-700:not([data-mode="light"] *) { color: var(--ink-amber) !important; }
+.themed-panel[data-mode="dark"] .text-emerald-600:not([data-mode="light"] *),
+.themed-panel[data-mode="dark"] .text-emerald-700:not([data-mode="light"] *) { color: var(--ink-premio) !important; }
+.themed-panel[data-mode="dark"] .text-sky-700:not([data-mode="light"] *) { color: var(--ink-info) !important; }
+/* Botones de peligro/aviso: su rojo/ámbar fijo no llega a 4.5:1 sobre la
+   superficie oscura; pasan a las tintas claras de estado. */
+.themed-app[data-theme-style][data-mode="dark"] .theme-btn-danger:not([data-mode="light"] *) { color: var(--ink-danger); }
+.themed-app[data-theme-style][data-mode="dark"] .theme-btn-warning:not([data-mode="light"] *) { color: var(--ink-warning); }
+.themed-app[data-mode="dark"] .tkc-switch::after { box-shadow: 0 1px 3px rgb(0 0 0 / 0.5); }
+
+/* ==========================================================
+   ACCESIBILIDAD
+   ========================================================== */
+/* Indicador de foco visible para quien navega con teclado, en todo el panel
+   (antes solo lo tenían los selectores). Solo con :focus-visible: el clic con
+   mouse no lo muestra. */
+.themed-panel :is(button, a, summary, [role="button"], [role="radio"], [role="tab"], input, textarea, select, [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Enlace "Saltar al contenido": invisible hasta recibir el foco con Tab. */
+.tkc-skip-link {
+  position: fixed !important;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 200;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  background: var(--accent, #7C3AED);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  transform: translateY(-200%);
+}
+.tkc-skip-link:focus { transform: translateY(0); }
+/* Quien pide menos movimiento en su sistema no ve transiciones ni animaciones
+   en el panel. Solo el panel: los overlays de OBS quedan fuera a propósito
+   (las animaciones de las alertas son parte de lo que ve la audiencia). */
+@media (prefers-reduced-motion: reduce) {
+  .themed-panel *, .themed-panel *::before, .themed-panel *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ---- Utilidades que consumen las variables ---- */
 .theme-surface {
   background: var(--surface-bg);

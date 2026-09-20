@@ -5,6 +5,8 @@ import DiceOverlay from './DiceOverlay';
 import Login from './Login';
 import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
+import ExpiryBanner from './ExpiryBanner';
+import useAutoLabels from './useAutoLabels';
 import SystemHealth from './SystemHealth';
 import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
@@ -70,7 +72,7 @@ const EVENT_TABS = [
   { id: 'goal',     label: 'Objetivo',      icon: '🎯' },
   { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
   { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
-  { id: 'tts',      label: 'TTS (BETA)',    icon: '🔊' },
+  { id: 'tts',      label: 'TTS',           icon: '🔊' },
 ];
 
 // Pedido explicito: URLs reales para cada sección (benjaapis.dev/overlays,
@@ -304,6 +306,8 @@ export default function App() {
   // dispositivo, no solo `overlayTheme`. Es un no-op si ya coinciden (ver
   // el guard `sameSkin` dentro de setSkin, en ThemeContext.jsx).
   const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor, setSkin } = useTheme();
+  // Nombre accesible para los campos que solo tienen un texto vecino (ver useAutoLabels.js).
+  useAutoLabels(!overlayMode);
 
   // Personalización de fondo + color de usuario por overlay (ver
   // overlayCustomization.js) — MISMO patrón de dos estados que el tema de
@@ -922,13 +926,6 @@ export default function App() {
   // al streamer sin forma de ingresar otro usuario ni de reintentar.
   const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive);
 
-  // Recordatorio de vencimiento in-app: licencias lifetime no tienen expiresAt.
-  // Sin sesión (visitante anónimo, solo Color Says) no hay nada que recordar.
-  const daysLeft = session?.expiresAt
-    ? Math.ceil((session.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
-    : null;
-  const showExpiryWarning = daysLeft !== null && daysLeft <= 3;
-
   // Solo Color Says y Tema son de acceso libre; el resto necesita sesión
   // (licencia paga o prueba gratis) — sin ella se muestra el login
   // embebido con la opción de prueba gratis en el panel principal.
@@ -961,6 +958,7 @@ export default function App() {
 
   return (
     <ThemedShell className="flex flex-col">
+      <a href="#contenido-principal" className="tkc-skip-link">Saltar al contenido</a>
       {kickedOutMessage && (
         <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
           {kickedOutMessage}
@@ -972,11 +970,8 @@ export default function App() {
           <button type="button" onClick={() => setServerRestarted(false)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
-      {showExpiryWarning && (
-        <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
-          Tu licencia vence {daysLeft <= 0 ? 'hoy' : `en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`} — contacta al administrador para renovarla.
-        </div>
-      )}
+      {/* Recordatorio de vencimiento (ver expiry.js): lleva directo a renovar. */}
+      <ExpiryBanner session={session} hidden={sidebarMode === 'membership'} onRenew={() => setSidebarMode('membership')} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
           Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
@@ -1046,7 +1041,7 @@ export default function App() {
         )}
       </aside>
 
-      <main className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden">
+      <main id="contenido-principal" tabIndex={-1} className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden focus:outline-none">
         {/* Pedido explicito: página principal con accesos directos. Sin
             sesión igual se ve (versión reducida, ver Dashboard.jsx) -- no
             hace falta needsAccess acá porque cada shortcut ya lleva a una
@@ -1216,7 +1211,7 @@ export default function App() {
                 más abajo, fuera de esta sección para que no se desmonte al
                 cambiar de pestaña). */}
             {eventsTab === 'tts' && needsAccess('tts') && (
-              <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS (BETA)." />
+              <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS." />
             )}
           </>
         )}

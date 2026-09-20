@@ -1316,7 +1316,7 @@ export default function Overlay({ state, zubState, elimState, rouletteState, act
   // OVERLAY_CUSTOMIZE_LABELS en overlayCustomization.js).
   const gamesCustomize = customization?.games;
   return (
-    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} style={{ ...(embedded ? { minHeight: 0 } : null), ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+    <div className={`themed-app grid place-items-center ${embedded ? '' : 'min-h-screen'}`} style={{ ...(embedded ? { minHeight: 0 } : null), ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
       <div className="relative grid">
         <div className="col-start-1 row-start-1 transition-all duration-700 ease-in-out origin-center"
           style={{ opacity: activeApp === 'king' ? 1 : 0, visibility: activeApp === 'king' ? 'visible' : 'hidden', transform: activeApp === 'king' ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(-20px)' }}>

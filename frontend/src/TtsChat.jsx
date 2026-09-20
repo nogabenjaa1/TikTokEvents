@@ -1,4 +1,5 @@
 import { HowItWorks } from './PanelHelp';
+import { randomVoicePool, utteranceTimeoutMs } from './ttsVoice';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
@@ -81,7 +82,6 @@ const MAX_QUEUE = 15;
 // configurable (ver maxMessageAgeSec en DEFAULTS) y por defecto más generoso.
 // Cada cuánto revisa que el motor de voz no se haya quedado mudo/pausado.
 const ENGINE_KEEPALIVE_MS = 4000;
-const UTTERANCE_SAFETY_MS = 15000;
 const REPEAT_WINDOW_MS = 15000;
 const REPEAT_HISTORY = 3;
 
@@ -248,9 +248,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // reportó ninguna voz (ver el comentario de loadVoices más arriba), cae
   // en la voz configurada normal -- nunca deja el mensaje sin voz por esto.
   const pickVoice = (current) => {
-    if (current.randomVoice && voicesRef.current.length > 0) {
-      return voicesRef.current[Math.floor(Math.random() * voicesRef.current.length)];
-    }
+    const pool = current.randomVoice ? randomVoicePool(voicesRef.current) : [];
+    if (pool.length > 0) return pool[Math.floor(Math.random() * pool.length)];
     return resolveVoice(current.voiceURI, voicesRef.current);
   };
 
@@ -328,7 +327,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
       if (recoveredTimeoutRef.current) clearTimeout(recoveredTimeoutRef.current);
       recoveredTimeoutRef.current = setTimeout(() => setEngineStatus(speakingRef.current ? 'speaking' : 'idle'), 4000);
       finish();
-    }, UTTERANCE_SAFETY_MS);
+    }, utteranceTimeoutMs(spokenText, current.rate));
 
     window.speechSynthesis.speak(utterance);
   };
@@ -563,7 +562,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>
             <p className="theme-label text-[10px] uppercase tracking-[0.3em] font-black">🔊 Voz del Live</p>
-            <h1 className="text-2xl font-black tracking-wide mt-2">TTS (BETA)</h1>
+            <h1 className="text-2xl font-black tracking-wide mt-2">TTS</h1>
             <p className="text-sm text-gray-500 mt-2">Lee automáticamente los mensajes autorizados. Los mensajes con @ nunca se reproducen.</p>
           </div>
           <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-full border ${statusBadge.cls}`}>
@@ -738,14 +737,19 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-5">
             {Object.entries(EFFECT_PRESETS).map(([key, preset]) => (
-              <div key={key} className={`theme-input p-2 flex flex-col items-center gap-1.5 cursor-pointer transition-all ${settings.activePreset === key ? 'ring-2 ring-[var(--accent)]' : ''}`} onClick={() => applyPreset(key)} title={preset.hint}>
-                <span className="text-lg leading-none">{preset.emoji}</span>
-                <span className="text-[9px] font-black uppercase tracking-wide text-center">{preset.label}</span>
+              <div key={key} className={`theme-input p-2 flex flex-col items-center gap-1.5 transition-all ${settings.activePreset === key ? 'ring-2 ring-[var(--accent)]' : ''}`}>
+                {/* El efecto se elige con un botón de verdad (antes era un div clicable
+                    que el teclado no alcanzaba); el ▶ de abajo solo lo escucha. */}
+                <button type="button" onClick={() => applyPreset(key)} aria-pressed={settings.activePreset === key} title={preset.hint} className="w-full flex flex-col items-center gap-1.5 cursor-pointer">
+                  <span className="text-lg leading-none" aria-hidden="true">{preset.emoji}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wide text-center">{preset.label}</span>
+                </button>
                 <button
                   type="button"
                   onClick={(event) => { event.stopPropagation(); previewPreset(key); }}
                   disabled={!('speechSynthesis' in window) || !testText.trim()}
                   className="theme-btn-secondary w-full py-1 text-[9px] font-black disabled:opacity-40"
+                  aria-label={`Escuchar el efecto ${preset.label}`}
                 >▶</button>
               </div>
             ))}
@@ -756,7 +760,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
               checked={settings.randomVoice}
               onChange={(v) => update('randomVoice', v)}
               label="🎲 Voz aleatoria"
-              description="Cada mensaje usa una voz al azar entre todas las disponibles, en vez de la fija de abajo."
+              description={`Cada mensaje usa una voz distinta en español (${randomVoicePool(voices).length} disponibles en este navegador), en vez de la fija de abajo.`}
             />
           </div>
 

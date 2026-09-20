@@ -56,19 +56,19 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       return <DiceOverlay embedded diceState={liveState || mock.diceState} theme={theme} customize={entry} />;
     case 'taptap':
       return (
-        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <TopTapTapOverlay state={mock.state} customize={entry} />
         </div>
       );
     case 'gifter':
       return (
-        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <TopGifterOverlay state={mock.state} customize={entry} />
         </div>
       );
     case 'musicqueue':
       return (
-        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <SpotifyQueueOverlay state={mock.state} customize={entry} />
         </div>
       );
@@ -78,7 +78,7 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       // el streamer YA configuró de verdad (ver liveState en
       // OverlayLink.jsx).
       return (
-        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <ExtensibleOverlay state={liveState || mock.state} customize={entry} />
         </div>
       );
@@ -88,13 +88,13 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       // streamer ya tiene, no uno inventado (ver liveState en
       // OverlayLink.jsx).
       return (
-        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <GoalOverlay state={liveState || mock.state} customize={entry} />
         </div>
       );
     case 'chat':
       return (
-        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent}>
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <ChatOverlay viewerCount={mock.viewerCount} previewMessages={mock.messages} customize={entry} />
         </div>
       );

@@ -1,6 +1,7 @@
 import { SkeletonRows } from './PanelHelp';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import AdminStats from './AdminStats';
 
 // Tipos que el admin puede elegir a mano (crear o extender). Las pruebas
 // gratis ('trial') se generan solo desde /api/free-trial, autoservicio —
@@ -35,10 +36,10 @@ const STATUS_FILTERS = [
 ];
 
 function statusOf(license) {
-  if (license.revoked) return { id: 'revoked', label: 'Revocada', className: 'text-red-400 bg-red-950/40 border-red-800/50' };
+  if (license.revoked) return { id: 'revoked', label: 'Revocada', className: 'text-red-400 bg-red-500/15 border-red-500/50' };
   if (license.expiresAt !== null && license.expiresAt <= Date.now()) return { id: 'expired', label: 'Expirada', className: 'text-gray-500 bg-[var(--surface-bg-alt)] border-[var(--surface-border-color)]' };
-  if (license.expiresAt !== null && license.expiresAt - Date.now() <= EXPIRING_SOON_MS) return { id: 'expiring', label: 'Por vencer', className: 'text-amber-400 bg-amber-950/40 border-amber-800/50' };
-  return { id: 'active', label: 'Activa', className: 'text-green-400 bg-green-950/40 border-green-800/50' };
+  if (license.expiresAt !== null && license.expiresAt - Date.now() <= EXPIRING_SOON_MS) return { id: 'expiring', label: 'Por vencer', className: 'text-amber-400 bg-amber-500/15 border-amber-500/50' };
+  return { id: 'active', label: 'Activa', className: 'text-green-400 bg-green-500/15 border-green-500/50' };
 }
 
 function fmtDate(ms) {
@@ -54,7 +55,7 @@ function fmtDate(ms) {
 function ToastStack({ toasts }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 w-72">
+    <div role="status" aria-live="polite" className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 w-72">
       {toasts.map(t => (
         <div key={t.id} className={[
           'theme-surface px-4 py-3 text-xs font-bold shadow-lg flex items-center gap-2',
@@ -465,6 +466,9 @@ export default function LicenseManager({ onSessionInvalid }) {
         </div>
       )}
 
+      {/* Resumen del negocio: ingresos, licencias por plan, por vencer, conversión */}
+      <AdminStats onUnauthorized={handleUnauthorized} />
+
       {/* Crear licencia */}
       <form onSubmit={createLicense} className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
         <p className="theme-label text-xs uppercase tracking-widest font-semibold">Nueva licencia</p>
@@ -538,7 +542,7 @@ export default function LicenseManager({ onSessionInvalid }) {
               </div>
             ))}
             <p className="text-[10px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
-            <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start mt-1">
+            <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start py-2">
               {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
             </button>
             {historyOpen && (
@@ -629,7 +633,8 @@ export default function LicenseManager({ onSessionInvalid }) {
                       type="checkbox"
                       checked={selectedIds.has(lic.id)}
                       onChange={() => toggleSelected(lic.id)}
-                      className="shrink-0"
+                      aria-label={`Seleccionar la licencia de @${lic.username}`}
+                      className="shrink-0 w-4 h-4"
                     />
                   )}
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
@@ -728,12 +733,12 @@ export default function LicenseManager({ onSessionInvalid }) {
                   {!lic.isAdmin && (
                     <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--surface-border-color)]">
                       {!lic.revoked && (
-                        <button type="button" onClick={() => revoke(lic.id)} className="text-[10px] font-bold text-red-700 hover:underline">
+                        <button type="button" onClick={() => revoke(lic.id)} className="text-[10px] font-bold text-red-700 hover:underline py-2">
                           Revocar acceso
                         </button>
                       )}
                       {!lic.revoked && (
-                        <button type="button" onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-700 hover:underline">
+                        <button type="button" onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-700 hover:underline py-2">
                           Regenerar clave
                         </button>
                       )}

@@ -492,6 +492,52 @@ test('Monthly plus the add-on in one payment applies both, and the recorded amou
   assert.equal(update.keyHash, 'hash(ana-monthly-KEY)');
 });
 
+test('renewing a license that still has time adds the remaining days instead of losing them', () => {
+  const { context } = purchaseContext();
+  const DAY = 24 * 60 * 60 * 1000;
+  const remaining = (license) => context.computeLicenseUpdateForPurchase(license, { planType: 'month' }).expiresAt - 1000;
+
+  // The stub's computeExpiresAt returns 1000 for any plan, so what is left over is exactly the carried-over time.
+  const active = remaining({ username: 'ana', license_type: 'month', expires_at: Date.now() + 5 * DAY, revoked: false });
+  assert.ok(active <= 5 * DAY && active > 5 * DAY - 5000, `carried ${active} ms`);
+  assert.equal(remaining({ username: 'ana', license_type: 'trial', expires_at: Date.now() + 2 * DAY, revoked: false }) > 2 * DAY - 5000, true);
+  assert.equal(remaining({ username: 'ana', license_type: 'month', expires_at: Date.now() - DAY, revoked: false }), 0, 'expired: starts from scratch');
+  assert.equal(remaining({ username: 'ana', license_type: 'month', expires_at: Date.now() + 5 * DAY, revoked: true }), 0, 'revoked: no banked days');
+  assert.equal(remaining({ username: 'ana', license_type: 'lifetime', expires_at: null, revoked: false }), 0);
+  assert.equal(context.computeLicenseUpdateForPurchase({ username: 'ana', expires_at: Date.now() + DAY, revoked: false }, { planType: 'lifetime' }).expiresAt, null, 'lifetime never expires');
+});
+
+test('a payment whose license update fails is retried, and forgotten if it never works so a later retry can apply it', async () => {
+  const flaky = purchaseContext();
+  flaky.context.setTimeout = (fn) => { fn(); return 0; };
+  let calls = 0;
+  flaky.context.db.applyPurchase = async (...args) => { calls += 1; if (calls < 3) throw new Error('db down'); flaky.events.applied.push(args); };
+  flaky.context.db.deletePaymentRecord = async () => { throw new Error('must not be called when a retry works'); };
+  const ok = await flaky.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-retry' });
+  assert.equal(ok.applied, true);
+  assert.equal(calls, 3);
+  assert.equal(flaky.events.applied.length, 1);
+
+  const broken = purchaseContext();
+  broken.context.setTimeout = (fn) => { fn(); return 0; };
+  const forgotten = [];
+  let attempts = 0;
+  broken.context.db.applyPurchase = async () => { attempts += 1; throw new Error('db down'); };
+  broken.context.db.deletePaymentRecord = async (...args) => { forgotten.push(args); };
+  await assert.rejects(() => broken.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-dead' }), /db down/);
+  assert.equal(attempts, 3);
+  assert.deepEqual(forgotten, [['mp', 'pay-dead']]);
+  assert.ok(broken.events.logs.some((line) => line.includes('PAGO COBRADO SIN APLICAR')), 'the failure is loud in the logs');
+
+  const stripe = purchaseContext();
+  stripe.context.setTimeout = (fn) => { fn(); return 0; };
+  const stripeForgotten = [];
+  stripe.context.db.applyPurchase = async () => { throw new Error('db down'); };
+  stripe.context.db.deletePaymentRecord = async (...args) => { stripeForgotten.push(args); };
+  await assert.rejects(() => stripe.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_1' }));
+  assert.deepEqual(stripeForgotten, [['stripe', 'pi_1']]);
+});
+
 test('a payment already processed, or for a license that no longer exists, applies nothing', async () => {
   const seen = purchaseContext();
   seen.events.fresh = false;

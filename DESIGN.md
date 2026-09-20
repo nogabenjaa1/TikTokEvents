@@ -48,6 +48,7 @@ colors:
   scrollbar-track: "#0A0614"
   scrollbar-thumb: "#3E266E"
   scrollbar-thumb-hover: "#6B21A8"
+  overlay-playing: "#22C55E"
 typography:
   title:
     fontFamily: "ui-sans-serif, system-ui, sans-serif"
@@ -73,6 +74,42 @@ typography:
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "0.15em"
+  overlay-display-sm:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "28px"
+    fontWeight: 900
+    lineHeight: 1.1
+    letterSpacing: "normal"
+  overlay-display-md:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "32px"
+    fontWeight: 900
+    lineHeight: 1.1
+    letterSpacing: "normal"
+  overlay-display-lg:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "40px"
+    fontWeight: 900
+    lineHeight: 1
+    letterSpacing: "normal"
+  overlay-display-xl:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "52px"
+    fontWeight: 900
+    lineHeight: 1
+    letterSpacing: "normal"
+  overlay-display-2xl:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "56px"
+    fontWeight: 900
+    lineHeight: 1
+    letterSpacing: "normal"
+  overlay-display-hero:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "80px"
+    fontWeight: 900
+    lineHeight: 1
+    letterSpacing: "-0.05em"
 rounded:
   sm: "0.75rem"
   cute-nav: "1.1rem"
@@ -162,6 +199,10 @@ Los cuatro materiales viven en la misma familia de luminosidad — pastel claro 
 
 El fondo del `body` (`page-black`, `#05030A`) solo se ve mientras carga la página y detrás de los overlays transparentes; encima va siempre el fondo temático de cada skin. La barra de desplazamiento del navegador es oscura y morada en todos los skins (`scrollbar-track` `#0A0614`, `scrollbar-thumb` `#3E266E`, al pasar el mouse `#6B21A8`, esquinas de `10px`): los navegadores no le pasan variables CSS del tema, así que no sigue el acento.
 
+### Verde de la canción sonando (overlay de música)
+
+El overlay de la cola de Spotify marca la canción que está sonando con un borde `overlay-playing` (`#22C55E`) y un resplandor del mismo verde. Es un color de "en vivo" pensado para verse sobre la escena del directo, así que no sale de los tokens de estado del panel (que son más oscuros para leerse sobre el pastel).
+
 ### Estado (fijos, no siguen el acento elegido)
 - **Rojo Alerta** (`#EF4444`): ventanas de snipe/peligro, licencias revocadas, errores. Siempre en pares badge (fondo `red-950/70` + borde `red-500/70` + texto claro).
 - **Ámbar Aviso** (`#F59E0B`): avisos de vencimiento de licencia, estados "por vencer" o "verificando".
@@ -193,6 +234,7 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 - **Headline** (peso 900/`font-black`, 24px, `tracking-widest`): títulos de pantalla completa poco frecuentes — p. ej. "OFFLINE" en la tarjeta del overlay sin conexión.
 - **Title** (peso 900/`font-black`, 10px, `tracking-[0.3em]`, mayúsculas): la voz dominante del sistema — encabezados de módulo ("KING", "🔑 Licencias", "🎨 Tema"). Actúa como un eyebrow gigante en vez de un título tradicional.
 - **Body** (peso 700, 14px): nombres de usuario, texto de mensajes de error, contenido variable.
+- **Display de overlay** (peso 900, 28 / 32 / 40 / 52 / 56 / 80px): los números y textos grandes de los overlays de OBS (el cronómetro de Rey del Trono, los contadores y nombres de ganador, el conteo de Eliminación y Ruleta). Se leen desde lejos sobre la escena del directo, por eso salen de la escala del panel. Solo se usan dentro de los overlays, nunca en el panel de control.
 - **Label** (peso 700, 11px, `tracking-widest`, mayúsculas): etiquetas de formulario, badges de estado, metadata secundaria (fechas, contadores de uso).
 
 ### Named Rules

@@ -127,6 +127,7 @@ test('editing an assigned alert offline preserves its gift and media', async () 
 });
 
 test('catalog requires this license LIVE connection, reloads each time and rejects a stale connection', async () => {
+  const directoryGifts = [];
   const tenant = { liveConnected: false, currentTikTokUsername: 'ana', tiktokConnection: {}, getSeenGifts: () => [] };
   let calls = 0;
   let changeConnection = false;
@@ -138,6 +139,7 @@ test('catalog requires this license LIVE connection, reloads each time and rejec
     app: { get: (...args) => { handler = args.at(-1); } }, auth: {},
     getOrCreateTenant: () => tenant,
     mergeGiftCatalogs: require('./lib/giftCatalog').mergeGiftCatalogs,
+    giftDirectory: { load: async () => {}, list: () => directoryGifts },
     WebcastPushConnectionV1: class {
       async getAvailableGifts() {
         calls++;
@@ -165,7 +167,8 @@ test('catalog requires this license LIVE connection, reloads each time and rejec
   assert.equal((await load()).code, 409);
 });
 
-test('the catalog merges the room list, the generic list and the gifts already seen in the LIVE, and keeps gifts with no image', async () => {
+test('the catalog merges the room list, the generic list, the gifts seen in any LIVE and this one, and keeps gifts with no image', async () => {
+  const directoryGifts = [{ id: 77, name: 'Super GG', coins: 30, icon: 'https://x/gg.png' }];
   const tenant = {
     liveConnected: true, currentTikTokUsername: 'ana', tiktokConnection: { roomId: '777' },
     getSeenGifts: () => [{ id: 4, name: 'Regalo Visto', coins: 10, icon: '' }],
@@ -179,6 +182,7 @@ test('the catalog merges the room list, the generic list and the gifts already s
     app: { get: (...args) => { handler = args.at(-1); } }, auth: {},
     getOrCreateTenant: () => tenant, console: { warn() {}, error() {}, log() {} },
     mergeGiftCatalogs: require('./lib/giftCatalog').mergeGiftCatalogs,
+    giftDirectory: { load: async () => {}, list: () => directoryGifts },
     WebcastPushConnectionV1: class {
       constructor(username, options) { this.options = options; created.push(options); }
       async getAvailableGifts() {
@@ -197,14 +201,15 @@ test('the catalog merges the room list, the generic list and the gifts already s
   };
   build(false);
   const full = await load();
-  assert.deepEqual(full.gifts.map((g) => g.name), ['Rose', 'Vieja', 'Nueva', 'Regalo Visto']);
+  assert.deepEqual(full.gifts.map((g) => g.name), ['Rose', 'Vieja', 'Nueva', 'Regalo Visto', 'Super GG']);
+  assert.equal(full.gifts.find((g) => g.name === 'Super GG').icon, 'https://x/gg.png', 'a gift TikTok delivered in some other LIVE is offered, with its icon');
   assert.equal(full.gifts.find((g) => g.name === 'Rose').icon, '/rose.png', 'the icon comes from whichever list has it');
   assert.equal(full.gifts.find((g) => g.name === 'Nueva').icon, '', 'a gift with no image is still offered');
   assert.equal(created[0].clientParams.room_id, '777', 'the room list is requested with the room id');
 
   build(true);
   const fallback = await load();
-  assert.deepEqual(fallback.gifts.map((g) => g.name), ['Rose', 'Vieja', 'Regalo Visto'], 'a failing room list falls back to the generic one');
+  assert.deepEqual(fallback.gifts.map((g) => g.name), ['Rose', 'Vieja', 'Regalo Visto', 'Super GG'], 'a failing room list falls back to the generic one, and the gifts already seen still come');
 });
 
 test('a live gift whose name differs only in case, accents or spacing still finds its alert', () => {

@@ -8,8 +8,7 @@ import Dashboard from './Dashboard';
 import ExpiryBanner from './ExpiryBanner';
 import useAutoLabels from './useAutoLabels';
 import { shouldMonitorInPanel, loadMonitorMode, saveMonitorMode, loadMonitorSink, saveMonitorSink } from './alertMonitor';
-import { GiftCatalogContext } from './GiftCatalogContext';
-import { cleanGift, loadExtraGifts, saveExtraGifts, addExtraGift, mergeCatalog, findGiftByName } from './giftCatalog';
+import { addSeenGift, mergeCatalog } from './giftCatalog';
 import SystemHealth from './SystemHealth';
 import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
@@ -369,27 +368,14 @@ export default function App() {
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
-  // Regalos que la lista de TikTok no trae (escritos a mano o vistos en un
-  // directo), recordados en este navegador -- ver giftCatalog.js. `allGifts` es
-  // lo que ven los selectores: la lista de TikTok más estos extras.
-  const [extraGifts, setExtraGifts]               = useState(loadExtraGifts);
-  const allGifts = useMemo(() => mergeCatalog(giftsList, extraGifts), [giftsList, extraGifts]);
-  const allGiftsRef = useRef(allGifts);
-  allGiftsRef.current = allGifts;
-  const addGift = useCallback((raw) => {
-    const gift = cleanGift(raw);
-    if (!gift) return null;
-    // Si ya está en el catálogo (aunque se haya escrito distinto), se usa ese.
-    const known = findGiftByName(allGiftsRef.current, gift.name);
-    if (known && known.name !== 'Ninguno') return known;
-    setExtraGifts((prev) => {
-      const next = addExtraGift(prev, gift);
-      if (next !== prev) saveExtraGifts(next);
-      return next;
-    });
-    return gift;
-  }, []);
-  const giftCatalogContext = useMemo(() => ({ addGift }), [addGift]);
+  // El catálogo es lo que TikTok devuelve (`giftsList`) más los regalos que
+  // van llegando en el directo y que su lista no traía (`seenGifts`, ver
+  // giftCatalog.js). `allGifts` es lo que ven todos los selectores. No hay
+  // forma de crear regalos a mano.
+  const [seenGifts, setSeenGifts]                 = useState([]);
+  const allGifts = useMemo(() => mergeCatalog(giftsList, seenGifts), [giftsList, seenGifts]);
+  // Versión anterior: regalos escritos a mano en este navegador. Ya no existen.
+  useEffect(() => { try { localStorage.removeItem('tkc_extra_gifts'); } catch { /* sin almacenamiento */ } }, []);
   // Sonido de las alertas en ESTA pestaña (ver alertMonitor.js): modo, salida
   // de audio elegida y si hay un overlay de alertas abierto (lo avisa el servidor).
   const [monitorMode, setMonitorModeState]        = useState(loadMonitorMode);
@@ -854,11 +840,11 @@ export default function App() {
   useEffect(() => {
     if (!socket || overlayMode) return undefined;
     const onOverlayStatus = (status) => setAlertsOverlayConnected(!!status?.connected);
-    const onGiftSeen = (gift) => { addGift(gift); };
+    const onGiftSeen = (gift) => setSeenGifts((prev) => addSeenGift(prev, gift));
     socket.on('alerts_overlay_status', onOverlayStatus);
     socket.on('gift_seen', onGiftSeen);
     return () => { socket.off('alerts_overlay_status', onOverlayStatus); socket.off('gift_seen', onGiftSeen); };
-  }, [socket, overlayMode, addGift]);
+  }, [socket, overlayMode]);
 
   // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
   // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
@@ -1000,7 +986,6 @@ export default function App() {
   };
 
   return (
-    <GiftCatalogContext.Provider value={giftCatalogContext}>
     <ThemedShell className="flex flex-col">
       <a href="#contenido-principal" className="tkc-skip-link">Saltar al contenido</a>
       {kickedOutMessage && (
@@ -1337,6 +1322,5 @@ export default function App() {
 
     <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
     </ThemedShell>
-    </GiftCatalogContext.Provider>
   );
 }

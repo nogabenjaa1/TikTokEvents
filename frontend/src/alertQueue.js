@@ -1,40 +1,92 @@
 export const ANIM_DURATION_MS = 400;
 
-// Una cola por reproductor. Los eventos guardan su propio contenido y nunca
-// dependen de la llegada de otro evento para avanzar.
-export function createAlertQueue(onChange, schedule = setTimeout, cancel = clearTimeout) {
+const MIN_DURATION_MS = 500;
+const MAX_DURATION_MS = 15000;
+
+function phaseAt(elapsed, duration, animation) {
+  if (elapsed < animation) return 'entering';
+  if (elapsed < duration - animation) return 'visible';
+  return 'exiting';
+}
+
+// Una cola por reproductor: las alertas se muestran de a una, en orden de
+// llegada, y se pueden seguir agregando mientras corre la actual.
+//
+// El avance NO depende de una cadena de setTimeout: el navegador embebido de
+// OBS / TikTok Studio congela o frena los temporizadores de una fuente que no
+// se está pintando, y con eso la alerta activa se quedaba "pegada" y las demás
+// esperando hasta que otro evento las soltaba de golpe. Ahora todo sale del
+// reloj real (now): tick() mira qué hora es y decide en qué fase está la alerta
+// actual, si ya terminó y cuál sigue. tick() lo llaman un temporizador propio,
+// un ticker en Worker (ver ticker.js), el cambio de visibilidad de la página y
+// cada alerta nueva, así que da igual cuál de ellos sea el que despierte.
+//
+// Si la página estuvo congelada y al volver la alerta actual ya se pasó de su
+// tiempo, se da por terminada y la SIGUIENTE arranca completa desde ahora (cada
+// una con su duración entera, una tras otra), en vez de disparar todas juntas.
+export function createAlertQueue(onChange, schedule = setTimeout, cancel = clearTimeout, now = Date.now) {
   const pending = [];
-  let active = false;
+  let current = null; // { alert, startedAt, duration, animation, phase }
+  let timer = null;
   let disposed = false;
   let sequence = 0;
-  let timers = [];
-  function advance() {
-    if (disposed || active || !pending.length) return;
-    const alert = pending.shift();
-    active = true;
-    const duration = Math.min(15000, Math.max(500, Number(alert.durationMs) || 5000));
-    const animationDuration = Math.min(ANIM_DURATION_MS, duration / 2);
-    onChange(alert, 'entering');
-    timers = [
-      schedule(() => onChange(alert, 'visible'), animationDuration),
-      schedule(() => onChange(alert, 'exiting'), duration - animationDuration),
-      schedule(() => {
-        timers = [];
-        active = false;
-        onChange(null, 'visible');
-        advance();
-      }, duration),
-    ];
+
+  function disarm() {
+    if (timer !== null) cancel(timer);
+    timer = null;
   }
+
+  // Un solo temporizador, para el próximo cambio de fase o el final.
+  function arm() {
+    disarm();
+    if (!current) return;
+    const elapsed = now() - current.startedAt;
+    const next = elapsed < current.animation ? current.animation
+      : elapsed < current.duration - current.animation ? current.duration - current.animation
+        : current.duration;
+    timer = schedule(tick, Math.max(0, next - elapsed));
+  }
+
+  function begin(alert) {
+    const duration = Math.min(MAX_DURATION_MS, Math.max(MIN_DURATION_MS, Number(alert.durationMs) || 5000));
+    current = { alert, startedAt: now(), duration, animation: Math.min(ANIM_DURATION_MS, duration / 2), phase: 'entering' };
+    onChange(alert, 'entering');
+    arm();
+  }
+
+  function tick() {
+    if (disposed) return;
+    timer = null;
+    if (current) {
+      const elapsed = now() - current.startedAt;
+      if (elapsed >= current.duration) {
+        current = null;
+        onChange(null, 'visible');
+      } else {
+        const phase = phaseAt(elapsed, current.duration, current.animation);
+        if (phase !== current.phase) {
+          current.phase = phase;
+          onChange(current.alert, phase);
+        }
+        arm();
+        return;
+      }
+    }
+    if (pending.length) begin(pending.shift());
+  }
+
   return {
     enqueue(alert) {
       if (disposed || !alert) return;
       pending.push({ ...alert, playbackId: ++sequence });
-      advance();
+      tick();
     },
+    tick,
+    get size() { return pending.length + (current ? 1 : 0); },
     dispose() {
       disposed = true;
-      timers.forEach(cancel);
+      disarm();
+      current = null;
       pending.length = 0;
     },
   };

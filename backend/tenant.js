@@ -262,6 +262,14 @@ class Tenant {
         this.alertConfigs = {};
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
+        // Rachas de regalos abiertas (esperan su cierre) y recién cerradas por
+        // tiempo, y regalos vistos en este directo -- ver events.js.
+        this.openGiftCombos = new Map();
+        this.closedGiftCombos = new Map();
+        this.seenGifts = new Map();
+        // Sockets de overlays de alertas conectados (para que el panel no
+        // suene encima de OBS) -- ver alerts.js.
+        this.alertOverlaySockets = new Set();
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no

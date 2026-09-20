@@ -3,7 +3,11 @@
 // cual estaban, sin cambios de lógica.
 const {
     GIFT_ACCUMULATE_WINDOW_MS,
+    GIFT_COMBO_TIMEOUT_MS,
+    GIFT_COMBO_MEMORY_MS,
+    MAX_SEEN_GIFTS,
 } = require('../../lib/tenantHelpers');
+const { giftNameKey } = require('../../lib/giftCatalog');
 
 module.exports = {
     // ==========================================
@@ -19,8 +23,43 @@ module.exports = {
         // `userDetails.profilePictureUrls` (que en esta versión es un
         // string, no un array — indexarlo con [0] agarraba un carácter
         // suelto en vez de la URL).
-        if (data.type === 1 && !data.repeatEnd) return; // esperar a que termine el combo
+        // Racha (type 1): se espera al cierre (repeatEnd) para contar y disparar
+        // UNA sola vez; si el cierre no llega, un temporizador la cierra con lo
+        // último recibido (ver GIFT_COMBO_TIMEOUT_MS). Nunca queda una racha
+        // muerta esperando al siguiente evento.
+        if (data.type === 1) {
+            const comboKey = `${data.userId || data.uniqueId}|${data.giftId ?? data.name}`;
+            const open = this.openGiftCombos.get(comboKey);
+            if (!data.repeatEnd) {
+                if (open) clearTimeout(open.timer);
+                const timer = setTimeout(() => {
+                    this.openGiftCombos.delete(comboKey);
+                    this.closedGiftCombos.set(comboKey, { count: data.repeatCount || 1, at: Date.now() });
+                    this.dispatchGiftEvent({ ...data, repeatEnd: true });
+                }, GIFT_COMBO_TIMEOUT_MS);
+                if (timer.unref) timer.unref();
+                this.openGiftCombos.set(comboKey, { timer });
+                return;
+            }
+            if (open) { clearTimeout(open.timer); this.openGiftCombos.delete(comboKey); }
+            // El cierre real llegó después de que el temporizador ya la había
+            // cerrado: solo se cuenta lo que faltaba (o nada, si no hay más).
+            const closed = this.closedGiftCombos.get(comboKey);
+            if (closed) {
+                this.closedGiftCombos.delete(comboKey);
+                if (Date.now() - closed.at <= GIFT_COMBO_MEMORY_MS) {
+                    const missing = (data.repeatCount || 1) - closed.count;
+                    if (missing <= 0) return;
+                    return this.dispatchGiftEvent({ ...data, repeatCount: missing });
+                }
+            }
+        }
+        this.dispatchGiftEvent(data);
+    },
 
+    // Reparte un regalo YA cerrado a cada módulo (juegos, alertas, catálogo).
+    dispatchGiftEvent(data) {
+        this.noteSeenGift(data);
         const event = {
             username: data.uniqueId,
             // Pedido explicito ({nickname} en el texto de las alertas): el
@@ -30,6 +69,7 @@ module.exports = {
             nickname: data.nickname || data.uniqueId || '',
             avatar: data.profilePictureUrl || '',
             giftName: data.name || '',
+            giftId: data.giftId,
             diamondCount: data.diamondCount || 0,
             repeatCount: data.repeatCount || 1,
             followRole: data.followRole,
@@ -44,10 +84,27 @@ module.exports = {
         this.processGiftExtensible(event);
         this.processGiftGoal(event.totalCoins);
         this.processAlertTrigger({
-            username: event.username, nickname: event.nickname, key: event.giftName,
+            username: event.username, nickname: event.nickname, key: event.giftName, giftId: event.giftId,
             repeatCount: event.repeatCount, giftName: event.giftName, coins: event.totalCoins,
             allowGlobalFallback: true,
         });
+    },
+
+    // Cada regalo que llega en el directo existe sí o sí: se recuerda (id,
+    // nombre, monedas, ícono) y, si es nuevo, se avisa al panel para que
+    // aparezca en los selectores aunque la lista que bajó TikTok no lo traía.
+    noteSeenGift(data) {
+        const name = String(data.name || '').trim();
+        if (!name) return;
+        const key = giftNameKey(name);
+        if (this.seenGifts.has(key) || this.seenGifts.size >= MAX_SEEN_GIFTS) return;
+        const gift = { id: data.giftId ?? null, name, coins: data.diamondCount || 0, icon: data.giftPictureUrl || '' };
+        this.seenGifts.set(key, gift);
+        this.broadcast.emit('gift_seen', gift);
+    },
+
+    getSeenGifts() {
+        return [...this.seenGifts.values()];
     },
 
     // Bug real de nombre de campo (mismo patrón que gift/badge, confirmado

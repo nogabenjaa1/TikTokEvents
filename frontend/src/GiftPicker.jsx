@@ -76,7 +76,7 @@ export default function GiftPicker({
         {selected ? (
           <>
             <span className="flex items-center gap-3 min-w-0">
-              {selected.icon && <img src={selected.icon} alt="" className="w-6 h-6 flex-shrink-0" />}
+              {selected.icon ? <img src={selected.icon} alt="" className="w-6 h-6 flex-shrink-0" /> : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>}
               <span className={`${v.name} truncate`}>{selected.name}</span>
               {renderBadge?.(selected)}
             </span>
@@ -118,7 +118,7 @@ export default function GiftPicker({
                 className={`w-full text-left p-2 ${v.row} cursor-pointer flex items-center justify-between gap-2`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  {gift.icon && <img src={gift.icon} alt="" className="w-6 h-6 flex-shrink-0" />}
+                  {gift.icon ? <img src={gift.icon} alt="" className="w-6 h-6 flex-shrink-0" /> : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>}
                   <span className={`${v.name} truncate`}>{gift.name}</span>
                   {renderBadge?.(gift)}
                 </div>

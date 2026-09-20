@@ -7,6 +7,7 @@ import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
 import ExpiryBanner from './ExpiryBanner';
 import useAutoLabels from './useAutoLabels';
+import { shouldMonitorInPanel, loadMonitorMode, saveMonitorMode, loadMonitorSink, saveMonitorSink } from './alertMonitor';
 import SystemHealth from './SystemHealth';
 import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
@@ -366,6 +367,13 @@ export default function App() {
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
   const [giftsList, setGiftsList]                = useState([]);
+  // Sonido de las alertas en ESTA pestaña (ver alertMonitor.js): modo, salida
+  // de audio elegida y si hay un overlay de alertas abierto (lo avisa el servidor).
+  const [monitorMode, setMonitorModeState]        = useState(loadMonitorMode);
+  const [monitorSink, setMonitorSinkState]        = useState(loadMonitorSink);
+  const [alertsOverlayConnected, setAlertsOverlayConnected] = useState(false);
+  const setMonitorMode = (mode) => { setMonitorModeState(mode); saveMonitorMode(mode); };
+  const setMonitorSink = (id, label) => { const sink = { id, label }; setMonitorSinkState(sink); saveMonitorSink(sink); };
   // Salud del sistema (ver SystemHealth.jsx): estado real del socket con el
   // servidor y del motor de voz, más el aviso de "el servidor se reinició".
   const [socketConnected, setSocketConnected]  = useState(false);
@@ -817,6 +825,26 @@ export default function App() {
     return () => { controller.abort(); clearTimeout(retry); };
   }, [username, connectionStatus, overlayMode, licenseKey, socketConnected]);
 
+  // Avisos del servidor: si hay un overlay de alertas abierto, y los regalos que
+  // van llegando en el directo (que la lista que bajó TikTok puede no traer):
+  // se agregan a los selectores sin recargar nada.
+  useEffect(() => {
+    if (!socket || overlayMode) return undefined;
+    const onOverlayStatus = (status) => setAlertsOverlayConnected(!!status?.connected);
+    const onGiftSeen = (gift) => {
+      if (!gift?.name) return;
+      const key = String(gift.name).trim().toLowerCase();
+      setGiftsList((prev) => {
+        if (prev.length === 0 || prev.some((g) => String(g.name).trim().toLowerCase() === key)) return prev;
+        const [first, ...rest] = prev;
+        return [first, ...[...rest, gift].sort((a, b) => (a.coins || 0) - (b.coins || 0) || String(a.name).localeCompare(String(b.name)))];
+      });
+    };
+    socket.on('alerts_overlay_status', onOverlayStatus);
+    socket.on('gift_seen', onGiftSeen);
+    return () => { socket.off('alerts_overlay_status', onOverlayStatus); socket.off('gift_seen', onGiftSeen); };
+  }, [socket, overlayMode]);
+
   // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
   // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
   // debe quedar ningún fondo sólido detrás del recuadro además del que
@@ -1203,6 +1231,10 @@ export default function App() {
                   customization={panelOverlayDraft.alerts}
                   onCustomizeChange={(entry) => updateOverlayCustomization('alerts', entry)}
                   onApplyToAll={() => applyOverlayCustomizationToAll('alerts')}
+                  monitor={{
+                    mode: monitorMode, onModeChange: setMonitorMode, overlayConnected: alertsOverlayConnected,
+                    sinkId: monitorSink.id, sinkLabel: monitorSink.label, onSinkChange: setMonitorSink,
+                  }}
                 />
               )
             )}
@@ -1225,7 +1257,9 @@ export default function App() {
             en SU navegador sin importar en qué pestaña del panel esté, no
             solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
             tiene pegada esa URL aparte). */}
-        <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} />
+        {shouldMonitorInPanel(monitorMode, alertsOverlayConnected) && (
+          <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} />
+        )}
 
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el

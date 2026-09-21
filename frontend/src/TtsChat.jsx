@@ -1,5 +1,6 @@
 import { HowItWorks } from './PanelHelp';
 import { randomVoicePool, utteranceTimeoutMs } from './ttsVoice';
+import { writeStorage } from './safeStorage';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
@@ -146,7 +147,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
   useEffect(() => {
     settingsRef.current = settings;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
+    writeStorage(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
   }, [settings]);
 
   // Quién puede activar una lectura (allUsers/moderators/superFans/

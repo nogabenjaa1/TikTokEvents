@@ -42,6 +42,10 @@ class PanelErrorBoundary extends Component {
     return { failed: true };
   }
 
+  componentDidCatch(error, info) {
+    console.error('[Panel] No se pudo mostrar la sección:', error, info?.componentStack);
+  }
+
   render() {
     if (!this.state.failed) return this.props.children;
     return (

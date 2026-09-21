@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { writeStorage } from './safeStorage';
 
 const STORAGE_KEY = 'tkc_theme';
 // Apariencia (claro / oscuro / automático según el sistema): independiente
@@ -126,11 +127,11 @@ export function ThemeProvider({ children }) {
   };
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
+    writeStorage(STORAGE_KEY, JSON.stringify(theme));
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents));
+    writeStorage(RECENTS_KEY, JSON.stringify(recents));
   }, [recents]);
 
   // Elegí un skin completo (material + acento) de una — reemplaza al viejo

@@ -1,13 +1,19 @@
 // Helpers de sesión/licencia, sin JSX: se usan desde App.jsx y LicenseManager.jsx.
 import { io } from 'socket.io-client';
+import { writeStorage, removeStorage } from './safeStorage';
 
 const SESSION_KEY = 'tkc_session'; // { token, licenseKey, overlayKey, username, licenseType, isAdmin, expiresAt }
 
+// Si el navegador no deja guardar (almacenamiento bloqueado o lleno), la sesión
+// igual dura mientras la pestaña siga abierta, en vez de romper el inicio de sesión.
+let memorySession = null;
+
 export function saveSession(session) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  memorySession = writeStorage(SESSION_KEY, JSON.stringify(session)) ? null : session;
 }
 
 export function loadSession() {
+  if (memorySession) return memorySession;
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -17,7 +23,8 @@ export function loadSession() {
 }
 
 export function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
+  memorySession = null;
+  removeStorage(SESSION_KEY);
 }
 
 // El overlay se carga en OBS sin login interactivo posible: su token viaja en

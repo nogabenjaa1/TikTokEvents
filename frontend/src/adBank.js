@@ -4,6 +4,7 @@
 // navegador (o modo incógnito) resetea el banco: costo proporcional a un
 // beneficio de un minijuego gratuito, no de una licencia paga.
 import { GUEST_BANK_HOUR_MS, GUEST_BANK_CAP_MS } from './adConfig';
+import { writeStorage } from './safeStorage';
 
 const BANK_KEY = 'tkc_colorsays_ad_bank';
 
@@ -19,7 +20,7 @@ function readBankedUntil() {
 }
 
 function writeBankedUntil(bankedUntil) {
-  localStorage.setItem(BANK_KEY, JSON.stringify({ bankedUntil }));
+  writeStorage(BANK_KEY, JSON.stringify({ bankedUntil }));
 }
 
 // Milisegundos de uso sin ads que quedan, o 0 si no hay banco activo.

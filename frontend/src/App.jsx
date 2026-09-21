@@ -1048,7 +1048,7 @@ export default function App() {
             paneles"). */}
         <div className="flex flex-col items-center gap-0.5 flex-shrink-0 md:mb-1">
           <img src={logoMark} alt="" className="h-7 md:h-8 w-auto" />
-          <span className="text-[7px] font-black uppercase tracking-wider text-gray-500 text-center leading-none">BenjaApis</span>
+          <span className="text-[8px] font-black uppercase tracking-wider text-gray-500 text-center leading-none">BenjaApis</span>
         </div>
         {SECTIONS.map((s) => (
           <button

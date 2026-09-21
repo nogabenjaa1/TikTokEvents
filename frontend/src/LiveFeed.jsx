@@ -115,7 +115,7 @@ export default function LiveFeed({ feed, connected }) {
             type="button"
             aria-pressed={filter === f.id}
             onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-colors ${filter === f.id ? 'theme-btn-primary border-transparent' : 'text-white border-[var(--surface-border-color)] hover:border-[var(--accent)]'}`}
+            className={`rounded-full font-black uppercase tracking-widest border transition-colors theme-btn-sm ${filter === f.id ? 'theme-btn-primary border-transparent' : 'text-white border-[var(--surface-border-color)] hover:border-[var(--accent)]'}`}
             style={filter === f.id ? undefined : { background: 'color-mix(in oklch, var(--accent) 12%, transparent)' }}
           >
             {f.label} <span>{counts[f.id]}</span>

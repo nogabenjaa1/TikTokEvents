@@ -170,7 +170,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
             {TARGET_TYPES.map((t) => (
               <button key={t.id} type="button" disabled={state.isActive}
                 onClick={() => setTargetType(t.id)}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed ${targetType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                className={`flex-1 font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-md ${targetType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {t.label}
               </button>
             ))}
@@ -208,7 +208,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
               <span className="text-[10px] text-gray-400 truncate">🎧 Ya tiene un sonido guardado</span>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <button type="button" onClick={testAudio} className="text-[10px] font-bold text-sky-400 hover:text-sky-300">▶ Probar</button>
-                <button type="button" onClick={removeAudio} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
+                <button type="button" onClick={removeAudio} className="theme-link theme-link-danger">Quitar</button>
               </div>
             </div>
           )}
@@ -232,18 +232,18 @@ export default function Goal({ state, socket, username, connectionStatus }) {
 
         <div className="flex gap-4">
           {!state.isActive ? (
-            <button onClick={startGoal} disabled={connectionStatus !== 'connected'} className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed">
+            <button onClick={startGoal} disabled={connectionStatus !== 'connected'} className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed">
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR OBJETIVO'}
             </button>
           ) : (
             <>
-              <button onClick={updateGoal} className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all">
+              <button onClick={updateGoal} className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all">
                 ACTUALIZAR META
               </button>
-              <button onClick={resetProgress} className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all">
+              <button onClick={resetProgress} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all">
                 REINICIAR PROGRESO ⟲
               </button>
-              <button onClick={stopGoal} className="theme-btn-danger px-6 py-4 font-bold transition-all">
+              <button onClick={stopGoal} className="theme-btn-danger theme-btn-lg font-bold transition-all">
                 ⏹
               </button>
             </>

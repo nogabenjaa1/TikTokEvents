@@ -193,7 +193,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                 <button
                   onClick={startZubastinis}
                   disabled={connectionStatus !== 'connected'}
-                  className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
@@ -202,13 +202,13 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                   <button
                     onClick={togglePause}
                     disabled={state.mode === 'finished'}
-                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
                   </button>
                   <button
                     onClick={restartZubastinis}
-                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
+                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
                   >
                     REINICIAR ⟲
                   </button>
@@ -216,7 +216,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               )}
               <button
                 onClick={stopZubastinis}
-                className="theme-btn-danger px-6 py-4 font-bold transition-all"
+                className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
                 ⏹
               </button>

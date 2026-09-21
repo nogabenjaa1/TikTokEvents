@@ -99,7 +99,7 @@ export default function ThemeSwitcher() {
             </div>
             <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Usuario de TikTok</label>
             <input readOnly value="streamer_oficial" className="theme-input w-full p-3 outline-none text-sm font-bold text-white mb-4" />
-            <button className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs shadow-lg">
+            <button className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase shadow-lg">
               Empezar
             </button>
           </div>

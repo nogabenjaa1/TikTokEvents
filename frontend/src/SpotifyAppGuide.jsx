@@ -99,7 +99,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
           </p>
           <div className="flex items-center gap-2 mt-2">
             <code className="theme-input flex-1 px-3 py-2 text-[11px] text-green-300 break-all select-all">{redirectUri}</code>
-            <button type="button" onClick={copyRedirectUri} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+            <button type="button" onClick={copyRedirectUri} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
               {copied ? 'Copiado' : 'Copiar'}
             </button>
           </div>
@@ -149,7 +149,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
               onClick={() => setShowSecret((visible) => !visible)}
               aria-pressed={showSecret}
               aria-label={showSecret ? 'Ocultar el Client secret' : 'Mostrar el Client secret'}
-              className="theme-btn-secondary px-3 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0"
+              className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest flex-shrink-0"
             >
               {showSecret ? '🙈' : '👁️'}
             </button>
@@ -158,17 +158,17 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
         <p className="text-[10px] text-gray-500 leading-snug">
           El Client secret funciona como una contraseña de tu app: solo se usa para conectar tu Spotify, se guarda cifrado y nunca se vuelve a mostrar.
         </p>
-        {error && <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
+        {error && <p role="alert" className="theme-notice">{error}</p>}
         <div className="flex gap-2">
           <button
             type="submit"
             disabled={saving || !clientId.trim() || !clientSecret.trim()}
-            className="theme-btn-primary flex-1 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Verificando con Spotify...' : 'Verificar y guardar'}
           </button>
           {onCancel && (
-            <button type="button" onClick={onCancel} disabled={saving} className="theme-btn-secondary px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
+            <button type="button" onClick={onCancel} disabled={saving} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40">
               Cancelar
             </button>
           )}

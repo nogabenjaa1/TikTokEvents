@@ -351,7 +351,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           <button
             onClick={() => setRewardGateOpen(true)}
             disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
-            className="theme-btn-secondary w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-secondary theme-btn-sm w-full font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Ver anuncio: +1h sin anuncios
           </button>

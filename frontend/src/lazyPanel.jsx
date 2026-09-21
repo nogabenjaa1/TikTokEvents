@@ -52,7 +52,7 @@ class PanelErrorBoundary extends Component {
       <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-3 p-10 text-center">
         <p className="text-sm font-bold text-white">No se pudo cargar esta sección.</p>
         <p className="text-xs text-gray-500">Revisa tu conexión a internet y vuelve a intentarlo.</p>
-        <button type="button" onClick={() => window.location.reload()} className="theme-btn-primary px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+        <button type="button" onClick={() => window.location.reload()} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest">
           Recargar
         </button>
       </div>

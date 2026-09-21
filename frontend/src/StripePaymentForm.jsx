@@ -106,9 +106,9 @@ function CheckoutInner({ pending, setPending, submitError, setSubmitError, onSuc
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <PaymentElement />
       {pending && <p className="text-[10px] text-gray-500 text-center">Procesando pago...</p>}
-      {submitError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{submitError}</p>}
+      {submitError && <p className="theme-notice">{submitError}</p>}
       <button type="submit" disabled={!stripe || pending}
-        className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+        className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed">
         {pending ? 'Procesando...' : 'Pagar'}
       </button>
     </form>
@@ -154,8 +154,8 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
   if (loadError) {
     return (
       <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
-        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{loadError}</p>
-        <button type="button" onClick={onCancel} className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all">
+        <p className="theme-notice">{loadError}</p>
+        <button type="button" onClick={onCancel} className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all">
           Volver
         </button>
       </div>

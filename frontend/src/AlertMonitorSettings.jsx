@@ -61,7 +61,7 @@ export default function AlertMonitorSettings({ enabled, onEnabledChange, overlay
             Opcional: envía el sonido de esta pestaña a un dispositivo concreto (por ejemplo un cable virtual que capta tu programa de directo).
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={chooseOutput} className="theme-btn-secondary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+            <button type="button" onClick={chooseOutput} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
               🎧 Elegir dispositivo de salida
             </button>
             {sinkId && (

@@ -17,10 +17,10 @@ function ErrorFallback({ onRetry }) {
           No se pudo mostrar. Tu sesión y tus ajustes están a salvo: recarga la página para continuar.
         </p>
         <div className="flex flex-wrap justify-center gap-2 mt-1">
-          <button type="button" onClick={() => window.location.reload()} className="theme-btn-primary px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+          <button type="button" onClick={() => window.location.reload()} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest">
             Recargar la página
           </button>
-          <button type="button" onClick={onRetry} className="theme-btn-secondary px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+          <button type="button" onClick={onRetry} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest">
             Intentar de nuevo
           </button>
         </div>

@@ -180,7 +180,7 @@ export default function Dashboard({
             <h2 className="theme-heading text-lg font-black">Desbloquea todo tu panel</h2>
             <p className="text-xs text-gray-400 mt-1 max-w-lg">Con una licencia (o la prueba gratis) accedes a los juegos, las alertas, el TTS y más. Los accesos con candado te llevan directo a iniciar sesión.</p>
           </div>
-          <button type="button" onClick={() => onGoEventTab('king')} className="theme-btn-primary px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg flex-shrink-0">
+          <button type="button" onClick={() => onGoEventTab('king')} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg flex-shrink-0">
             Iniciar sesión
           </button>
         </div>
@@ -210,7 +210,7 @@ export default function Dashboard({
                   <p className={`text-sm font-black ${step.done ? 'text-gray-400 line-through' : 'text-white'}`}>{step.title}</p>
                   <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{step.text}</p>
                   {step.action && !step.done && (
-                    <button type="button" onClick={step.action.run} className="theme-btn-primary mt-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">
+                    <button type="button" onClick={step.action.run} className="theme-btn-primary theme-btn-sm mt-2 font-black uppercase tracking-widest">
                       {step.action.label} →
                     </button>
                   )}
@@ -248,7 +248,7 @@ export default function Dashboard({
                   type="button"
                   onClick={onToggleTts}
                   disabled={ttsLocked || (!ttsEnabled && !connected)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed ${ttsEnabled ? 'bg-red-950/70 border border-red-700/60 text-red-300' : 'theme-btn-primary'}`}
+                  className={`font-black uppercase tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-sm ${ttsEnabled ? 'bg-red-950/70 border border-red-700/60 text-red-300' : 'theme-btn-primary'}`}
                 >
                   {ttsEnabled ? 'Apagar' : 'Prender'}
                 </button>

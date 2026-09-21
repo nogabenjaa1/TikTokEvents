@@ -457,7 +457,7 @@ export default function LicenseManager({ onSessionInvalid }) {
           )}
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{newKey.key}</code>
-            <button onClick={copyKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+            <button onClick={copyKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
               {copied ? '✅ Copiado' : 'Copiar'}
             </button>
           </div>
@@ -503,7 +503,7 @@ export default function LicenseManager({ onSessionInvalid }) {
         <EditSwitch label="Complemento de Spotify" hint="Pago único. Sirve sobre todo para el plan Mensual: Anual y Lifetime ya lo incluyen."
           checked={spotifyAddon} onChange={setSpotifyAddon} />
         <button type="submit" disabled={creating || !username.trim()}
-          className="theme-btn-primary py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+          className="theme-btn-primary theme-btn-md font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed">
           {creating ? 'CREANDO...' : 'CREAR LICENCIA'}
         </button>
       </form>
@@ -534,14 +534,14 @@ export default function LicenseManager({ onSessionInvalid }) {
                 <button
                   onClick={() => savePrice(planType)}
                   disabled={savingPlan === planType || priceInputs[planType] === (prices[planType] / 100).toString()}
-                  className="theme-btn-primary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {savingPlan === planType ? 'Guardando...' : 'Guardar'}
                 </button>
               </div>
             ))}
             <p className="text-[10px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
-            <button onClick={toggleHistory} className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline self-start py-2">
+            <button onClick={toggleHistory} className="theme-link theme-link-info self-start">
               {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
             </button>
             {historyOpen && (
@@ -563,7 +563,7 @@ export default function LicenseManager({ onSessionInvalid }) {
         )}
       </div>
 
-      {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
+      {error && <p className="theme-notice">{error}</p>}
 
       {/* Resumen + filtros */}
       <div className="w-full max-w-lg flex flex-col gap-3">
@@ -602,7 +602,7 @@ export default function LicenseManager({ onSessionInvalid }) {
             <button
               onClick={bulkDeleteSelected}
               disabled={bulkDeleting}
-              className="text-[10px] font-bold text-red-400 hover:text-red-300 underline disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-link theme-link-danger disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {bulkDeleting ? 'Eliminando...' : `Eliminar seleccionadas (${selectedIds.size})`}
             </button>
@@ -672,7 +672,7 @@ export default function LicenseManager({ onSessionInvalid }) {
 
               <div className="flex flex-wrap items-center gap-3 mt-1">
                 <button type="button" onClick={() => openEditor(lic)} aria-expanded={editingId === lic.id}
-                  className="theme-btn-secondary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                  className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
                   {editingId === lic.id ? 'Cerrar' : '✏️ Editar'}
                 </button>
               </div>
@@ -714,11 +714,11 @@ export default function LicenseManager({ onSessionInvalid }) {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button type="button" onClick={() => saveEdit(lic)} disabled={savingEdit}
-                      className="theme-btn-primary px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
                       {savingEdit ? 'Guardando...' : 'Guardar cambios'}
                     </button>
                     <button type="button" onClick={() => setEditingId(null)}
-                      className="theme-btn-secondary px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                      className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
                       Cancelar
                     </button>
                     {!lic.isAdmin && (

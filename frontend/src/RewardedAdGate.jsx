@@ -61,7 +61,7 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
             target="_blank"
             rel="noopener noreferrer"
             onClick={startWatch}
-            className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all text-center block"
+            className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase transition-all text-center block"
           >
             Ver anuncio
           </a>
@@ -69,7 +69,7 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
           <button
             onClick={() => ready && claim()}
             disabled={!ready}
-            className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {ready ? claimLabel : `Disponible en ${secondsLeft}s`}
           </button>
@@ -77,7 +77,7 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
 
         <button
           onClick={() => { reset(); onCancel(); }}
-          className="theme-btn-secondary w-full py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all"
+          className="theme-btn-secondary theme-btn-sm w-full font-bold uppercase tracking-widest transition-all"
         >
           Cancelar
         </button>

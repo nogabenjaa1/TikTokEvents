@@ -244,12 +244,12 @@ export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amou
   if (sdkState === 'error' || sdkState === 'no-key') {
     return (
       <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
-        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
+        <p className="theme-notice">
           {sdkState === 'no-key'
             ? 'El cobro con tarjeta todavía no está configurado. Intenta más tarde.'
             : 'No se pudo cargar el formulario de pago. Revisa tu conexión o intenta más tarde.'}
         </p>
-        <button type="button" onClick={onCancel} className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all">
+        <button type="button" onClick={onCancel} className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all">
           Volver
         </button>
       </div>
@@ -266,7 +266,7 @@ export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amou
       </div>
       {sdkState === 'loading' && <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de MercadoPago...</p>}
       {pending && <p className="text-[10px] text-gray-500 text-center">Procesando pago...</p>}
-      {submitError && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{submitError}</p>}
+      {submitError && <p className="theme-notice">{submitError}</p>}
       <div id={BRICK_CONTAINER_ID} />
       {/* Pedido explicito de MercadoPago (checklist de calidad,
           "Logos oficiales de Mercado Pago"): refuerza confianza en el
@@ -293,7 +293,7 @@ export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amou
                 setSubmitError('Verificación cancelada. Puedes intentar de nuevo.');
                 callbacks?.reject();
               }}
-              className="theme-btn-secondary w-full py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all"
+              className="theme-btn-secondary theme-btn-sm w-full font-bold uppercase tracking-widest transition-all"
             >
               Cancelar verificación
             </button>

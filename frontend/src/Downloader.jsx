@@ -164,11 +164,11 @@ export default function Downloader() {
       <div className="theme-surface w-full max-w-xl p-6">
         <div className="flex gap-2 mb-4">
           <button type="button" onClick={() => setPlat('yt')}
-            className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${plat === 'yt' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+            className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${plat === 'yt' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
             YouTube
           </button>
           <button type="button" onClick={() => setPlat('tt')}
-            className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${plat === 'tt' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+            className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${plat === 'tt' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
             TikTok
           </button>
         </div>
@@ -179,7 +179,7 @@ export default function Downloader() {
             placeholder={placeholder}
             className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           <button type="button" onClick={fetchInfo} disabled={fetchingInfo || !url.trim()}
-            className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+            className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
             {fetchingInfo ? 'Analizando...' : 'Analizar'}
           </button>
         </div>
@@ -205,11 +205,11 @@ export default function Downloader() {
           <label className="theme-label block text-[10px] mb-2">Formato</label>
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button type="button" onClick={() => selectFmt('mp4')}
-              className={`py-3 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${fmt === 'mp4' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+              className={`font-black uppercase tracking-wide transition-all theme-btn-md ${fmt === 'mp4' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
               🎬 MP4
             </button>
             <button type="button" onClick={() => selectFmt('mp3')}
-              className={`py-3 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${fmt === 'mp3' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+              className={`font-black uppercase tracking-wide transition-all theme-btn-md ${fmt === 'mp3' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
               🎵 MP3
             </button>
           </div>
@@ -218,14 +218,14 @@ export default function Downloader() {
           <div className="flex gap-2 flex-wrap mb-5">
             {qualityOptions.map((q) => (
               <button key={q.value} type="button" onClick={() => setQuality(q.value)}
-                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${quality === q.value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${quality === q.value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {q.label}
               </button>
             ))}
           </div>
 
           <button type="button" onClick={startDownload}
-            className="theme-btn-primary w-full py-4 rounded-xl font-black uppercase tracking-widest text-xs">
+            className="theme-btn-primary theme-btn-lg w-full font-black uppercase tracking-widest">
             Descargar
           </button>
         </div>
@@ -262,7 +262,7 @@ export default function Downloader() {
                     <p className="text-[9px] text-gray-500">listo para guardar</p>
                   </div>
                   <button type="button" onClick={() => saveJobFile(job)} disabled={savingJobId === job.id}
-                    className="theme-btn-primary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
                     {savingJobId === job.id ? 'Guardando...' : 'Guardar'}
                   </button>
                 </div>

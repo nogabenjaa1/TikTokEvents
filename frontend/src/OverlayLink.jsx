@@ -43,7 +43,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
       <div className="flex items-start justify-between gap-3 mb-1">
         <h2 className="theme-heading text-lg font-bold">{title}</h2>
         {onCustomize && (
-          <button onClick={onCustomize} className="theme-btn-secondary px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0 whitespace-nowrap">
+          <button onClick={onCustomize} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0 whitespace-nowrap">
             🎨 Personalizar
           </button>
         )}
@@ -59,14 +59,14 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
       )}
 
       {!url ? (
-        <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">
+        <p role="alert" className="theme-notice">
           No pudimos recuperar tu clave de licencia de esta sesión. Cierra sesión y vuelve a entrar con tu clave para generar el enlace.
         </p>
       ) : (
         <>
           <div className="flex items-center gap-2 mb-1">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{revealed ? url : maskOverlayUrl(url)}</code>
-            <button type="button" onClick={() => setRevealed((r) => !r)} className="theme-btn-secondary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0" aria-pressed={revealed}>
+            <button type="button" onClick={() => setRevealed((r) => !r)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0" aria-pressed={revealed}>
               {revealed ? '🙈 Ocultar' : '👁️ Mostrar'}
             </button>
           </div>
@@ -74,14 +74,14 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
             {copyFailed ? 'No pudimos copiar automáticamente: selecciona la URL de arriba y cópiala a mano.' : 'La URL es personal, por eso se muestra oculta. "Copiar URL" copia la completa.'}
           </p>
           <div className="flex gap-3">
-            <button onClick={copyUrl} className="theme-btn-primary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest">
+            <button onClick={copyUrl} className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
               {copied ? '✅ Copiado' : '📋 Copiar URL'}
             </button>
             {/* Enlace real (no window.open): un <a target="_blank"> nunca lo
                 bloquea un bloqueador de ventanas emergentes, a diferencia de
                 una ventana abierta por script. */}
             <a href={url} target="_blank" rel="noopener noreferrer"
-              className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-center">
+              className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest text-center">
               👁️ Vista previa
             </a>
           </div>
@@ -175,7 +175,7 @@ function OverlayKeyNotice() {
         <span className="font-bold">Estos enlaces ya no llevan tu clave de licencia.</span>{' '}
         Si tenías overlays en OBS de antes, cambia su URL por la de aquí: la anterior sigue funcionando, pero con ella se puede iniciar sesión como tú.
       </span>
-      <button type="button" onClick={close} className="theme-btn-secondary px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">Entendido</button>
+      <button type="button" onClick={close} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">Entendido</button>
     </div>
   );
 }

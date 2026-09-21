@@ -29,7 +29,7 @@ export default function RefundPolicyModal({ onClose }) {
         <button
           type="button"
           onClick={onClose}
-          className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all mt-2"
+          className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase transition-all mt-2"
         >
           Entendido
         </button>

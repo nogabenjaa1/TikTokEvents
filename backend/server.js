@@ -1468,11 +1468,42 @@ app.get('/api/pricing', async (req, res) => {
     });
 });
 
+// Lo que llega en una notificación sin firma válida lo puede haber mandado
+// cualquiera: antes de imprimirlo en el registro se deja solo lo que tienen los
+// ids y nombres de verdad (nada de saltos de línea que falsifiquen renglones).
+function logSafe(value) {
+    return String(value ?? '').replace(/[^\w.:@-]/g, '').slice(0, 64);
+}
+
 // Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
 // tiene el JWT de la app) — la validación es la firma HMAC del header
 // x-signature contra MP_WEBHOOK_SECRET, documentada acá:
 // https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
 app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
+    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
+    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
+    // camino que cree una Preference/Checkout Pro ni un pago suelto con la
+    // Payments API, así que el único tópico que se procesa es 'order'.
+    //
+    // Pero QUÉ tópicos le manda MercadoPago a esta URL no lo decide el código
+    // sino el dashboard ("Tus integraciones" > Webhooks > Eventos): quitar la
+    // lógica de la Payments API no le quita la suscripción, y mientras 'Pagos'
+    // (o cualquier otro evento) siga marcado seguirán llegando notificaciones
+    // 'payment' -- con IDs solo numéricos, a diferencia de los de 'order'
+    // ("ORD01..."). Antes la firma se validaba PRIMERO, para cualquier tópico:
+    // una notificación de un tópico que ni usamos, o firmada con el secreto de
+    // otra aplicación o del modo de prueba, terminaba en un
+    // "Webhook con firma inválida" que parecía un fallo de los pagos y no lo
+    // era (MercadoPago además la reintenta mientras no reciba un 200). Ahora el
+    // tópico se mira antes: lo que no es 'order' se da por recibido (200) sin
+    // validar ni procesar nada, porque no dispara ningún efecto; la firma se
+    // sigue exigiendo, sin excepción, a lo único que sí compra algo.
+    const topic = req.query.type || req.body?.type;
+    if (topic !== 'order') {
+        console.log(`[MP] Notificación de tópico "${logSafe(topic) || 'desconocido'}" ignorada — esta integración solo procesa 'order' (Orders API).`);
+        return res.sendStatus(200);
+    }
+
     const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
@@ -1503,7 +1534,16 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
         WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId: String(dataId).toLowerCase(), secret });
     } catch (err) {
         const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
-        console.error('[MP] Webhook con firma inválida — descartado', { reason, dataId, xRequestId, secretLength: secret.length });
+        // Nada de esto está autenticado (la firma justo falló): se limpia antes
+        // de imprimirlo. `live_mode: false` = notificación del modo de prueba
+        // (puede venir firmada con otro secreto); `application_id`/`user_id`
+        // distintos a los propios = otra aplicación apuntando a esta URL. Con
+        // eso se ve de dónde viene en vez de adivinarlo.
+        console.error('[MP] Webhook con firma inválida — descartado', {
+            reason, topic: 'order', dataId: logSafe(dataId), xRequestId: logSafe(xRequestId), secretLength: secret.length,
+            action: logSafe(req.body?.action), liveMode: logSafe(req.body?.live_mode),
+            applicationId: logSafe(req.body?.application_id), userId: logSafe(req.body?.user_id),
+        });
         return res.sendStatus(401);
     }
 
@@ -1511,19 +1551,6 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // notificación si no contesta rápido, y lo que sigue (consultar el pago
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
-
-    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
-    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
-    // camino que cree una Preference/Checkout Pro (se eliminó ese endpoint
-    // muerto hace un tiempo), así que el único tópico real que puede llegar
-    // es 'order'. Se descarta cualquier otro explícitamente en vez de
-    // dejarlo pasar en silencio, para que quede claro en el log si algún
-    // día MercadoPago manda algo inesperado en esta cuenta.
-    const topic = req.query.type || req.body?.type;
-    if (topic !== 'order') {
-        console.log('[MP] Webhook con tópico no soportado (esta integración es solo Orders API) — descartado:', topic);
-        return;
-    }
 
     try {
         // No se confia en el body de la notificacion -- se pide el estado

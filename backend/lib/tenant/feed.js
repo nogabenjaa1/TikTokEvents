@@ -24,7 +24,8 @@ function sanitizeFeedItem(raw) {
         avatar: image(raw.avatar),
         giftName: raw.type === 'gift' ? text(raw.giftName, 60) : '',
         giftId: raw.type === 'gift' && Number.isSafeInteger(Number(raw.giftId)) ? Number(raw.giftId) : null,
-        icon: raw.type === 'gift' ? image(raw.icon) : '',
+        // La imagen del regalo, o la del sticker del club de fans cuando la trae.
+        icon: raw.type === 'gift' || raw.type === 'sticker' ? image(raw.icon) : '',
         count: raw.type === 'gift' && Number.isFinite(count) && count > 0 ? Math.min(count, 999999) : 1,
         coins: raw.type === 'gift' && Number.isFinite(coins) && coins > 0 ? Math.min(coins, 99999999) : 0,
     };

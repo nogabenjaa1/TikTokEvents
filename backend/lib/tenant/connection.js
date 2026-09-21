@@ -35,6 +35,7 @@ module.exports = {
         this.disconnectTikTok();
         this.openGiftCombos.forEach(({ timer }) => clearTimeout(timer));
         this.openGiftCombos.clear();
+        this.clearStickerHolds();
         this.stopSpotifyQueuePolling();
         this.stopRuntimePersistence();
         this.persistRuntimeState(true); // deja guardado que ya no hay nada activo

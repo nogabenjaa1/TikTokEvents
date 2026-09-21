@@ -300,6 +300,21 @@ const ready = pool.query(`
       last_seen BIGINT NOT NULL
     )
   `))
+  // Stickers del club de fans que han llegado en el chat de CADA licencia, con su id
+  // e imagen (ver lib/stickerDirectoryCore.js): son los que se pueden elegir al armar
+  // una alerta de sticker. Por licencia (los stickers son de cada creador) y no
+  // global como seen_gifts. emote_id va como texto: los ids de TikTok son números de
+  // 19 cifras.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS seen_stickers (
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      emote_id TEXT NOT NULL,
+      image_url TEXT NOT NULL DEFAULT '',
+      first_seen BIGINT NOT NULL,
+      last_seen BIGINT NOT NULL,
+      PRIMARY KEY (license_id, emote_id)
+    )
+  `))
   // Alertas GENERALES (pedido explícito: "alertas globales" además de las
   // específicas de siempre) -- trigger_type = 'gift_global', sin regalo
   // fijo: se disparan con CUALQUIER regalo que no tenga su propia alerta
@@ -585,15 +600,16 @@ async function claimTrialConnection(id, targetUsername) {
     }
 }
 
-// Borra la licencia y lo que cuelga de ella (alertas y cuentas/apps de
-// Spotify, que tienen FK a licenses) en una sola transacción. Los pagos se
-// conservan (ver la migración de payments más arriba).
+// Borra la licencia y lo que cuelga de ella (alertas, stickers vistos y
+// cuentas/apps de Spotify, que tienen FK a licenses) en una sola transacción.
+// Los pagos se conservan (ver la migración de payments más arriba).
 async function deleteLicense(id) {
     await ready;
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         await client.query('DELETE FROM alert_configs WHERE license_id = $1', [id]);
+        await client.query('DELETE FROM seen_stickers WHERE license_id = $1', [id]);
         await client.query('DELETE FROM spotify_accounts WHERE license_id = $1', [id]);
         await client.query('DELETE FROM spotify_apps WHERE license_id = $1', [id]);
         await client.query('DELETE FROM licenses WHERE id = $1', [id]);
@@ -922,6 +938,27 @@ async function listSeenGifts() {
     return rows;
 }
 
+// Stickers del club de fans vistos en el chat de una licencia (ver la tabla
+// seen_stickers arriba y lib/stickerDirectoryCore.js). Volver a verlos solo
+// refresca la imagen y la fecha; nunca duplica la fila.
+async function upsertSeenSticker(licenseId, { id, imageUrl }) {
+    await ready;
+    const now = Date.now();
+    await pool.query(`
+        INSERT INTO seen_stickers (license_id, emote_id, image_url, first_seen, last_seen)
+        VALUES ($1, $2, $3, $4, $4)
+        ON CONFLICT (license_id, emote_id) DO UPDATE SET
+            image_url = CASE WHEN EXCLUDED.image_url <> '' THEN EXCLUDED.image_url ELSE seen_stickers.image_url END,
+            last_seen = EXCLUDED.last_seen
+    `, [licenseId, id, imageUrl || '', now]);
+}
+
+async function listSeenStickers(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT emote_id, image_url FROM seen_stickers WHERE license_id = $1 ORDER BY first_seen, emote_id', [licenseId]);
+    return rows;
+}
+
 // Todos los pagos, solo las columnas que usa el panel de estadísticas del admin.
 async function listPaymentsForStats() {
     await ready;
@@ -1183,7 +1220,7 @@ module.exports = {
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
-    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts,
+    getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,

@@ -87,7 +87,12 @@ module.exports = {
         let alert = this.findAlertConfig(triggerKey, giftId);
         if (!alert && allowGlobalFallback) alert = this.findGlobalAlertForCoins(coins);
         if (!alert) return;
-        const count = Math.max(1, repeatCount || 1);
+        this.emitAlertTriggered(alert, { username, nickname, giftName, coins, count: Math.max(1, repeatCount || 1) });
+    },
+
+    // Manda una alerta YA elegida al overlay y al panel (mismo `alert_triggered` para todos
+    // los disparadores). Los stickers la usan al soltar sus alertas, que pueden esperar al TTS.
+    emitAlertTriggered(alert, { username, nickname, giftName, coins, count = 1 }) {
         this.broadcast.emit('alert_triggered', {
             triggerId: ++this.alertTriggerCounter,
             visualUrl: alert.visualUrl,
@@ -144,6 +149,8 @@ module.exports = {
         // que respete su propio mínimo (en vez del fijo 100 de siempre, que
         // podría quedar por debajo del mínimo configurado y confundir).
         const isGlobal = alert.minCoins != null;
+        // Una alerta de sticker no tiene regalo: al dispararse de verdad `{gift}` queda vacío.
+        const isSticker = /^sticker(:\d+)?$/i.test(alert.giftName || '');
         this.broadcast.emit('alert_triggered', {
             triggerId: ++this.alertTriggerCounter,
             visualUrl: alert.visualUrl,
@@ -152,7 +159,7 @@ module.exports = {
             audioUrl: alert.audioUrl,
             text: applyAlertTextTemplate(alert.text, {
                 username: 'usuario_de_prueba', nickname: 'Usuario de Prueba',
-                gift: isGlobal || alert.giftName?.startsWith('__draft_gift__:') ? 'Regalo' : (alert.giftName || 'Regalo'),
+                gift: isSticker ? '' : isGlobal || alert.giftName?.startsWith('__draft_gift__:') ? 'Regalo' : (alert.giftName || 'Regalo'),
                 coins: isGlobal ? Math.max(100, alert.minCoins) : 100, count: 1,
             }),
             textPosition: alert.textPosition,

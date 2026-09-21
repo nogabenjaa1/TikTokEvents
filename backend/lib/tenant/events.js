@@ -9,6 +9,7 @@ const {
 } = require('../../lib/tenantHelpers');
 const { giftNameKey } = require('../../lib/giftCatalog');
 const giftDirectory = require('../../lib/giftDirectory');
+const { extractStickers, readableCommentText } = require('../../lib/stickerCatalog');
 
 module.exports = {
     // ==========================================
@@ -165,17 +166,18 @@ module.exports = {
         });
     },
 
+    // Sticker (emote) mandado solo, sin texto: el evento `emote`. Va al catálogo de
+    // stickers y dispara su alerta; los del club de fans además salen en la actividad del
+    // Dashboard y en la alerta general (ver processStickerUse). El mismo sticker repetido
+    // en el evento cuenta una sola vez.
     handleEmoteEvent(data) {
         if (!data?.uniqueId) return;
-        const emotes = Array.isArray(data.emoteList) ? data.emoteList : [];
-        const isFanClubSticker = emotes.some((emote) => (
-            emote?.emoteType === 2 || emote?.emoteScene === 2 || emote?.rewardCondition === 2
-        ));
-        if (!isFanClubSticker) return;
-        this.pushFeed({ type: 'sticker', username: data.uniqueId, nickname: data.nickname, avatar: data.profilePictureUrl });
-        this.processAlertTrigger({
-            username: data.uniqueId, nickname: data.nickname || data.uniqueId, key: 'sticker',
-            repeatCount: 1, giftName: '', coins: 0,
+        this.noteEmoteSample('emote', data.emoteList);
+        const stickers = extractStickers(data.emoteList);
+        if (stickers.length === 0) return;
+        this.processStickerUse({
+            username: data.uniqueId, nickname: data.nickname || data.uniqueId, avatar: data.profilePictureUrl,
+            userKey: data.userId || data.uniqueId, stickers,
         });
     },
 
@@ -187,38 +189,52 @@ module.exports = {
         // (verificado contra un LIVE real) — con el nombre viejo esto
         // siempre daba string vacío y el chat completo (TTS y Ruleta modo
         // chat) quedaba mudo, sin ningún error visible.
-        const comment = typeof data.content === 'string' ? data.content.trim() : '';
-        if (!comment) return;
+        const rawComment = typeof data.content === 'string' ? data.content.trim() : '';
+
+        // Stickers (emotes) dentro del comentario: llegan embebidos en este mismo mensaje
+        // (ver lib/stickerCatalog.js para cuáles cuentan y cuáles son del club de fans).
+        // Requiere el parche de WebcastChatMessage.emotes en patch-tiktok-live-connector.js:
+        // sin él `data.emotes` no trae ni el tipo ni la imagen del emote. Un comentario que
+        // es solo stickers puede llegar sin texto.
+        this.noteEmoteSample('chat', data.emotes);
+        const stickers = extractStickers(data.emotes);
+        if (!rawComment && stickers.length === 0) return;
 
         const badges = Array.isArray(data.userBadges) ? data.userBadges : [];
         const badgeText = badges.map((badge) => [badge.type, badge.name, badge.url].filter(Boolean).join(' ')).join(' ').toLowerCase();
         const identity = data.userIdentity || {};
 
-        // Pedido explícito, tras agregar el disparador de alerta 'sticker'
-        // (ver handleEmoteEvent): un sticker EXCLUSIVO del club de fans
-        // mandado dentro del chat viene como un emote embebido en este
-        // mismo mensaje -- mismo criterio que ahí (emoteType/emoteScene/
-        // rewardCondition === 2, los valores reales "FANS"/"FANS_CLUB" del
-        // protobuf) para que el TTS no intente leer el texto/placeholder
-        // que TikTok manda junto con el sticker. Requiere el parche de
-        // WebcastChatMessage.emotes en patch-tiktok-live-connector.js (sin
-        // él, `data.emotes` nunca trae estos 3 campos).
-        const hasFanClubEmote = Array.isArray(data.emotes) && data.emotes.some((e) => (
-            e?.emoteType === 2 || e?.emoteScene === 2 || e?.rewardCondition === 2
-        ));
-
+        // El TTS y el chat solo reciben el texto de verdad: sin lo que TikTok deja en el
+        // lugar de cada sticker (un marcador que el TTS leería como una palabra). Antes,
+        // cualquier comentario con un sticker se descartaba entero; ahora se lee su texto.
+        const comment = stickers.length > 0 ? readableCommentText(rawComment) : rawComment;
+        // Siempre texto: es lo que el panel devuelve al avisar que terminó de leerlo.
+        const messageId = String(data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`);
         // Comandos (!play, etc.) nunca van al TTS — pedido explícito. Se
         // filtran ACÁ (no en el panel) para que ni siquiera crucen el
         // socket como candidato a leerse en voz alta.
-        if (!comment.startsWith('!') && !hasFanClubEmote) {
+        const readable = comment !== '' && !comment.startsWith('!');
+
+        // Las alertas de los stickers salen ANTES de avisar al TTS para poder dejarlas
+        // esperando: si el comentario trae texto que se puede leer, se disparan cuando el
+        // panel avise que terminó de leerlo (pedido explícito: "si el sticker viene al
+        // final de un texto leído por el TTS, espera a que lo lea y luego se dispara").
+        const holdsAlert = stickers.length > 0 && this.processStickerUse({
+            username: data.uniqueId, nickname: data.nickname || data.uniqueId, avatar: data.profilePictureUrl,
+            userKey: data.userId || data.uniqueId, stickers, messageId, holdForTts: readable,
+        });
+
+        if (readable) {
             // Pedido explícito (overlay de chat en vivo): mismo broadcast
             // que ya usaba el TTS -- va SIN filtrar por los ajustes de TTS
             // (esos se aplican del lado del cliente, ver TtsChat.jsx), así
             // que sirve tal cual para mostrar el chat completo también.
             // `avatar` es nuevo acá (el TTS no lo necesita, lo ignora sin
             // problema) -- solo para poder mostrar la fotito en el overlay.
+            // `holdsAlert`: hay alertas de sticker esperando a este mensaje, el panel
+            // tiene que avisar cuando termine con él (ver TtsChat.jsx).
             this.broadcast.emit('tts_chat_message', {
-                id: data.msgId || `${Date.now()}-${data.userId || data.uniqueId || 'chat'}`,
+                id: messageId,
                 username: data.nickname || data.uniqueId || 'Usuario',
                 uniqueId: data.uniqueId || '',
                 avatar: data.profilePictureUrl || '',
@@ -227,11 +243,14 @@ module.exports = {
                 isSuperFan: badgeText.includes('superfan') || badgeText.includes('super_fan') || badgeText.includes('super fan'),
                 isSubscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
                 fanLevel: Math.max(0, Number(data.teamMemberLevel) || Number(data.user?.fansClubInfo?.fansLevel) || 0),
+                holdsAlert,
             });
         }
 
-        this.processPlayCommand(comment, data, identity);
-        this.processRouletteComment(data);
+        if (rawComment) {
+            this.processPlayCommand(comment, data, identity);
+            this.processRouletteComment(data);
+        }
     },
 
     // Contador de espectadores en vivo (overlay de chat, pedido explícito)

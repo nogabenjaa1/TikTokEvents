@@ -87,6 +87,7 @@ const { createHealthChecker } = require('./lib/healthCheck');
 const { registerSystemRoutes } = require('./routes/system');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
+const { stickerAlertKey, stickerIdFromKey, cleanStickerId } = require('./lib/stickerCatalog');
 const giftDirectory = require('./lib/giftDirectory');
 const { sniffMedia } = require('./lib/mediaSniff');
 
@@ -1119,6 +1120,7 @@ const VALID_TRIGGER_TYPES = ['gift', 'gift_global', ...NON_GIFT_TRIGGER_TYPES];
 // Mismas etiquetas que TRIGGER_LABELS en AlertsAdmin.jsx — solo para el
 // mensaje de conflicto de disparador de abajo.
 const TRIGGER_LABEL_ES = { follow: 'Seguimiento', sticker: 'Sticker de club de fans', gift_global: 'Alerta general' };
+const STICKER_ALERT_LABEL_ES = 'ese sticker del club de fans';
 const MIN_COINS_CAP = 999999;
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
@@ -1140,6 +1142,9 @@ function serializeAlert(row) {
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
         minCoins: row.min_coins != null ? Number(row.min_coins) : null,
+        // Solo las alertas de UN sticker del club de fans (su clave es sticker:<id>); la
+        // general de "cualquier sticker" no lleva id.
+        stickerId: row.trigger_type === 'sticker' ? stickerIdFromKey(row.gift_name) || null : null,
     };
 }
 
@@ -1177,8 +1182,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     // de TikTok, que jamas se llamaria literal "follow"); 'gift_global' usa
     // el mínimo de monedas (puede haber varias, una por cada mínimo
     // distinto, a diferencia de los otros dos que solo admiten una).
+    // 'sticker' puede llevar además el id del sticker elegido en el selector (clave
+    // sticker:<id>, una alerta por sticker); sin id es la de "cualquier sticker".
     let triggerKey;
     let minCoins = null;
+    let stickerId = '';
     if (triggerType === 'gift') {
         // Clave única por borrador: las alertas existentes no se migran ni modifican.
         triggerKey = typeof giftName === 'string' && giftName.trim()
@@ -1189,6 +1197,12 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             return res.status(400).json({ success: false, error: `El mínimo de monedas debe ser un número entre 1 y ${MIN_COINS_CAP}` });
         }
         triggerKey = `global:${minCoins}`;
+    } else if (triggerType === 'sticker') {
+        const askedStickerId = typeof req.body?.stickerId === 'string' ? req.body.stickerId.trim() : '';
+        stickerId = cleanStickerId(askedStickerId);
+        // Un id que no sirve nunca se convierte en silencio en la alerta general.
+        if (askedStickerId && !stickerId) return res.status(400).json({ success: false, error: 'Sticker no válido' });
+        triggerKey = stickerAlertKey(stickerId);
     } else {
         triggerKey = triggerType;
     }
@@ -1241,6 +1255,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         if (occupyingRow && (!isEditing || occupyingRow.id !== editingRow.id)) {
             const conflictLabel = triggerType === 'gift' ? triggerKey
                 : triggerType === 'gift_global' ? `general de ${minCoins} monedas`
+                : triggerType === 'sticker' && stickerId ? STICKER_ALERT_LABEL_ES
                 : TRIGGER_LABEL_ES[triggerType] || triggerKey;
             const conflictNoun = triggerType === 'gift_global' ? 'mínimo' : 'disparador';
             return res.status(409).json({ success: false, error: `Ya existe una alerta para "${conflictLabel}" — bórrala primero o elige otro ${conflictNoun}.` });
@@ -1322,6 +1337,17 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         console.error('[Alertas] Error subiendo la alerta:', err.message);
         res.status(500).json({ success: false, error: 'No se pudo guardar la alerta — revisa que Supabase Storage esté configurado.' });
     }
+});
+
+// Stickers del club de fans que han llegado en el chat de esta licencia (con su imagen): son
+// los que se pueden elegir al armar una alerta de sticker. TikTok no da la lista de un
+// creador, así que se arma con lo que va apareciendo en sus directos (ver
+// lib/stickerDirectoryCore.js); el panel se entera de los nuevos con `sticker_seen`.
+app.get('/api/stickers', auth.requireAuth, generalLimiter, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
+    await tenant.getStickerDirectory().load();
+    res.json({ success: true, stickers: tenant.getKnownStickers() });
 });
 
 app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res) => {

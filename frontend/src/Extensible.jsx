@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import TimeInput from './TimeInput';
 import { formatHHMMSS } from './timeFormat';
 
@@ -65,7 +65,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
   // Persiste cualquier cambio para que sobreviva a cambiar de pestaña (o
   // recargar la página) sin perder la configuración personalizada.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch { /* sin almacenamiento: solo se pierde recordar la configuración */ }
   }, [baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode]);
 
   const buildConfig = () => ({
@@ -170,13 +170,13 @@ export default function Extensible({ state, socket, username, connectionStatus }
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">⏱️ AJUSTAR TIEMPO EN VIVO</label>
               <div className="grid grid-cols-4 gap-2 mb-2">
                 <button type="button" onClick={() => adjustTime(-300)} disabled={!state.isActive}
-                  className="theme-btn-danger py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">-5m</button>
+                  className="theme-btn-danger theme-btn-md font-bold disabled:opacity-40 disabled:cursor-not-allowed">-5m</button>
                 <button type="button" onClick={() => adjustTime(-60)} disabled={!state.isActive}
-                  className="theme-btn-danger py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">-1m</button>
+                  className="theme-btn-danger theme-btn-md font-bold disabled:opacity-40 disabled:cursor-not-allowed">-1m</button>
                 <button type="button" onClick={() => adjustTime(60)} disabled={!state.isActive}
-                  className="theme-btn-primary py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">+1m</button>
+                  className="theme-btn-primary theme-btn-md font-bold disabled:opacity-40 disabled:cursor-not-allowed">+1m</button>
                 <button type="button" onClick={() => adjustTime(300)} disabled={!state.isActive}
-                  className="theme-btn-primary py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">+5m</button>
+                  className="theme-btn-primary theme-btn-md font-bold disabled:opacity-40 disabled:cursor-not-allowed">+5m</button>
               </div>
               <div className="flex gap-2">
                 <input
@@ -187,10 +187,10 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 />
                 <button type="button" onClick={() => adjustTime(Math.round(customAdjustMin * 60))}
                   disabled={!state.isActive || !customAdjustMin}
-                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Sumar</button>
+                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Sumar</button>
                 <button type="button" onClick={() => adjustTime(-Math.round(customAdjustMin * 60))}
                   disabled={!state.isActive || !customAdjustMin}
-                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Restar</button>
+                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">Restar</button>
               </div>
               <p className="text-[10px] text-gray-500 mt-1">Se refleja al instante en el overlay y en el panel, sin reiniciar el contador. Solo funciona con el modo activo.</p>
             </div>
@@ -222,7 +222,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
             {/* Modo Inverso */}
             <div className="mb-6">
               <button type="button" onClick={() => setReverseMode(r => !r)}
-                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${reverseMode ? 'theme-btn-danger' : 'theme-btn-secondary'}`}
+                className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${reverseMode ? 'theme-btn-danger' : 'theme-btn-secondary'}`}
                 title="Cada follow o regalo RESTA tiempo en vez de sumar">
                 {reverseMode ? '🔻 Modo Inverso (RESTA tiempo)' : '🔺 Modo Normal (SUMA tiempo)'}
               </button>
@@ -237,7 +237,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 <button
                   onClick={startExtensible}
                   disabled={connectionStatus !== 'connected'}
-                  className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
@@ -246,13 +246,13 @@ export default function Extensible({ state, socket, username, connectionStatus }
                   <button
                     onClick={togglePause}
                     disabled={state.finished}
-                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
                   </button>
                   <button
                     onClick={restartExtensible}
-                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
+                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
                   >
                     REINICIAR ⟲
                   </button>
@@ -260,7 +260,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
               )}
               <button
                 onClick={stopExtensible}
-                className="theme-btn-danger px-6 py-4 font-bold transition-all"
+                className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
                 ⏹
               </button>

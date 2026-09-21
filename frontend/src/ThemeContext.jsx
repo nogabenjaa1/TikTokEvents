@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { writeStorage } from './safeStorage';
 
 const STORAGE_KEY = 'tkc_theme';
 // Apariencia (claro / oscuro / automático según el sistema): independiente
@@ -126,11 +127,11 @@ export function ThemeProvider({ children }) {
   };
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
+    writeStorage(STORAGE_KEY, JSON.stringify(theme));
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents));
+    writeStorage(RECENTS_KEY, JSON.stringify(recents));
   }, [recents]);
 
   // Elegí un skin completo (material + acento) de una — reemplaza al viejo
@@ -158,12 +159,8 @@ export function ThemeProvider({ children }) {
     setSkin(previous.style, previous.accent, previous.customColor);
   };
 
-  // Compat: algunos consumidores viejos podían llamar setStyle/setAccent por separado.
-  const setStyle  = (style)  => setSkin(style, theme.accent, theme.customColor);
-  const setAccent = (accent) => setSkin(theme.style, accent, theme.customColor);
-
   return (
-    <ThemeContext.Provider value={{ ...theme, previous, recents, setSkin, setStyle, setAccent, revertToPrevious, mode, resolvedMode, setMode }}>
+    <ThemeContext.Provider value={{ ...theme, previous, recents, setSkin, revertToPrevious, mode, resolvedMode, setMode }}>
       {children}
     </ThemeContext.Provider>
   );

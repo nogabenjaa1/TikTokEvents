@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 // Ayudas compartidas por los paneles de juegos/contadores (Rey del Trono,
 // Zubastinis, Eliminación, Ruleta, Extensible, Objetivo): una explicación

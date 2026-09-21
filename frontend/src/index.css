@@ -27,6 +27,15 @@ body {
   font-family: var(--font-sans);
   user-select: none;
 }
+/* La página no se puede seleccionar (se siente como una app), pero lo que la
+   persona necesita copiar a mano sí: su clave, la URL de un overlay, un mensaje
+   de error. Sin esto, cuando el botón de copiar falla ("selecciona la URL y
+   cópiala a mano") no había nada que seleccionar. Va en la capa base para que
+   una utilidad como `select-all` (que selecciona una clave entera con un clic)
+   siga ganando: las reglas sin capa siempre le ganan a las de Tailwind. */
+@layer base {
+  code, pre, .theme-notice, [role="alert"], [role="status"] { user-select: text; }
+}
 
 /* Ocultar flechas nativas de inputs numéricos (no se pueden themear: los
    navegadores no exponen sus colores a CSS) — cuando un input numérico
@@ -402,6 +411,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-premio: #6EE7B7;
   --ink-info: #7DD3FC;
   --ink-amber: #FBBF24;
+  --status-mix: #fff;
   color: var(--ink);
 }
 /* Isla clara: la vista previa de un overlay embebida en el panel (data-mode="light"
@@ -417,6 +427,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-premio: #047857;
   --ink-info: #0369A1;
   --ink-amber: #B45309;
+  --status-mix: #000;
 }
 /* Títulos, etiquetas y botones secundarios: en claro usan un tono oscuro del
    acento; en oscuro, uno claro. */
@@ -582,6 +593,60 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 }
 .theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
 
+/* ==========================================
+   TALLAS DE BOTÓN, AVISOS Y ENLACES
+   ==========================================
+   Antes cada archivo decidía a mano el relleno y el tamaño de texto de sus
+   botones (25 combinaciones distintas solo en los primarios), sus cajas de
+   aviso (más de 20 variantes, con tres tonos distintos de ámbar) y sus
+   enlaces de texto. Ahora cada cosa tiene una sola definición. Ninguna usa
+   clases de Tailwind ni nombres de color: leen los tokens (--ink, --ink-*),
+   que ya tienen su versión para cada material, acento y el modo oscuro. */
+
+/* Tres tallas, y solo tres: sm (barras de herramientas y acciones dentro de
+   una fila), md (la de siempre en formularios y paneles) y lg (la acción
+   principal de una pantalla, como Iniciar). Se suman a theme-btn-primary,
+   -secondary, -danger o -warning. */
+.theme-btn-sm { padding: 0.5rem 0.75rem; font-size: 0.625rem; line-height: 0.875rem; }
+.theme-btn-md { padding: 0.75rem 1rem;   font-size: 0.75rem;  line-height: 1rem; }
+.theme-btn-lg { padding: 1rem 1.5rem;    font-size: 0.875rem; line-height: 1.25rem; }
+
+/* Avisos (error, atención, éxito): un solo aspecto. El color del texto sale de
+   los tokens de estado (--ink-*), así que también cambia solo en modo oscuro. */
+.theme-notice {
+  --notice: #EF4444;
+  --notice-ink: var(--ink-danger);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in oklch, var(--notice) 40%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--notice) 10%, transparent);
+  color: color-mix(in oklch, var(--notice-ink) 65%, var(--status-mix));
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 700;
+}
+.theme-notice-danger  { --notice: #EF4444; --notice-ink: var(--ink-danger); }
+.theme-notice-warning { --notice: #F59E0B; --notice-ink: var(--ink-warning); }
+.theme-notice-success { --notice: #10B981; --notice-ink: var(--ink-premio); }
+/* Aviso con más aire, para los que llevan un botón o varias líneas. */
+.theme-notice-roomy { padding: 0.75rem 1rem; }
+
+/* Enlaces de texto (botones sin caja): subrayados, con área de toque cómoda y
+   un cambio visible al pasar el cursor. Por defecto van en tinta apagada. */
+.theme-link {
+  padding-block: 0.5rem;
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+  font-weight: 700;
+  text-decoration: underline;
+  color: color-mix(in oklch, var(--ink, currentColor) 78%, transparent);
+}
+.theme-link:hover { color: var(--ink, currentColor); }
+.theme-link-danger,  .theme-link-danger:hover  { color: color-mix(in oklch, var(--ink-danger) 65%, var(--status-mix)); }
+.theme-link-info,    .theme-link-info:hover    { color: color-mix(in oklch, var(--ink-info) 65%, var(--status-mix)); }
+.theme-link-warning, .theme-link-warning:hover { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)); }
+.theme-link-danger:hover, .theme-link-info:hover, .theme-link-warning:hover { opacity: 0.75; }
+
 /* Tokens de tinta de estado y radios del material Cute -- documentados en
    DESIGN.md (Colors › Estado / Shapes). Cada valor vive UNA sola vez acá y
    el resto del archivo lee la variable. */
@@ -592,6 +657,11 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-premio: #047857;
   --ink-info: #0369A1;
   --ink-amber: #B45309;
+  /* Con lo que se mezclan los tonos de estado para textos de avisos y enlaces:
+     negro en claro (los oscurece hasta 4,5:1 sobre el pastel) y blanco en oscuro.
+     Mezclar con una tinta morada movía el matiz (el verde salía azul); con un
+     acromático el rojo, el ámbar, el verde y el azul siguen siendo reconocibles. */
+  --status-mix: #000;
   --radius-cute-dock: 1.75rem;
   --radius-cute-nav: 1.1rem;
   --radius-cute-box: 1rem;
@@ -717,6 +787,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style] .tkc-username-rainbow {
   background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
   background-size: 400% 100% !important;
+  /* impeccable-disable-next-line gradient-text: opción "arcoíris" que el streamer elige en Personalizar para el nombre de usuario del overlay; es una función, no decoración */
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
@@ -735,6 +806,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    alimenta getUsernameOverride, mismo truco de background-clip:text. */
 .themed-app[data-theme-style] .tkc-username-gradient {
   background-image: linear-gradient(90deg, var(--tkc-username-from, #7C3AED), var(--tkc-username-to, #3B82F6)) !important;
+  /* impeccable-disable-next-line gradient-text: opción "degradado" que el streamer elige en Personalizar para el nombre de usuario del overlay; es una función, no decoración */
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;

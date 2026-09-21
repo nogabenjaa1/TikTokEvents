@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import { SkeletonRows } from './PanelHelp';
 import iconFollow from './assets/alert-follow.png';
@@ -159,7 +159,6 @@ function LivePreview({ draftAlert, customize }) {
       setTimeout(() => setCycle((c) => c + 1), duration + LOOP_PAUSE_MS),
     ];
     return () => timers.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftAlert, cycle]);
 
   return (
@@ -218,13 +217,13 @@ function AlertRow({ alert, giftIcon, testFire, previewSaved, startEdit, remove }
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        <button onClick={() => testFire(alert.id)} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" title="Dispara la alerta real en tu stream" aria-label={`Probar la alerta ${name}`}>
+        <button onClick={() => testFire(alert.id)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-wide" title="Dispara la alerta real en tu stream" aria-label={`Probar la alerta ${name}`}>
           🔥 Probar
         </button>
-        <button onClick={() => previewSaved(alert)} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" title="Verla aquí, sin disparar nada" aria-label={`Vista previa de la alerta ${name}`}>
+        <button onClick={() => previewSaved(alert)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-wide" title="Verla aquí, sin disparar nada" aria-label={`Vista previa de la alerta ${name}`}>
           👁️ Ver
         </button>
-        <button onClick={() => startEdit(alert)} className="theme-btn-primary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide" aria-label={`Editar la alerta ${name}`}>
+        <button onClick={() => startEdit(alert)} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-wide" aria-label={`Editar la alerta ${name}`}>
           ✏️ Editar
         </button>
         <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline px-1" aria-label={`Borrar la alerta ${name}`}>
@@ -591,14 +590,14 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button type="button" onClick={openNew} className="theme-btn-primary px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
+          <button type="button" onClick={openNew} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg">
             ＋ Nueva alerta
           </button>
         </div>
       </div>
 
       {notice && (
-        <div role="status" className="w-full max-w-2xl rounded-xl px-4 py-3 text-xs font-bold text-green-300 bg-green-500/10 border border-green-500/30">
+        <div role="status" className="w-full max-w-2xl theme-notice theme-notice-success theme-notice-roomy">
           ✅ {notice}
         </div>
       )}
@@ -617,7 +616,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">2</span> Sube una imagen, GIF o video, un audio y/o escribe un texto.</li>
             <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">3</span> Mira la vista previa, ajusta y guarda.</li>
           </ol>
-          <button type="button" onClick={openNew} className="theme-btn-primary px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">
+          <button type="button" onClick={openNew} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg">
             ＋ Crear mi primera alerta
           </button>
         </div>
@@ -629,7 +628,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
                 <h2 className="theme-heading text-lg font-semibold">Ajustes generales</h2>
                 <p className="text-[11px] text-gray-500 mt-0.5">Afectan a TODAS tus alertas a la vez. Para algo propio de una alerta (como su color), edítala.</p>
               </div>
-              <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0" title="Color, degradado y tamaño del texto de todas las alertas">
+              <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0" title="Color, degradado y tamaño del texto de todas las alertas">
                 🎨 Personalizar
               </button>
             </div>
@@ -712,7 +711,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <button key={t.id} type="button"
               onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'gift_global') setMinCoins(''); }}
               aria-pressed={triggerType === t.id}
-              className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+              className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -865,7 +864,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               <div className="flex gap-2 flex-wrap">
                 {TEXT_POSITIONS.map((p) => (
                   <button key={p.id} type="button" onClick={() => setTextPosition(p.id)} aria-pressed={textPosition === p.id}
-                    className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${textPosition === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                    className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${textPosition === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                     {p.label}
                   </button>
                 ))}
@@ -894,7 +893,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <div className="flex gap-2 flex-wrap">
             {POSITIONS.map((p) => (
               <button key={p.id} type="button" onClick={() => setPosition(p.id)} aria-pressed={position === p.id}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${position === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${position === p.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {p.label}
               </button>
             ))}
@@ -907,7 +906,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <div className="flex gap-2 flex-wrap">
               {ANIMATION_IN_OPTIONS.map((a) => (
                 <button key={a.id} type="button" onClick={() => setEntranceAnim(a.id)} aria-pressed={entranceAnim === a.id}
-                  className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${entranceAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${entranceAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                   {a.label}
                 </button>
               ))}
@@ -918,7 +917,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <div className="flex gap-2 flex-wrap">
               {ANIMATION_OUT_OPTIONS.map((a) => (
                 <button key={a.id} type="button" onClick={() => setExitAnim(a.id)} aria-pressed={exitAnim === a.id}
-                  className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${exitAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${exitAnim === a.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                   {a.label}
                 </button>
               ))}
@@ -936,11 +935,11 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <button
               onClick={save}
               disabled={saving}
-              className="theme-btn-primary flex-1 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? 'GUARDANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
             </button>
-            <button onClick={closeForm} type="button" className="theme-btn-secondary px-5 py-3 rounded-xl font-bold tracking-wide text-xs uppercase">
+            <button onClick={closeForm} type="button" className="theme-btn-secondary theme-btn-md font-bold tracking-wide uppercase">
               Cancelar
             </button>
           </div>
@@ -958,7 +957,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <AlertVisual alert={savedPreview} phase={savedPreviewPhase} customize={customization} />
           <button
             onClick={closeSavedPreview}
-            className="fixed top-4 right-4 z-[10000] theme-btn-secondary px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+            className="fixed top-4 right-4 z-[10000] theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest"
           >
             ✕ Cerrar vista previa
           </button>

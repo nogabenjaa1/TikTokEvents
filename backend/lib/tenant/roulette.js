@@ -109,7 +109,7 @@ module.exports = {
     // cada eliminado del batch (no una sola vez para todo el grupo) antes de
     // mostrar el resultado agrupado — ver beginRouletteSubSpin.
     beginRouletteStep() {
-        const { revealOrder, winnerIndex, revealCursor } = this.rouletteState;
+        const { winnerIndex, revealCursor } = this.rouletteState;
         if (revealCursor >= winnerIndex) {
             this.finishRouletteWithWinner();
             return;

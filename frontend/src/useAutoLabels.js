@@ -23,7 +23,7 @@ function hasName(el) {
 }
 
 // Texto visible más cercano: hermano anterior, y si no hay, el del contenedor.
-export function guessLabel(el) {
+function guessLabel(el) {
   const own = clean(el.getAttribute('title')) || clean(el.getAttribute('placeholder'));
   if (own) return own;
   for (let node = el, depth = 0; node && depth < 3; node = node.parentElement, depth += 1) {

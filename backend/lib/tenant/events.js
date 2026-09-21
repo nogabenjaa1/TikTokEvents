@@ -134,7 +134,7 @@ module.exports = {
         // llegue o no a sumar algo, para distinguir si el problema es que
         // TikTok/la librería no manda eventos de más usuarios (recepción) o
         // si algo de acá abajo los descarta (procesamiento).
-        this.recordTapTapEvent(username, likeCount);
+        this.recordTapTapEvent(username);
 
         if (!username || likeCount <= 0) return;
 

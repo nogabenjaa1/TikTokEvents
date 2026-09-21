@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { HowItWorks } from './PanelHelp';
 import SpotifyAppGuide from './SpotifyAppGuide';
@@ -235,13 +235,13 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
       <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎵 Spotify</p>
 
       {banner === 'connected' && (
-        <div role="status" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-emerald-500/10 border-emerald-500/40 text-emerald-600 flex items-start justify-between gap-3">
+        <div role="status" className="w-full max-w-md theme-notice theme-notice-success theme-notice-roomy flex items-start justify-between gap-3">
           <span>✅ CUENTA DE SPOTIFY CONECTADA. Por seguridad el TTS se apaga al volver: si lo usabas, vuelve a activarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {banner === 'error' && (
-        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+        <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
           <span>❌ NO SE PUDO CONECTAR CON SPOTIFY. INTENTA DE NUEVO.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
@@ -251,7 +251,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           mano en su lista de usuarios (ver backend/spotify.js). Con el mensaje
           genérico la gente apretaba "Conectar" una y otra vez. */}
       {banner === 'not_registered' && (
-        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+        <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
           <span>❌ TU CUENTA DE SPOTIFY TODAVÍA NO ESTÁ HABILITADA. Spotify solo deja conectar las cuentas que el administrador agregó a la plataforma: envíale el correo con el que inicias sesión en Spotify y, cuando te confirme que ya la agregó, vuelve a intentarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
@@ -259,19 +259,19 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
       {/* Mismo caso que el de arriba pero con la app PROPIA del streamer: aquí
           no hay a quién pedirle nada, el arreglo es suyo (paso 4 de la guía). */}
       {banner === 'not_registered_own' && (
-        <div role="alert" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-red-500/10 border-red-500/40 text-red-700 flex items-start justify-between gap-3">
+        <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
           <span>❌ TU CUENTA DE SPOTIFY NO ESTÁ EN LOS USUARIOS DE TU APP. En el dashboard de Spotify abre tu app, entra a Settings → User Management → Add new user, agrega tu nombre y el correo de tu cuenta de Spotify, y vuelve a intentarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {banner === 'app_saved' && (
-        <div role="status" className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-emerald-500/10 border-emerald-500/40 text-emerald-600 flex items-start justify-between gap-3">
+        <div role="status" className="w-full max-w-md theme-notice theme-notice-success theme-notice-roomy flex items-start justify-between gap-3">
           <span>✅ TU APP DE SPOTIFY QUEDÓ GUARDADA. Ahora pulsa "Conectar con Spotify" para autorizar tu cuenta.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {errorToast && (
-        <div className="w-full max-w-md rounded-lg px-4 py-3 text-xs font-bold border bg-amber-500/10 border-amber-500/40 text-amber-600">
+        <div className="w-full max-w-md theme-notice theme-notice-warning theme-notice-roomy">
           ⚠️ {errorToast}
         </div>
       )}
@@ -307,7 +307,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                 conectas con tu propia app de Spotify y te guiamos paso a paso.
               </p>
               {onWantsMembership && (
-                <button type="button" onClick={onWantsMembership} className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg">
+                <button type="button" onClick={onWantsMembership} className="theme-btn-primary theme-btn-lg w-full font-bold tracking-wide transition-all shadow-lg">
                   Ver el complemento
                 </button>
               )}
@@ -320,7 +320,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                 <span className="font-bold text-white">Mensual</span>.
               </p>
               {onWantsMembership && (
-                <button type="button" onClick={onWantsMembership} className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg">
+                <button type="button" onClick={onWantsMembership} className="theme-btn-primary theme-btn-lg w-full font-bold tracking-wide transition-all shadow-lg">
                   Ver membresías
                 </button>
               )}
@@ -350,18 +350,18 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                 <button
                   onClick={connect}
                   disabled={connecting}
-                  className="theme-btn-primary w-full py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg mb-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-lg w-full font-bold tracking-wide transition-all shadow-lg mb-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connecting ? 'Redirigiendo...' : 'Renovar conexión'}
                 </button>
                 {connectError && <p role="alert" className="text-[11px] font-bold text-red-500 mb-3">{connectError}</p>}
               </>
             )}
-            <button onClick={disconnect} className="theme-btn-danger w-full py-3 rounded-xl font-bold tracking-wide transition-all">
+            <button onClick={disconnect} className="theme-btn-danger theme-btn-lg w-full font-bold tracking-wide transition-all">
               Desconectar
             </button>
             {access.source === 'own' ? (
-              <button type="button" onClick={removeOwnApp} className="block mx-auto mt-3 text-[11px] font-bold text-gray-400 underline hover:text-white">
+              <button type="button" onClick={removeOwnApp} className="block mx-auto mt-3 theme-link">
                 Quitar mi app de Spotify
               </button>
             ) : access.reason !== 'admin' && (
@@ -385,7 +385,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
             <button
               onClick={connect}
               disabled={connecting}
-              className="theme-btn-primary w-full py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg w-full font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? 'Redirigiendo...' : 'Conectar con Spotify'}
             </button>
@@ -417,14 +417,14 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
             <button
               type="button"
               onClick={() => update('enabled', !settings.enabled)}
-              className={`px-4 py-3 text-xs font-black tracking-widest transition-opacity flex-shrink-0 ${settings.enabled ? 'bg-red-950/70 border border-red-700/60 text-red-300 rounded-xl' : 'theme-btn-primary'}`}
+              className={`font-black tracking-widest transition-opacity flex-shrink-0 theme-btn-md ${settings.enabled ? 'bg-red-950/70 border border-red-700/60 text-red-300 rounded-xl' : 'theme-btn-primary'}`}
             >
               {settings.enabled ? 'DESACTIVAR' : 'ACTIVAR'}
             </button>
           </div>
 
           {settings.enabled && !settings.allUsers && !settings.moderators && !settings.fanMembers && (
-            <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-3">Ahora mismo nadie del chat puede pedir canciones: activa al menos una opción de abajo.</p>
+            <p role="status" className="theme-notice theme-notice-warning mb-3">Ahora mismo nadie del chat puede pedir canciones: activa al menos una opción de abajo.</p>
           )}
 
           <div className={`space-y-3 transition-opacity ${settings.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
@@ -501,7 +501,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           <div className="flex items-center justify-between mb-4">
             <h2 className="theme-heading text-lg font-semibold">Pedidas por chat</h2>
             {queue.length > 0 && (
-              <button onClick={clearQueue} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline">
+              <button onClick={clearQueue} className="theme-link theme-link-danger">
                 Vaciar
               </button>
             )}

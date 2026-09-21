@@ -1,4 +1,3 @@
-import React from 'react';
 import { RAINBOW_GRADIENT, VALID_MESSAGE_ANIMATIONS, MESSAGE_ANIMATION_LABELS, bordersEnabled } from './overlayCustomization';
 import OverlayPreviewBox from './OverlayPreviewBox';
 
@@ -213,10 +212,10 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
         </div>
 
         <div className="flex gap-3 mt-6">
-          <button onClick={onApplyToAll} className="theme-btn-secondary flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">
+          <button onClick={onApplyToAll} className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
             Aplicar a todos los overlays
           </button>
-          <button onClick={onClose} className="theme-btn-primary flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">
+          <button onClick={onClose} className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
             Listo
           </button>
         </div>

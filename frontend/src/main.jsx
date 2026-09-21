@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import { ThemeProvider } from './ThemeContext.jsx'
+import AppErrorBoundary from './AppErrorBoundary.jsx'
 
 // BrowserRouter envuelve TODO, overlay de OBS incluido -- a propósito no
 // pasa nada raro ahí: el overlay se identifica por query string
@@ -15,7 +16,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <App />
+        <AppErrorBoundary>
+          <App />
+        </AppErrorBoundary>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,

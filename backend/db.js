@@ -5,9 +5,9 @@
 //
 // Antes esto era SQLite (better-sqlite3, un solo archivo local). Se migró
 // a Supabase para que los datos sobrevivan a redeploys/reinicios del
-// backend sin importar dónde corra (Railway, Render, Fly, un VPS, etc.) —
-// ver backend/migrate-to-supabase.js para pasar los datos de una DB SQLite
-// existente.
+// backend sin importar dónde corra (Railway, Render, Fly, un VPS, etc.).
+// Los datos de la base SQLite anterior ya se pasaron; no queda ningún rastro
+// de SQLite en el código.
 // ==========================================
 const { Pool, types } = require('pg');
 const tokenCrypto = require('./tokenCrypto');

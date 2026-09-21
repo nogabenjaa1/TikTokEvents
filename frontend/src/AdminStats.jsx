@@ -70,7 +70,7 @@ export default function AdminStats({ onUnauthorized }) {
       <div className="flex items-center justify-between gap-2">
         <h2 id="admin-stats-title" className="theme-label text-xs uppercase tracking-widest font-semibold">📊 Resumen del negocio</h2>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={load} disabled={loading} className="text-[10px] font-bold text-sky-700 hover:underline disabled:opacity-40 py-2">
+          <button type="button" onClick={load} disabled={loading} className="theme-link theme-link-info disabled:opacity-40">
             {loading ? 'Actualizando…' : 'Actualizar'}
           </button>
           <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="text-[10px] font-bold text-gray-400 hover:text-white underline py-2">

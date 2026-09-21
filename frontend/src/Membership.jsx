@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { backendUrl, authHeaders, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import { useState, useEffect, useRef } from 'react';
+import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
@@ -400,8 +400,8 @@ export default function Membership({ session, onSessionUpdate }) {
             Tu plan nuevo necesitó una clave nueva. Cópiala y reemplaza la key en la URL del overlay que tengas guardada en OBS.
           </p>
           <div className="flex items-center gap-2">
-            <code className="theme-input flex-1 px-3 py-2 text-xs break-all">{revealedKey}</code>
-            <button type="button" onClick={copyRevealedKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+            <code className="theme-input flex-1 px-3 py-2 text-xs break-all select-all">{revealedKey}</code>
+            <button type="button" onClick={copyRevealedKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
               {keyCopied ? 'Copiado' : 'Copiar'}
             </button>
           </div>
@@ -437,7 +437,7 @@ export default function Membership({ session, onSessionUpdate }) {
               className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           </div>
           <button type="submit" disabled={loginLoading || !loginKey.trim()}
-            className="theme-btn-primary px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+            className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
             {loginLoading ? 'Verificando...' : 'Entrar'}
           </button>
           {loginError && <p role="alert" className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
@@ -461,15 +461,15 @@ export default function Membership({ session, onSessionUpdate }) {
                 plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
               </p>
               <div className="flex items-center gap-2">
-                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{trialResult.key}</code>
-                <button type="button" onClick={copyTrialKey} className="theme-btn-primary px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{trialResult.key}</code>
+                <button type="button" onClick={copyTrialKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
                   {trialCopied ? 'Copiado' : 'Copiar'}
                 </button>
               </div>
               <button
                 type="button"
                 onClick={continueAfterTrial}
-                className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
               >
                 Continuar
               </button>
@@ -504,12 +504,12 @@ export default function Membership({ session, onSessionUpdate }) {
                 <div className="flex flex-col gap-3">
                   <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
                   <p className="text-[11px] text-gray-500">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
-                  {trialError && <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{trialError}</p>}
+                  {trialError && <p role="alert" className="theme-notice">{trialError}</p>}
                   <button
                     type="button"
                     onClick={submitTrial}
                     disabled={trialLoading || !alias.trim()}
-                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {trialLoading ? 'CREANDO...' : 'Solicitar prueba gratis'}
                   </button>
@@ -522,14 +522,14 @@ export default function Membership({ session, onSessionUpdate }) {
                   <button
                     type="button"
                     onClick={() => { if (requireAlias()) setShowAdGate(true); }}
-                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
                   >
                     Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
                   </button>
                   <button
                     type="button"
                     onClick={() => { if (requireAlias()) setShowCardForm(true); }}
-                    className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
                   >
                     Verificar una tarjeta (sin cobro)
                   </button>
@@ -553,7 +553,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 {buyingAddon ? 'Complemento de Spotify (pago único)' : `Plan ${PLAN_LABELS[payingPlan] || payingPlan}`} · MX$ {payingAmountMxn?.toLocaleString('es-MX')}
               </p>
             </div>
-            <button type="button" onClick={() => setPayingPlan(null)} className="theme-btn-secondary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0">
+            <button type="button" onClick={() => setPayingPlan(null)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0">
               {buyingAddon ? 'Volver' : 'Cambiar plan'}
             </button>
           </div>
@@ -713,7 +713,7 @@ export default function Membership({ session, onSessionUpdate }) {
             )
           ) : (
             <button type="button" onClick={attemptContinue}
-              className="theme-btn-primary w-full max-w-2xl py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all">
+              className="theme-btn-primary theme-btn-md w-full max-w-2xl font-black tracking-widest uppercase transition-all">
               Continuar con el pago
             </button>
           )}
@@ -742,7 +742,7 @@ export default function Membership({ session, onSessionUpdate }) {
               <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Activo</p>
             ) : canBuyAddon ? (
               <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
-                className="theme-btn-primary px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
                 {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
               </button>
             ) : (
@@ -797,7 +797,7 @@ export default function Membership({ session, onSessionUpdate }) {
                   <p className="theme-chip text-[9px] font-black uppercase tracking-widest text-center mt-3 py-2">Plan actual</p>
                 ) : rank > currentPlanRank ? (
                   <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
-                    className="theme-btn-primary w-full mt-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="theme-btn-primary theme-btn-sm w-full mt-3 font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
                     {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
                   </button>
                 ) : null}

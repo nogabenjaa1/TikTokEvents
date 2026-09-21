@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { backendUrl, requestFreeTrial } from './auth';
@@ -97,11 +97,11 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
         className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
       />
       <PaymentElement />
-      {error && <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{error}</p>}
+      {error && <p className="theme-notice">{error}</p>}
       <button
         type="submit"
         disabled={submitting || !stripe || !alias.trim() || !cardholderName.trim()}
-        className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {submitting ? 'VERIFICANDO...' : 'Verificar y activar prueba gratis'}
       </button>
@@ -155,7 +155,7 @@ export default function CardVerifyForm({ alias, setAlias, onResult, onCancel }) 
       </p>
 
       {loadError ? (
-        <p className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold">{loadError}</p>
+        <p className="theme-notice">{loadError}</p>
       ) : !clientSecret ? (
         <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de Stripe...</p>
       ) : (
@@ -170,7 +170,7 @@ export default function CardVerifyForm({ alias, setAlias, onResult, onCancel }) 
         </Elements>
       )}
 
-      <button type="button" onClick={onCancel} className="theme-btn-secondary w-full py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all">
+      <button type="button" onClick={onCancel} className="theme-btn-secondary theme-btn-sm w-full font-bold uppercase tracking-widest transition-all">
         Cancelar
       </button>
     </div>

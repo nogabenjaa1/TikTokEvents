@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 // Redimensiona la imagen a 200x200 máx (4x los 50px que muestra el overlay:
 // aguanta pantallas de alta densidad Y que el overlay se escale hacia

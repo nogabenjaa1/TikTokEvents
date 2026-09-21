@@ -31,7 +31,7 @@ export default function ExpiryBanner({ session, onRenew, hidden = false }) {
     >
       <span className="font-bold tracking-wide text-white"><span aria-hidden="true">{urgent ? '⚠️' : '⏳'} </span>{notice.message}</span>
       <span className="hidden sm:inline text-gray-300">{notice.detail}</span>
-      <button type="button" onClick={onRenew} className="theme-btn-primary px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">
+      <button type="button" onClick={onRenew} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
         {notice.trial ? 'Elegir un plan' : 'Renovar'}
       </button>
       <button type="button" onClick={close} aria-label="Cerrar aviso de vencimiento" className="leading-none px-1 text-white">✕</button>

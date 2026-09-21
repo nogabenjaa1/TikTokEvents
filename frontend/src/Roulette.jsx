@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
@@ -10,9 +10,9 @@ import { formatMMSS } from './timeFormat';
 // Eliminación (ver sizeFor en Elimination.jsx).
 function sizeFor(count) {
   if (count <= 8)  return { box: 'w-16 h-16', text: 'text-[9px]', emoji: 'text-2xl' };
-  if (count <= 16) return { box: 'w-12 h-12', text: 'text-[8px]', emoji: 'text-lg'  };
-  if (count <= 30) return { box: 'w-9 h-9',   text: 'text-[7px]', emoji: 'text-sm'  };
-  return               { box: 'w-7 h-7',   text: 'text-[6px]', emoji: 'text-xs'  };
+  if (count <= 16) return { box: 'w-12 h-12', text: 'text-[9px]', emoji: 'text-lg'  };
+  if (count <= 30) return { box: 'w-9 h-9',   text: 'text-[8px]', emoji: 'text-sm'  };
+  return               { box: 'w-7 h-7',   text: 'text-[8px]', emoji: 'text-xs'  };
 }
 
 function EntryBlock({ e, size }) {
@@ -152,7 +152,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
         {(state.lastEliminatedList || []).length > 0 && (state.mode === 'spinning' || state.mode === 'result') && (
           <div className="flex flex-col gap-1.5 mb-3 relative z-10">
             {state.lastEliminatedList.map((e, i) => (
-              <div key={e.username + i} className="flex items-center gap-2 bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2">
+              <div key={e.username + i} className="flex items-center gap-2 theme-notice">
                 <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
                 <span className="text-xs font-bold text-red-300">💀 @{e.username} quedó fuera</span>
               </div>
@@ -197,11 +197,11 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">CÓMO SE CONSIGUE UNA ENTRADA</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setEntryMode('chat')}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${entryMode === 'chat' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  className={`flex-1 font-black uppercase tracking-widest transition-all theme-btn-sm ${entryMode === 'chat' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                   💬 Modo Chat
                 </button>
                 <button type="button" onClick={() => setEntryMode('gift')}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${entryMode === 'gift' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                  className={`flex-1 font-black uppercase tracking-widest transition-all theme-btn-sm ${entryMode === 'gift' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                   🎁 Modo Gift
                 </button>
               </div>
@@ -257,7 +257,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 Gift — no hay nada que un toggle pudiera cambiar de verdad). */}
             <div className="mb-6">
               <button type="button" onClick={() => setFastMode(f => !f)}
-                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
                 title="Reduce las animaciones de giro/resultado a la mitad (1s en vez de 2s)">
                 ⚡ Fast Mode
               </button>
@@ -283,7 +283,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 />
                 <button type="button" onClick={addManualEntry}
                   disabled={!state.isActive || state.mode !== 'joining' || !manualUsername.trim()}
-                  className="theme-btn-secondary px-4 py-2 rounded-lg text-[10px] font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
                   Agregar
                 </button>
               </div>
@@ -296,7 +296,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <div className="flex gap-2 mb-2">
                 {Object.entries(WINNER_RULE_LABELS).map(([value, label]) => (
                   <button key={value} type="button" onClick={() => setWinnerRule(value)}
-                    className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${winnerRule === value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                    className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${winnerRule === value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                     {label}
                   </button>
                 ))}
@@ -322,7 +322,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 <button
                   onClick={startRoulette}
                   disabled={connectionStatus !== 'connected' || (entryMode === 'gift' && !selectedGift)}
-                  className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
@@ -331,14 +331,14 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                   <button
                     onClick={togglePause}
                     disabled={state.mode !== 'joining'}
-                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
                   </button>
                   <button
                     onClick={restartRoulette}
                     disabled={state.mode === 'spinning'}
-                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     REINICIAR ⟲
                   </button>
@@ -346,7 +346,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               )}
               <button
                 onClick={stopRoulette}
-                className="theme-btn-danger px-6 py-4 font-bold transition-all"
+                className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
                 ⏹
               </button>

@@ -1,4 +1,3 @@
-import React from 'react';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';

@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Indicador de salud del sistema (mejora de estabilidad): en un vistazo, si
 // el panel está hablando con el servidor, si hay un LIVE conectado y si el
@@ -71,12 +70,12 @@ export default function SystemHealth({
       {(ttsEnabled || canReconnect) && (
         <div className="flex gap-2 mt-1 flex-wrap">
           {canReconnect && onReconnectTikTok && (
-            <button type="button" onClick={onReconnectTikTok} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest" title="Vuelve a conectar con tu LIVE sin perder rankings ni partidas">
+            <button type="button" onClick={onReconnectTikTok} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest" title="Vuelve a conectar con tu LIVE sin perder rankings ni partidas">
               🔄 Reconectar TikTok
             </button>
           )}
           {ttsEnabled && onResetVoice && (
-            <button type="button" onClick={onResetVoice} className="theme-btn-secondary px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest" title="Reinicia el motor de voz si dejó de leer">
+            <button type="button" onClick={onResetVoice} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest" title="Reinicia el motor de voz si dejó de leer">
               🔊 Reiniciar voz
             </button>
           )}

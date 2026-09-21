@@ -168,10 +168,12 @@ module.exports = {
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
     registerAlertHandlers(socket) {
         // Presencia del overlay de alertas: el overlay de OBS se autentica con
-        // la clave y se declara con `overlayScreen: 'alerts'` (ver auth.js del
-        // frontend). Al panel que se conecta se le dice cómo está ahora.
+        // su token (o la clave, en los enlaces anteriores) y se declara con
+        // `overlayScreen: 'alerts'` (ver auth.js del frontend). Al panel que se
+        // conecta se le dice cómo está ahora.
         const declaredScreen = socket.handshake?.auth?.overlayScreen;
-        if (socket.authMethod === 'key' && declaredScreen === 'alerts') {
+        const isOverlaySocket = socket.authMethod === 'key' || socket.authMethod === 'overlay';
+        if (isOverlaySocket && declaredScreen === 'alerts') {
             this.alertOverlaySockets.add(socket.id);
             this.emitAlertOverlayStatus();
             socket.on('disconnect', () => {
@@ -181,6 +183,9 @@ module.exports = {
         } else {
             socket.emit('alerts_overlay_status', { connected: this.alertOverlaySockets.size > 0, count: this.alertOverlaySockets.size });
         }
+
+        // Un overlay con token de solo lectura no dispara nada.
+        if (socket.authMethod === 'overlay') return;
 
         // Botón "🔥 Probar" del panel de Alertas (ver AlertsAdmin.jsx) —
         // dispara la alerta real, id de por medio, sin esperar ningún

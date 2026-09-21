@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
 import { rollFair, rollWithPairBias } from './diceBias';
 import RewardedAdGate from './RewardedAdGate';
@@ -240,6 +240,8 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
+    // doRollInternal se declara después y depende de finishRoll: cuando uno cambia el otro también, nunca queda una versión vieja.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
 
   const doRollInternal = useCallback(() => {
@@ -349,7 +351,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           <button
             onClick={() => setRewardGateOpen(true)}
             disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
-            className="theme-btn-secondary w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-secondary theme-btn-sm w-full font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Ver anuncio: +1h sin anuncios
           </button>

@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Compartido entre Colorsays.jsx (el juego) y DiceOverlay.jsx (el overlay
 // especial de OBS para Colores) — una sola fuente de verdad para la lista

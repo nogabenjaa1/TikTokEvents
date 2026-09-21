@@ -14,13 +14,6 @@ const REVEAL_RESULT_MS = 2000;
 const REVEAL_SELECT_MS_FAST = 1000;
 const REVEAL_RESULT_MS_FAST = 1000;
 
-// Tope de cuántos eliminados se muestran en grande/en burbujas por ronda
-// en el overlay (ver EliminatedResultVisual en Overlay.jsx) — pedido
-// explícito: 1 grande + hasta 4 burbujas, el resto va como texto "y N
-// más...". No limita cuántos se pueden eliminar por ronda de verdad
-// (eliminationsPerRound), solo cuántos se DIBUJAN.
-const ELIM_RESULT_DISPLAY_CAP = 5;
-
 // Galería de avatares de relleno para entradas manuales (ver
 // elim_add_manual_entry/roulette_add_manual_entry): 10 círculos de colores
 // variados con un emoji simple, para usuarios nuevos que el admin suma a
@@ -228,7 +221,6 @@ module.exports = {
     REVEAL_RESULT_MS,
     REVEAL_SELECT_MS_FAST,
     REVEAL_RESULT_MS_FAST,
-    ELIM_RESULT_DISPLAY_CAP,
     DEFAULT_MANUAL_AVATARS,
     pickDefaultManualAvatar,
     TIKTOK_CONNECT_TIMEOUT_MS,

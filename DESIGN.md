@@ -157,6 +157,8 @@ components:
 
 TikTok Concurso es la cabina de control del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE, donde un único acento de color hace de faro sobre un fondo pastel teñido de ese mismo acento. El sistema es deliberadamente táctil y de arcade — botones con peso, glows de acento, tipografía en mayúsculas y trazo grueso — no un dashboard corporativo silencioso.
 
+> **Estado actual (importante).** Los materiales Kawaii y Minimal y el acento verde se retiraron: hoy hay **dos materiales** (Clásico —el id `default`— y Cute) combinables con **tres acentos** (morado, azul, rosa) más uno **personalizado**. Las menciones a Kawaii, Minimal, Verde y a "16 combinaciones" más abajo describen ese sistema anterior y se conservan como historial; los tokens y las reglas siguen valiendo tal cual para los dos materiales que quedan.
+
 Lo más distintivo del sistema no es una paleta fija sino su **pluralismo controlado**: cuatro "materiales" (Default, Kawaii, Minimal, Cute) combinables con cuatro acentos de color (morado, azul, rosa, verde) — 16 combinaciones reales, todas construidas sobre el mismo esqueleto de tokens CSS (`--page-bg`, `--surface-bg`, `--surface-radius`, `--surface-shadow`, `--accent`). Los cuatro materiales comparten la misma familia de color — un **pastel claro de verdad** (`L` 0.72–0.82 en OKLCH) — y se distinguen entre sí únicamente por forma y profundidad, no por luminosidad (decisión del dueño del producto: antes Default/Minimal eran una cabina nocturna casi negra y Kawaii/Cute los únicos pasteles; se homogenizó todo a la paleta clara porque es la que mejor representa la marca). Default es el punto de referencia del sistema — esquinas moderadas (`1.5rem`/`0.75rem`), sombra ambiental difusa; Minimal es plano y callado — sin cajas, una sola línea de borde tintada del acento como única seña de profundidad; Cute (reemplazo de Claymorfismo) es dulce y contenido — borde punteado tipo washi-tape, radios grandes (`1.75rem`), textura de puntitos tipo sprinkles; Kawaii (reemplazo de Glassmorfismo) es dulce y máximo — radios ultra redondeados (`2rem`/píldora completa en cada control), relleno pastel lleno en botones/chips con brillo diagonal interior tipo gomita inflada, sombra profunda y difuminada del color del acento. Al vivir los cuatro sobre fondo claro, todo el texto blanco/gris del resto del sistema se sobreescribe a una tinta oscura propia de cada material (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — mismo hex en los cuatro hoy) para mantener el contraste — ver Colors › Tinta de Material.
 
 El overlay de OBS (lo que ve la audiencia del stream) **replica el mismo skin** (material + acento) que el streamer eligió en el panel — sincronizado en tiempo real por Socket.io, no por `localStorage` (el overlay corre en la ventana de OBS, un navegador aparte que nunca comparte sesión con el panel). El streamer elige el skin justamente para que represente su marca frente a su audiencia; que solo él lo vea sería el fallo del sistema, no una protección.
@@ -277,6 +279,22 @@ Táctil y de arcade: los componentes tienen peso, glow y transición suave (0.35
 - **Secondary:** fondo tenue del acento sobre la superficie (`color-mix` 16%), borde del acento al 55%, texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.42 0.16 h)`) en los cuatro materiales — `--accent-soft` (la versión clara) quedaba ilegible sobre el fondo pastel y se reemplazó en todos.
 - **El botón primario nunca usa la tinta oscura salvo en Kawaii:** en Default/Minimal/Cute sigue siendo el degradé eléctrico de `--accent`/`--accent-2` con texto blanco — ese relleno es vívido, no pastel-diluido, así que blanco sigue contrastando igual que siempre. Kawaii es la única excepción: su botón primario usa un degradé **pastel lleno** (`linear-gradient(145deg, var(--accent-pastel), color-mix(accent-2 55% white))`, más claro que el resto) y por eso necesita texto en `--ink-kawaii` — ver Colors › Acento Pastel / Tinta de Material.
 
+### Tallas de botón
+Tres, y solo tres, que se suman al tipo de botón (`theme-btn-primary`, `-secondary`, `-danger`, `-warning`). Antes cada archivo decidía a mano su relleno y su tamaño de texto (25 combinaciones distintas entre los primarios).
+- **`theme-btn-sm`** — relleno `8px 12px`, texto de 10px: barras de herramientas, alternadores y acciones dentro de una fila.
+- **`theme-btn-md`** — relleno `12px 16px`, texto de 12px: la talla normal de formularios y paneles.
+- **`theme-btn-lg`** — relleno `16px 24px`, texto de 14px: la acción principal de una pantalla (Iniciar, Detener, Guardar).
+- Excepciones a propósito: botones de tamaño fijo (el botón flotante 🎉, las flechas circulares de una fila desplazable, los selectores de dados) y el botón de ancho especial de Color Says.
+- El radio no se declara en el botón: lo pone el tema (`--surface-radius-sm`, píldora en Cute). Escribir `rounded-xl` en un botón de tema no hace nada.
+
+### Avisos (`theme-notice`)
+Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio 8px, borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
+- El texto usa el token de tinta de estado (`--ink-*`) **mezclado 65% con negro en modo claro y con blanco en oscuro** (`--status-mix`), lo que da al menos 4,5:1 sobre el pastel y sobre el fondo oscuro. Mezclar con la tinta morada movía el matiz (el verde salía azul): con un acromático el rojo, el ámbar, el verde y el azul siguen reconociéndose.
+- Los avisos de ancho completo (las franjas de arriba de la pantalla) siguen siendo componentes propios.
+
+### Enlaces de texto (`theme-link`)
+Botones sin caja: subrayados, texto de 10px en negrita, área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
+
 ### Chips
 - **Style:** fondo del acento activo al 22% de opacidad, siempre píldora completa. Texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.42 0.16 h)`, no `--accent-soft`) en Default y Minimal. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado — los cuatro materiales resuelven el mismo problema (texto legible sobre fondo claro), cada uno con su propio tono.
 - **State:** los badges de estado (Activa/Revocada/Por vencer/Expirada en licencias) no usan el acento — usan los colores de estado fijos (verde/rojo/ámbar/gris) con el mismo tratamiento de badge (fondo 40% + borde 50%).
@@ -304,6 +322,7 @@ La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como f
 ## Do's and Don'ts
 
 ### Do:
+- **Do** dar tamaño a un botón de tema con `theme-btn-sm|md|lg`, a una caja de aviso con `theme-notice` y a un enlace de texto con `theme-link`, en vez de escribir relleno, tamaño de texto, radio o colores de estado a mano: así el cambio de un solo valor llega a toda la interfaz y los avisos cumplen contraste en claro y en oscuro.
 - **Do** leer siempre los tokens CSS (`var(--surface-bg)`, `var(--accent)`, `var(--surface-radius)`) en vez de hardcodear color o radio — un componente nuevo debe funcionar en los 16 combos de material×acento sin tocarlo.
 - **Do** usar mayúsculas + tracking amplio + peso `black` para cualquier etiqueta, botón o estado nuevo — es la voz tipográfica dominante del sistema.
 - **Do** reservar los colores de estado fijos (rojo/ámbar/esmeralda/gris) exclusivamente para semántica de juego o licencia (peligro, aviso, premio/éxito, offline) — nunca para decoración.

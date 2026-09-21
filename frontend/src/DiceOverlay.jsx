@@ -1,4 +1,3 @@
-import React from 'react';
 import { COLORS, Die } from './colorsData';
 import { resolveBackgroundStyle, getUsernameOverride } from './overlayCustomization';
 import { accentStyleVars } from './ThemeContext';

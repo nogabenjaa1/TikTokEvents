@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Tarjeta de conexión a TikTok -- pedido explícito: antes era una barra
 // flotante fija en la esquina superior derecha, visible en CUALQUIER
@@ -45,7 +44,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
           (que sigue funcionando igual). Solo tiene sentido mientras hay
           algo conectado o intentándolo. */}
       {(live || verifying) && !disabled && (
-        <button onClick={onDisconnect} className="theme-btn-secondary w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-300">
+        <button onClick={onDisconnect} className="theme-btn-secondary theme-btn-sm w-full font-black uppercase tracking-widest text-red-400 hover:text-red-300">
           ⏻ Desconectar
         </button>
       )}

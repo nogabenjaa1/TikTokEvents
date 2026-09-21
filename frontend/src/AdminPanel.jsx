@@ -1,5 +1,5 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
@@ -54,6 +54,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
         snipeTime,
       });
     }
+    // Cambiar de socket (reconexión) no debe re-enviar los ajustes: solo cuando el streamer los cambia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGift, selectedInstaWin, mainTime, snipeTime, state.isActive]);
 
   const startContest = () => {
@@ -198,7 +200,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                 <button
                   onClick={startContest}
                   disabled={connectionStatus !== 'connected' || !selectedGift}
-                  className="theme-btn-primary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
                 </button>
@@ -207,13 +209,13 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                   <button
                     onClick={togglePause}
                     disabled={state.mode === 'finished'}
-                    className="theme-btn-secondary flex-1 py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
                   </button>
                   <button
                     onClick={restartContest}
-                    className="theme-btn-warning flex-1 py-4 font-bold tracking-wide transition-all"
+                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
                   >
                     REINICIAR ⟲
                   </button>
@@ -221,7 +223,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               )}
               <button
                 onClick={stopContest}
-                className="theme-btn-danger px-6 py-4 font-bold transition-all"
+                className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
                 ⏹
               </button>

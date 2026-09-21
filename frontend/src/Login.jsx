@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { loginWithKey, saveSession } from './auth';
 import logoMark from './assets/logo-mark.png';
 
@@ -52,7 +52,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>
           </div>
 
-          {notice && <p role="status" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{notice}</p>}
+          {notice && <p role="status" className="theme-notice mb-4">{notice}</p>}
 
           <label htmlFor="license-key" className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
           <div className="flex items-center gap-2 mb-4">
@@ -67,17 +67,17 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
               placeholder="Pega tu clave aquí"
               className="theme-input flex-1 min-w-0 p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
             />
-            <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary px-3 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0">
+            <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest flex-shrink-0">
               {showKey ? '🙈' : '👁️'}
             </button>
           </div>
 
-          {error && <p role="alert" className="bg-red-500/10 border border-red-500/40 text-red-700 rounded-lg px-3 py-2 text-xs font-bold mb-4">{error}</p>}
+          {error && <p role="alert" className="theme-notice mb-4">{error}</p>}
 
           <button
             type="submit"
             disabled={loading || !key.trim()}
-            className="theme-btn-primary w-full py-4 rounded-xl font-black tracking-widest uppercase text-sm transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-primary theme-btn-lg w-full font-black tracking-widest uppercase transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {loading ? 'VERIFICANDO...' : 'ENTRAR'}
           </button>
@@ -89,7 +89,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
           <button
             type="button"
             onClick={onWantsMembership}
-            className="theme-btn-secondary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all"
+            className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
           >
             ¿No tienes licencia? Ver planes y prueba gratis
           </button>

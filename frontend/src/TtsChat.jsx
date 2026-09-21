@@ -1,5 +1,6 @@
 import { HowItWorks } from './PanelHelp';
 import { randomVoicePool, utteranceTimeoutMs } from './ttsVoice';
+import { writeStorage } from './safeStorage';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const STORAGE_KEY = 'tiktok-concurso-tts-settings';
@@ -140,14 +141,13 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const recentTextsRef = useRef([]); // [{ text, ts }] — para "ignorar repetidos"
 
   const connected = connectionStatus === 'connected';
-  const active = settings.enabled && connected;
 
   // El padre (App.jsx) muestra el estado del motor en el indicador de salud.
   useEffect(() => { onEngineStatusChange?.(engineStatus); }, [engineStatus, onEngineStatusChange]);
 
   useEffect(() => {
     settingsRef.current = settings;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
+    writeStorage(STORAGE_KEY, JSON.stringify({ ...settings, enabled: false }));
   }, [settings]);
 
   // Quién puede activar una lectura (allUsers/moderators/superFans/
@@ -259,7 +259,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // comentario original tal cual lo escribió la persona, esto solo afecta
   // lo que se dice en voz alta.
   const stripEmojis = (text) => text
-    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/[\u{FE0F}\u{200D}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -454,7 +455,6 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   useEffect(() => {
     if (!settings.enabled || connected) return;
     resetEngine();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.enabled, connected]);
 
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
@@ -582,18 +582,18 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 <h2 className="text-sm font-black tracking-widest">LECTURA AUTOMÁTICA</h2>
                 <p className="text-xs text-gray-500 mt-1">Se desactiva al recargar por seguridad.</p>
               </div>
-              <button type="button" disabled={!connected && !settings.enabled} onClick={() => update('enabled', !settings.enabled)} className={`px-6 py-3 text-xs font-black tracking-widest transition-opacity disabled:opacity-40 ${settings.enabled ? 'bg-red-950/70 border border-red-700/60 text-red-300 rounded-xl' : 'theme-btn-primary'}`}>
+              <button type="button" disabled={!connected && !settings.enabled} onClick={() => update('enabled', !settings.enabled)} className={`font-black tracking-widest transition-opacity disabled:opacity-40 theme-btn-md ${settings.enabled ? 'bg-red-950/70 border border-red-700/60 text-red-300 rounded-xl' : 'theme-btn-primary'}`}>
                 {settings.enabled ? 'DESACTIVAR' : 'ACTIVAR TTS'}
               </button>
             </div>
 
-            {!('speechSynthesis' in window) && <p className="rounded-xl bg-red-950/60 border border-red-800 text-red-300 p-3 text-xs">Este navegador no admite Speech Synthesis.</p>}
-            {!connected && <p role="status" className="rounded-xl bg-red-500/10 border border-red-500/40 text-red-700 p-3 text-xs mb-4">Para activar el TTS conecta una cuenta que esté transmitiendo en TikTok LIVE (desde el Dashboard).</p>}
+            {!('speechSynthesis' in window) && <p className="theme-notice">Este navegador no admite Speech Synthesis.</p>}
+            {!connected && <p role="status" className="theme-notice mb-4">Para activar el TTS conecta una cuenta que esté transmitiendo en TikTok LIVE (desde el Dashboard).</p>}
             {!settings.allUsers && !settings.moderators && !settings.superFans && !settings.fanMembers && (
-              <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-4">Ahora mismo no se leerá a nadie: activa al menos una opción de abajo (por ejemplo "Todos los usuarios").</p>
+              <p role="status" className="theme-notice theme-notice-warning mb-4">Ahora mismo no se leerá a nadie: activa al menos una opción de abajo (por ejemplo "Todos los usuarios").</p>
             )}
 
-            {hiddenNotice && <p role="status" className="rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-500 p-3 text-xs mb-4">{hiddenNotice}</p>}
+            {hiddenNotice && <p role="status" className="theme-notice theme-notice-warning mb-4">{hiddenNotice}</p>}
             {settings.enabled && (
               <p className="text-[11px] text-gray-500 leading-snug mb-4">
                 💡 Para que la voz no se pause, mantén esta pestaña visible (por ejemplo en una ventana aparte junto a tu transmisión): los navegadores frenan las pestañas ocultas.
@@ -725,8 +725,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
               <p className="text-[10px] text-red-400 font-bold mb-2 text-center">⚠ El motor de voz no respondió a tiempo y se reinició solo.</p>
             )}
             <div className="flex gap-2">
-              <button type="button" onClick={stop} disabled={!queueCount && engineStatus === 'idle'} className="theme-btn-secondary flex-1 py-3 text-[10px] font-black tracking-widest disabled:opacity-40">DETENER Y VACIAR COLA</button>
-              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary px-4 py-3 text-[10px] font-black tracking-widest">↻ Reiniciar voz</button>
+              <button type="button" onClick={stop} disabled={!queueCount && engineStatus === 'idle'} className="theme-btn-secondary theme-btn-md flex-1 font-black tracking-widest disabled:opacity-40">DETENER Y VACIAR COLA</button>
+              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary theme-btn-md font-black tracking-widest">↻ Reiniciar voz</button>
             </div>
           </aside>
         </div>
@@ -748,7 +748,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                   type="button"
                   onClick={(event) => { event.stopPropagation(); previewPreset(key); }}
                   disabled={!('speechSynthesis' in window) || !testText.trim()}
-                  className="theme-btn-secondary w-full py-1 text-[9px] font-black disabled:opacity-40"
+                  className="theme-btn-secondary theme-btn-sm w-full font-black disabled:opacity-40"
                   aria-label={`Escuchar el efecto ${preset.label}`}
                 >▶</button>
               </div>
@@ -823,7 +823,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 type="button"
                 onClick={testVoice}
                 disabled={!('speechSynthesis' in window) || !testText.trim()}
-                className="theme-btn-primary px-6 py-3 text-xs font-black tracking-widest disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                className="theme-btn-primary theme-btn-md font-black tracking-widest disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
               >
                 {testing ? 'REPRODUCIENDO...' : 'PROBAR VOZ'}
               </button>
@@ -851,7 +851,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
               <option value="enabled">Habilitado (siempre se lee)</option>
               <option value="disabled">Deshabilitado (nunca se lee)</option>
             </select>
-            <button type="button" onClick={addOverride} disabled={!newOverrideUsername.trim()} className="theme-btn-primary px-6 py-3 text-xs font-black tracking-widest disabled:opacity-40 flex-shrink-0">
+            <button type="button" onClick={addOverride} disabled={!newOverrideUsername.trim()} className="theme-btn-primary theme-btn-md font-black tracking-widest disabled:opacity-40 flex-shrink-0">
               AGREGAR
             </button>
           </div>

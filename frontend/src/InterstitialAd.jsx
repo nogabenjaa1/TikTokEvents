@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AdIframeBanner from './AdIframeBanner';
 import { INTERSTITIAL_AD_ZONE, INTERSTITIAL_MIN_WAIT_MS, INTERSTITIAL_AUTO_CLOSE_MS } from './adConfig';
 
@@ -45,7 +45,7 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
         <button
           onClick={() => canClose && onDone()}
           disabled={!canClose}
-          className="theme-btn-primary w-full py-3 rounded-xl font-black tracking-widest uppercase text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {canClose ? 'Continuar' : `Disponible en ${secondsLeft}s`}
         </button>

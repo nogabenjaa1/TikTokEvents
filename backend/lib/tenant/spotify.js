@@ -7,6 +7,9 @@ const {
     SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT,
     SPOTIFY_QUEUE_INTERNAL_CAP,
     SPOTIFY_POLL_INTERVAL_MS,
+    createSpotifyRequest,
+    publicSpotifyRequest,
+    reconcileSpotifyRequests,
 } = require('../../lib/tenantHelpers');
 
 module.exports = {
@@ -20,7 +23,8 @@ module.exports = {
         const upcoming = this.spotifyQueueState.queue.filter((song) => !song.playing);
         return {
             nowPlaying: this.spotifyQueueState.nowPlaying,
-            queue: upcoming.slice(0, this.spotifySettings.maxQueueSize || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT),
+            // Sin los campos internos de seguimiento (cuándo se pidió, si Spotify ya la mostró...).
+            queue: upcoming.slice(0, this.spotifySettings.maxQueueSize || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT).map(publicSpotifyRequest),
         };
     },
 
@@ -268,15 +272,8 @@ module.exports = {
             return;
         }
 
-        this.spotifyQueueState.queue.push({
-            id: ++this.spotifyQueueCounter,
-            uri: track.uri,
-            title: track.name,
-            artist: (track.artists || []).map((a) => a.name).join(', '),
-            albumArt: track.album?.images?.[track.album.images.length - 1]?.url || '',
-            requestedBy: username,
-            playing: false,
-        });
+        // Spotify ya la aceptó: se queda en la lista hasta que haya pruebas de que se tocó (ver spotifyQueueSync.js).
+        this.spotifyQueueState.queue.push(createSpotifyRequest({ id: ++this.spotifyQueueCounter, track, username }));
         if (this.spotifyQueueState.queue.length > SPOTIFY_QUEUE_INTERNAL_CAP) this.spotifyQueueState.queue.shift();
         this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         this.startSpotifyQueuePolling();
@@ -358,23 +355,26 @@ module.exports = {
         }
 
         const currentUri = live.currently_playing?.uri || null;
-        const upcomingUris = new Set((live.queue || []).map((t) => t.uri));
 
         const before = JSON.stringify([this.spotifyQueueState.nowPlaying?.uri, this.spotifyQueueState.queue.map((s) => [s.uri, s.playing])]);
 
-        this.spotifyQueueState.queue = this.spotifyQueueState.queue
-            .filter((song) => song.uri === currentUri || upcomingUris.has(song.uri))
-            .map((song) => ({ ...song, playing: song.uri === currentUri }));
+        // Qué pedidos siguen pendientes. Una canción que Spotify aceptó pero todavía no muestra en su cola NO se saca
+        // (la lectura tarda en reflejarla): antes se borraba a los pocos segundos y los espectadores la volvían a pedir.
+        const result = reconcileSpotifyRequests(this.spotifyQueueState.queue, live, { emptyReads: this.spotifyEmptyReads || 0 });
+        this.spotifyQueueState.queue = result.requests;
+        this.spotifyEmptyReads = result.emptyReads;
+        for (const { request, reason } of result.dropped) {
+            console.log(`[${this.logId}] [SPOTIFY] "${request.title}" (pedida por @${request.requestedBy}) sale de la lista: ${reason}.`);
+        }
 
         if (currentUri) {
             const track = live.currently_playing;
-            const requested = this.spotifyQueueState.queue.find((s) => s.uri === currentUri);
             this.spotifyQueueState.nowPlaying = {
                 uri: currentUri,
                 title: track.name,
                 artist: (track.artists || []).map((a) => a.name).join(', '),
                 albumArt: track.album?.images?.[track.album.images.length - 1]?.url || '',
-                requestedBy: requested?.requestedBy || null,
+                requestedBy: result.currentRequest?.requestedBy || null,
             };
         } else {
             this.spotifyQueueState.nowPlaying = null;

@@ -216,6 +216,9 @@ function pickEliminationBatch(pool, maxCount) {
     return batch;
 }
 
+// Qué pedidos de !play siguen pendientes según la cola real de Spotify (ver lib/spotifyQueueSync.js).
+const { createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests } = require('./spotifyQueueSync');
+
 module.exports = {
     REVEAL_SELECT_MS,
     REVEAL_RESULT_MS,
@@ -241,6 +244,9 @@ module.exports = {
     SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT,
     SPOTIFY_QUEUE_INTERNAL_CAP,
     SPOTIFY_POLL_INTERVAL_MS,
+    createSpotifyRequest,
+    publicSpotifyRequest,
+    reconcileSpotifyRequests,
     EXTENSIBLE_TICK_MS,
     shuffleArray,
     pickEliminationBatch,

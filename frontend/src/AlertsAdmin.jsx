@@ -7,6 +7,7 @@ import iconSticker from './assets/alert-sticker.png';
 import { backendUrl, authHeaders } from './auth';
 import { AlertVisual } from './Overlay';
 import { alertTiming } from './alertQueue';
+import { quotaSummary } from './alertQuota';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import AlertMonitorSettings from './AlertMonitorSettings';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
@@ -271,6 +272,10 @@ function FormSection({ step, title, hint, children }) {
 // ─────────────────────────────────────────────
 export default function AlertsAdmin({ giftsList, socket, customization, onCustomizeChange, onApplyToAll, monitor }) {
   const [alerts, setAlerts] = useState([]);
+  // Cuántas alertas permite el plan (lo manda el servidor con la lista, ver alertQuota.js).
+  const [quota, setQuota] = useState(null);
+  const [quotaMessage, setQuotaMessage] = useState(null);
+  const quotaView = quotaSummary(quota, alerts.length, quotaMessage);
   const [loading, setLoading] = useState(true);
   const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
@@ -401,7 +406,11 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     try {
       const res = await fetch(`${backendUrl()}/api/alerts`, { headers: authHeaders() });
       const data = await res.json();
-      if (data.success) setAlerts(data.alerts);
+      if (data.success) {
+        setAlerts(data.alerts);
+        setQuota(data.quota || null);
+        setQuotaMessage(data.limitMessage || null);
+      }
     } finally {
       setLoading(false);
     }
@@ -451,6 +460,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   };
 
   const openNew = () => {
+    // Con el cupo lleno no tiene sentido armar una alerta que el servidor va a rechazar al guardar.
+    if (quotaView?.full) return;
     resetForm();
     setNotice('');
     setView('form');
@@ -524,7 +535,11 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       form.append('exitAnim', exitAnim);
       const res = await fetch(`${backendUrl()}/api/alerts`, { method: 'POST', headers: authHeaders(), body: form });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo guardar la alerta');
+      if (!data.success) {
+        // Si el tope se alcanzó desde otro dispositivo, el contador se corrige con lo que dice el servidor.
+        if (data.quota) { setQuota(data.quota); setQuotaMessage(data.error || null); }
+        throw new Error(data.error || 'No se pudo guardar la alerta');
+      }
       const wasEditing = !!editingId;
       resetForm();
       setView('list');
@@ -588,13 +603,38 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🔔 Alertas</p>
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">Mis alertas</h1>
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
+          {quotaView && !loading && (
+            quotaView.unlimited ? (
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mt-2">♾️ {quotaView.label}</p>
+            ) : (
+              <div className="mt-2 max-w-xs">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-1">{quotaView.label}</p>
+                <div
+                  role="progressbar" aria-label="Alertas usadas de tu plan" aria-valuemin={0} aria-valuemax={quotaView.max} aria-valuenow={quotaView.used}
+                  className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-bg-alt)' }}
+                >
+                  <div className="h-full rounded-full" style={{ width: `${quotaView.percent}%`, background: quotaView.level === 'full' ? '#EF4444' : quotaView.level === 'warn' ? '#F59E0B' : 'var(--accent)' }} />
+                </div>
+              </div>
+            )
+          )}
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button type="button" onClick={openNew} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg">
+          <button
+            type="button" onClick={openNew} disabled={!!quotaView?.full}
+            title={quotaView?.full ? 'Llegaste al límite de alertas de tu plan' : undefined}
+            className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             ＋ Nueva alerta
           </button>
         </div>
       </div>
+
+      {quotaView?.full && !loading && (
+        <div role="status" className="w-full max-w-2xl theme-notice theme-notice-warning theme-notice-roomy">
+          {quotaView.message}
+        </div>
+      )}
 
       {notice && (
         <div role="status" className="w-full max-w-2xl theme-notice theme-notice-success theme-notice-roomy">

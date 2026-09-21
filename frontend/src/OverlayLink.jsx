@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { buildOverlayUrl, ensureOverlayKey, loadSession } from './auth';
+import { buildOverlayUrl, ensureOverlayKey, loadSession, rotateOverlayKey } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import ScrollRow from './ScrollRow';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
@@ -180,6 +180,59 @@ function OverlayKeyNotice() {
   );
 }
 
+// Renovar los enlaces: para cuando uno se ve sin querer (una captura de pantalla, una
+// pantalla compartida). Cambia solo el "candado" de los overlays: la clave de licencia
+// y la sesión siguen igual, pero los enlaces anteriores dejan de funcionar.
+function OverlayKeyRotation({ onRotated }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const rotate = async () => {
+    if (!window.confirm('¿Renovar tus enlaces de overlay? Los enlaces actuales dejarán de funcionar ahora mismo y tendrás que pegar los nuevos en OBS o TikTok LIVE Studio. Tu clave de licencia y tu sesión no cambian.')) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const { disconnected } = await rotateOverlayKey();
+      setResult({ ok: true, disconnected });
+      onRotated();
+    } catch (err) {
+      setResult({ ok: false, message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details className="theme-surface w-full max-w-xl p-5">
+      <summary className="cursor-pointer text-sm font-black theme-heading">🔐 ¿Se vio uno de tus enlaces? Renuévalos</summary>
+      <div className="mt-3 text-xs text-gray-400 space-y-2">
+        <p>
+          Cada URL de overlay lleva un código secreto. Si alguien la ve (por ejemplo en una captura o al compartir tu pantalla), puede abrir tus overlays y ver lo que muestran.
+        </p>
+        <p>
+          Al renovar, <span className="font-bold text-white">todos los enlaces actuales dejan de funcionar</span> y se crean enlaces nuevos. Tu clave de licencia y tu sesión no cambian.
+        </p>
+        <p>
+          Después, copia la URL nueva de cada overlay y pégala en tus fuentes de navegador de OBS o TikTok LIVE Studio. Mientras no lo hagas, esos overlays se quedan apagados.
+        </p>
+        <p>
+          Los enlaces muy antiguos, que llevan tu clave de licencia dentro, no cambian con este botón. Si todavía usas alguno, reemplázalo por uno nuevo de esta pantalla y pide al administrador que regenere tu clave.
+        </p>
+        <button type="button" onClick={rotate} disabled={busy} className="theme-btn-danger theme-btn-md font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+          {busy ? 'Renovando...' : 'Renovar mis enlaces'}
+        </button>
+        {result?.ok && (
+          <p role="status" className="theme-notice theme-notice-success">
+            Listo: tus enlaces se renovaron. Copia la URL nueva de cada overlay y pégala en OBS o TikTok LIVE Studio.
+            {result.disconnected > 0 && ` Se apagaron ${result.disconnected} ${result.disconnected === 1 ? 'overlay que estaba abierto' : 'overlays que estaban abiertos'} con el enlace anterior.`}
+          </p>
+        )}
+        {result && !result.ok && <p role="alert" className="theme-notice">{result.message}</p>}
+      </div>
+    </details>
+  );
+}
+
 // Sub-navegación del panel de Overlays — mismo patrón visual que EVENT_TABS
 // de App.jsx (fila horizontal de pestañas), pedido explícito para que la
 // vitrina de enlaces deje de ser una sola página larga y quede agrupada por
@@ -250,6 +303,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   useEffect(() => {
     ensureOverlayKey().then((saved) => { if (saved) setOverlayKeyLoaded((n) => n + 1); }).catch(() => {});
   }, []);
+  const rebuildUrls = () => setOverlayKeyLoaded((n) => n + 1);
 
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
@@ -429,6 +483,8 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             </ol>
           </div>
         )}
+
+        {loadSession()?.overlayKey && <OverlayKeyRotation onRotated={rebuildUrls} />}
       </div>
 
       {customizingId && (

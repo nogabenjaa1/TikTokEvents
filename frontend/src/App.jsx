@@ -1,7 +1,5 @@
-import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, AlertSoundListener } from './Overlay';
-import DiceOverlay from './DiceOverlay';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { AlertSoundListener } from './Overlay';
 import Login from './Login';
 import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
@@ -12,182 +10,31 @@ import useEventSounds from './useEventSounds';
 import AudioUnlockBanner from './AudioUnlockBanner';
 import { addSeenGift, mergeCatalog } from './giftCatalog';
 import { addFeedItem, FEED_MAX } from './feedLogic';
-import SystemHealth from './SystemHealth';
-import ScrollRow from './ScrollRow';
 import TtsChat from './TtsChat';
 import InterstitialAd from './InterstitialAd';
-import logoMark from './assets/logo-mark.png';
-import { ThemedShell, useTheme, accentStyleVars } from './ThemeContext';
-import { isOverlayMode, getOverlayScreen, loadSession, clearSession, buildAuthenticatedSocket, backendUrl, authHeaders, logoutSession } from './auth';
+import { ThemedShell, useTheme } from './ThemeContext';
+import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, logoutSession } from './auth';
+import AppSidebar from './app/AppSidebar';
+import EventsSection from './app/EventsSection';
+import OverlayModeView from './app/OverlayModeView';
+import useGiftCatalog from './app/useGiftCatalog';
+import useSectionRouting from './app/useSectionRouting';
+import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
 
 // Paneles pesados cargados bajo demanda (ver lazyPanel.jsx): el overlay de
 // OBS y el primer render del panel ya no descargan pagos, Downloader,
 // licencias, etc. hasta que se abren.
-const AdminPanel = lazyPanel(() => import('./AdminPanel'));
-const Zubastinis = lazyPanel(() => import('./Zubastinis'));
-const Elimination = lazyPanel(() => import('./Elimination'));
-const Roulette = lazyPanel(() => import('./Roulette'));
-const Extensible = lazyPanel(() => import('./Extensible'));
-const Spotify = lazyPanel(() => import('./Spotify'));
 const ColorSays = lazyPanel(() => import('./Colorsays'));
 const Downloader = lazyPanel(() => import('./Downloader'));
-const Goal = lazyPanel(() => import('./Goal'));
 const LicenseManager = lazyPanel(() => import('./LicenseManager'));
+const AdminSystem = lazyPanel(() => import('./AdminSystem'));
 const Membership = lazyPanel(() => import('./Membership'));
 const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
 const OverlayLink = lazyPanel(() => import('./OverlayLink'));
-const AlertsAdmin = lazyPanel(() => import('./AlertsAdmin'));
 
-// Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
-// TikTok (antes eran botones sueltos de primer nivel) detrás de una
-// subsidebar propia — ver EVENT_TABS. "dashboard" (pedido explícito: página
-// principal con accesos directos, ver Dashboard.jsx) va primero porque es
-// el nuevo destino por default al entrar con sesión.
-const SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard',   icon: '🏠' },
-  { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
-  { id: 'events',  label: 'Eventos',      icon: '🎉' },
-  { id: 'color',   label: 'ColorDice',    icon: '🎲' },
-  { id: 'downloader', label: 'Downloader', icon: '⬇️' },
-  { id: 'theme',   label: 'Tema',         icon: '🎨' },
-  { id: 'membership', label: 'Membresía', icon: '💳' },
-];
 
-// Primer id de cada grupo de EVENT_TABS (juegos | contadores y metas |
-// interacción con el chat, mismo orden que el Dashboard) -- delante de cada
-// uno va un separador fino en la subnavegación.
-const EVENT_TAB_GROUP_STARTS = ['extensible', 'spotify'];
-
-// Botón del rail principal (pedido explícito: navegación profesional). En
-// mobile es una pastilla algo más ancha que alta para que entre el nombre
-// completo sin apretarse con el vecino; en desktop, un cuadro de ancho fijo.
-const NAV_BTN = 'theme-nav-btn min-w-[64px] md:w-[68px] h-[52px] px-2 md:px-1 rounded-[14px] border flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]';
-const NAV_LABEL = 'text-[9px] font-bold uppercase tracking-wide text-center leading-tight whitespace-nowrap';
-
-// Pestañas dentro de la sección "TikTokEvents" — cada una es uno de los
-// módulos que ya existían como botón de primer nivel.
-const EVENT_TABS = [
-  { id: 'king',     label: 'Rey del Trono', icon: '👑' },
-  { id: 'zub',      label: 'Zubastinis',    icon: '🏆' },
-  { id: 'elim',     label: 'Eliminación',   icon: '💀' },
-  { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
-  { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
-  { id: 'goal',     label: 'Objetivo',      icon: '🎯' },
-  { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
-  { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
-  { id: 'tts',      label: 'TTS',           icon: '🔊' },
-];
-
-// Pedido explicito: URLs reales para cada sección (benjaapis.dev/overlays,
-// /membership, /tiktokevents/kingthrone, etc.) en vez de todo colgado del
-// estado de React sin reflejo en la barra de direcciones -- así se puede
-// compartir/guardar un enlace directo a una sección y el botón
-// atrás/adelante del navegador funciona. A propósito NO usa <Routes>/<Route>
-// de react-router (el render de acá abajo sigue siendo 100% condicional,
-// como siempre) -- solo se usa el router para LEER/ESCRIBIR el pathname y
-// mantenerlo sincronizado con `sidebarMode`/`eventsTab`, sin tocar cómo se
-// decide qué mostrar. OJO: esto NUNCA debe tocar el modo overlay (la URL
-// que ya está pegada en OBS de streamers reales, ?overlay=true&screen=...)
-// -- por eso el efecto de sincronización de más abajo corta temprano si
-// `overlayMode` es true, y esta sección de rutas ni se evalúa en ese caso
-// (ver el `if (overlayMode) return ...` bien arriba en el componente).
-const SECTION_PATHS = {
-  dashboard: 'dashboard',
-  overlay: 'overlays',
-  events: 'tiktokevents',
-  color: 'colordice',
-  downloader: 'downloader',
-  theme: 'theme',
-  membership: 'membership',
-  licenses: 'licenses',
-};
-const PATH_TO_SECTION = Object.fromEntries(Object.entries(SECTION_PATHS).map(([id, path]) => [path, id]));
-
-const EVENT_TAB_PATHS = {
-  king: 'kingthrone',
-  zub: 'zubastinis',
-  elim: 'elimination',
-  roulette: 'roulette',
-  extensible: 'extensible',
-  goal: 'objetivo',
-  spotify: 'spotify',
-  alerts: 'alerts',
-  tts: 'tts',
-};
-const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PATHS).map(([id, path]) => [path, id]));
-
-// Deduce sección + pestaña de TikTokEvents (si aplica) a partir del
-// pathname actual -- se usa tanto para el estado INICIAL (sin flash del
-// contenido por defecto antes de corregirse, ver el useState de más abajo)
-// como para reaccionar a atrás/adelante del navegador. Cualquier ruta
-// desconocida (o la raíz "/") cae siempre en 'dashboard' -- es la página
-// principal del sitio, con o sin sesión (Dashboard.jsx ya sabe mostrar una
-// versión reducida para visitantes sin cuenta).
-function sectionFromPath(pathname) {
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments.length === 0) return { section: 'dashboard', tab: null };
-  const section = PATH_TO_SECTION[segments[0]];
-  if (!section) return { section: 'dashboard', tab: null };
-  const tab = section === 'events' ? (PATH_TO_EVENT_TAB[segments[1]] || 'king') : null;
-  return { section, tab };
-}
-
-// Título de pestaña dinámico (pedido explícito: "que sea visible siempre"
-// en qué sección está) -- ver el useEffect que lo aplica más abajo. La
-// marca del sitio es BenjaApis; "TikTokEvents" se conserva solo como
-// prefijo dentro de esa sección puntual (el nombre de la funcionalidad en
-// sí, no el nombre del producto -- pedido explícito de mantenerlo así).
-function sectionTitle(sidebarMode, eventsTab) {
-  if (sidebarMode === 'events') {
-    const tab = EVENT_TABS.find((t) => t.id === eventsTab);
-    return tab ? `TikTokEvents · ${tab.label}` : 'TikTokEvents';
-  }
-  const section = SECTIONS.find((s) => s.id === sidebarMode);
-  return section ? `BenjaApis · ${section.label}` : 'BenjaApis';
-}
-
-// Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
-// puramente cosmético/local). Todo lo demás requiere sesión — sin ella se
-// muestra el login embebido con la opción de prueba gratis en su lugar.
-const FREE_MODES = ['overlay', 'color', 'theme'];
-
-// Pestañas de TikTokEvents que tienen representación en el overlay de OBS
-// (TTS no la tiene: lee el chat en el navegador del streamer, sin overlay).
-const OVERLAY_APPS = ['king', 'zub', 'elim', 'roulette'];
-
-// Opción por defecto para cuando no quieren un regalo Insta-Win
-const NO_INSTA_WIN = {
-  name: 'Ninguno',
-  coins: 0,
-  icon: 'https://cdn-icons-png.flaticon.com/512/1828/1828843.png',
-};
-
-// La tarjeta del overlay mide 380x700 fijo (pensada para el recorte de OBS)
-// — se achica a este factor para que entre en un celular sin desbordar.
-const OVERLAY_PREVIEW_SCALE = 0.75;
-
-// Vista previa del overlay embebida, solo mobile: desde el celular no se
-// puede tener a la vez el panel y una ventana aparte de OBS para chequear
-// cómo se ve en vivo (a diferencia de desktop, donde el streamer sí puede
-// tener las dos ventanas abiertas), así que se resuelve deslizando hacia
-// abajo del panel de King/Zub/Elim. Reusa el mismo Overlay.jsx que corre en
-// OBS, con el `activeApp` REAL (lo que de verdad está en el aire) — nunca
-// forzado al modo que se esté mirando, porque la idea es confirmar qué ve
-// la audiencia ahora mismo, no simular un modo que no está activo.
-function MobileOverlayPreview({ state, zubState, elimState, rouletteState, activeApp, prize, theme, customization }) {
-  return (
-    <div className="md:hidden flex-shrink-0 border-t flex flex-col items-center gap-3 py-5" style={{ borderColor: 'var(--surface-border-color)' }}>
-      <p className="theme-label text-[10px] uppercase tracking-widest font-semibold">Vista previa del overlay</p>
-      <div style={{ width: 380 * OVERLAY_PREVIEW_SCALE, height: 700 * OVERLAY_PREVIEW_SCALE, overflow: 'hidden' }}>
-        <div style={{ width: 380, height: 700, transform: `scale(${OVERLAY_PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-          <Overlay embedded state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={theme} customization={customization} />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const overlayMode = isOverlayMode();
@@ -263,8 +110,6 @@ export default function App() {
   // como TTS) porque acá el permiso lo tiene que aplicar el SERVIDOR antes
   // de llamar a la API real de Spotify, no el navegador de cada espectador.
   const [spotifySettingsState, setSpotifySettingsState] = useState({ enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: 8 });
-  const location = useLocation();
-  const navigate = useNavigate();
 
   // Arranca en la sección que indique la URL (pedido explícito de URLs
   // reales, ver SECTION_PATHS/sectionFromPath más arriba) -- sin sesión y
@@ -370,7 +215,6 @@ export default function App() {
   const [username, setUsername]                 = useState('');
   const [connectionStatus, setConnectionStatus]  = useState('idle');
   const [connectionError, setConnectionError]    = useState('');
-  const [giftsList, setGiftsList]                = useState([]);
   // El catálogo es lo que TikTok devuelve (`giftsList`) más los regalos que
   // van llegando en el directo y que su lista no traía (`seenGifts`, ver
   // giftCatalog.js). `allGifts` es lo que ven todos los selectores. No hay
@@ -379,7 +223,6 @@ export default function App() {
   // Actividad en vivo del Dashboard (regalos, seguidores, stickers): el servidor
   // manda un resumen al conectar y luego cada evento (ver LiveFeed.jsx).
   const [feed, setFeed]                           = useState([]);
-  const allGifts = useMemo(() => mergeCatalog(giftsList, seenGifts), [giftsList, seenGifts]);
   // Versión anterior: regalos escritos a mano en este navegador. Ya no existen.
   useEffect(() => { try { localStorage.removeItem('tkc_extra_gifts'); } catch { /* sin almacenamiento */ } }, []);
   // Sonido en ESTA pestaña (ver alertMonitor.js y overlayAudio.js): el panel
@@ -410,76 +253,7 @@ export default function App() {
   const [ttsEngine, setTtsEngine]              = useState('idle');
   const [serverRestarted, setServerRestarted]  = useState(false);
   const bootIdRef = useRef(null);
-  // ── URLs reales para cada sección (pedido explícito) ──
-  // sidebarMode/eventsTab siguen siendo el estado de siempre (todo el
-  // render de más abajo sigue leyendo esas dos variables tal cual, sin
-  // tocar ningún `setSidebarMode(...)`/`setEventsTab(...)` existente) --
-  // estos dos efectos son los ÚNICOS que hablan con el router, en las dos
-  // direcciones:
-  //  1) estado -> URL: cada vez que cambian, empuja el pathname
-  //     correspondiente (si no es ya ese) para que la barra de direcciones
-  //     siempre refleje dónde está el streamer.
-  //  2) URL -> estado: si el pathname cambia por afuera (atrás/adelante del
-  //     navegador, un enlace externo), corrige sidebarMode/eventsTab para
-  //     que coincidan.
-  // Nunca se pisan en bucle: si ya coinciden, cada lado no hace nada (React
-  // ya evita el re-render si el estado nuevo es idéntico al viejo). Se
-  // corta temprano en modo overlay -- esa URL (?overlay=true&screen=...) es
-  // la que ya está pegada en OBS de streamers reales, no se toca para nada.
-  useEffect(() => {
-    if (overlayMode) return;
-    const targetPath = sidebarMode === 'events'
-      ? `/${SECTION_PATHS.events}/${EVENT_TAB_PATHS[eventsTab] || EVENT_TAB_PATHS.king}`
-      : `/${SECTION_PATHS[sidebarMode] || SECTION_PATHS.dashboard}`;
-    if (location.pathname !== targetPath) navigate(targetPath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayMode, sidebarMode, eventsTab]);
-
-  // Bug real reportado ("conectar Spotify me manda al Dashboard y me apaga
-  // el TTS"): la excepción de cameFromSpotifyOAuth de más arriba deja el
-  // ESTADO inicial bien (events/spotify), pero el efecto de "estado -> URL"
-  // de arriba todavía no alcanzó a actualizar `location.pathname` (el
-  // navigate() de React Router recién se refleja en un re-render
-  // posterior) cuando ESTE efecto corre en la misma tanda -- lee el
-  // pathname viejo ("/"), lo traduce a 'dashboard' (la ruta desconocida
-  // cae ahí, ver sectionFromPath) y pisa el estado recién puesto antes de
-  // que el navigate() de arriba llegue a corregir la URL.
-  // La condición de acá abajo salta ese instante puntual -- a propósito
-  // compara `location.pathname` CON `location.search` (los dos de
-  // useLocation, arriba), nunca mezclado con `window.location` directo:
-  // `navigate()` llama a history.pushState de forma SÍNCRONA, así que
-  // `window.location` ya refleja la URL nueva un instante antes de que
-  // React vuelva a renderizar con el `location` de React Router
-  // actualizado -- comparar uno ya corregido contra el otro todavía viejo
-  // hacía que la condición nunca se cumpliera de verdad (bug real
-  // encontrado armando este mismo fix). Atrás/adelante del navegador y
-  // cualquier otra navegación real siguen andando normal -- esa
-  // combinación puntual de pathname+query nunca vuelve a darse después de
-  // la corrección.
-  useEffect(() => {
-    if (overlayMode) return;
-    if (location.pathname === '/' && location.search.includes('spotify=')) return;
-    const { section, tab } = sectionFromPath(location.pathname);
-    setSidebarMode(section);
-    if (section === 'events' && tab) setEventsTab(tab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayMode, location.pathname]);
-
-  // La subnavegación de eventos se desplaza en pantallas angostas: al
-  // cambiar de pestaña (o llegar por un enlace directo) la activa se centra
-  // para que nunca quede escondida fuera de la vista.
-  useEffect(() => {
-    if (overlayMode || sidebarMode !== 'events') return;
-    document.querySelector('[data-events-tab-active="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
-  }, [overlayMode, sidebarMode, eventsTab]);
-
-  // Título de la pestaña del navegador (pedido explícito: que siempre sea
-  // visible en qué sección está, no un "TikTokEvents" fijo sin importar
-  // dónde navegue).
-  useEffect(() => {
-    if (overlayMode) return;
-    document.title = sectionTitle(sidebarMode, eventsTab);
-  }, [overlayMode, sidebarMode, eventsTab]);
+  useSectionRouting({ overlayMode, sidebarMode, setSidebarMode, eventsTab, setEventsTab });
 
   // Control remoto del TTS para el shortcut del Dashboard (ver
   // TtsChat.jsx/Dashboard.jsx) -- `ttsEnabled` es solo para MOSTRAR el
@@ -832,30 +606,8 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [username, socket, overlayMode]);
 
-  const licenseKey = session?.token || null;
-  // El catálogo vive solo en memoria y pertenece a la conexión LIVE actual.
-  // Cancelar evita que una respuesta vieja reemplace el catálogo de otro usuario.
-  useEffect(() => {
-    setGiftsList([]);
-    if (!licenseKey || !socketConnected || overlayMode || connectionStatus !== 'connected' || !username.trim()) return;
-    const controller = new AbortController();
-    let retry;
-    const load = async () => {
-      try {
-        const response = await fetch(`${backendUrl()}/api/setup/${encodeURIComponent(username.trim().replace(/^@+/, ''))}`, {
-          headers: authHeaders(), cache: 'no-store', signal: controller.signal,
-        });
-        const data = await response.json();
-        if (controller.signal.aborted) return;
-        if (!data.success || !data.gifts?.length) throw new Error('Catálogo no disponible');
-        setGiftsList([NO_INSTA_WIN, ...data.gifts]);
-      } catch {
-        if (!controller.signal.aborted) retry = setTimeout(load, 5000);
-      }
-    };
-    load();
-    return () => { controller.abort(); clearTimeout(retry); };
-  }, [username, connectionStatus, overlayMode, licenseKey, socketConnected]);
+  const giftsList = useGiftCatalog({ session, socketConnected, overlayMode, connectionStatus, username });
+  const allGifts = useMemo(() => mergeCatalog(giftsList, seenGifts), [giftsList, seenGifts]);
 
   // Avisos del servidor: si hay un overlay de alertas abierto, y los regalos que
   // van llegando en el directo (que la lista que bajó TikTok puede no traer):
@@ -878,96 +630,16 @@ export default function App() {
     };
   }, [socket, overlayMode]);
 
-  // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
-  // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
-  // debe quedar ningún fondo sólido detrás del recuadro además del que
-  // elija la personalización de cada uno (ver overlayCustomization.js).
-  // `body` tiene un color de fondo fijo (ver index.css) que de otra forma
-  // se colaría por fuera del recuadro/fila — se anula solo mientras el
-  // overlay activo es uno de estos, nunca en "juegos" (ahí el fondo
-  // temático de página SÍ es parte del diseño de siempre).
-  // BUG corregido (pedido explícito): "colors" faltaba en esta lista —
-  // Extensible ya lo tenía pero Colores, aunque comparte exactamente el
-  // mismo patrón de tarjeta única (`theme-die-frame` de 960x260), se había
-  // quedado afuera. Sin esto, el `.themed-app` que envuelve a DiceOverlay
-  // seguía pintando su fondo de página sólido por detrás/alrededor del
-  // marco, así que "transparente" en la personalización nunca se veía
-  // realmente transparente en OBS.
-  useEffect(() => {
-    if (!overlayMode) return;
-    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors', 'goal', 'chat'].includes(getOverlayScreen());
-    document.body.classList.toggle('tkc-overlay-transparent', transparent);
-    return () => document.body.classList.remove('tkc-overlay-transparent');
-  }, [overlayMode]);
 
-  // ✅ ADIÓS React.lazy y Suspense. Ahora el Overlay no se destruye con cada update.
   if (overlayMode) {
-    if (!socket) {
-      return (
-        <div className="min-h-screen bg-[#05030A] text-red-400 flex items-center justify-center font-sans text-sm">
-          Falta la clave de licencia en la URL del overlay (?overlay=true&amp;key=...)
-        </div>
-      );
-    }
-    const screen = getOverlayScreen();
-    if (screen === 'colors') {
-      return <DiceOverlay diceState={diceState} theme={overlayTheme} customize={overlayCustomization.colors} />;
-    }
-    // Sin `grid place-items-center` a propósito — el recuadro (380x700
-    // fijo, ver Overlay.jsx) queda anclado arriba con `h-screen flex` en
-    // vez de centrado, para que agregar o perder una fila del ranking
-    // nunca lo reubique en la pantalla (pedido explícito: "posición
-    // estática").
-    if (screen === 'taptap') {
-      return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <TopTapTapOverlay state={tapTapState} customize={overlayCustomization.taptap} />
-        </div>
-      );
-    }
-    if (screen === 'gifter') {
-      return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <TopGifterOverlay state={gifterState} customize={overlayCustomization.gifter} />
-        </div>
-      );
-    }
-    if (screen === 'musicqueue') {
-      return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <SpotifyQueueOverlay state={spotifyQueueState} customize={overlayCustomization.musicqueue} />
-        </div>
-      );
-    }
-    if (screen === 'alerts') {
-      return (
-        <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <AlertOverlay socket={socket} customize={overlayCustomization.alerts} />
-        </div>
-      );
-    }
-    if (screen === 'extensible') {
-      return (
-        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <ExtensibleOverlay state={extensibleState} customize={overlayCustomization.extensible} />
-        </div>
-      );
-    }
-    if (screen === 'goal') {
-      return (
-        <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <GoalOverlay state={goalState} customize={overlayCustomization.goal} />
-        </div>
-      );
-    }
-    if (screen === 'chat') {
-      return (
-        <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-          <ChatOverlay socket={socket} viewerCount={viewerCount} customize={overlayCustomization.chat} />
-        </div>
-      );
-    }
-    return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />;
+    return (
+      <OverlayModeView
+        socket={socket} state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize}
+        overlayTheme={overlayTheme} overlayCustomization={overlayCustomization} diceState={diceState}
+        tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
+        extensibleState={extensibleState} goalState={goalState} viewerCount={viewerCount}
+      />
+    );
   }
 
   const logout = () => {
@@ -1008,6 +680,13 @@ export default function App() {
     });
   };
 
+  // Cambio de pestaña dentro de TikTokEvents: además del estado, avisamos al backend que cambiamos de modo (solo si
+  // ese modo tiene overlay y hay socket — sin sesión no hay nada que avisar).
+  const selectEventsTab = (tabId) => {
+    setEventsTab(tabId);
+    if (socket && OVERLAY_APPS.includes(tabId)) socket.emit('set_active_app', tabId);
+  };
+
   // Shortcut del Dashboard: ir directo a una pestaña de TikTokEvents --
   // misma lógica que ya usan los botones de la subsidebar (ver EVENT_TABS
   // más abajo, `set_active_app` solo si esa pestaña tiene overlay propio).
@@ -1036,73 +715,11 @@ export default function App() {
       {/* El sonido de alertas y eventos lo pone este panel: hay que avisar si el navegador aún lo bloquea. */}
       <AudioUnlockBanner enabled={soundEnabled} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
-      {/* Mobile: rail horizontal arriba, scrolleable, en el flujo normal.
-          Desktop (md:): el rail vertical fijo de siempre, sin cambios. */}
-      <aside aria-label="Navegación principal" className="theme-sidebar tkc-mobile-flush flex flex-row md:flex-col items-center gap-2 w-full md:w-[84px] min-h-0 md:min-h-screen py-2 px-2 md:py-4 md:px-0 flex-shrink-0 overflow-x-auto md:overflow-visible z-50 tkc-no-scrollbar">
-        {/* Logo + nombre de marca — chico y sin botón/borde a propósito
-            (pedido explícito: "visible pero que no abrume"), primero en la
-            fila/columna para que quede como una cabecera sutil del rail de
-            navegación, no como un botón más. El nombre va acá porque este
-            rail es lo único presente en TODOS los paneles (pedido
-            explícito: "asegurate que benjaapis salga en todos los
-            paneles"). */}
-        <div className="flex flex-col items-center gap-0.5 flex-shrink-0 md:mb-1">
-          <img src={logoMark} alt="" className="h-7 md:h-8 w-auto" />
-          <span className="text-[8px] font-black uppercase tracking-wider text-gray-500 text-center leading-none">BenjaApis</span>
-        </div>
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setSidebarMode(s.id)}
-            aria-current={sidebarMode === s.id ? 'page' : undefined}
-            title={s.id === 'events' ? 'TikTokEvents: juegos, alertas, TTS y más' : s.label}
-            className={[NAV_BTN, sidebarMode === s.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent'].join(' ')}
-          >
-            <span className="text-xl leading-none" aria-hidden="true">{s.icon}</span>
-            <span className={[NAV_LABEL, sidebarMode === s.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
-              {s.label}
-            </span>
-          </button>
-        ))}
-
-        {session?.isAdmin && (
-          <button
-            type="button"
-            onClick={() => setSidebarMode('licenses')}
-            title="Administrar licencias"
-            aria-current={sidebarMode === 'licenses' ? 'page' : undefined}
-            className={[NAV_BTN, sidebarMode === 'licenses' ? 'theme-nav-btn-active' : 'bg-transparent border-transparent'].join(' ')}
-          >
-            <span className="text-xl leading-none" aria-hidden="true">🔑</span>
-            <span className={[NAV_LABEL, sidebarMode === 'licenses' ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
-              Licencias
-            </span>
-          </button>
-        )}
-
-        <div className="hidden md:block flex-1" />
-        {!session && (
-          <button type="button" onClick={() => goToEventTab('king')} title="Inicia sesión o prueba gratis"
-            className={[NAV_BTN, 'theme-btn-primary'].join(' ')}>
-            <span className="text-xl leading-none" aria-hidden="true">🔑</span>
-            <span className={NAV_LABEL}>Entrar</span>
-          </button>
-        )}
-        {session && (
-          <button type="button"
-            onClick={() => {
-              const gameRunning = state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive;
-              if (gameRunning && !window.confirm('Hay un juego activo. Si cierras sesión se detendrá. ¿Cerrar sesión de todos modos?')) return;
-              logout();
-            }}
-            title="Cerrar sesión"
-            className="min-w-[64px] md:w-[68px] h-[52px] px-2 md:px-1 rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-            <span className="text-xl leading-none" aria-hidden="true">🚪</span>
-            <span className={[NAV_LABEL, 'text-gray-500'].join(' ')}>Salir</span>
-          </button>
-        )}
-      </aside>
+      <AppSidebar
+        sidebarMode={sidebarMode} onNavigate={setSidebarMode} session={session}
+        gameRunning={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
+        onEnter={() => goToEventTab('king')} onLogout={logout}
+      />
 
       <main id="contenido-principal" tabIndex={-1} className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden focus:outline-none">
         {/* Pedido explicito: página principal con accesos directos. Sin
@@ -1134,153 +751,18 @@ export default function App() {
         )}
 
         {sidebarMode === 'events' && (
-          <>
-            {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
-                entre igual de bien en mobile que el rail principal. */}
-            <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-            <ScrollRow label="Eventos de TikTok">
-              {EVENT_TABS.map((t) => (
-                <Fragment key={t.id}>
-                {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
-                <button
-                  type="button"
-                  aria-current={eventsTab === t.id ? 'page' : undefined}
-                  data-events-tab-active={eventsTab === t.id ? 'true' : undefined}
-                  onClick={() => {
-                    setEventsTab(t.id);
-                    // Avisamos al backend que cambiamos de modo (solo si ese
-                    // modo tiene overlay y hay socket — sin sesión no hay
-                    // nada que avisar)
-                    if (socket && OVERLAY_APPS.includes(t.id)) socket.emit('set_active_app', t.id);
-                  }}
-                  className={[
-                    'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
-                    eventsTab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
-                  ].join(' ')}
-                >
-                  <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
-                  <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
-                    {t.label}
-                  </span>
-                </button>
-                </Fragment>
-              ))}
-            </ScrollRow>
-              <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />
-            </div>
-
-            {eventsTab === 'king' && (
-              needsAccess('king') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Rey del Trono." />
-              ) : (
-                <>
-                  <AdminPanel
-                    state={state} socket={socket}
-                    username={username} connectionStatus={connectionStatus} giftsList={allGifts}
-                    prize={prize}
-                  />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
-                </>
-              )
-            )}
-            {eventsTab === 'zub' && (
-              needsAccess('zub') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Zubastinis." />
-              ) : (
-                <>
-                  <Zubastinis
-                    state={zubState} socket={socket}
-                    username={username} connectionStatus={connectionStatus}
-                    prize={prize}
-                  />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
-                </>
-              )
-            )}
-            {eventsTab === 'elim' && (
-              needsAccess('elim') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Eliminación." />
-              ) : (
-                <>
-                  <Elimination
-                    state={elimState} socket={socket}
-                    username={username} connectionStatus={connectionStatus} giftsList={allGifts}
-                    prize={prize}
-                  />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
-                </>
-              )
-            )}
-            {eventsTab === 'roulette' && (
-              needsAccess('roulette') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Ruleta." />
-              ) : (
-                <>
-                  <Roulette
-                    state={rouletteState} socket={socket}
-                    username={username} connectionStatus={connectionStatus} giftsList={allGifts}
-                    prize={prize}
-                  />
-                  <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
-                </>
-              )
-            )}
-            {eventsTab === 'extensible' && (
-              needsAccess('extensible') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Modo Extensible." />
-              ) : (
-                <Extensible
-                  state={extensibleState} socket={socket}
-                  username={username} connectionStatus={connectionStatus}
-                />
-              )
-            )}
-            {eventsTab === 'goal' && (
-              needsAccess('goal') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar el Objetivo." />
-              ) : (
-                <Goal state={goalState} socket={socket} username={username} connectionStatus={connectionStatus} />
-              )
-            )}
-            {eventsTab === 'spotify' && (
-              needsAccess('spotify') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Spotify." />
-              ) : (
-                <Spotify
-                  socket={socket} queueState={spotifyQueueState} settingsState={spotifySettingsState}
-                  oauthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
-                  onWantsMembership={() => setSidebarMode('membership')}
-                />
-              )
-            )}
-            {/* Pedido explicito: el panel de configuración de Alertas se
-                muda de "Overlays" (que ahora solo se queda con la URL/
-                ayuda de OBS, ver OverlayLink.jsx) a TikTokEvents, junto al
-                resto de los módulos que sí edita el streamer. */}
-            {eventsTab === 'alerts' && (
-              needsAccess('alerts') ? (
-                <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar Alertas." />
-              ) : (
-                <AlertsAdmin
-                  giftsList={allGifts} socket={socket}
-                  customization={panelOverlayDraft.alerts}
-                  onCustomizeChange={(entry) => updateOverlayCustomization('alerts', entry)}
-                  onApplyToAll={() => applyOverlayCustomizationToAll('alerts')}
-                  monitor={{
-                    enabled: soundEnabled, onEnabledChange: setSoundEnabled, overlayConnected: alertsOverlayConnected,
-                    sinkId: monitorSink.id, sinkLabel: monitorSink.label, onSinkChange: setMonitorSink,
-                  }}
-                />
-              )
-            )}
-            {/* TTS también requiere sesión — se muestra el login embebido en
-                su lugar sin desmontar TtsChat (ver comentario de "visible"
-                más abajo, fuera de esta sección para que no se desmonte al
-                cambiar de pestaña). */}
-            {eventsTab === 'tts' && needsAccess('tts') && (
-              <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar TTS." />
-            )}
-          </>
+          <EventsSection
+            eventsTab={eventsTab} onSelectTab={selectEventsTab} socketConnected={socketConnected} connectionStatus={connectionStatus}
+            ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
+            socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
+            overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
+            state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} extensibleState={extensibleState} goalState={goalState}
+            spotifyQueueState={spotifyQueueState} spotifySettingsState={spotifySettingsState}
+            spotifyOAuthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
+            panelOverlayDraft={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
+            soundEnabled={soundEnabled} onSoundEnabledChange={setSoundEnabled} alertsOverlayConnected={alertsOverlayConnected}
+            monitorSink={monitorSink} onMonitorSinkChange={setMonitorSink}
+          />
         )}
         {/* Permanece montado siempre (no solo dentro de "events") para que la
             lectura activa no se interrumpa si el streamer se va a otra
@@ -1327,6 +809,7 @@ export default function App() {
           <Membership session={session} onSessionUpdate={setSession} />
         )}
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager onSessionInvalid={handleSessionInvalid} />}
+        {sidebarMode === 'system' && session?.isAdmin && <AdminSystem onSessionInvalid={handleSessionInvalid} />}
       </main>
     </div>
 

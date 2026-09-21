@@ -27,6 +27,15 @@ body {
   font-family: var(--font-sans);
   user-select: none;
 }
+/* La página no se puede seleccionar (se siente como una app), pero lo que la
+   persona necesita copiar a mano sí: su clave, la URL de un overlay, un mensaje
+   de error. Sin esto, cuando el botón de copiar falla ("selecciona la URL y
+   cópiala a mano") no había nada que seleccionar. Va en la capa base para que
+   una utilidad como `select-all` (que selecciona una clave entera con un clic)
+   siga ganando: las reglas sin capa siempre le ganan a las de Tailwind. */
+@layer base {
+  code, pre, .theme-notice, [role="alert"], [role="status"] { user-select: text; }
+}
 
 /* Ocultar flechas nativas de inputs numéricos (no se pueden themear: los
    navegadores no exponen sus colores a CSS) — cuando un input numérico

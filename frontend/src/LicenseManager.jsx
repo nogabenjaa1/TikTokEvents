@@ -456,7 +456,7 @@ export default function LicenseManager({ onSessionInvalid }) {
             <p className="text-[11px] text-gray-400 mb-2">La clave anterior ya no sirve: hay que entregarle esta y volver a pegar la URL de sus overlays en OBS.</p>
           )}
           <div className="flex items-center gap-2">
-            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{newKey.key}</code>
+            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{newKey.key}</code>
             <button onClick={copyKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
               {copied ? '✅ Copiado' : 'Copiar'}
             </button>

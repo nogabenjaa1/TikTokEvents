@@ -65,7 +65,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
       ) : (
         <>
           <div className="flex items-center gap-2 mb-1">
-            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{revealed ? url : maskOverlayUrl(url)}</code>
+            <code className={`theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all${revealed ? ' select-all' : ''}`}>{revealed ? url : maskOverlayUrl(url)}</code>
             <button type="button" onClick={() => setRevealed((r) => !r)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0" aria-pressed={revealed}>
               {revealed ? '🙈 Ocultar' : '👁️ Mostrar'}
             </button>

@@ -400,7 +400,7 @@ export default function Membership({ session, onSessionUpdate }) {
             Tu plan nuevo necesitó una clave nueva. Cópiala y reemplaza la key en la URL del overlay que tengas guardada en OBS.
           </p>
           <div className="flex items-center gap-2">
-            <code className="theme-input flex-1 px-3 py-2 text-xs break-all">{revealedKey}</code>
+            <code className="theme-input flex-1 px-3 py-2 text-xs break-all select-all">{revealedKey}</code>
             <button type="button" onClick={copyRevealedKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
               {keyCopied ? 'Copiado' : 'Copiar'}
             </button>
@@ -461,7 +461,7 @@ export default function Membership({ session, onSessionUpdate }) {
                 plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
               </p>
               <div className="flex items-center gap-2">
-                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all">{trialResult.key}</code>
+                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{trialResult.key}</code>
                 <button type="button" onClick={copyTrialKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
                   {trialCopied ? 'Copiado' : 'Copiar'}
                 </button>

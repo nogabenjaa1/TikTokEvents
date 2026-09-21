@@ -139,13 +139,18 @@ async function resolveFromRawKey(key) {
 // iniciar sesión como el streamer. Este token, en cambio, solo abre el socket
 // del overlay —que únicamente recibe— y no sirve para iniciar sesión. Se
 // deriva de la licencia y de su clave actual, así que regenerar la clave (o
-// una compra que la rota) invalida los enlaces anteriores, y no hace falta
-// guardar nada en la base de datos.
+// una compra que la rota) invalida los enlaces anteriores. El streamer también
+// puede renovar SOLO sus enlaces de overlay sin tocar su clave: cada renovación
+// suma uno a `overlay_epoch` (ver /api/auth/rotate-overlay-key).
 const OVERLAY_TOKEN_PREFIX = 'ovl.';
 const OVERLAY_TOKEN_RE = /^ovl\.([\w-]{1,64})\.([A-Za-z0-9_-]{32})$/;
 
 function overlayTokenFor(row) {
-    const mac = crypto.createHmac('sha256', KEY_HASH_SECRET).update(`overlay:${row.id}:${row.key_hash}`).digest('base64url').slice(0, 32);
+    // Época 0 (nunca renovado) no la incluye: así los enlaces que ya se copiaron a
+    // OBS antes de existir la renovación siguen valiendo.
+    const epoch = Number(row.overlay_epoch) || 0;
+    const material = epoch > 0 ? `overlay:${row.id}:${row.key_hash}:${epoch}` : `overlay:${row.id}:${row.key_hash}`;
+    const mac = crypto.createHmac('sha256', KEY_HASH_SECRET).update(material).digest('base64url').slice(0, 32);
     return `${OVERLAY_TOKEN_PREFIX}${row.id}.${mac}`;
 }
 

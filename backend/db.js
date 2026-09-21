@@ -353,7 +353,64 @@ const ready = pool.query(`
       changed_by TEXT NOT NULL,
       changed_at BIGINT NOT NULL
     )
-  `));
+  `))
+  // Reportes de errores (ver lib/errorReports.js): una fila por "huella", con un
+  // contador de cuántas veces ocurrió, en vez de una fila por ocurrencia.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS error_reports (
+      id TEXT PRIMARY KEY,
+      fingerprint TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      message TEXT NOT NULL,
+      stack TEXT,
+      context TEXT,
+      user_agent TEXT,
+      license_id TEXT,
+      occurrences INTEGER NOT NULL DEFAULT 1,
+      first_seen BIGINT NOT NULL,
+      last_seen BIGINT NOT NULL
+    )
+  `))
+  .then(() => pool.query(`CREATE INDEX IF NOT EXISTS idx_error_reports_last_seen ON error_reports(last_seen)`))
+  // Historial de lo que hace el admin (crear, editar, extender, revocar y eliminar
+  // licencias, cambios de precio, limpiezas...). Nunca guarda claves.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit (
+      id TEXT PRIMARY KEY,
+      at BIGINT NOT NULL,
+      admin_username TEXT NOT NULL,
+      admin_license_id TEXT,
+      action TEXT NOT NULL,
+      target_license_id TEXT,
+      target_label TEXT,
+      details TEXT
+    )
+  `))
+  .then(() => pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_audit_at ON admin_audit(at)`))
+  // Pagos que se cobraron y no se pudieron aplicar a la licencia: antes solo
+  // quedaba una línea en el registro del servidor. Una fila por pago.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_failures (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_payment_id TEXT NOT NULL,
+      license_id TEXT,
+      plan_type TEXT,
+      dice_tier TEXT,
+      spotify_addon BOOLEAN NOT NULL DEFAULT FALSE,
+      amount_cents INTEGER NOT NULL DEFAULT 0,
+      reason TEXT NOT NULL,
+      error TEXT,
+      created_at BIGINT NOT NULL,
+      resolved_at BIGINT,
+      resolved_by TEXT,
+      UNIQUE (provider, provider_payment_id)
+    )
+  `))
+  // Cada vez que el streamer renueva sus enlaces de overlay se suma uno: el token
+  // del overlay lo incluye y los anteriores dejan de servir (ver auth.overlayTokenFor).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_epoch INTEGER NOT NULL DEFAULT 0`));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
 async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null, spotifyAddon = false }) {
@@ -937,6 +994,190 @@ async function getPricingHistory(limit = 50) {
     return rows;
 }
 
+// ── Salud ──────────────────────────────────────────────────
+async function ping() {
+    await ready;
+    await pool.query('SELECT 1');
+}
+
+// ── Reportes de errores (ver lib/errorReports.js) ──────────
+// Si la huella ya existe se suma al contador; si no, se crea. Se hace en dos
+// pasos (y no con ON CONFLICT) para que otro reporte igual que entre a la vez no
+// rompa nada: el que pierde la carrera vuelve a sumar.
+async function upsertErrorReport({ fingerprint, source, kind, message, stack, context, userAgent, licenseId, increment = 1, at }) {
+    await ready;
+    const bump = () => pool.query(
+        `UPDATE error_reports SET occurrences = occurrences + $2, last_seen = $3 WHERE fingerprint = $1`,
+        [fingerprint, increment, at],
+    );
+    const updated = await bump();
+    if (updated.rowCount > 0) return;
+    try {
+        await pool.query(`
+            INSERT INTO error_reports (id, fingerprint, source, kind, message, stack, context, user_agent, license_id, occurrences, first_seen, last_seen)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+        `, [require('crypto').randomUUID(), fingerprint, source, kind, message, stack || null, context || null, userAgent || null, licenseId || null, increment, at]);
+    } catch (err) {
+        if (err.code !== '23505') throw err;
+        await bump();
+    }
+}
+
+async function listErrorReports(limit = 100) {
+    await ready;
+    const { rows } = await pool.query(
+        'SELECT id, source, kind, message, stack, context, user_agent, license_id, occurrences, first_seen, last_seen FROM error_reports ORDER BY last_seen DESC LIMIT $1',
+        [limit],
+    );
+    return rows;
+}
+
+async function clearErrorReports() {
+    await ready;
+    const result = await pool.query('DELETE FROM error_reports');
+    return result.rowCount || 0;
+}
+
+// Borra lo viejo y, si aun así hay más de `maxRows`, lo más antiguo.
+async function pruneErrorReports({ olderThan, maxRows }) {
+    await ready;
+    await pool.query('DELETE FROM error_reports WHERE last_seen < $1', [olderThan]);
+    const { rows } = await pool.query('SELECT COUNT(*) AS n FROM error_reports');
+    const extra = Number(rows[0].n) - maxRows;
+    if (extra <= 0) return;
+    const oldest = await pool.query('SELECT id FROM error_reports ORDER BY last_seen ASC LIMIT $1', [extra]);
+    const ids = oldest.rows.map((row) => row.id);
+    if (ids.length === 0) return;
+    await pool.query(`DELETE FROM error_reports WHERE id IN (${ids.map((_, i) => `$${i + 1}`).join(', ')})`, ids);
+}
+
+// Cuántos errores distintos y cuántas ocurrencias desde `since`.
+async function countErrorReportsSince(since) {
+    await ready;
+    const { rows } = await pool.query('SELECT COUNT(*) AS distinct_count, COALESCE(SUM(occurrences), 0) AS total FROM error_reports WHERE last_seen >= $1', [since]);
+    return { distinct: Number(rows[0].distinct_count), occurrences: Number(rows[0].total) };
+}
+
+// ── Historial de acciones del admin ────────────────────────
+async function insertAuditLog({ id, at, adminUsername, adminLicenseId, action, targetLicenseId, targetLabel, details }) {
+    await ready;
+    await pool.query(`
+        INSERT INTO admin_audit (id, at, admin_username, admin_license_id, action, target_license_id, target_label, details)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [id, at, adminUsername, adminLicenseId || null, action, targetLicenseId || null, targetLabel || null, details || null]);
+}
+
+async function listAuditLog({ limit = 100, before = null } = {}) {
+    await ready;
+    const { rows } = before
+        ? await pool.query('SELECT * FROM admin_audit WHERE at < $1 ORDER BY at DESC LIMIT $2', [before, limit])
+        : await pool.query('SELECT * FROM admin_audit ORDER BY at DESC LIMIT $1', [limit]);
+    return rows;
+}
+
+async function pruneAuditLog({ olderThan, maxRows }) {
+    await ready;
+    await pool.query('DELETE FROM admin_audit WHERE at < $1', [olderThan]);
+    const { rows } = await pool.query('SELECT COUNT(*) AS n FROM admin_audit');
+    const extra = Number(rows[0].n) - maxRows;
+    if (extra <= 0) return;
+    const oldest = await pool.query('SELECT id FROM admin_audit ORDER BY at ASC LIMIT $1', [extra]);
+    const ids = oldest.rows.map((row) => row.id);
+    if (ids.length === 0) return;
+    await pool.query(`DELETE FROM admin_audit WHERE id IN (${ids.map((_, i) => `$${i + 1}`).join(', ')})`, ids);
+}
+
+// ── Pagos que no se pudieron aplicar ───────────────────────
+// Una fila por pago: si ya existía (y se resolvió) y vuelve a fallar, se reabre.
+async function upsertPaymentFailure({ provider, providerPaymentId, licenseId, planType, diceTier, spotifyAddon, amountCents, reason, error, createdAt }) {
+    await ready;
+    const reopen = () => pool.query(
+        'UPDATE payment_failures SET reason = $3, error = $4, resolved_at = NULL, resolved_by = NULL WHERE provider = $1 AND provider_payment_id = $2',
+        [provider, String(providerPaymentId), reason, error || null],
+    );
+    const updated = await reopen();
+    if (updated.rowCount > 0) return;
+    try {
+        await pool.query(`
+            INSERT INTO payment_failures (id, provider, provider_payment_id, license_id, plan_type, dice_tier, spotify_addon, amount_cents, reason, error, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [require('crypto').randomUUID(), provider, String(providerPaymentId), licenseId || null, planType || null, diceTier || null, !!spotifyAddon, Number(amountCents) || 0, reason, error || null, createdAt]);
+    } catch (err) {
+        if (err.code !== '23505') throw err;
+        await reopen();
+    }
+}
+
+async function listPaymentFailures({ includeResolved = false } = {}) {
+    await ready;
+    const { rows } = await pool.query(
+        `SELECT * FROM payment_failures ${includeResolved ? '' : 'WHERE resolved_at IS NULL'} ORDER BY created_at DESC LIMIT 200`,
+    );
+    return rows;
+}
+
+async function getPaymentFailure(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM payment_failures WHERE id = $1', [id]);
+    return rows[0];
+}
+
+async function resolvePaymentFailure(id, by) {
+    await ready;
+    await pool.query('UPDATE payment_failures SET resolved_at = $2, resolved_by = $3 WHERE id = $1 AND resolved_at IS NULL', [id, Date.now(), by]);
+}
+
+// Cuando un reintento del proveedor sí logra aplicar el pago, el aviso se cierra solo.
+async function resolvePaymentFailureFor(provider, providerPaymentId, by) {
+    await ready;
+    await pool.query(
+        'UPDATE payment_failures SET resolved_at = $3, resolved_by = $4 WHERE provider = $1 AND provider_payment_id = $2 AND resolved_at IS NULL',
+        [provider, String(providerPaymentId), Date.now(), by],
+    );
+}
+
+// ── Conciliación ───────────────────────────────────────────
+async function listPaymentsWithoutLicense(limit = 200) {
+    await ready;
+    const { rows } = await pool.query(
+        'SELECT p.* FROM payments p LEFT JOIN licenses l ON l.id = p.license_id WHERE l.id IS NULL ORDER BY p.created_at DESC LIMIT $1',
+        [limit],
+    );
+    return rows;
+}
+
+async function listStripePaymentIdsSince(sinceMs) {
+    await ready;
+    const { rows } = await pool.query('SELECT stripe_payment_id FROM payments WHERE stripe_payment_id IS NOT NULL AND created_at >= $1', [sinceMs]);
+    return rows.map((row) => row.stripe_payment_id);
+}
+
+// ── Enlaces de overlay ─────────────────────────────────────
+async function bumpOverlayEpoch(id) {
+    await ready;
+    const { rows } = await pool.query('UPDATE licenses SET overlay_epoch = overlay_epoch + 1 WHERE id = $1 RETURNING overlay_epoch', [id]);
+    return rows[0] ? Number(rows[0].overlay_epoch) : null;
+}
+
+// ── Archivos en uso (para detectar huérfanos, ver lib/storageOrphans.js) ──
+// Todas las rutas del bucket que alguna fila de la base usa: los archivos de las
+// alertas y el sonido de "objetivo completado" de cada licencia.
+async function listReferencedMediaPaths() {
+    await ready;
+    const alerts = await pool.query('SELECT visual_path, audio_path, media_path FROM alert_configs');
+    const goals = await pool.query('SELECT goal_settings FROM licenses WHERE goal_settings IS NOT NULL');
+    const paths = new Set();
+    for (const row of alerts.rows) {
+        for (const path of [row.visual_path, row.audio_path, row.media_path]) if (path) paths.add(path);
+    }
+    for (const row of goals.rows) {
+        let settings = row.goal_settings;
+        if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch { settings = null; } }
+        if (settings && settings.audioPath) paths.add(settings.audioPath);
+    }
+    return paths;
+}
+
 module.exports = {
     insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
@@ -946,4 +1187,8 @@ module.exports = {
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
     getPricingOverrides, setPricingOverride, getPricingHistory,
+    ping, upsertErrorReport, listErrorReports, clearErrorReports, pruneErrorReports, countErrorReportsSince,
+    insertAuditLog, listAuditLog, pruneAuditLog,
+    upsertPaymentFailure, listPaymentFailures, getPaymentFailure, resolvePaymentFailure, resolvePaymentFailureFor,
+    listPaymentsWithoutLicense, listStripePaymentIdsSince, bumpOverlayEpoch, listReferencedMediaPaths,
 };

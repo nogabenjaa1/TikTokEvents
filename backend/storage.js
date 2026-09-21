@@ -100,4 +100,90 @@ async function deleteFile(path) {
     }
 }
 
-module.exports = { ensureBucket, uploadFile, deleteFile };
+function isConfigured() {
+    return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+// Lo que se acepta como carpeta (el id de una licencia): nada de rutas raras.
+const SAFE_SEGMENT = /^[\w-]{1,64}$/;
+
+// Lista el contenido de una "carpeta" del bucket, con paginación. En la API de
+// Supabase las carpetas llegan como entradas sin id; los archivos traen id, fecha
+// de creación y su tamaño en metadata.
+async function listFolder(prefix) {
+    assertConfigured();
+    const entries = [];
+    const limit = 100;
+    for (let offset = 0; offset <= 100000; offset += limit) {
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${BUCKET}`, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ prefix, limit, offset, sortBy: { column: 'name', order: 'asc' } }),
+        });
+        if (!res.ok) throw new Error(`Supabase Storage list falló (${res.status})`);
+        const page = await res.json();
+        if (!Array.isArray(page)) throw new Error('Respuesta inesperada al listar el almacenamiento');
+        entries.push(...page);
+        if (page.length < limit) break;
+    }
+    return entries;
+}
+
+function toFile(entry, path) {
+    return { path, size: Number(entry.metadata?.size) || 0, createdAt: Date.parse(entry.created_at) || null };
+}
+
+// Todos los archivos del bucket: [{ path, size, createdAt }]. Recorre las carpetas
+// (una por licencia) con poca concurrencia y con un tope de tiempo: si se agota
+// devuelve lo que alcanzó y `truncated: true`.
+async function listAllFiles({ budgetMs = 60000, concurrency = 4 } = {}) {
+    const started = Date.now();
+    const files = [];
+    const folders = [];
+    for (const entry of await listFolder('')) {
+        if (entry.id) files.push(toFile(entry, entry.name));
+        else if (SAFE_SEGMENT.test(entry.name)) folders.push(entry.name);
+    }
+    let truncated = false;
+    let next = 0;
+    async function worker() {
+        while (next < folders.length) {
+            if (Date.now() - started > budgetMs) { truncated = true; return; }
+            const folder = folders[next++];
+            for (const entry of await listFolder(folder)) {
+                if (entry.id) files.push(toFile(entry, `${folder}/${entry.name}`));
+            }
+        }
+    }
+    await Promise.all(Array.from({ length: concurrency }, worker));
+    return { files, truncated };
+}
+
+// A diferencia de deleteFile (que no avisa si falla), esta dice si se borró.
+async function deleteFileStrict(path) {
+    assertConfigured();
+    try {
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, { method: 'DELETE', headers: authHeaders() });
+        return res.ok;
+    } catch {
+        return false;
+    }
+}
+
+async function deleteFiles(paths) {
+    let deleted = 0;
+    let failed = 0;
+    for (const path of paths) {
+        if (await deleteFileStrict(path)) deleted++; else failed++;
+    }
+    return { deleted, failed };
+}
+
+// Borra todo lo que hay en la carpeta de una licencia (al eliminar la licencia).
+async function deletePrefix(prefix) {
+    if (typeof prefix !== 'string' || !SAFE_SEGMENT.test(prefix)) throw new Error('Carpeta no válida');
+    const files = (await listFolder(prefix)).filter((entry) => entry.id).map((entry) => `${prefix}/${entry.name}`);
+    return deleteFiles(files);
+}
+
+module.exports = { ensureBucket, uploadFile, deleteFile, isConfigured, listAllFiles, deleteFiles, deletePrefix };

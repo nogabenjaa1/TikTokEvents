@@ -53,19 +53,22 @@ test('global tiers, specific gifts and follows keep their own text and color in 
   assert.equal(events[0].textColor, '#ff0000');
 });
 
-function alertApi({ maxAlerts = 150 } = {}) {
+// `license` decides the plan (and so the alert cap); by default an unlimited Lifetime one.
+function alertApi({ license = { id: 'license', license_type: 'lifetime' } } = {}) {
   const rows = new Map();
   const configs = new Map();
   const uploads = [];
   let save;
+  let list;
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   // Register the actual alert routes with isolated storage and database adapters.
   vm.runInNewContext(source.slice(source.indexOf('const NON_GIFT_TRIGGER_TYPES'), source.indexOf("app.delete('/api/alerts/:id'")), {
-    app: { get() {}, post: (...args) => { save = args.at(-1); } },
+    app: { get: (route, ...args) => { if (route === '/api/alerts') list = args.at(-1); }, post: (...args) => { save = args.at(-1); } },
     auth: {}, generalLimiter: null, uploadAlertMedia: null,
     crypto: require('node:crypto'), console,
     // The names server.js defines above the sliced routes.
-    MAX_ALERTS_PER_LICENSE: maxAlerts, ALERT_VISUAL_GROUPS: ['image', 'gif', 'video'], sniffMedia: require('./lib/mediaSniff').sniffMedia,
+    ...pick(require('./lib/alertQuota'), ['canCreateAlert', 'limitMessage', 'quotaInfo']),
+    ALERT_VISUAL_GROUPS: ['image', 'gif', 'video'], sniffMedia: require('./lib/mediaSniff').sniffMedia,
     storage: { uploadFile: async (storedPath, buffer, mime) => { uploads.push({ path: storedPath, mime }); return `https://files.test/${storedPath}`; }, deleteFile: async () => {} },
     db: {
       getAlertConfig: async (id) => rows.get(id),
@@ -90,10 +93,22 @@ function alertApi({ maxAlerts = 150 } = {}) {
       let result;
       let status = 200;
       const response = { status(code) { status = code; return this; }, json(data) { result = data; } };
-      await save({ body, files, license: { id: 'license' } }, response);
+      await save({ body, files, license }, response);
       return { status, ...result };
     },
+    async list() {
+      let result;
+      await list({ license }, { json(data) { result = data; } });
+      return result;
+    },
+    fill(count) {
+      for (let i = 0; i < count; i++) rows.set(`row-${i}`, { id: `row-${i}`, license_id: license.id, gift_name: `Regalo ${i}`, trigger_type: 'gift' });
+    },
   };
+}
+
+function pick(object, keys) {
+  return Object.fromEntries(keys.map((key) => [key, object[key]]));
 }
 
 test('multiple drafts survive editing and assigning a fresh gift without affecting an existing alert', async () => {
@@ -317,19 +332,53 @@ test('a file that only claims to be media is refused before anything is uploaded
   assert.equal(api.rows.size, 0, 'and nothing was saved');
 });
 
-test('a license cannot pile up alerts past the cap, but editing one at the cap still works', async () => {
-  const api = alertApi({ maxAlerts: 2 });
+test('a Monthly license stops at 50 alerts, but editing one at the cap still works', async () => {
+  const api = alertApi({ license: { id: 'license', license_type: 'month' } });
   const first = await api.save({ giftName: 'Rose', text: 'a' });
   await api.save({ text: 'a draft with no gift yet counts too' });
+  api.fill(48);
+  assert.equal(api.rows.size, 50);
   const over = await api.save({ giftName: 'Heart', text: 'c' });
   assert.equal(over.status, 400);
-  assert.match(over.error, /máximo de 2 alertas/);
-  assert.equal(api.rows.size, 2);
+  assert.match(over.error, /hasta 50 alertas/);
+  assert.match(over.error, /Anual \(150\)/, 'the message points to the next plan');
+  assert.deepEqual(over.quota, { max: 50, used: 50, unlimited: false, plan: 'month' });
+  assert.equal(api.rows.size, 50);
   const edited = await api.save({ alertId: first.alert.id, giftName: 'Rose', text: 'edited' });
   assert.equal(edited.success, true, 'editing does not create a new alert');
-  assert.equal(api.rows.size, 2);
+  assert.equal(api.rows.size, 50);
   const conflict = await api.save({ giftName: 'Rose', text: 'same trigger' });
   assert.equal(conflict.status, 409, 'an occupied trigger is still reported as a conflict, not as the cap');
+});
+
+test('an Annual license allows 150 alerts and Lifetime and admin licenses have no cap', async () => {
+  const annual = alertApi({ license: { id: 'license', license_type: 'annual' } });
+  annual.fill(149);
+  assert.equal((await annual.save({ giftName: 'Rose', text: 'last one' })).success, true, 'the 150th fits');
+  const over = await annual.save({ giftName: 'Lion', text: 'one too many' });
+  assert.equal(over.status, 400);
+  assert.match(over.error, /hasta 150 alertas/);
+  assert.match(over.error, /Lifetime/);
+
+  const lifetime = alertApi({ license: { id: 'license', license_type: 'lifetime' } });
+  lifetime.fill(400);
+  assert.equal((await lifetime.save({ giftName: 'Rose', text: 'still fits' })).success, true);
+  const admin = alertApi({ license: { id: 'license', license_type: 'month', is_admin: true } });
+  admin.fill(400);
+  assert.equal((await admin.save({ giftName: 'Rose', text: 'admin fits' })).success, true);
+});
+
+test('the alert list reports how many alerts the plan allows so the panel can show "12 of 50"', async () => {
+  const month = alertApi({ license: { id: 'license', license_type: 'month' } });
+  month.fill(12);
+  const listed = await month.list();
+  assert.deepEqual(listed.quota, { max: 50, used: 12, unlimited: false, plan: 'month' });
+  assert.match(listed.limitMessage, /hasta 50 alertas/, 'the text the panel shows at the cap travels with the list');
+  const lifetime = alertApi({ license: { id: 'license', license_type: 'lifetime' } });
+  lifetime.fill(3);
+  const unlimited = await lifetime.list();
+  assert.deepEqual(unlimited.quota, { max: null, used: 3, unlimited: true, plan: 'lifetime' });
+  assert.equal(unlimited.limitMessage, null, 'nothing to warn about when there is no cap');
 });
 
 test('a very long gift name is cut instead of stored whole', async () => {

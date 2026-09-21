@@ -72,9 +72,11 @@ const spotify = require('./spotify');
 const storage = require('./storage');
 const Tenant = require('./tenant');
 const downloader = require('./downloader');
+const { DownloadUrlError } = require('./lib/downloaderSafety');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
 const giftDirectory = require('./lib/giftDirectory');
+const { sniffMedia } = require('./lib/mediaSniff');
 
 // Archivos de las Alertas de regalos (imagen/gif/video/audio) — en memoria,
 // nunca tocan disco: van directo de la request a Supabase Storage (ver
@@ -85,16 +87,15 @@ const giftDirectory = require('./lib/giftDirectory');
 // porque ahora puede venir uno, el otro, o los dos juntos.
 const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
     .fields([{ name: 'visual', maxCount: 1 }, { name: 'audio', maxCount: 1 }]);
-const ALERT_VISUAL_TYPES = {
-    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
-    'image/gif': 'gif',
-    'video/mp4': 'video', 'video/webm': 'video',
-};
-// Compartido con el sonido de "objetivo completado" (ver /api/goal/audio
-// más abajo) -- mismos formatos de audio válidos en los dos casos.
-const ALERT_AUDIO_TYPES = {
-    'audio/mpeg': 'audio', 'audio/wav': 'audio', 'audio/mp3': 'audio', 'audio/ogg': 'audio',
-};
+// Qué se acepta se decide por lo que el archivo ES (sus primeros bytes, ver
+// lib/mediaSniff.js), no por el tipo que declare el navegador: ese dato lo
+// manda quien sube el archivo y puede mentir. El audio (mp3/wav/ogg) es el mismo
+// para las alertas y para el sonido de "objetivo completado" (ver /api/goal/audio
+// más abajo).
+const ALERT_VISUAL_GROUPS = ['image', 'gif', 'video'];
+// Tope de alertas por licencia: sin él, alguien podría llenar con archivos el
+// almacenamiento compartido por todos los streamers.
+const MAX_ALERTS_PER_LICENSE = 150;
 const uploadGoalAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }).single('audio');
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
@@ -333,6 +334,22 @@ async function kickOtherDevices(licenseId, newSessionId) {
 // ==========================================
 // AUTH: LOGIN (con la license key, sin username/password separado)
 // ==========================================
+// Lo que el panel necesita saber de su licencia (inicio de sesión, prueba gratis
+// y /verify). `overlayKey` es el token de solo lectura para los enlaces de OBS
+// (ver auth.overlayTokenFor): así esos enlaces no llevan la clave de licencia.
+function sessionLicense(row) {
+    return {
+        username: row.username,
+        licenseType: row.license_type,
+        isAdmin: !!row.is_admin,
+        expiresAt: row.expires_at,
+        diceTier: row.dice_tier,
+        diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
+        spotifyAddon: !!row.spotify_addon,
+        overlayKey: auth.overlayTokenFor(row),
+    };
+}
+
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const { key } = req.body || {};
     if (!key || typeof key !== 'string') {
@@ -353,19 +370,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     if (!row.multi_device) await kickOtherDevices(row.id, sessionId);
 
     const token = auth.signSession(row, sessionId);
-    res.json({
-        success: true,
-        token,
-        license: {
-            username: row.username,
-            licenseType: row.license_type,
-            isAdmin: !!row.is_admin,
-            expiresAt: row.expires_at,
-            diceTier: row.dice_tier,
-            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
-            spotifyAddon: !!row.spotify_addon,
-        },
-    });
+    res.json({ success: true, token, license: sessionLicense(row) });
 });
 
 // Crea el SetupIntent que CardVerifyForm.jsx confirma con el Payment
@@ -466,20 +471,7 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
     const sessionId = auth.generateSessionId();
     await db.setSession(row.id, sessionId);
     const token = auth.signSession(row, sessionId);
-    res.json({
-        success: true,
-        key,
-        token,
-        license: {
-            username: row.username,
-            licenseType: row.license_type,
-            isAdmin: false,
-            expiresAt: row.expires_at,
-            diceTier: row.dice_tier,
-            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
-            spotifyAddon: !!row.spotify_addon,
-        },
-    });
+    res.json({ success: true, key, token, license: sessionLicense(row) });
 });
 
 // Logout explícito: mata la sesión server-side de inmediato (no hace falta
@@ -487,6 +479,15 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
 app.post('/api/auth/logout', auth.requireAuth, async (req, res) => {
     await db.setSession(req.license.id, null);
     res.json({ success: true });
+});
+
+// El token de solo lectura para los enlaces de OBS (ver auth.overlayTokenFor).
+// Lo pide el panel de una sesión abierta antes de que ese token existiera.
+// A propósito NO toca `pending_key_reveal` (a diferencia de /verify, que
+// entrega la clave nueva de una compra una sola vez): pedir esto jamás puede
+// hacer que el streamer pierda esa clave.
+app.get('/api/auth/overlay-key', auth.requireAuth, generalLimiter, (req, res) => {
+    res.json({ success: true, overlayKey: auth.overlayTokenFor(req.license) });
 });
 
 // Re-chequeo liviano de un token ya emitido: lo usa la app de escritorio
@@ -501,15 +502,7 @@ app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) =
     if (row.pending_key_reveal) await db.consumePendingKeyReveal(row.id);
     res.json({
         success: true,
-        license: {
-            username: row.username,
-            licenseType: row.license_type,
-            isAdmin: !!row.is_admin,
-            expiresAt: row.expires_at,
-            diceTier: row.dice_tier,
-            diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
-            spotifyAddon: !!row.spotify_addon,
-        },
+        license: sessionLicense(row),
         newKey: row.pending_key_reveal || undefined,
     });
 });
@@ -1099,7 +1092,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     if (triggerType === 'gift') {
         // Clave única por borrador: las alertas existentes no se migran ni modifican.
         triggerKey = typeof giftName === 'string' && giftName.trim()
-            ? giftName.trim() : `__draft_gift__:${crypto.randomUUID()}`;
+            ? giftName.trim().slice(0, 120) : `__draft_gift__:${crypto.randomUUID()}`;
     } else if (triggerType === 'gift_global') {
         minCoins = Math.trunc(Number(req.body?.minCoins));
         if (!Number.isFinite(minCoins) || minCoins < 1 || minCoins > MIN_COINS_CAP) {
@@ -1112,15 +1105,13 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
 
     const visualFile = req.files?.visual?.[0];
     const audioFile = req.files?.audio?.[0];
-    let visualFileType;
-    if (visualFile) {
-        visualFileType = ALERT_VISUAL_TYPES[visualFile.mimetype];
-        if (!visualFileType) {
-            return res.status(400).json({ success: false, error: `Formato de imagen/video no soportado: ${visualFile.mimetype}` });
-        }
+    const visualMedia = visualFile ? sniffMedia(visualFile.buffer) : null;
+    if (visualFile && !ALERT_VISUAL_GROUPS.includes(visualMedia?.group)) {
+        return res.status(400).json({ success: false, error: 'Formato de imagen o video no soportado. Usa PNG, JPG, WEBP, GIF, MP4 o WEBM.' });
     }
-    if (audioFile && !ALERT_AUDIO_TYPES[audioFile.mimetype]) {
-        return res.status(400).json({ success: false, error: `Formato de audio no soportado: ${audioFile.mimetype}` });
+    const audioMedia = audioFile ? sniffMedia(audioFile.buffer) : null;
+    if (audioFile && audioMedia?.group !== 'audio') {
+        return res.status(400).json({ success: false, error: 'Formato de audio no soportado. Usa MP3, WAV u OGG.' });
     }
 
     const cleanText = typeof text === 'string' ? text.trim().slice(0, 200) : '';
@@ -1150,8 +1141,8 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         if (isEditing && triggerType === 'gift' && !(typeof giftName === 'string' && giftName.trim())) {
             triggerKey = (editingRow.trigger_type || 'gift') === 'gift' ? editingRow.gift_name : triggerKey;
         }
-        const occupyingRow = (await db.listAlertConfigs(req.license.id))
-            .find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
+        const allAlerts = await db.listAlertConfigs(req.license.id);
+        const occupyingRow = allAlerts.find((row) => row.gift_name.toLowerCase() === triggerKey.toLowerCase());
 
         // Si el disparador destino ya lo usa OTRA alerta (no la que se está
         // editando), no se pisa en silencio -- el streamer tiene que
@@ -1163,6 +1154,10 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
                 : TRIGGER_LABEL_ES[triggerType] || triggerKey;
             const conflictNoun = triggerType === 'gift_global' ? 'mínimo' : 'disparador';
             return res.status(409).json({ success: false, error: `Ya existe una alerta para "${conflictLabel}" — bórrala primero o elige otro ${conflictNoun}.` });
+        }
+
+        if (!isEditing && !occupyingRow && allAlerts.length >= MAX_ALERTS_PER_LICENSE) {
+            return res.status(400).json({ success: false, error: `Llegaste al máximo de ${MAX_ALERTS_PER_LICENSE} alertas. Borra alguna para crear otra.` });
         }
 
         // De qué fila se heredan los recursos no tocados: la que se está
@@ -1180,10 +1175,10 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         if (visualFile) {
             if (existing?.visual_path) await storage.deleteFile(existing.visual_path);
             const visualId = crypto.randomUUID();
-            const ext = (visualFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-            visualPath = `${req.license.id}/${visualId}${ext}`;
-            visualUrl = await storage.uploadFile(visualPath, visualFile.buffer, visualFile.mimetype);
-            finalVisualType = visualFileType;
+            // El tipo y la extensión salen del contenido real, nunca de lo que declaró el navegador.
+            visualPath = `${req.license.id}/${visualId}${visualMedia.ext}`;
+            visualUrl = await storage.uploadFile(visualPath, visualFile.buffer, visualMedia.mime);
+            finalVisualType = visualMedia.group;
         } else if (clearVisual) {
             if (existing?.visual_path) await storage.deleteFile(existing.visual_path);
             visualUrl = null; visualPath = null; finalVisualType = null;
@@ -1194,9 +1189,8 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         if (audioFile) {
             if (existing?.audio_path) await storage.deleteFile(existing.audio_path);
             const audioId = crypto.randomUUID();
-            const ext = (audioFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-            audioPath = `${req.license.id}/${audioId}${ext}`;
-            audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioFile.mimetype);
+            audioPath = `${req.license.id}/${audioId}${audioMedia.ext}`;
+            audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioMedia.mime);
         } else if (clearAudio) {
             if (existing?.audio_path) await storage.deleteFile(existing.audio_path);
             audioUrl = null; audioPath = null;
@@ -1259,16 +1253,16 @@ app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res)
 app.post('/api/goal/audio', auth.requireAuth, generalLimiter, uploadGoalAudio, async (req, res) => {
     const audioFile = req.file;
     if (!audioFile) return res.status(400).json({ success: false, error: 'Falta el archivo de audio' });
-    if (!ALERT_AUDIO_TYPES[audioFile.mimetype]) {
-        return res.status(400).json({ success: false, error: `Formato de audio no soportado: ${audioFile.mimetype}` });
+    const audioMedia = sniffMedia(audioFile.buffer);
+    if (audioMedia?.group !== 'audio') {
+        return res.status(400).json({ success: false, error: 'Formato de audio no soportado. Usa MP3, WAV u OGG.' });
     }
     try {
         const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
         if (tenant.goalAudioPath) await storage.deleteFile(tenant.goalAudioPath);
         const audioId = crypto.randomUUID();
-        const ext = (audioFile.originalname.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-        const audioPath = `${req.license.id}/goal-${audioId}${ext}`;
-        const audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioFile.mimetype);
+        const audioPath = `${req.license.id}/goal-${audioId}${audioMedia.ext}`;
+        const audioUrl = await storage.uploadFile(audioPath, audioFile.buffer, audioMedia.mime);
         await db.setGoalSettings(req.license.id, { audioUrl, audioPath });
         tenant.setGoalAudio(audioUrl, audioPath);
         res.json({ success: true, audioUrl });
@@ -2075,7 +2069,12 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
 // verificación de tarjeta de la prueba gratis pasa pre-login. Solo
 // loguea -- no se persiste en DB ni se usa para nada más.
 app.post('/api/stripe/client-error', stripeClientErrorLimiter, (req, res) => {
-    console.error(`[Stripe] Error de tarjeta reportado por el navegador (${req.body?.context || 'sin contexto'}):`, JSON.stringify(req.body?.error));
+    // Sin auth, así que nada de lo que llega se imprime tal cual: el contexto va
+    // corto y sin saltos de línea (no se pueden falsificar líneas del registro)
+    // y el detalle del error, acotado.
+    const context = String(req.body?.context ?? '').replace(/[^\w .:/-]/g, '').slice(0, 60) || 'sin contexto';
+    const detail = (JSON.stringify(req.body?.error ?? null) || 'null').slice(0, 2000);
+    console.error(`[Stripe] Error de tarjeta reportado por el navegador (${context}):`, detail);
     res.sendStatus(204);
 });
 
@@ -2158,7 +2157,10 @@ app.post('/api/downloader/start', auth.requireAuth, downloaderActionLimiter, (re
         const jobId = downloader.startDownload({ licenseId: req.license.id, url, fmt, quality });
         res.json({ success: true, job_id: jobId });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        // URL no válida -> 400; demasiadas descargas -> 429; el resto es un fallo nuestro.
+        const status = err instanceof DownloadUrlError ? 400 : (err.status || 500);
+        if (status >= 500) console.error('[Downloader] Error iniciando la descarga:', err.message);
+        res.status(status).json({ success: false, error: status >= 500 ? 'No se pudo iniciar la descarga. Intenta de nuevo en un momento.' : err.message });
     }
 });
 
@@ -2218,6 +2220,23 @@ const FRONTEND_INDEX = path.join(__dirname, 'public', 'index.html');
 app.use((req, res) => {
     if (fs.existsSync(FRONTEND_INDEX)) return res.sendFile(FRONTEND_INDEX);
     res.status(404).json({ success: false, error: 'No encontrado. Este backend solo expone la API; el frontend se sirve por separado.' });
+});
+
+// Red de seguridad final: cualquier error que se escape de una ruta, o de un
+// lector de la petición (JSON mal formado, archivo demasiado grande), termina
+// aquí. Sin esto Express responde con una página HTML —y, si NODE_ENV no es
+// "production", con la traza completa del error— en vez del JSON que espera el
+// frontend.
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    if (err instanceof multer.MulterError) {
+        const tooBig = err.code === 'LIMIT_FILE_SIZE';
+        return res.status(tooBig ? 413 : 400).json({ success: false, error: tooBig ? 'El archivo pesa más de 15 MB.' : 'No se pudo leer el archivo enviado.' });
+    }
+    const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+    if (status >= 500) console.error(`[Error] ${req.method} ${req.path}:`, err?.stack || err);
+    const message = status >= 500 ? 'Error interno del servidor' : status === 413 ? 'La solicitud es demasiado grande' : 'Solicitud inválida';
+    res.status(status).json({ success: false, error: message });
 });
 
 // Fire-and-forget (mismo criterio que otros catch silenciosos de arranque

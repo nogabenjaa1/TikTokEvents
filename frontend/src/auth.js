@@ -1,7 +1,7 @@
 // Helpers de sesión/licencia, sin JSX: se usan desde App.jsx y LicenseManager.jsx.
 import { io } from 'socket.io-client';
 
-const SESSION_KEY = 'tkc_session'; // { token, licenseKey, username, licenseType, isAdmin, expiresAt }
+const SESSION_KEY = 'tkc_session'; // { token, licenseKey, overlayKey, username, licenseType, isAdmin, expiresAt }
 
 export function saveSession(session) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -20,7 +20,7 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
-// El overlay se carga en OBS sin login interactivo posible: la key viaja en
+// El overlay se carga en OBS sin login interactivo posible: su token viaja en
 // la URL (?overlay=true&key=...) y se manda tal cual en el handshake del socket.
 export function isOverlayMode() {
   return window.location.hash.includes('overlay') || window.location.search.includes('overlay=true');
@@ -44,15 +44,19 @@ export function getOverlayScreen() {
 
 // URL lista para pegar como fuente de navegador en OBS/TikTok LIVE Studio:
 // mismo origen en el que corre el panel (el overlay es un modo de este
-// mismo frontend, nunca del backend) + la license key cruda guardada en la
-// sesión al loguearse. Devuelve null si la sesión no la tiene guardada
-// (p. ej. quedó de un login anterior a que existiera este campo).
+// mismo frontend, nunca del backend) + el token de solo lectura del overlay
+// (`overlayKey`, ver auth.overlayTokenFor en el backend): ese enlace se ve en
+// OBS y en las capturas, y con el token no se puede iniciar sesión. Una sesión
+// guardada antes de que existiera el token usa, mientras se lo pide al
+// backend (ver ensureOverlayKey), la license key cruda. Devuelve null si la
+// sesión no tiene ninguna de las dos.
 // `screen`: 'games' (por defecto), 'colors', 'taptap' o 'gifter' — ver
 // getOverlayScreen más arriba.
 export function buildOverlayUrl(screen = 'games') {
   const session = loadSession();
-  if (!session?.licenseKey) return null;
-  const base = `${window.location.origin}/?overlay=true&key=${encodeURIComponent(session.licenseKey)}`;
+  const key = session?.overlayKey || session?.licenseKey;
+  if (!key) return null;
+  const base = `${window.location.origin}/?overlay=true&key=${encodeURIComponent(key)}`;
   return screen === 'games' ? base : `${base}&screen=${screen}`;
 }
 
@@ -144,6 +148,19 @@ export async function refreshSession() {
   if (data.newKey) updated.licenseKey = data.newKey;
   saveSession(updated);
   return { ...updated, revealedKey: data.newKey || null };
+}
+
+// Pide el token del overlay para una sesión abierta antes de que existiera y lo
+// guarda. No toca nada más de la sesión (a diferencia de refreshSession, que
+// también consume la clave nueva de una compra). Devuelve true si guardó uno.
+export async function ensureOverlayKey() {
+  const session = loadSession();
+  if (!session?.token || session.overlayKey) return false;
+  const res = await fetch(`${backendUrl()}/api/auth/overlay-key`, { headers: authHeaders() });
+  const data = await res.json();
+  if (!data.success || !data.overlayKey) return false;
+  saveSession({ ...loadSession(), overlayKey: data.overlayKey });
+  return true;
 }
 
 // Avisa al backend que mate la sesión ya mismo (no hace falta esperar a que

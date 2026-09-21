@@ -443,6 +443,15 @@ class Tenant {
         socket.emit('prize_updated', this.prize);
         socket.emit('dice_state_update', this.diceState);
 
+        // El overlay de OBS con su token de solo lectura únicamente RECIBE: no se
+        // le registra ninguna acción de control, así que aunque alguien vea su
+        // enlace no puede iniciar juegos, cambiar ajustes ni conectar TikTok.
+        // Solo se anota su presencia (ver registerAlertHandlers).
+        if (socket.authMethod === 'overlay') {
+            this.registerAlertHandlers(socket);
+            return;
+        }
+
         // Handlers de socket por área (ver backend/lib/tenant/*.js).
         this.registerMiscHandlers(socket);
         this.registerConnectionHandlers(socket);

@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { buildOverlayUrl } from './auth';
+import { useEffect, useState } from 'react';
+import { buildOverlayUrl, ensureOverlayKey, loadSession } from './auth';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import ScrollRow from './ScrollRow';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
 
-// La URL lleva la clave de licencia -- si el streamer comparte pantalla o
-// hace directo con este panel a la vista, mostrarla completa filtra su
-// clave. Por eso se muestra oculta por defecto ("Mostrar" la revela); copiar
-// y abrir la vista previa siempre usan la URL real.
+// La URL es personal: si el streamer comparte pantalla o hace directo con este
+// panel a la vista, mostrarla completa deja que cualquiera use su overlay (y, en
+// los enlaces anteriores, que inicie sesión con su clave). Por eso se muestra
+// oculta por defecto ("Mostrar" la revela); copiar y abrir la vista previa
+// siempre usan la URL real.
 function maskOverlayUrl(url) {
   return url.replace(/(key=)[^&#]+/i, '$1••••••••••••');
 }
@@ -70,7 +71,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
             </button>
           </div>
           <p className="text-[11px] text-gray-500 mb-4">
-            {copyFailed ? 'No pudimos copiar automáticamente: selecciona la URL de arriba y cópiala a mano.' : 'La URL incluye tu clave de licencia, por eso se muestra oculta. "Copiar URL" copia la completa.'}
+            {copyFailed ? 'No pudimos copiar automáticamente: selecciona la URL de arriba y cópiala a mano.' : 'La URL es personal, por eso se muestra oculta. "Copiar URL" copia la completa.'}
           </p>
           <div className="flex gap-3">
             <button onClick={copyUrl} className="theme-btn-primary flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest">
@@ -152,6 +153,33 @@ function OverlayIntro() {
   );
 }
 
+const KEY_NOTICE_STORAGE = 'tkc_overlay_key_notice';
+
+// Los enlaces nuevos ya no llevan la clave de licencia (llevan un token que solo
+// sirve para el overlay). Quien ya tenía overlays en OBS con el enlace anterior
+// tiene que cambiarlos: el viejo sigue funcionando, pero con él se puede iniciar
+// sesión como el streamer.
+function OverlayKeyNotice() {
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(KEY_NOTICE_STORAGE) === '1'; } catch { return false; }
+  });
+  if (hidden) return null;
+  const close = () => {
+    setHidden(true);
+    try { localStorage.setItem(KEY_NOTICE_STORAGE, '1'); } catch { /* sin almacenamiento: solo se cierra por ahora */ }
+  };
+  return (
+    <div role="status" className="w-full max-w-xl rounded-xl border-2 bg-amber-500/15 border-amber-500 text-[11px] py-2 px-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span className="flex-1 min-w-[14rem] text-white">
+        <span aria-hidden="true">🔒 </span>
+        <span className="font-bold">Estos enlaces ya no llevan tu clave de licencia.</span>{' '}
+        Si tenías overlays en OBS de antes, cambia su URL por la de aquí: la anterior sigue funcionando, pero con ella se puede iniciar sesión como tú.
+      </span>
+      <button type="button" onClick={close} className="theme-btn-secondary px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">Entendido</button>
+    </div>
+  );
+}
+
 // Sub-navegación del panel de Overlays — mismo patrón visual que EVENT_TABS
 // de App.jsx (fila horizontal de pestañas), pedido explícito para que la
 // vitrina de enlaces deje de ser una sola página larga y quede agrupada por
@@ -214,6 +242,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
   const [customizingId, setCustomizingId] = useState(null);
+
+  // Una sesión abierta antes de que existiera el token del overlay no lo tiene
+  // guardado: se pide una vez al abrir esta pantalla y los enlaces se rehacen
+  // solos en cuanto llega.
+  const [, setOverlayKeyLoaded] = useState(0);
+  useEffect(() => {
+    ensureOverlayKey().then((saved) => { if (saved) setOverlayKeyLoaded((n) => n + 1); }).catch(() => {});
+  }, []);
 
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
@@ -285,12 +321,13 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
 
       <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-4 font-sans flex-1 overflow-y-auto">
         <OverlayIntro />
+        {loadSession()?.overlayKey && <OverlayKeyNotice />}
 
         {tab === 'events' && (
           <>
             <OverlayUrlCard
               title="Overlay de juegos (Rey del Trono / Zubastinis / Eliminación / Ruleta)"
-              description="Úsalo para estos cuatro modos. Ya incluye tu clave de licencia — es personal, no la compartas con nadie."
+              description="Úsalo para estos cuatro modos. Ya incluye tu acceso — es personal, no la compartas con nadie."
               dimensions="380×700 px (vertical)"
               url={gamesUrl}
               onCustomize={() => setCustomizingId('games')}

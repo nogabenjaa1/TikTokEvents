@@ -16,6 +16,8 @@ if (!JWT_SECRET || !KEY_HASH_SECRET) {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DURATIONS_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS, annual: 365 * DAY_MS, lifetime: null, trial: 7 * DAY_MS };
 const LIFETIME_JWT_EXPIRY = '365d'; // las licencias lifetime igual reautentican una vez al año
+// Al verificar se fija el algoritmo en vez de aceptar el que declare el propio token.
+const JWT_ALGORITHMS = ['HS256'];
 
 // La key ya tiene entropía criptográfica propia, así que alcanza con un HMAC
 // (más simple y liviano que bcrypt, que está pensado para passwords humanas).
@@ -69,7 +71,7 @@ function generateSessionId() {
 }
 
 function signSession(row, sessionId) {
-    const payload = { sub: row.id, sid: sessionId, username: row.username, isAdmin: !!row.is_admin, licenseType: row.license_type };
+    const payload = { typ: 'session', sub: row.id, sid: sessionId, username: row.username, isAdmin: !!row.is_admin, licenseType: row.license_type };
     const expiresIn = row.expires_at === null
         ? LIFETIME_JWT_EXPIRY
         : Math.max(60, Math.floor((row.expires_at - Date.now()) / 1000)); // al menos 60s para evitar tokens ya vencidos
@@ -77,7 +79,11 @@ function signSession(row, sessionId) {
 }
 
 function verifySession(token) {
-    return jwt.verify(token, JWT_SECRET); // lanza si es inválido/expiró
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: JWT_ALGORITHMS }); // lanza si es inválido/expiró
+    // Los tokens de otro uso (p. ej. el `state` de Spotify, que se firma con el
+    // mismo secreto) no son una sesión. Los emitidos antes de existir `typ` no lo llevan.
+    if (decoded.typ && decoded.typ !== 'session') throw new Error('Tipo de token inválido');
+    return decoded;
 }
 
 // El `state` del OAuth de Spotify (ver /api/spotify/connect y /callback en
@@ -87,11 +93,14 @@ function verifySession(token) {
 // va firmada y vence rápido (5 min alcanza de sobra para el ida-y-vuelta
 // real a accounts.spotify.com).
 function signSpotifyState(licenseId) {
-    return jwt.sign({ licenseId }, JWT_SECRET, { expiresIn: '5m' });
+    return jwt.sign({ typ: 'spotify_state', licenseId }, JWT_SECRET, { expiresIn: '5m' });
 }
 
 function verifySpotifyState(state) {
-    return jwt.verify(state, JWT_SECRET).licenseId; // lanza si es inválido/expiró
+    const decoded = jwt.verify(state, JWT_SECRET, { algorithms: JWT_ALGORITHMS }); // lanza si es inválido/expiró
+    // Una sesión (que dura meses) no vale como `state` aunque esté bien firmada.
+    if (decoded.typ !== 'spotify_state' || !decoded.licenseId) throw new Error('Tipo de token inválido');
+    return decoded.licenseId;
 }
 
 // Re-valida contra la DB (no solo la firma del JWT): cubre licencia
@@ -120,6 +129,34 @@ async function resolveFromToken(token) {
 async function resolveFromRawKey(key) {
     const row = await db.findByKeyHash(hashKey(key));
     if (!isLicenseValid(row)) return null;
+    return row;
+}
+
+// ── Token del overlay de OBS ───────────────────────────────
+// El enlace del overlay se pega en OBS o TikTok LIVE Studio, y ahí se ve
+// completo (el cuadro de propiedades de OBS, una captura, una pantalla
+// compartida). Si llevara la clave de licencia, ver el enlace sería poder
+// iniciar sesión como el streamer. Este token, en cambio, solo abre el socket
+// del overlay —que únicamente recibe— y no sirve para iniciar sesión. Se
+// deriva de la licencia y de su clave actual, así que regenerar la clave (o
+// una compra que la rota) invalida los enlaces anteriores, y no hace falta
+// guardar nada en la base de datos.
+const OVERLAY_TOKEN_PREFIX = 'ovl.';
+const OVERLAY_TOKEN_RE = /^ovl\.([\w-]{1,64})\.([A-Za-z0-9_-]{32})$/;
+
+function overlayTokenFor(row) {
+    const mac = crypto.createHmac('sha256', KEY_HASH_SECRET).update(`overlay:${row.id}:${row.key_hash}`).digest('base64url').slice(0, 32);
+    return `${OVERLAY_TOKEN_PREFIX}${row.id}.${mac}`;
+}
+
+async function resolveFromOverlayToken(token) {
+    const match = OVERLAY_TOKEN_RE.exec(String(token || ''));
+    if (!match) return null;
+    const row = await db.findById(match[1]);
+    if (!isLicenseValid(row)) return null;
+    const expected = Buffer.from(overlayTokenFor(row));
+    const given = Buffer.from(token);
+    if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null;
     return row;
 }
 
@@ -158,11 +195,12 @@ function requireAdmin(req, res, next) {
 // Acepta DOS formas de autenticar en el handshake:
 //   auth.token       -> JWT de una sesión ya logueada (ventana de control),
 //                       sujeto a la restricción de un solo dispositivo.
-//   auth.licenseKey  -> key cruda (usada por el overlay embebido en OBS,
-//                       que no puede loguearse interactivamente). El overlay
-//                       queda a propósito EXENTO de la restricción de
-//                       dispositivo único: corre en paralelo al panel de
-//                       control por diseño, no es "otro dispositivo humano".
+//   auth.licenseKey  -> lo usa el overlay embebido en OBS, que no puede loguearse
+//                       interactivamente: el token de solo lectura (ver
+//                       overlayTokenFor) o, en los enlaces anteriores, la key
+//                       cruda. El overlay queda a propósito EXENTO de la
+//                       restricción de dispositivo único: corre en paralelo al
+//                       panel de control por diseño, no es "otro dispositivo humano".
 async function socketAuthMiddleware(socket, next) {
     const { token, licenseKey } = socket.handshake.auth || {};
 
@@ -173,9 +211,17 @@ async function socketAuthMiddleware(socket, next) {
             row = status.row;
             socket.sessionId = status.sessionId;
             socket.authMethod = 'jwt';
-        } else if (licenseKey) {
-            row = await resolveFromRawKey(licenseKey);
-            socket.authMethod = 'key';
+        } else if (typeof licenseKey === 'string' && licenseKey.length > 0 && licenseKey.length <= 300) {
+            if (licenseKey.startsWith(OVERLAY_TOKEN_PREFIX)) {
+                row = await resolveFromOverlayToken(licenseKey);
+                socket.authMethod = 'overlay';
+            } else if (process.env.OVERLAY_LEGACY_KEYS !== 'off') {
+                // Enlaces de overlay anteriores, que llevan la clave de licencia
+                // (y con ella permiten todo). Se apagan con OVERLAY_LEGACY_KEYS=off
+                // cuando ya nadie los use.
+                row = await resolveFromRawKey(licenseKey);
+                socket.authMethod = 'key';
+            }
         }
 
         if (!row) return next(new Error('unauthorized'));
@@ -193,5 +239,6 @@ async function socketAuthMiddleware(socket, next) {
 module.exports = {
     hashKey, keyPrefix, computeExpiresAt, isLicenseValid, sanitizeAlias, generateLabeledKey,
     generateSessionId, signSession, verifySession, signSpotifyState, verifySpotifyState, checkTokenStatus, resolveFromToken, resolveFromRawKey,
+    overlayTokenFor, resolveFromOverlayToken, OVERLAY_TOKEN_PREFIX,
     requireAuth, requireAdmin, socketAuthMiddleware,
 };

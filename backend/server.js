@@ -15,11 +15,17 @@ require('dotenv').config({ quiet: true });
 // atrapada en cualquier otro punto del proceso (no solo este evento
 // puntual) tira abajo TODO el proceso sin él — afecta a todas las
 // licencias conectadas en ese momento, no solo a una.
+// Se conecta más abajo, cuando ya existe la base de datos (ver errorReporter):
+// además de dejar la línea en el registro, estos errores quedan guardados y se
+// ven en el panel de Sistema > Errores.
+let reportBackendError = () => {};
 process.on('uncaughtException', (err) => {
     console.error('[UNCAUGHT EXCEPTION] El proceso siguió vivo — no se reinició. Detalle:', err);
+    reportBackendError('exception', err);
 });
 process.on('unhandledRejection', (reason) => {
     console.error('[UNHANDLED REJECTION]', reason);
+    reportBackendError('rejection', reason);
 });
 
 // Redundante a propósito con el `postinstall` de package.json: en al menos
@@ -74,6 +80,11 @@ const Tenant = require('./tenant');
 const downloader = require('./downloader');
 const { DownloadUrlError } = require('./lib/downloaderSafety');
 const { createHandshakeLimiter, clientIp, isNewSession } = require('./lib/handshakeLimiter');
+const { createErrorReporter } = require('./lib/errorReports');
+const { canCreateAlert, limitMessage, quotaInfo } = require('./lib/alertQuota');
+const { helmetDirectives } = require('./lib/csp');
+const { createHealthChecker } = require('./lib/healthCheck');
+const { registerSystemRoutes } = require('./routes/system');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
 const giftDirectory = require('./lib/giftDirectory');
@@ -94,9 +105,9 @@ const uploadAlertMedia = multer({ storage: multer.memoryStorage(), limits: { fil
 // para las alertas y para el sonido de "objetivo completado" (ver /api/goal/audio
 // más abajo).
 const ALERT_VISUAL_GROUPS = ['image', 'gif', 'video'];
-// Tope de alertas por licencia: sin él, alguien podría llenar con archivos el
-// almacenamiento compartido por todos los streamers.
-const MAX_ALERTS_PER_LICENSE = 150;
+// Tope de alertas por licencia según su plan (ver lib/alertQuota.js): sin él,
+// alguien podría llenar con archivos el almacenamiento compartido por todos los
+// streamers.
 const uploadGoalAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }).single('audio');
 
 // Uno o varios orígenes separados por coma (p. ej. el dominio de Vercel +
@@ -199,6 +210,33 @@ function normalizeCardBrand(paymentMethodId) {
 // plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
 storage.ensureBucket().catch((err) => console.error('[Storage] No se pudo verificar el bucket de alertas al arrancar:', err.message));
 
+// Reportes de errores (pantallas, servidor y política de seguridad): se guardan
+// agrupados en la base y se ven en el panel de Sistema > Errores.
+const errorReporter = createErrorReporter({ db });
+reportBackendError = (kind, err, context) => {
+    errorReporter.record({ kind, message: (err && err.message) || String(err), stack: err && err.stack, context }, { source: 'backend' });
+};
+
+// Historial de lo que hace el admin (ver Sistema > Historial). No espera ni falla:
+// un error al anotar jamás debe impedir la acción en sí. Nunca recibe claves, solo
+// quién, qué y sobre qué licencia.
+function audit(req, action, target = {}, details = null) {
+    db.insertAuditLog({
+        id: crypto.randomUUID(), at: Date.now(),
+        adminUsername: req.license.username, adminLicenseId: req.license.id,
+        action, targetLicenseId: target.id || null, targetLabel: target.label || null,
+        details: details ? JSON.stringify(details).slice(0, 1000) : null,
+    }).catch((err) => console.error('[Auditoría] No se pudo anotar la acción:', err.message));
+}
+
+// Al eliminar una licencia también se borran sus archivos del almacenamiento (antes
+// se quedaban para siempre). No espera ni falla: si no se pudo, los archivos quedan
+// como huérfanos y se limpian desde Sistema > Archivos.
+function cleanLicenseFiles(licenseId) {
+    if (!storage.isConfigured()) return;
+    storage.deletePrefix(licenseId).catch((err) => console.error('[Storage] No se pudieron borrar los archivos de la licencia ' + licenseId + ':', err.message));
+}
+
 const app = express();
 // Render (y cualquier host detrás de un proxy/balanceador) manda el IP real
 // del cliente en X-Forwarded-For — sin esto, express-rate-limit no confía
@@ -208,15 +246,18 @@ app.set('trust proxy', 1);
 // Cabeceras de seguridad estandar (X-Frame-Options, X-Content-Type-
 // Options, Strict-Transport-Security, Referrer-Policy, quita X-Powered-
 // By, etc.) -- pedido explicito de una revision de seguridad del sitio.
-// A proposito SIN Content-Security-Policy ni Cross-Origin-Embedder-
-// Policy: el sitio carga Google AdSense, Adsterra y el SDK de
-// MercadoPago (que a su vez carga reCAPTCHA) desde muchisimos dominios
-// de terceros -- una CSP mal armada podria romper en silencio los
-// anuncios (ingresos) o el cobro con tarjeta (lo mas critico del sitio,
-// recien estabilizado) sin que se note hasta que alguien reporte el
-// problema. Si se quiere una CSP real, hay que armarla con tiempo y
-// probar cada integracion de terceros a mano, no activarla a ciegas.
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+// Content-Security-Policy en modo SOLO REPORTE (ver lib/csp.js): el navegador no
+// bloquea nada, solo avisa de lo que una política estricta habría bloqueado, y
+// esos avisos llegan a Sistema > Errores. Se hace así a propósito: el sitio carga
+// Google AdSense, Adsterra y el SDK de MercadoPago (que a su vez carga reCAPTCHA)
+// desde muchísimos dominios de terceros, y una política mal armada rompería en
+// silencio los anuncios (ingresos) o el cobro con tarjeta. Cuando los reportes
+// dejen de mostrar avisos se pasa a bloquear (quitando reportOnly). Sin
+// Cross-Origin-Embedder-Policy por el mismo motivo.
+app.use(helmet({
+    contentSecurityPolicy: { useDefaults: false, reportOnly: true, directives: helmetDirectives({ reportUri: '/api/csp-report' }) },
+    crossOriginEmbedderPolicy: false,
+}));
 // Comprime respuestas (el paquete JS del frontend pesa ~600 kB sin gzip).
 // socket.io va por su propio canal WebSocket, no pasa por acá.
 app.use(compression());
@@ -228,7 +269,8 @@ const BOOT_ID = crypto.randomUUID();
 
 // Chequeo de salud sin autenticación ni datos sensibles: sirve para el
 // health check de Render y para un ping externo (UptimeRobot, etc.) que
-// evite que el servicio se duerma por inactividad.
+// evite que el servicio se duerma por inactividad. A propósito NO toca la base
+// de datos (Render lo usa para decidir si reinicia): para eso está /health/deep.
 app.get('/health', (req, res) => {
     res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()) });
 });
@@ -491,6 +533,30 @@ app.get('/api/auth/overlay-key', auth.requireAuth, generalLimiter, (req, res) =>
     res.json({ success: true, overlayKey: auth.overlayTokenFor(req.license) });
 });
 
+// Renueva SOLO los enlaces de overlay: sube la "época" del token (ver
+// auth.overlayTokenFor), así que los enlaces anteriores dejan de servir y se cortan
+// los overlays que ya estaban conectados con ellos. La clave de licencia y la sesión
+// no cambian. Es lo que se hace cuando un enlace de OBS se filtró (una captura, una
+// pantalla compartida). Límite bajo: no es algo que se haga a diario.
+const rotateOverlayLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+app.post('/api/auth/rotate-overlay-key', auth.requireAuth, rotateOverlayLimiter, async (req, res) => {
+    try {
+        await db.bumpOverlayEpoch(req.license.id);
+        const row = await db.findById(req.license.id);
+        // Solo los overlays con token: el panel (sesión) y los enlaces anteriores con
+        // la clave cruda no se tocan (esos se invalidan regenerando la clave).
+        let disconnected = 0;
+        for (const socket of await io.in(req.license.id).fetchSockets()) {
+            if (socket.authMethod === 'overlay') { socket.disconnect(true); disconnected++; }
+        }
+        console.log('[Overlay] ' + req.license.username + ' renovó sus enlaces de overlay (' + disconnected + ' conexión(es) cortada(s)).');
+        res.json({ success: true, overlayKey: auth.overlayTokenFor(row), disconnected });
+    } catch (err) {
+        console.error('[Overlay] No se pudieron renovar los enlaces:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudieron renovar los enlaces. Intenta de nuevo.' });
+    }
+});
+
 // Re-chequeo liviano de un token ya emitido: lo usa la app de escritorio
 // (que corre el juego 100% local) para confirmar cada tanto que la key
 // sigue viva contra este servidor — revocada, expirada, o reemplazada por
@@ -596,6 +662,8 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
         spotifyAddon: spotifyAddon === true,
     });
 
+    audit(req, 'license.create', { id: row.id, label: row.username }, { licenseType, diceTier: diceTier || 'regular', spotifyAddon: spotifyAddon === true });
+
     // La key en claro se devuelve UNA sola vez: a partir de acá solo vive hasheada.
     res.json({
         success: true,
@@ -626,6 +694,7 @@ app.post('/api/licenses/:id/regenerate-key', auth.requireAuth, auth.requireAdmin
     const key = auth.generateLabeledKey(row.username, PLAN_KEY_LABELS[row.license_type] || String(row.license_type).toLowerCase());
     await db.setLicenseKey(row.id, { keyHash: auth.hashKey(key), keyPrefix: auth.keyPrefix(key) });
     console.log(`[Licencias] ${req.license.username} regeneró la clave de la licencia ${row.id} (@${row.username}).`);
+    audit(req, 'license.regenerate_key', { id: row.id, label: row.username });
     res.json({ success: true, key, license: { id: row.id, username: row.username } });
 });
 
@@ -633,6 +702,7 @@ app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminL
     const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     await db.revoke(row.id);
+    audit(req, 'license.revoke', { id: row.id, label: row.username });
     res.json({ success: true });
 });
 
@@ -644,6 +714,7 @@ app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, 
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
     await db.setMultiDevice(row.id, !!enabled);
+    audit(req, 'license.multi_device', { id: row.id, label: row.username }, { enabled: !!enabled });
     res.json({ success: true });
 });
 
@@ -657,6 +728,7 @@ app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adm
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
     await db.setWinBonusUnlocked(row.id, !!enabled);
+    audit(req, 'license.win_bonus', { id: row.id, label: row.username }, { enabled: !!enabled });
     res.json({ success: true });
 });
 
@@ -668,6 +740,7 @@ app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin,
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
     const { enabled } = req.body || {};
     await db.setSpotifyAddon(row.id, !!enabled);
+    audit(req, 'license.spotify_addon', { id: row.id, label: row.username }, { enabled: !!enabled });
     res.json({ success: true });
 });
 
@@ -718,6 +791,13 @@ app.post('/api/licenses/:id/edit', auth.requireAuth, auth.requireAdmin, adminLim
     if (spotifyAddon !== undefined && spotifyAddon !== !!row.spotify_addon) await db.setSpotifyAddon(row.id, spotifyAddon);
     if (winBonus !== undefined && winBonus !== !!row.dice_win_bonus_unlocked) await db.setWinBonusUnlocked(row.id, winBonus);
     console.log(`[Licencias] ${req.license.username} editó la licencia ${row.id} (@${row.username}).`);
+    const changes = {};
+    if (licenseType !== undefined) changes.licenseType = licenseType;
+    if (diceTier !== undefined && diceTier !== row.dice_tier) changes.diceTier = diceTier;
+    if (multiDevice !== undefined && multiDevice !== !!row.multi_device) changes.multiDevice = multiDevice;
+    if (spotifyAddon !== undefined && spotifyAddon !== !!row.spotify_addon) changes.spotifyAddon = spotifyAddon;
+    if (winBonus !== undefined && winBonus !== !!row.dice_win_bonus_unlocked) changes.winBonus = winBonus;
+    audit(req, 'license.edit', { id: row.id, label: row.username }, changes);
     res.json({ success: true });
 });
 
@@ -735,6 +815,7 @@ app.post('/api/licenses/:id/extend', auth.requireAuth, auth.requireAdmin, adminL
         return res.status(400).json({ success: false, error: 'Nivel de Color Says inválido' });
     }
     await db.extendLicense(row.id, licenseType, auth.computeExpiresAt(licenseType), diceTier);
+    audit(req, 'license.extend', { id: row.id, label: row.username }, { licenseType, diceTier });
     res.json({ success: true });
 });
 
@@ -749,6 +830,8 @@ app.delete('/api/licenses/:id', auth.requireAuth, auth.requireAdmin, adminLimite
     if (row.is_admin) return res.status(400).json({ success: false, error: 'No se puede eliminar una licencia admin' });
     if (!row.revoked) await db.revoke(row.id);
     await db.deleteLicense(row.id);
+    cleanLicenseFiles(row.id);
+    audit(req, 'license.delete', { id: row.id, label: row.username });
     res.json({ success: true });
 });
 
@@ -771,12 +854,14 @@ app.post('/api/licenses/bulk-delete', auth.requireAuth, auth.requireAdmin, admin
             if (row.is_admin) { skipped.push(id); continue; }
             if (!row.revoked) await db.revoke(row.id);
             await db.deleteLicense(row.id);
+            cleanLicenseFiles(row.id);
             deleted++;
         } catch (err) {
             console.error('[licenses] Error eliminando en bloque', id, err.message);
             skipped.push(id);
         }
     }
+    audit(req, 'license.bulk_delete', {}, { deleted, skipped: skipped.length });
     res.json({ success: true, deleted, skipped: skipped.length });
 });
 
@@ -802,6 +887,7 @@ app.post('/api/admin/pricing', auth.requireAuth, auth.requireAdmin, adminLimiter
         const { oldAmountCents } = isSpotifyAddon
             ? await pricing.setSpotifyAddonPriceCents(amountCents, req.license.username)
             : await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
+        audit(req, 'pricing.set', { label: planType }, { oldAmountCents, newAmountCents: amountCents });
         res.json({ success: true, planType, oldAmountCents, newAmountCents: amountCents });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -1059,7 +1145,10 @@ function serializeAlert(row) {
 
 app.get('/api/alerts', auth.requireAuth, generalLimiter, async (req, res) => {
     const alerts = await db.listAlertConfigs(req.license.id);
-    res.json({ success: true, alerts: alerts.map(serializeAlert) });
+    const quota = quotaInfo(req.license, alerts.length);
+    // El texto del límite viaja con la lista para que el panel lo muestre cuando se llegue al tope,
+    // sin repetir aquí la redacción de cada plan.
+    res.json({ success: true, alerts: alerts.map(serializeAlert), quota, limitMessage: quota.unlimited ? null : limitMessage(req.license) });
 });
 
 // multipart/form-data: `visual`/`audio` son los dos archivos (cada uno
@@ -1157,8 +1246,8 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             return res.status(409).json({ success: false, error: `Ya existe una alerta para "${conflictLabel}" — bórrala primero o elige otro ${conflictNoun}.` });
         }
 
-        if (!isEditing && !occupyingRow && allAlerts.length >= MAX_ALERTS_PER_LICENSE) {
-            return res.status(400).json({ success: false, error: `Llegaste al máximo de ${MAX_ALERTS_PER_LICENSE} alertas. Borra alguna para crear otra.` });
+        if (!isEditing && !occupyingRow && !canCreateAlert(req.license, allAlerts.length)) {
+            return res.status(400).json({ success: false, error: limitMessage(req.license), quota: quotaInfo(req.license, allAlerts.length) });
         }
 
         // De qué fila se heredan los recursos no tocados: la que se está
@@ -1508,19 +1597,41 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
 // del pago (`forget`) para que el siguiente reintento (sondeo de la orden,
 // /confirm de Stripe) lo aplique, en vez de dejarlo como "ya procesado" con el
 // cliente cobrado y sin plan. Devuelve como antes; relanza el error si no pudo.
-async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget }) {
+async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget, provider, providerPaymentId, amountCents }) {
+    // Cuando un pago cobrado no se puede aplicar, además de la línea del registro
+    // queda una fila en payment_failures: se ve en Sistema > Pagos y se aplica con
+    // un botón (antes solo constaba en el registro del servidor).
+    // Anotar el fallo jamás debe estropear el pago: ni por un error asíncrono ni por
+    // uno síncrono.
+    const noteFailure = (reason, error) => {
+        if (!provider || !providerPaymentId) return;
+        try {
+            db.upsertPaymentFailure({
+                provider, providerPaymentId, licenseId, planType, diceTier, spotifyAddon, amountCents,
+                reason, error: String(error || '').slice(0, 300), createdAt: Date.now(),
+            }).catch((err) => console.error(`[${label}] No se pudo anotar el pago fallido:`, err.message));
+        } catch (err) {
+            console.error(`[${label}] No se pudo anotar el pago fallido:`, err.message);
+        }
+    };
     let lastError;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             const license = await db.findById(licenseId);
             if (!license) {
                 console.error(`[${label}] Pago para una licencia inexistente:`, licenseId);
+                noteFailure('license_missing', 'La licencia no existe');
                 return { applied: false };
             }
             const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
             if (Object.keys(update).length > 0) {
                 await db.applyPurchase(licenseId, update);
                 console.log(`[${label}] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+            }
+            // Si este pago había quedado anotado como pendiente y ahora sí se aplicó (un
+            // reintento del proveedor), el aviso se cierra solo.
+            if (provider && providerPaymentId) {
+                try { db.resolvePaymentFailureFor(provider, providerPaymentId, 'automático').catch(() => {}); } catch { /* el aviso pendiente nunca debe estropear un pago ya aplicado */ }
             }
             return { applied: true, licenseId };
         } catch (err) {
@@ -1529,6 +1640,7 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
             if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 400));
         }
     }
+    noteFailure('apply_failed', lastError && lastError.message);
     try { await forget(); } catch (err) {
         console.error(`[${label}] ⚠️ PAGO COBRADO SIN APLICAR y sin poder olvidarlo (licencia ${licenseId}); aplícalo a mano desde Licencias > Editar:`, err.message);
         throw lastError;
@@ -1561,6 +1673,7 @@ async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotif
 
     return applyPaymentWithRetry({
         label: 'MP', licenseId, planType, diceTier, spotifyAddon,
+        provider: 'mp', providerPaymentId: String(mpPaymentId), amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         forget: () => db.deletePaymentRecord('mp', mpPaymentId),
     });
 }
@@ -1591,6 +1704,7 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
 
     return applyPaymentWithRetry({
         label: 'Stripe', licenseId, planType, diceTier, spotifyAddon,
+        provider: 'stripe', providerPaymentId: String(stripePaymentId), amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         forget: () => db.deletePaymentRecord('stripe', stripePaymentId),
     });
 }
@@ -2184,6 +2298,16 @@ app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, r
 });
 
 // ==========================================
+// SISTEMA: salud, reportes de errores, historial del admin, almacenamiento y
+// conciliación de pagos (ver routes/system.js)
+// ==========================================
+const healthChecker = createHealthChecker({ ping: () => db.ping() });
+registerSystemRoutes(app, {
+    auth, db, storage, io, tenants, errorReporter, healthChecker, getStripeClient,
+    applyPaymentWithRetry, applyApprovedStripePaymentIfNew, audit, bootId: BOOT_ID,
+});
+
+// ==========================================
 // SOCKET.IO: autenticación en el handshake + aislamiento por room
 // ==========================================
 // Freno a las conexiones nuevas por IP: cada intento, aunque traiga una clave
@@ -2244,7 +2368,10 @@ app.use((err, req, res, next) => {
         return res.status(tooBig ? 413 : 400).json({ success: false, error: tooBig ? 'El archivo pesa más de 15 MB.' : 'No se pudo leer el archivo enviado.' });
     }
     const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
-    if (status >= 500) console.error(`[Error] ${req.method} ${req.path}:`, err?.stack || err);
+    if (status >= 500) {
+        console.error(`[Error] ${req.method} ${req.path}:`, err?.stack || err);
+        reportBackendError('http', err, `${req.method} ${req.path}`);
+    }
     const message = status >= 500 ? 'Error interno del servidor' : status === 413 ? 'La solicitud es demasiado grande' : 'Solicitud inválida';
     res.status(status).json({ success: false, error: message });
 });
@@ -2254,6 +2381,20 @@ app.use((err, req, res, next) => {
 // sigue con los precios default de PLAN_PRICES_CENTS en vez de no levantar
 // -- el admin puede volver a guardar el precio despues para reintentar.
 pricing.loadPriceOverrides().catch(err => console.error('[PRICING] No se pudieron cargar los overrides de precio al arrancar:', err.message));
+
+// Mantenimiento de los historiales: reportes de errores (30 días, 500 filas) y
+// acciones del admin (1 año, 5000 filas).
+async function pruneHistories() {
+    const day = 24 * 60 * 60 * 1000;
+    try {
+        await db.pruneErrorReports({ olderThan: Date.now() - 30 * day, maxRows: 500 });
+        await db.pruneAuditLog({ olderThan: Date.now() - 365 * day, maxRows: 5000 });
+    } catch (err) {
+        console.error('[Mantenimiento] No se pudieron depurar los historiales:', err.message);
+    }
+}
+setTimeout(pruneHistories, 60 * 1000).unref();
+setInterval(pruneHistories, 6 * 60 * 60 * 1000).unref();
 
 // Render manda SIGTERM antes de reemplazar el proceso en un deploy: se guarda
 // YA el estado en vivo de cada tenant (juegos, rankings, Objetivo) para que el

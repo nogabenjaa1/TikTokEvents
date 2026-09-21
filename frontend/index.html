@@ -12,9 +12,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- La hoja de la fuente se pide con preload y se activa al llegar, en vez
-         de bloquear el primer render (display=swap ya evita texto invisible). -->
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <!-- La hoja de la fuente se pide con preload y main.jsx la activa, en vez de
+         bloquear el primer render (display=swap ya evita texto invisible). Sin un
+         "onload" dentro del propio HTML: la política de seguridad de contenido no
+         tiene que permitir scripts en línea. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
     <title>BenjaApis</title>
     <!-- AdSense necesita este script presente en el HTML de entrada desde

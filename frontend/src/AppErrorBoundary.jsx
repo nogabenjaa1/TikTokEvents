@@ -1,6 +1,7 @@
 import { Component } from 'react';
 import { ThemedShell } from './ThemeContext';
 import { isOverlayMode } from './auth';
+import { reportClientError } from './errorReporter';
 import {
   nextReloadState, OVERLAY_RELOAD_DELAY_MS, OVERLAY_RELOAD_DELAY_UNCOUNTED_MS, OVERLAY_RELOAD_WINDOW_MS,
 } from './errorRecovery';
@@ -47,6 +48,7 @@ export default class AppErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('[Interfaz] Error al dibujar la pantalla:', error, info?.componentStack);
+    reportClientError({ kind: 'render', message: error?.message || String(error), stack: `${error?.stack || ''}\n${info?.componentStack || ''}` });
     if (isOverlayMode()) this.scheduleOverlayReload();
   }
 

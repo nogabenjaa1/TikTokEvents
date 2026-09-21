@@ -385,7 +385,7 @@ test('the add-on price is separate from the plans: it adds to a purchase but can
 
 // ── Purchases (server.js helpers, run against stubs) ──
 function purchaseContext() {
-  const events = { payments: [], stripePayments: [], applied: [], logs: [], fresh: true };
+  const events = { payments: [], stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const context = vm.createContext({
     pricing, spotify, crypto: require('node:crypto'), Date,
@@ -401,6 +401,9 @@ function purchaseContext() {
       insertStripePaymentIfNew: async (row) => { events.stripePayments.push(row); return events.fresh; },
       findById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
       applyPurchase: async (...args) => { events.applied.push(args); },
+      // The pending-payment notes for the admin (Sistema > Pagos); plain copies so deepEqual works across the vm.
+      upsertPaymentFailure: async (row) => { events.failures.push({ ...row }); },
+      resolvePaymentFailureFor: async (...args) => { events.resolved.push(args); },
     },
     console: { log() {}, error: (...args) => events.logs.push(args.join(' ')) },
     EMAIL_RE: /^\S+@\S+\.\S+$/,
@@ -536,6 +539,63 @@ test('a payment whose license update fails is retried, and forgotten if it never
   stripe.context.db.deletePaymentRecord = async (...args) => { stripeForgotten.push(args); };
   await assert.rejects(() => stripe.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_1' }));
   assert.deepEqual(stripeForgotten, [['stripe', 'pi_1']]);
+});
+
+test('a charged payment that cannot be applied is left as a pending note for the admin, with what is needed to apply it by hand', async () => {
+  const mp = purchaseContext();
+  mp.context.setTimeout = (fn) => { fn(); return 0; };
+  mp.context.db.applyPurchase = async () => { throw new Error('db down'); };
+  mp.context.db.deletePaymentRecord = async () => {};
+  await assert.rejects(() => mp.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, mpPaymentId: 'pay-dead' }), /db down/);
+  assert.equal(mp.events.failures.length, 1);
+  const note = mp.events.failures[0];
+  assert.deepEqual([note.provider, note.providerPaymentId, note.licenseId, note.planType, note.spotifyAddon, note.amountCents, note.reason, note.error],
+    ['mp', 'pay-dead', 'm1', 'month', true, 12600 + 18000, 'apply_failed', 'db down']);
+
+  const stripe = purchaseContext();
+  stripe.context.setTimeout = (fn) => { fn(); return 0; };
+  stripe.context.db.applyPurchase = async () => { throw new Error('db down'); };
+  stripe.context.db.deletePaymentRecord = async () => {};
+  await assert.rejects(() => stripe.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'annual', stripePaymentId: 'pi_dead' }));
+  assert.deepEqual([stripe.events.failures[0].provider, stripe.events.failures[0].providerPaymentId, stripe.events.failures[0].reason], ['stripe', 'pi_dead', 'apply_failed']);
+
+  const gone = purchaseContext();
+  assert.equal((await gone.context.applyApprovedPaymentIfNew({ licenseId: 'gone', planType: 'month', mpPaymentId: 'pay-orphan' })).applied, false);
+  assert.deepEqual([gone.events.failures[0].reason, gone.events.failures[0].licenseId], ['license_missing', 'gone']);
+});
+
+test('a payment that finally applies closes its earlier pending note by itself, and a healthy one leaves none', async () => {
+  const clean = purchaseContext();
+  assert.equal((await clean.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-fine' })).applied, true);
+  assert.deepEqual(clean.events.failures, []);
+  assert.deepEqual(clean.events.resolved, [['mp', 'pay-fine', 'automático']]);
+
+  const retried = purchaseContext();
+  assert.equal((await retried.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_again' })).applied, true);
+  assert.deepEqual(retried.events.resolved, [['stripe', 'pi_again', 'automático']]);
+
+  const repeated = purchaseContext();
+  repeated.events.fresh = false;
+  await repeated.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-dup' });
+  assert.deepEqual([repeated.events.failures, repeated.events.resolved], [[], []], 'a duplicate notification touches nothing');
+});
+
+test('a broken pending-payment log never changes what happens to the payment itself', async () => {
+  // The note is a courtesy for the admin: neither a rejected nor a synchronous error from it may hide the real result.
+  for (const failing of [async () => { throw new Error('notes down'); }, () => { throw new Error('notes down, synchronously'); }]) {
+    const ok = purchaseContext();
+    ok.context.db.upsertPaymentFailure = failing;
+    ok.context.db.resolvePaymentFailureFor = failing;
+    assert.equal((await ok.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-ok' })).applied, true);
+    assert.equal(ok.events.applied.length, 1);
+
+    const broken = purchaseContext();
+    broken.context.setTimeout = (fn) => { fn(); return 0; };
+    broken.context.db.applyPurchase = async () => { throw new Error('db down'); };
+    broken.context.db.deletePaymentRecord = async () => {};
+    broken.context.db.upsertPaymentFailure = failing;
+    await assert.rejects(() => broken.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-bad' }), /db down/, 'the caller still sees the real error');
+  }
 });
 
 test('a payment already processed, or for a license that no longer exists, applies nothing', async () => {

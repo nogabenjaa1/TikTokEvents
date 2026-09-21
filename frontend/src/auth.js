@@ -170,6 +170,21 @@ export async function ensureOverlayKey() {
   return true;
 }
 
+// Renueva SOLO los enlaces de overlay: los actuales dejan de funcionar y se genera
+// un token nuevo. La clave de licencia y la sesión no cambian. Guarda el token nuevo
+// en la sesión para que los enlaces que arma buildOverlayUrl ya salgan renovados.
+// Devuelve cuántos overlays abiertos con el enlace anterior se apagaron.
+export async function rotateOverlayKey() {
+  const session = loadSession();
+  if (!session?.token) throw new Error('Inicia sesión para renovar tus enlaces.');
+  const res = await fetch(`${backendUrl()}/api/auth/rotate-overlay-key`, { method: 'POST', headers: authHeaders() });
+  if (res.status === 429) throw new Error('Ya renovaste tus enlaces varias veces en la última hora. Espera un rato e inténtalo de nuevo.');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success || !data.overlayKey) throw new Error(data.error || 'No se pudieron renovar los enlaces. Intenta de nuevo.');
+  saveSession({ ...loadSession(), overlayKey: data.overlayKey });
+  return { disconnected: Number(data.disconnected) || 0 };
+}
+
 // Avisa al backend que mate la sesión ya mismo (no hace falta esperar a que
 // otro dispositivo se loguee para que este token deje de servir). Es un
 // best-effort: si falla (sin conexión, etc.) el logout local sigue andando

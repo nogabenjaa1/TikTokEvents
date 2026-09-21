@@ -1,0 +1,101 @@
+import { useEffect } from 'react';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay } from '../Overlay';
+import DiceOverlay from '../DiceOverlay';
+import { accentStyleVars } from '../ThemeContext';
+import { getOverlayScreen } from '../auth';
+
+// Lo que se ve cuando la página se abre como fuente de navegador de OBS (?overlay=true&screen=...): la pantalla
+// elegida con el estado que llega por el socket. Esa URL ya está pegada en OBS de streamers reales: no
+// cambiar cómo se elige la pantalla ni qué recibe cada una.
+export default function OverlayModeView({
+  socket, state, zubState, elimState, rouletteState, activeApp, prize, overlayTheme, overlayCustomization,
+  diceState, tapTapState, gifterState, spotifyQueueState, extensibleState, goalState, viewerCount,
+}) {
+  // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
+  // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
+  // debe quedar ningún fondo sólido detrás del recuadro además del que
+  // elija la personalización de cada uno (ver overlayCustomization.js).
+  // `body` tiene un color de fondo fijo (ver index.css) que de otra forma
+  // se colaría por fuera del recuadro/fila — se anula solo mientras el
+  // overlay activo es uno de estos, nunca en "juegos" (ahí el fondo
+  // temático de página SÍ es parte del diseño de siempre).
+  // BUG corregido (pedido explícito): "colors" faltaba en esta lista —
+  // Extensible ya lo tenía pero Colores, aunque comparte exactamente el
+  // mismo patrón de tarjeta única (`theme-die-frame` de 960x260), se había
+  // quedado afuera. Sin esto, el `.themed-app` que envuelve a DiceOverlay
+  // seguía pintando su fondo de página sólido por detrás/alrededor del
+  // marco, así que "transparente" en la personalización nunca se veía
+  // realmente transparente en OBS.
+  useEffect(() => {
+    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors', 'goal', 'chat'].includes(getOverlayScreen());
+    document.body.classList.toggle('tkc-overlay-transparent', transparent);
+    return () => document.body.classList.remove('tkc-overlay-transparent');
+  }, []);
+
+  if (!socket) {
+    return (
+      <div className="min-h-screen bg-[#05030A] text-red-400 flex items-center justify-center font-sans text-sm">
+        Falta la clave de licencia en la URL del overlay (?overlay=true&amp;key=...)
+      </div>
+    );
+  }
+  const screen = getOverlayScreen();
+  if (screen === 'colors') {
+    return <DiceOverlay diceState={diceState} theme={overlayTheme} customize={overlayCustomization.colors} />;
+  }
+  // Sin `grid place-items-center` a propósito — el recuadro (380x700
+  // fijo, ver Overlay.jsx) queda anclado arriba con `h-screen flex` en
+  // vez de centrado, para que agregar o perder una fila del ranking
+  // nunca lo reubique en la pantalla (pedido explícito: "posición
+  // estática").
+  if (screen === 'taptap') {
+    return (
+      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <TopTapTapOverlay state={tapTapState} customize={overlayCustomization.taptap} />
+      </div>
+    );
+  }
+  if (screen === 'gifter') {
+    return (
+      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <TopGifterOverlay state={gifterState} customize={overlayCustomization.gifter} />
+      </div>
+    );
+  }
+  if (screen === 'musicqueue') {
+    return (
+      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <SpotifyQueueOverlay state={spotifyQueueState} customize={overlayCustomization.musicqueue} />
+      </div>
+    );
+  }
+  if (screen === 'alerts') {
+    return (
+      <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <AlertOverlay socket={socket} customize={overlayCustomization.alerts} />
+      </div>
+    );
+  }
+  if (screen === 'extensible') {
+    return (
+      <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <ExtensibleOverlay state={extensibleState} customize={overlayCustomization.extensible} />
+      </div>
+    );
+  }
+  if (screen === 'goal') {
+    return (
+      <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <GoalOverlay state={goalState} customize={overlayCustomization.goal} />
+      </div>
+    );
+  }
+  if (screen === 'chat') {
+    return (
+      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <ChatOverlay socket={socket} viewerCount={viewerCount} customize={overlayCustomization.chat} />
+      </div>
+    );
+  }
+  return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />;
+}

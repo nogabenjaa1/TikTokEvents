@@ -39,6 +39,48 @@ test('the overlay token is stable, is not the license key and differs per licens
     assert.notEqual(auth.overlayTokenFor(makeRow({ key_hash: 'hash-two' })), token, 'a regenerated key changes the token');
 });
 
+test('renewing the overlay links changes the token, and a license never renewed keeps the token it already had', () => {
+    const row = makeRow();
+    const original = auth.overlayTokenFor(row);
+    // Links copied into OBS before renewals existed were made without an epoch: they must stay valid.
+    for (const epoch of [0, '0', null, undefined, NaN, 'abc', -0]) {
+        assert.equal(auth.overlayTokenFor({ ...row, overlay_epoch: epoch }), original, String(epoch));
+    }
+    const first = auth.overlayTokenFor({ ...row, overlay_epoch: 1 });
+    const second = auth.overlayTokenFor({ ...row, overlay_epoch: 2 });
+    assert.equal(new Set([original, first, second]).size, 3, 'every renewal gives a different link');
+    assert.equal(auth.overlayTokenFor({ ...row, overlay_epoch: '1' }), first, 'the database may hand the number back as text');
+    assert.match(first, /^ovl\.[\w-]{1,64}\.[A-Za-z0-9_-]{32}$/, 'same shape, so old and new links parse the same way');
+});
+
+test('after renewing, the previous link stops working and the new one works, while the login key is untouched', async () => {
+    const raw = 'carol-MONTH-rawkey22222';
+    const row = seed(makeRow({ id: 'lic-rot', key_hash: auth.hashKey(raw) }));
+    const before = auth.overlayTokenFor(row);
+    assert.ok(await auth.resolveFromOverlayToken(before));
+    assert.equal((await handshake({ licenseKey: before })).err, undefined);
+
+    rows.set(row.id, { ...row, overlay_epoch: 1 });
+    const after = auth.overlayTokenFor(rows.get(row.id));
+    assert.notEqual(after, before);
+    assert.equal(await auth.resolveFromOverlayToken(before), null, 'the old link is dead');
+    assert.equal((await handshake({ licenseKey: before })).err?.message, 'unauthorized', 'and cannot open a socket either');
+    assert.equal((await auth.resolveFromOverlayToken(after)).id, row.id, 'the new link works');
+    const fresh = await handshake({ licenseKey: after });
+    assert.equal(fresh.err, undefined);
+    assert.equal(fresh.socket.authMethod, 'overlay');
+
+    // Renewing the links is not changing the key: logging in with it, and the panel session, go on as before.
+    assert.equal((await auth.resolveFromRawKey(raw)).id, row.id);
+    const session = await handshake({ token: auth.signSession(rows.get(row.id), row.session_id) });
+    assert.equal(session.err, undefined);
+    assert.equal(session.socket.authMethod, 'jwt');
+
+    // Renewing again kills the previous renewal too.
+    rows.set(row.id, { ...row, overlay_epoch: 2 });
+    assert.equal(await auth.resolveFromOverlayToken(after), null);
+});
+
 test('a valid overlay token resolves to its license, and anything altered does not', async () => {
     const row = seed(makeRow());
     const token = auth.overlayTokenFor(row);

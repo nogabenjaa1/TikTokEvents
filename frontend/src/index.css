@@ -618,7 +618,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --notice-ink: var(--ink-danger);
   padding: 0.5rem 0.75rem;
   border: 1px solid color-mix(in oklch, var(--notice) 40%, transparent);
-  border-radius: 0.5rem;
+  border-radius: var(--surface-radius-sm);
   background: color-mix(in oklch, var(--notice) 10%, transparent);
   color: color-mix(in oklch, var(--notice-ink) 65%, var(--status-mix));
   font-size: 0.75rem;

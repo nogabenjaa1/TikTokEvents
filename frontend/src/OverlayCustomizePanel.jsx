@@ -43,8 +43,10 @@ function OptionRow({ active, onSelect, label, hint, children }) {
 // normal sin pelear con ningún !important de tema (a diferencia de
 // getUsernameOverride, que sí necesita las clases de index.css porque
 // APLICA sobre el username real dentro del overlay).
+// El "por defecto" se pinta con la tinta del tema, que es la que el overlay usa
+// para el nombre; un negro fijo desaparecía sobre el fondo del modo oscuro.
 function NamePreview({ type, from, to }) {
-  if (type === 'default') return <span className="text-base font-black flex-shrink-0" style={{ color: '#000000' }}>@abc</span>;
+  if (type === 'default') return <span className="text-base font-black flex-shrink-0" style={{ color: 'var(--ink, currentColor)' }}>@abc</span>;
   if (type === 'theme') return <span className="text-base font-black flex-shrink-0" style={{ color: 'var(--accent-soft)' }}>@abc</span>;
   if (type === 'rainbow') return <span className="text-base font-black flex-shrink-0" style={{ background: RAINBOW_GRADIENT, backgroundSize: '400% 100%', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;
   if (type === 'gradient') return <span className="text-base font-black flex-shrink-0" style={{ background: `linear-gradient(90deg, ${from || '#7C3AED'}, ${to || '#3B82F6'})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>@abc</span>;

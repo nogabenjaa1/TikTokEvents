@@ -74,6 +74,12 @@ typography:
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "0.15em"
+  control:
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 700
+    lineHeight: 1.33
+    letterSpacing: "0.1em"
   overlay-display-sm:
     fontFamily: "ui-sans-serif, system-ui, sans-serif"
     fontSize: "28px"
@@ -237,6 +243,7 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 - **Title** (peso 900/`font-black`, 10px, `tracking-[0.3em]`, mayúsculas): la voz dominante del sistema — encabezados de módulo ("KING", "🔑 Licencias", "🎨 Tema"). Actúa como un eyebrow gigante en vez de un título tradicional.
 - **Body** (peso 700, 14px): nombres de usuario, texto de mensajes de error, contenido variable.
 - **Display de overlay** (peso 900, 28 / 32 / 40 / 52 / 56 / 80px): los números y textos grandes de los overlays de OBS (el cronómetro de Rey del Trono, los contadores y nombres de ganador, el conteo de Eliminación y Ruleta). Se leen desde lejos sobre la escena del directo, por eso salen de la escala del panel. Solo se usan dentro de los overlays, nunca en el panel de control.
+- **Control** (peso 700–900, 12px, `tracking-widest`): el texto de los botones medianos (`theme-btn-md`) y de los avisos (`theme-notice`). Los botones pequeños usan el paso Title (10px) y los grandes el Body (14px).
 - **Label** (peso 700, 11px, `tracking-widest`, mayúsculas): etiquetas de formulario, badges de estado, metadata secundaria (fechas, contadores de uso).
 
 ### Named Rules
@@ -288,7 +295,7 @@ Tres, y solo tres, que se suman al tipo de botón (`theme-btn-primary`, `-second
 - El radio no se declara en el botón: lo pone el tema (`--surface-radius-sm`, píldora en Cute). Escribir `rounded-xl` en un botón de tema no hace nada.
 
 ### Avisos (`theme-notice`)
-Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio 8px, borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
+Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio del tema (`var(--surface-radius-sm)`: 12px en Clásico, 20px en Cute), borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
 - El texto usa el token de tinta de estado (`--ink-*`) **mezclado 65% con negro en modo claro y con blanco en oscuro** (`--status-mix`), lo que da al menos 4,5:1 sobre el pastel y sobre el fondo oscuro. Mezclar con la tinta morada movía el matiz (el verde salía azul): con un acromático el rojo, el ámbar, el verde y el azul siguen reconociéndose.
 - Los avisos de ancho completo (las franjas de arriba de la pantalla) siguen siendo componentes propios.
 

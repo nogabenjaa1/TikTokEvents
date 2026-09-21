@@ -87,6 +87,7 @@ const { createHealthChecker } = require('./lib/healthCheck');
 const { registerSystemRoutes } = require('./routes/system');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
+const { stickerAlertKey, stickerIdFromKey, cleanStickerId } = require('./lib/stickerCatalog');
 const giftDirectory = require('./lib/giftDirectory');
 const { sniffMedia } = require('./lib/mediaSniff');
 
@@ -1119,6 +1120,7 @@ const VALID_TRIGGER_TYPES = ['gift', 'gift_global', ...NON_GIFT_TRIGGER_TYPES];
 // Mismas etiquetas que TRIGGER_LABELS en AlertsAdmin.jsx — solo para el
 // mensaje de conflicto de disparador de abajo.
 const TRIGGER_LABEL_ES = { follow: 'Seguimiento', sticker: 'Sticker de club de fans', gift_global: 'Alerta general' };
+const STICKER_ALERT_LABEL_ES = 'ese sticker del club de fans';
 const MIN_COINS_CAP = 999999;
 // Mismas listas que ANIMATION_IN_OPTIONS/ANIMATION_OUT_OPTIONS en
 // AlertsAdmin.jsx — 'none' significa "sin animación, aparece/desaparece
@@ -1140,6 +1142,9 @@ function serializeAlert(row) {
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType: row.trigger_type || 'gift',
         minCoins: row.min_coins != null ? Number(row.min_coins) : null,
+        // Solo las alertas de UN sticker del club de fans (su clave es sticker:<id>); la
+        // general de "cualquier sticker" no lleva id.
+        stickerId: row.trigger_type === 'sticker' ? stickerIdFromKey(row.gift_name) || null : null,
     };
 }
 
@@ -1177,8 +1182,11 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     // de TikTok, que jamas se llamaria literal "follow"); 'gift_global' usa
     // el mínimo de monedas (puede haber varias, una por cada mínimo
     // distinto, a diferencia de los otros dos que solo admiten una).
+    // 'sticker' puede llevar además el id del sticker elegido en el selector (clave
+    // sticker:<id>, una alerta por sticker); sin id es la de "cualquier sticker".
     let triggerKey;
     let minCoins = null;
+    let stickerId = '';
     if (triggerType === 'gift') {
         // Clave única por borrador: las alertas existentes no se migran ni modifican.
         triggerKey = typeof giftName === 'string' && giftName.trim()
@@ -1189,6 +1197,12 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             return res.status(400).json({ success: false, error: `El mínimo de monedas debe ser un número entre 1 y ${MIN_COINS_CAP}` });
         }
         triggerKey = `global:${minCoins}`;
+    } else if (triggerType === 'sticker') {
+        const askedStickerId = typeof req.body?.stickerId === 'string' ? req.body.stickerId.trim() : '';
+        stickerId = cleanStickerId(askedStickerId);
+        // Un id que no sirve nunca se convierte en silencio en la alerta general.
+        if (askedStickerId && !stickerId) return res.status(400).json({ success: false, error: 'Sticker no válido' });
+        triggerKey = stickerAlertKey(stickerId);
     } else {
         triggerKey = triggerType;
     }
@@ -1241,6 +1255,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         if (occupyingRow && (!isEditing || occupyingRow.id !== editingRow.id)) {
             const conflictLabel = triggerType === 'gift' ? triggerKey
                 : triggerType === 'gift_global' ? `general de ${minCoins} monedas`
+                : triggerType === 'sticker' && stickerId ? STICKER_ALERT_LABEL_ES
                 : TRIGGER_LABEL_ES[triggerType] || triggerKey;
             const conflictNoun = triggerType === 'gift_global' ? 'mínimo' : 'disparador';
             return res.status(409).json({ success: false, error: `Ya existe una alerta para "${conflictLabel}" — bórrala primero o elige otro ${conflictNoun}.` });
@@ -1322,6 +1337,17 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
         console.error('[Alertas] Error subiendo la alerta:', err.message);
         res.status(500).json({ success: false, error: 'No se pudo guardar la alerta — revisa que Supabase Storage esté configurado.' });
     }
+});
+
+// Stickers del club de fans que han llegado en el chat de esta licencia (con su imagen): son
+// los que se pueden elegir al armar una alerta de sticker. TikTok no da la lista de un
+// creador, así que se arma con lo que va apareciendo en sus directos (ver
+// lib/stickerDirectoryCore.js); el panel se entera de los nuevos con `sticker_seen`.
+app.get('/api/stickers', auth.requireAuth, generalLimiter, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const tenant = getOrCreateTenant(req.license.id, req.license.license_type);
+    await tenant.getStickerDirectory().load();
+    res.json({ success: true, stickers: tenant.getKnownStickers() });
 });
 
 app.delete('/api/alerts/:id', auth.requireAuth, generalLimiter, async (req, res) => {
@@ -1468,11 +1494,42 @@ app.get('/api/pricing', async (req, res) => {
     });
 });
 
+// Lo que llega en una notificación sin firma válida lo puede haber mandado
+// cualquiera: antes de imprimirlo en el registro se deja solo lo que tienen los
+// ids y nombres de verdad (nada de saltos de línea que falsifiquen renglones).
+function logSafe(value) {
+    return String(value ?? '').replace(/[^\w.:@-]/g, '').slice(0, 64);
+}
+
 // Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
 // tiene el JWT de la app) — la validación es la firma HMAC del header
 // x-signature contra MP_WEBHOOK_SECRET, documentada acá:
 // https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
 app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
+    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
+    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
+    // camino que cree una Preference/Checkout Pro ni un pago suelto con la
+    // Payments API, así que el único tópico que se procesa es 'order'.
+    //
+    // Pero QUÉ tópicos le manda MercadoPago a esta URL no lo decide el código
+    // sino el dashboard ("Tus integraciones" > Webhooks > Eventos): quitar la
+    // lógica de la Payments API no le quita la suscripción, y mientras 'Pagos'
+    // (o cualquier otro evento) siga marcado seguirán llegando notificaciones
+    // 'payment' -- con IDs solo numéricos, a diferencia de los de 'order'
+    // ("ORD01..."). Antes la firma se validaba PRIMERO, para cualquier tópico:
+    // una notificación de un tópico que ni usamos, o firmada con el secreto de
+    // otra aplicación o del modo de prueba, terminaba en un
+    // "Webhook con firma inválida" que parecía un fallo de los pagos y no lo
+    // era (MercadoPago además la reintenta mientras no reciba un 200). Ahora el
+    // tópico se mira antes: lo que no es 'order' se da por recibido (200) sin
+    // validar ni procesar nada, porque no dispara ningún efecto; la firma se
+    // sigue exigiendo, sin excepción, a lo único que sí compra algo.
+    const topic = req.query.type || req.body?.type;
+    if (topic !== 'order') {
+        console.log(`[MP] Notificación de tópico "${logSafe(topic) || 'desconocido'}" ignorada — esta integración solo procesa 'order' (Orders API).`);
+        return res.sendStatus(200);
+    }
+
     const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
     const xSignature = req.headers['x-signature'];
     const xRequestId = req.headers['x-request-id'];
@@ -1503,7 +1560,16 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
         WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId: String(dataId).toLowerCase(), secret });
     } catch (err) {
         const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
-        console.error('[MP] Webhook con firma inválida — descartado', { reason, dataId, xRequestId, secretLength: secret.length });
+        // Nada de esto está autenticado (la firma justo falló): se limpia antes
+        // de imprimirlo. `live_mode: false` = notificación del modo de prueba
+        // (puede venir firmada con otro secreto); `application_id`/`user_id`
+        // distintos a los propios = otra aplicación apuntando a esta URL. Con
+        // eso se ve de dónde viene en vez de adivinarlo.
+        console.error('[MP] Webhook con firma inválida — descartado', {
+            reason, topic: 'order', dataId: logSafe(dataId), xRequestId: logSafe(xRequestId), secretLength: secret.length,
+            action: logSafe(req.body?.action), liveMode: logSafe(req.body?.live_mode),
+            applicationId: logSafe(req.body?.application_id), userId: logSafe(req.body?.user_id),
+        });
         return res.sendStatus(401);
     }
 
@@ -1511,19 +1577,6 @@ app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
     // notificación si no contesta rápido, y lo que sigue (consultar el pago
     // real contra la API de MP + escribir en la DB) puede tardar un poco.
     res.sendStatus(200);
-
-    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
-    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
-    // camino que cree una Preference/Checkout Pro (se eliminó ese endpoint
-    // muerto hace un tiempo), así que el único tópico real que puede llegar
-    // es 'order'. Se descarta cualquier otro explícitamente en vez de
-    // dejarlo pasar en silencio, para que quede claro en el log si algún
-    // día MercadoPago manda algo inesperado en esta cuenta.
-    const topic = req.query.type || req.body?.type;
-    if (topic !== 'order') {
-        console.log('[MP] Webhook con tópico no soportado (esta integración es solo Orders API) — descartado:', topic);
-        return;
-    }
 
     try {
         // No se confia en el body de la notificacion -- se pide el estado

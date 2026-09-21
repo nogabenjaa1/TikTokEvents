@@ -68,6 +68,7 @@ function alertApi({ license = { id: 'license', license_type: 'lifetime' } } = {}
     crypto: require('node:crypto'), console,
     // The names server.js defines above the sliced routes.
     ...pick(require('./lib/alertQuota'), ['canCreateAlert', 'limitMessage', 'quotaInfo']),
+    ...pick(require('./lib/stickerCatalog'), ['stickerAlertKey', 'stickerIdFromKey', 'cleanStickerId']),
     ALERT_VISUAL_GROUPS: ['image', 'gif', 'video'], sniffMedia: require('./lib/mediaSniff').sniffMedia,
     storage: { uploadFile: async (storedPath, buffer, mime) => { uploads.push({ path: storedPath, mime }); return `https://files.test/${storedPath}`; }, deleteFile: async () => {} },
     db: {
@@ -133,6 +134,55 @@ test('multiple drafts survive editing and assigning a fresh gift without affecti
   assert.equal(api.rows.get(original.alert.id).alert_text, 'Original {username}');
   assert.equal(api.configs.get('Rose').text, 'Original {username}');
   assert.equal(api.configs.get('Lion').text, 'Now assigned');
+});
+
+test('a fan club sticker alert can be for one sticker or for any of them, one alert each', async () => {
+  const api = alertApi();
+  const any = await api.save({ triggerType: 'sticker', text: 'Cualquiera {username}' });
+  assert.equal(any.success, true);
+  assert.equal(any.alert.triggerType, 'sticker');
+  assert.equal(any.alert.stickerId, null, 'the general one has no sticker id');
+  assert.ok(api.rows.has(any.alert.id));
+  assert.equal([...api.rows.values()][0].gift_name, 'sticker', 'the key the old general alert always had');
+
+  const own = await api.save({ triggerType: 'sticker', stickerId: '7121025198379731714', text: 'Este {username}' });
+  assert.equal(own.success, true);
+  assert.equal(own.alert.stickerId, '7121025198379731714');
+  assert.equal(own.alert.giftId, null, 'a sticker id is not a gift id');
+  assert.equal(api.rows.size, 2, 'the general alert and the sticker one live side by side');
+  assert.equal(api.configs.get('sticker:7121025198379731714').text, 'Este {username}');
+  assert.equal(api.configs.get('sticker').text, 'Cualquiera {username}');
+
+  const other = await api.save({ triggerType: 'sticker', stickerId: '7121025198379731999', text: 'Otro' });
+  assert.equal(other.success, true);
+  assert.equal(api.rows.size, 3);
+});
+
+test('a sticker cannot get two alerts, and a bad id never turns into the general alert', async () => {
+  const api = alertApi();
+  await api.save({ triggerType: 'sticker', stickerId: '123', text: 'uno' });
+  const twice = await api.save({ triggerType: 'sticker', stickerId: '123', text: 'dos' });
+  assert.equal(twice.status, 409);
+  assert.match(twice.error, /sticker/i);
+  assert.equal(api.rows.size, 1);
+
+  const bad = await api.save({ triggerType: 'sticker', stickerId: 'abc', text: 'malo' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.error, 'Sticker no válido');
+  assert.equal(api.rows.size, 1, 'nothing was saved');
+});
+
+test('moving an alert to another sticker replaces its old key instead of leaving an orphan', async () => {
+  const api = alertApi();
+  const general = await api.save({ triggerType: 'sticker', text: 'general' });
+  const moved = await api.save({ alertId: general.alert.id, triggerType: 'sticker', stickerId: '555', text: 'general' });
+  assert.equal(moved.success, true);
+  assert.equal(moved.alert.stickerId, '555');
+  assert.equal(api.rows.size, 1);
+  assert.equal(api.configs.has('sticker'), false, 'the general key is gone from the cache');
+  assert.equal(api.configs.has('sticker:555'), true);
+  const listed = await api.list();
+  assert.equal(listed.alerts[0].stickerId, '555');
 });
 
 test('editing an assigned alert offline preserves its gift and media', async () => {

@@ -16,14 +16,18 @@ function useNow(intervalMs = 5000) {
   return now;
 }
 
-// El ícono de la fila: la imagen del regalo, o el de seguidor / sticker. Si la
-// imagen de TikTok no carga, se muestra 🎁 en su lugar.
+// El ícono de la fila: la imagen del regalo, la del propio sticker (o la genérica
+// si no llegó o no carga), o la de seguidor. Si la imagen de un regalo no carga,
+// se muestra 🎁 en su lugar.
 function FeedIcon({ item }) {
   const [failed, setFailed] = useState(false);
   let content;
   if (item.type === 'follow') content = <img src={iconFollow} alt="" className="w-7 h-7 object-contain" />;
-  else if (item.type === 'sticker') content = <img src={iconSticker} alt="" className="w-7 h-7 object-contain" />;
-  else if (item.icon && !failed) content = <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />;
+  else if (item.type === 'sticker') {
+    content = item.icon && !failed
+      ? <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />
+      : <img src={iconSticker} alt="" className="w-7 h-7 object-contain" />;
+  } else if (item.icon && !failed) content = <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />;
   else content = <span className="text-xl leading-none" aria-hidden="true">🎁</span>;
   return (
     <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'color-mix(in oklch, var(--accent) 14%, transparent)' }}>

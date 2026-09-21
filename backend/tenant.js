@@ -274,6 +274,13 @@ class Tenant {
         // Sockets de overlays de alertas conectados (para que el panel no
         // suene encima de OBS) -- ver alerts.js.
         this.alertOverlaySockets = new Set();
+        // Stickers del club de fans (ver lib/tenant/stickers.js): catálogo de esta
+        // licencia (se crea al primer uso), paneles que avisan al terminar de leer un
+        // mensaje con el TTS, y alertas de sticker esperando a ese aviso.
+        this.stickerDirectory = null;
+        this.stickerRepeatGuard = null;
+        this.panelSockets = new Set();
+        this.pendingStickerAlerts = new Map();
 
         // Estado para el overlay multi-app (Rey del Trono / Zubastinis /
         // Eliminación / Ruleta, elegidos con set_active_app). Color Says no
@@ -465,6 +472,7 @@ class Tenant {
         this.registerSpotifyHandlers(socket);
         this.registerSettingsHandlers(socket);
         this.registerAlertHandlers(socket);
+        this.registerStickerHandlers(socket);
         this.registerFeedHandlers(socket);
     }
 }
@@ -475,6 +483,7 @@ Object.assign(Tenant.prototype, require('./lib/tenant/events'));
 Object.assign(Tenant.prototype, require('./lib/tenant/persistence'));
 Object.assign(Tenant.prototype, require('./lib/tenant/runtimeState'));
 Object.assign(Tenant.prototype, require('./lib/tenant/alerts'));
+Object.assign(Tenant.prototype, require('./lib/tenant/stickers'));
 Object.assign(Tenant.prototype, require('./lib/tenant/feed'));
 Object.assign(Tenant.prototype, require('./lib/tenant/spotify'));
 Object.assign(Tenant.prototype, require('./lib/tenant/king'));

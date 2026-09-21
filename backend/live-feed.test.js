@@ -65,18 +65,22 @@ test('a panel that connects (or reloads) receives what is recent in one message'
 function eventsTenant() {
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? { record() {} } : {}),
+    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? { record() {} } : name.includes('stickerCatalog') ? require('./lib/stickerCatalog') : {}),
     setTimeout, clearTimeout, Date, console, Math, Number, String, Map, Set, Object, Array,
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/events'), 'utf8'), context);
   const tenant = Object.create(context.module.exports);
   const feed = [];
   const alerts = [];
+  const stickerUses = [];
   tenant.pushFeed = (item) => feed.push({ ...item });
   tenant.processAlertTrigger = (payload) => alerts.push(payload);
   tenant.processFollowExtensible = () => {};
   tenant.processFollowGoal = () => {};
-  return { tenant, feed, alerts };
+  // Lo que hace un sticker con el feed y las alertas vive en lib/tenant/stickers.js (ver stickers.test.js).
+  tenant.processStickerUse = (payload) => { stickerUses.push(payload); return false; };
+  tenant.noteEmoteSample = () => {};
+  return { tenant, feed, alerts, stickerUses };
 }
 
 test('a follow goes to the feed (and still fires its alert); a share does not', () => {
@@ -88,12 +92,13 @@ test('a follow goes to the feed (and still fires its alert); a share does not', 
   assert.equal(feed.length, 1, 'not a follow: nothing new');
 });
 
-test('a fan club sticker goes to the feed, an ordinary emote does not', () => {
-  const { tenant, feed, alerts } = eventsTenant();
+test('a fan club sticker is handed to the sticker logic, an ordinary emote is not', () => {
+  const { tenant, stickerUses } = eventsTenant();
   tenant.handleEmoteEvent({ uniqueId: 'carla', nickname: 'Carla', emoteList: [{ emoteType: 2 }] });
-  assert.equal(feed.length, 1);
-  assert.equal(feed[0].type, 'sticker');
-  assert.equal(alerts.length, 1);
+  assert.equal(stickerUses.length, 1);
+  assert.equal(stickerUses[0].username, 'carla');
+  assert.equal(stickerUses[0].nickname, 'Carla');
+  assert.equal(stickerUses[0].stickers.length, 1);
   tenant.handleEmoteEvent({ uniqueId: 'dani', emoteList: [{ emoteType: 1 }] });
-  assert.equal(feed.length, 1);
+  assert.equal(stickerUses.length, 1, 'an ordinary emote is not a fan club sticker');
 });

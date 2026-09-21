@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
+import StickerPicker from './StickerPicker';
+import { addSeenSticker, stickerForId, stickerLabel, stickerTriggerKey } from './stickerCatalog';
 import { SkeletonRows } from './PanelHelp';
 import iconFollow from './assets/alert-follow.png';
 import iconGlobal from './assets/alert-global.png';
@@ -134,6 +136,7 @@ function alertDisplayName(alert) {
     const n = alert.minCoins ?? 0;
     return `Alerta general · desde ${n} moneda${n === 1 ? '' : 's'}`;
   }
+  if (alert.triggerType === 'sticker') return alert.stickerId ? stickerLabel({ id: alert.stickerId }) : 'Cualquier sticker del club de fans';
   if (alert.triggerType && alert.triggerType !== 'gift') return TRIGGER_LABELS[alert.triggerType] || alert.giftName;
   return alert.giftName || 'Regalo pendiente de seleccionar';
 }
@@ -195,19 +198,24 @@ const TRIGGER_ICONS = {
   sticker: { src: iconSticker, label: 'Sticker de club de fans' },
 };
 
-function AlertTypeIcon({ alert, giftIcon }) {
+function AlertTypeIcon({ alert, giftIcon, stickerIcon }) {
+  const [stickerFailed, setStickerFailed] = useState(false);
+  // La alerta de UN sticker muestra la imagen de ese sticker (si ya se conoce y carga).
+  if (alert.stickerId && stickerIcon && !stickerFailed) {
+    return <img src={stickerIcon} alt="Sticker del club de fans" referrerPolicy="no-referrer" onError={() => setStickerFailed(true)} className="w-9 h-9 object-contain flex-shrink-0" />;
+  }
   const fixed = TRIGGER_ICONS[alert.triggerType];
   const src = fixed ? fixed.src : giftIcon;
   if (!src) return <span className="w-9 h-9 flex items-center justify-center text-2xl flex-shrink-0" role="img" aria-label="Regalo">🎁</span>;
   return <img src={src} alt={fixed ? fixed.label : 'Regalo'} className="w-9 h-9 object-contain flex-shrink-0" />;
 }
 
-function AlertRow({ alert, giftIcon, testFire, previewSaved, startEdit, remove }) {
+function AlertRow({ alert, giftIcon, stickerIcon, testFire, previewSaved, startEdit, remove }) {
   const name = alertDisplayName(alert);
   return (
     <div className="theme-input flex flex-col gap-3 px-4 py-3">
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <AlertTypeIcon alert={alert} giftIcon={giftIcon} />
+        <AlertTypeIcon alert={alert} giftIcon={giftIcon} stickerIcon={stickerIcon} />
         <div className="min-w-0">
           <p className="text-sm font-bold text-white truncate">{name}</p>
           <p className="text-[11px] text-gray-500 truncate">
@@ -279,6 +287,12 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [loading, setLoading] = useState(true);
   const [triggerType, setTriggerType] = useState('gift');
   const [selectedGift, setSelectedGift] = useState(null);
+  // Sticker de la alerta de sticker: { id, imageUrl }, o null = cualquiera del club de fans.
+  const [selectedSticker, setSelectedSticker] = useState(null);
+  // Stickers del club de fans que han llegado en el chat de tus directos (TikTok no da la lista de
+  // un creador, así que se llena solo: ver stickerCatalog.js). Los guardados vienen del servidor y
+  // los nuevos llegan con `sticker_seen` mientras esta pantalla está abierta.
+  const [stickers, setStickers] = useState([]);
   const [minCoins, setMinCoins] = useState('');
 
   const [visualFile, setVisualFile] = useState(null);
@@ -384,7 +398,9 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     clearTimeout(savedPreviewTimer.current);
     setSavedPreviewPhase('entering');
     const isGlobal = alert.triggerType === 'gift_global';
-    setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, isGlobal ? '' : alert.giftName, isGlobal ? (alert.minCoins ?? 100) : '100') });
+    // Solo una alerta de un regalo tiene un regalo que mostrar (en las demás `giftName` es la clave interna).
+    const hasGift = !alert.triggerType || alert.triggerType === 'gift';
+    setSavedPreview({ ...alert, text: applyPreviewTags(alert.text, hasGift ? alert.giftName : '', isGlobal ? (alert.minCoins ?? 100) : '100') });
     const { duration: dur, animation } = alertTiming(alert);
     const timers = [
       setTimeout(() => setSavedPreviewPhase('visible'), animation),
@@ -418,6 +434,22 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
   useEffect(() => { fetchAlerts(); }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${backendUrl()}/api/stickers`, { headers: authHeaders(), cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled && data.success && Array.isArray(data.stickers)) setStickers((prev) => data.stickers.reduce(addSeenSticker, prev)); })
+      .catch(() => { /* sin catálogo todavía: queda "cualquier sticker" y los que vayan llegando */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onSeen = (sticker) => setStickers((prev) => addSeenSticker(prev, sticker));
+    socket.on('sticker_seen', onSeen);
+    return () => socket.off('sticker_seen', onSeen);
+  }, [socket]);
+
   // Separadas para la lista de abajo (pedido explícito: "alertas globales y
   // alertas específicas" como dos categorías) — las generales ordenadas por
   // mínimo ascendente, para que se lea como una escalera de niveles.
@@ -433,6 +465,9 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     return g?.icon || null;
   };
 
+  // Imagen del sticker de cada alerta de un sticker puntual (catálogo de tus directos).
+  const stickerIconFor = (alert) => (alert.stickerId ? stickers.find((s) => s.id === alert.stickerId)?.imageUrl || null : null);
+
   const alertForTrigger = (triggerKey) => alerts.find((a) => a.giftName.toLowerCase() === triggerKey.toLowerCase());
 
   // Pedido explícito: después de guardar (nueva alerta o edición), el
@@ -443,6 +478,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setEditingExisting(null);
     setTriggerType('gift');
     setSelectedGift(null);
+    setSelectedSticker(null);
     setMinCoins('');
     setVisualFile(null);
     setAudioFile(null);
@@ -484,6 +520,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     } else {
       setSelectedGift(null);
     }
+    setSelectedSticker(alert.triggerType === 'sticker' ? stickerForId(stickers, alert.stickerId) : null);
     setMinCoins(alert.triggerType === 'gift_global' && alert.minCoins != null ? String(alert.minCoins) : '');
     setVisualFile(null);
     setAudioFile(null);
@@ -526,6 +563,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       // vivo no coincide con el del catálogo.
       if (triggerType === 'gift' && selectedGift?.id != null) form.append('giftId', String(selectedGift.id));
       if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
+      // Sin id es la alerta general de "cualquier sticker del club de fans", como siempre.
+      if (triggerType === 'sticker' && selectedSticker?.id) form.append('stickerId', selectedSticker.id);
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
       form.append('textColor', textColor);
@@ -696,7 +735,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             {specificAlerts.length > 0 ? (
               <div className="flex flex-col gap-2">
                 {specificAlerts.map((alert) => (
-                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} stickerIcon={stickerIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
                 ))}
               </div>
             ) : (
@@ -713,7 +752,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             {globalAlerts.length > 0 ? (
               <div className="flex flex-col gap-2">
                 {globalAlerts.map((alert) => (
-                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
+                  <AlertRow key={alert.id} alert={alert} giftIcon={giftIconFor(alert)} stickerIcon={stickerIconFor(alert)} testFire={testFire} previewSaved={previewSaved} startEdit={startEdit} remove={remove} />
                 ))}
               </div>
             ) : (
@@ -749,7 +788,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         <div className="flex gap-2 flex-wrap">
           {TRIGGER_TYPES.map((t) => (
             <button key={t.id} type="button"
-              onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'gift_global') setMinCoins(''); }}
+              onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'sticker') setSelectedSticker(null); if (t.id !== 'gift_global') setMinCoins(''); }}
               aria-pressed={triggerType === t.id}
               className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
               {t.icon} {t.label}
@@ -761,8 +800,14 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             Se dispara con cualquier regalo que NO tenga su propia alerta específica y cuyo valor en monedas alcance el mínimo de abajo. Nunca compite con una alerta específica: si el regalo tiene la suya, esa gana siempre.
           </p>
         )}
-        {triggerType !== 'gift' && triggerType !== 'gift_global' && conflictForTrigger(triggerType) && (
-          <p className="text-[11px] text-amber-500 mt-3">Ya existe una alerta para "{TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.</p>
+        {triggerType !== 'gift' && triggerType !== 'gift_global' && conflictForTrigger(triggerType === 'sticker' ? stickerTriggerKey(selectedSticker?.id) : triggerType) && (
+          <p className="text-[11px] text-amber-500 mt-3">
+            {triggerType !== 'sticker'
+              ? `Ya existe una alerta para "${TRIGGER_LABELS[triggerType]}" — bórrala o elige otro disparador antes de guardar.`
+              : selectedSticker
+                ? 'Ya existe una alerta para ese sticker — bórrala o elige otro antes de guardar.'
+                : 'Ya existe la alerta de "Cualquier sticker del club de fans". Elige un sticker de la lista para crear una propia, o bórrala antes de guardar.'}
+          </p>
         )}
 
         {triggerType === 'gift_global' && (
@@ -793,6 +838,28 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               renderBadge={(gift) => conflictForTrigger(gift.name) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex-shrink-0">ya tiene alerta</span>}
             />
             {!selectedGift && <p className="text-xs text-gray-400 mt-2">Puedes guardar la alerta sin regalo y editarla para asignarlo cuando estés conectado a TikTok LIVE.</p>}
+          </div>
+        )}
+        {triggerType === 'sticker' && (
+          <div className="mt-4 relative z-20">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎫 STICKER</label>
+            <StickerPicker
+              stickers={stickers}
+              selected={selectedSticker}
+              onSelect={setSelectedSticker}
+              renderBadge={(sticker) => conflictForTrigger(stickerTriggerKey(sticker?.id)) && <span className="theme-chip text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex-shrink-0">ya tiene alerta</span>}
+            />
+            <p className="text-[11px] text-gray-500 mt-2">
+              Se dispara cada vez que alguien manda ese sticker (emote) en el chat. Si un mismo comentario lo trae varias veces, la alerta se dispara una sola vez.
+              Y si el comentario también trae un texto que lee el TTS, la alerta espera a que termine de leerse.
+            </p>
+            {stickers.length === 0 ? (
+              <p className="text-xs text-gray-400 mt-2">
+                Aún no hay stickers (emotes) guardados. TikTok no entrega esa lista, así que se agregan solos: en cuanto alguien mande uno en tu chat mientras estás en vivo, aparece aquí con su imagen y queda guardado para la próxima vez. Mientras tanto puedes usar «Cualquier sticker del club de fans».
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-500 mt-2">¿No ves uno? Aparece en cuanto alguien lo mande en tu chat mientras estás en vivo.</p>
+            )}
           </div>
         )}
       </FormSection>

@@ -48,9 +48,20 @@ const REPLACEMENTS = [
         // tiktok-live-proto/v3). Sin este parche, esos 3 campos se pierden
         // en la simplificacion de WebcastChatMessage.emotes -- solo deja
         // emoteId/emoteImageUrl/placeInComment.
-        label: 'WebcastChatMessage.emotes (agrega emoteType/emoteScene/rewardCondition)',
-        froms: ['placeInComment: emote.placeInComment\n\t\t\t\t}));'],
-        to: 'placeInComment: emote.placeInComment,\n\t\t\t\t\temoteType: emote.emote?.emoteType,\n\t\t\t\t\temoteScene: emote.emote?.emoteScene,\n\t\t\t\t\trewardCondition: emote.emote?.rewardCondition\n\t\t\t\t}));',
+        //
+        // Además, la librería lee dos campos que NO existen en el protobuf v3 que
+        // trae (tiktok-live-proto/v3, EmoteWithIndex e ImageModel): la posición del
+        // emote dentro del comentario se llama `index` (no `placeInComment`) y la
+        // imagen no tiene `imageUrl` sino `urlList`. Sin esto `placeInComment` y
+        // `emoteImageUrl` llegaban siempre `undefined` y no había imagen del sticker
+        // que mostrar en el selector de alertas. Los `froms` cubren el texto original
+        // y el estado de un parche anterior, para que funcione desde cualquier punto.
+        label: 'WebcastChatMessage.emotes (agrega emoteType/emoteScene/rewardCondition, imagen e índice)',
+        froms: [
+            'emoteImageUrl: emote.emote?.image?.imageUrl,\n\t\t\t\t\tplaceInComment: emote.placeInComment\n\t\t\t\t}));',
+            'emoteImageUrl: emote.emote?.image?.imageUrl,\n\t\t\t\t\tplaceInComment: emote.placeInComment,\n\t\t\t\t\temoteType: emote.emote?.emoteType,\n\t\t\t\t\temoteScene: emote.emote?.emoteScene,\n\t\t\t\t\trewardCondition: emote.emote?.rewardCondition\n\t\t\t\t}));',
+        ],
+        to: 'emoteImageUrl: emote.emote?.image?.imageUrl || emote.emote?.image?.urlList?.[0],\n\t\t\t\t\tplaceInComment: emote.placeInComment ?? emote.index,\n\t\t\t\t\temoteType: emote.emote?.emoteType,\n\t\t\t\t\temoteScene: emote.emote?.emoteScene,\n\t\t\t\t\trewardCondition: emote.emote?.rewardCondition\n\t\t\t\t}));',
     },
     {
         label: 'getTopViewerAttributes',

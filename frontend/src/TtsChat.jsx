@@ -1,5 +1,6 @@
 import { HowItWorks } from './PanelHelp';
 import { randomVoicePool, utteranceTimeoutMs } from './ttsVoice';
+import { createTtsRelease } from './ttsRelease';
 import { writeStorage } from './safeStorage';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
@@ -139,8 +140,27 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const watchdogRef = useRef(null);
   const recoveredTimeoutRef = useRef(null);
   const recentTextsRef = useRef([]); // [{ text, ts }] — para "ignorar repetidos"
+  // El mensaje que se está leyendo ahora, y cómo avisarle al servidor que se terminó con uno (ver
+  // ttsRelease.js): una alerta de sticker que viene en un comentario espera a que la voz lo lea.
+  const speakingMessageRef = useRef(null);
+  const releaseRef = useRef(() => false);
 
   const connected = connectionStatus === 'connected';
+
+  // Avisa al servidor cuando la voz termina con un mensaje que tiene una alerta de sticker esperando, y
+  // que este panel sabe avisar (sin esto una pestaña con una versión vieja del panel dejaría esas
+  // alertas esperando de más). Se repite en cada reconexión: el servidor ve un socket nuevo.
+  useEffect(() => {
+    if (!socket) return undefined;
+    releaseRef.current = createTtsRelease((event, id) => socket.emit(event, id));
+    const announce = () => socket.emit('tts_ack_ready');
+    if (socket.connected) announce();
+    socket.on('connect', announce);
+    return () => {
+      socket.off('connect', announce);
+      releaseRef.current = () => false;
+    };
+  }, [socket]);
 
   // El padre (App.jsx) muestra el estado del motor en el indicador de salud.
   useEffect(() => { onEngineStatusChange?.(engineStatus); }, [engineStatus, onEngineStatusChange]);
@@ -282,6 +302,11 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
     if (recoveredTimeoutRef.current) { clearTimeout(recoveredTimeoutRef.current); recoveredTimeoutRef.current = null; }
     window.speechSynthesis?.cancel();
+    // Lo que estaba pendiente (la cola y lo que se leía) se descarta: se avisa para que las alertas de
+    // sticker que esperaban a esos mensajes no sigan esperando.
+    releaseRef.current(speakingMessageRef.current);
+    speakingMessageRef.current = null;
+    queueRef.current.forEach((entry) => releaseRef.current(entry.message));
     queueRef.current = [];
     speakingRef.current = false;
     setQueueCount(0);
@@ -299,13 +324,14 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     const now = Date.now();
     const maxAgeMs = Math.max(5, Number(settingsRef.current.maxMessageAgeSec) || DEFAULT_MAX_MESSAGE_AGE_SEC) * 1000;
     while (queueRef.current.length && now - queueRef.current[0].ts > maxAgeMs) {
-      queueRef.current.shift();
+      releaseRef.current(queueRef.current.shift().message);
     }
     const next = queueRef.current.shift();
     setQueueCount(queueRef.current.length);
     if (!next) { setEngineStatus('idle'); return; }
 
     speakingRef.current = true;
+    speakingMessageRef.current = next.message;
     setEngineStatus('speaking');
     const current = settingsRef.current;
     const spokenText = applyMessageTemplate(next.message, current.messageTemplate);
@@ -314,6 +340,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
 
     const finish = () => {
       if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+      releaseRef.current(next.message);
+      if (speakingMessageRef.current === next.message) speakingMessageRef.current = null;
       speakingRef.current = false;
       processQueue();
     };
@@ -352,31 +380,38 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // repetitivos, filtro de palabras) — se aplican ACÁ, antes de que el
   // mensaje siquiera entre a la cola, así ni ocupan un lugar ni suman
   // retraso para los mensajes que sí importan.
+  // Devuelve true si el mensaje quedó en la cola de voz (ahí se avisa al servidor cuando termine con él).
   const enqueue = (message) => {
     const current = settingsRef.current;
     const text = message.comment;
-    if (text.trim().length < current.minChars) return;
-    if (isBlocked(text, current.blockedWords)) return;
+    if (text.trim().length < current.minChars) return false;
+    if (isBlocked(text, current.blockedWords)) return false;
     const normalized = normalizeForRepeat(text);
-    if (current.ignoreRepeats && isRepeat(normalized)) return;
+    if (current.ignoreRepeats && isRepeat(normalized)) return false;
     recentTextsRef.current.push({ text: normalized, ts: Date.now() });
     if (recentTextsRef.current.length > REPEAT_HISTORY) recentTextsRef.current.shift();
 
     queueRef.current.push({ message, ts: Date.now() });
     // Cola topeada: si se satura, se descarta el más viejo — pedido
     // explícito de que la cola sea eficiente y no crezca sin límite.
-    if (queueRef.current.length > MAX_QUEUE) queueRef.current.shift();
+    if (queueRef.current.length > MAX_QUEUE) releaseRef.current(queueRef.current.shift().message);
     setQueueCount(queueRef.current.length);
     processQueue();
+    return true;
   };
 
   useEffect(() => {
-    if (!socket || !('speechSynthesis' in window)) return;
+    if (!socket) return;
 
-    const onMessage = (message) => {
+    // Devuelve true si el mensaje quedó pendiente en la cola de voz. En cualquier otro caso (TTS
+    // apagado, sin permiso, filtrado, o un navegador sin voz) el servidor se entera ya, para que una
+    // alerta de sticker que espera a este mensaje no se quede esperando.
+    const handleMessage = (message) => {
+      if (!('speechSynthesis' in window)) return false;
       const current = settingsRef.current;
-      if (!current.enabled || message.comment.includes('@')) return;
-      if (seenIds.current.has(message.id)) return;
+      if (!current.enabled || message.comment.includes('@')) return false;
+      // Un mensaje repetido por el socket ya está en manos de la primera copia.
+      if (seenIds.current.has(message.id)) return true;
       seenIds.current.add(message.id);
       if (seenIds.current.size > 500) seenIds.current.clear();
 
@@ -388,16 +423,20 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
       const override = normalizedUniqueId
         ? current.usernameOverrides.find((entry) => entry.username === normalizedUniqueId)
         : null;
-      if (override?.mode === 'disabled') return;
+      if (override?.mode === 'disabled') return false;
 
       const authorized = override?.mode === 'enabled'
         || current.allUsers
         || (current.moderators && message.isModerator)
         || (current.superFans && message.isSuperFan)
         || (current.fanMembers && message.fanLevel >= current.minFanLevel);
-      if (!authorized) return;
+      if (!authorized) return false;
 
-      enqueue(message);
+      return enqueue(message);
+    };
+
+    const onMessage = (message) => {
+      if (!handleMessage(message)) releaseRef.current(message);
     };
 
     socket.on('tts_chat_message', onMessage);
@@ -418,6 +457,8 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     if (synth.paused) synth.resume();
     if (speakingRef.current && !synth.speaking && !synth.pending) {
       if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+      releaseRef.current(speakingMessageRef.current);
+      speakingMessageRef.current = null;
       speakingRef.current = false;
       processQueue();
     } else if (!speakingRef.current && queueRef.current.length > 0) {

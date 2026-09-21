@@ -73,6 +73,7 @@ const storage = require('./storage');
 const Tenant = require('./tenant');
 const downloader = require('./downloader');
 const { DownloadUrlError } = require('./lib/downloaderSafety');
+const { createHandshakeLimiter, clientIp, isNewSession } = require('./lib/handshakeLimiter');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
 const giftDirectory = require('./lib/giftDirectory');
@@ -2185,6 +2186,15 @@ app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, r
 // ==========================================
 // SOCKET.IO: autenticación en el handshake + aislamiento por room
 // ==========================================
+// Freno a las conexiones nuevas por IP: cada intento, aunque traiga una clave
+// falsa, cuesta una consulta a la base de datos (ver lib/handshakeLimiter.js).
+const handshakeLimiter = createHandshakeLimiter({ max: Number(process.env.SOCKET_HANDSHAKES_PER_MINUTE) || 300 });
+setInterval(() => handshakeLimiter.sweep(), 60 * 1000).unref();
+io.engine.use((req, res, next) => {
+    if (!isNewSession(req) || handshakeLimiter.allow(clientIp(req))) return next();
+    res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });
+    res.end('Demasiadas conexiones desde esta dirección. Espera un minuto.');
+});
 io.use(auth.socketAuthMiddleware);
 
 // Saca de memoria los tenants que nadie usa hace rato (ver

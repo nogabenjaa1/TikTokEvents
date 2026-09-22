@@ -762,6 +762,15 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   to   { background-position: 400% 0; }
 }
 
+/* Overlay "tira" (ticker) de regalos con alerta: la lista se duplica una vez
+   (ver GiftTickerOverlay.jsx) y esto la corre exactamente la mitad de su
+   ancho -- como el contenido se repite, el final de la primera copia
+   encastra con el principio de la segunda y el bucle no se nota. */
+@keyframes tkc-ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 /* Personalización de overlays: color de nombre de usuario "personalizado" o
    "arcoíris" (ver getUsernameOverride en overlayCustomization.js). Tienen
    que ir como CLASE con !important, no como `style` inline — las reglas de

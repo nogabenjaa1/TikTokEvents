@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay } from '../Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, GiftTickerOverlay } from '../Overlay';
 import DiceOverlay from '../DiceOverlay';
 import { accentStyleVars } from '../ThemeContext';
 import { getOverlayScreen } from '../auth';
@@ -78,6 +78,13 @@ export default function OverlayModeView({
     return (
       <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
         <AlertOverlay socket={socket} customize={overlayCustomization.alerts} />
+      </div>
+    );
+  }
+  if (screen === 'ticker') {
+    return (
+      <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <GiftTickerOverlay socket={socket} customize={overlayCustomization.ticker} />
       </div>
     );
   }

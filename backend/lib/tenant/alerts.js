@@ -6,6 +6,7 @@ const {
     applyAlertTextTemplate,
 } = require('../../lib/tenantHelpers');
 const { giftNameKey } = require('../../lib/giftCatalog');
+const giftDirectory = require('../giftDirectory');
 
 module.exports = {
     // ==========================================
@@ -23,8 +24,9 @@ module.exports = {
         try {
             const rows = await db.listAlertConfigs(this.licenseId);
             rows.forEach((row) => {
+                const triggerType = row.trigger_type || 'gift';
                 this.alertConfigs[row.gift_name.toLowerCase()] = {
-                    id: row.id, giftName: row.gift_name,
+                    id: row.id, giftName: row.gift_name, triggerType,
                     visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
                     audioUrl: row.audio_url,
                     text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
@@ -32,6 +34,9 @@ module.exports = {
                     durationMs: row.duration_ms, position: row.position,
                     entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
                     minCoins: row.min_coins != null ? Number(row.min_coins) : null,
+                    // Ver getGiftTickerSnapshot: una fila vieja sin apodo propio muestra el
+                    // nombre del regalo (nunca se guardó el nombre real del archivo subido).
+                    apodo: row.apodo || (triggerType === 'gift' ? row.gift_name : '') || '',
                 };
             });
         } catch (err) {
@@ -40,13 +45,49 @@ module.exports = {
     },
 
     // Llamados desde server.js justo después de guardar/borrar en la DB —
-    // mantienen este cache en memoria al día sin tener que releer todo.
+    // mantienen este cache en memoria al día sin tener que releer todo. El
+    // overlay 'ticker' (tira de regalos con alerta) no vuelve a pedir nada:
+    // se le reenvía la lista completa cada vez que algo cambia.
     setAlertConfig(giftName, alertData) {
         this.alertConfigs[giftName.toLowerCase()] = alertData;
+        this.emitGiftTickerSnapshot();
     },
 
     removeAlertConfig(giftName) {
         delete this.alertConfigs[giftName.toLowerCase()];
+        this.emitGiftTickerSnapshot();
+    },
+
+    // Instantánea para el overlay 'ticker': solo las alertas de UN regalo
+    // puntual (no las generales por mínimo, ni follow/sticker -- no tienen
+    // una sola imagen que mostrar) y con un regalo real elegido (una alerta
+    // recién creada sin regalo todavía usa una clave __draft_gift__ interna,
+    // no se muestra). El ícono se resuelve acá, contra el directorio GLOBAL
+    // de regalos vistos (giftDirectory, ver giftDirectoryCore.js) -- el
+    // overlay no tiene sesión ni el catálogo en vivo del panel, así que no
+    // puede resolverlo por su cuenta.
+    async getGiftTickerSnapshot() {
+        await giftDirectory.load();
+        const gifts = giftDirectory.list();
+        const findIcon = (giftId, giftName) => {
+            if (giftId) {
+                const byId = gifts.find((g) => String(g.id) === String(giftId));
+                if (byId) return byId.icon || '';
+            }
+            const wanted = giftNameKey(giftName);
+            const byName = wanted ? gifts.find((g) => giftNameKey(g.name) === wanted) : null;
+            return byName?.icon || '';
+        };
+        return Object.values(this.alertConfigs)
+            .filter((alert) => alert.triggerType === 'gift' && alert.giftName && !alert.giftName.startsWith('__draft_gift__:'))
+            .map((alert) => ({
+                id: alert.id, apodo: alert.apodo || alert.giftName,
+                giftName: alert.giftName, giftIcon: findIcon(alert.giftId, alert.giftName),
+            }));
+    },
+
+    async emitGiftTickerSnapshot() {
+        this.broadcast.emit('ticker_alerts_update', await this.getGiftTickerSnapshot());
     },
 
     // La alerta de un regalo se guarda con el nombre tal como lo mostró el

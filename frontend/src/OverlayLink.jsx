@@ -262,6 +262,7 @@ const OBS_HELP = {
       'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras se está mostrando.',
       'Este overlay es SOLO visual (imagen, video y texto): el sonido de la alerta y el de sus videos lo reproduce tu panel en el navegador, y tu directo lo capta junto con el audio de la computadora. Así todos lo oyen una sola vez. Deja el panel abierto mientras transmites.',
       'Si OBS está en otra computadora y no puedes dejar el panel abierto ahí, agrega &audio=1 al final de esta URL: ese overlay sí reproducirá el sonido. En ese caso apaga el sonido del panel en Alertas → Ajustes generales.',
+      'Tira de regalos con alerta: fuente aparte, 960×200 (horizontal), en bucle todo el tiempo — muestra la imagen y el apodo de cada regalo con una alerta específica asignada. El apodo se edita en cada alerta.',
     ],
   },
   tops: {
@@ -308,6 +309,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
   const alertsUrl = buildOverlayUrl('alerts');
+  const tickerUrl = buildOverlayUrl('ticker');
   const tapTapUrl = buildOverlayUrl('taptap');
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
@@ -400,12 +402,21 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             cada disparador, editar, probar, etc.) se mudó a TikTokEvents
             (ver App.jsx) — acá queda solo la URL para pegar en OBS. */}
         {tab === 'alerts' && (
-          <OverlayUrlCard
-            title="Overlay de Alertas"
-            description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
-            dimensions="1080×1920 px (vertical, toda la escena)"
-            url={alertsUrl}
-          />
+          <>
+            <OverlayUrlCard
+              title="Overlay de Alertas"
+              description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
+              dimensions="1080×1920 px (vertical, toda la escena)"
+              url={alertsUrl}
+            />
+            <OverlayUrlCard
+              title="Tira de regalos con alerta"
+              description="Franja horizontal en bucle con la imagen y el apodo de cada regalo que tenga una alerta específica asignada (no las generales por mínimo, ni seguimiento/sticker). El apodo se edita en cada alerta, en la pestaña Alertas."
+              dimensions="960×200 px (horizontal)"
+              url={tickerUrl}
+              onCustomize={() => setCustomizingId('ticker')}
+            />
+          </>
         )}
 
         {tab === 'tops' && (

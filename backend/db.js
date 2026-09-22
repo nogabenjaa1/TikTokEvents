@@ -326,6 +326,12 @@ const ready = pool.query(`
   // alertas generales con el mismo mínimo, mismo criterio que ya evita dos
   // alertas para el mismo regalo.
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS min_coins INTEGER`))
+  // Nombre corto para mostrar en la tira de regalos con alerta (overlay
+  // 'ticker'): por defecto el nombre del archivo de audio subido (o del
+  // visual si no hay audio), pero editable -- ver POST /api/alerts. NULL en
+  // una fila vieja (el nombre original del archivo nunca se guardó antes de
+  // esto): serializeAlert la completa con el nombre del regalo al servir.
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS apodo TEXT`))
   // Backfill de una sola vez: una alerta vieja (guardada antes de que
   // existieran visual_*/audio_*) tenia su unico archivo en media_type/
   // media_url/media_path -- 'audio' va a audio_*, cualquier otro tipo
@@ -795,11 +801,12 @@ async function upsertAlertConfig({
     audioUrl, audioPath,
     text, textPosition, textColor = null, giftId = null,
     durationMs, position, entranceAnim, exitAnim, triggerType, minCoins = null,
+    apodo = null,
 }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $18)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, apodo, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $21, $18)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             visual_url = EXCLUDED.visual_url,
@@ -818,6 +825,7 @@ async function upsertAlertConfig({
             exit_anim = EXCLUDED.exit_anim,
             trigger_type = EXCLUDED.trigger_type,
             min_coins = EXCLUDED.min_coins,
+            apodo = EXCLUDED.apodo,
             created_at = EXCLUDED.created_at
     `, [
         id, licenseId, giftName,
@@ -828,6 +836,7 @@ async function upsertAlertConfig({
         Date.now(),
         textColor,
         giftId,
+        apodo,
     ]);
     return getAlertConfig(id);
 }

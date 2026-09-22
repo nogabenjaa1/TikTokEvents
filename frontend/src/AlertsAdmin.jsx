@@ -223,6 +223,9 @@ function AlertRow({ alert, giftIcon, stickerIcon, testFire, previewSaved, startE
             {(alert.visualType || alert.audioUrl || alert.text) ? ` · ${alert.visualType ? (VISUAL_TYPE_ICON[alert.visualType] || '📎') : ''}${alert.audioUrl ? '🎧' : ''}${alert.text ? '💬' : ''}` : ''}
             {alert.text ? ` · "${alert.text}"` : ''}
           </p>
+          {(!alert.triggerType || alert.triggerType === 'gift') && alert.apodo && (
+            <p className="text-[11px] text-gray-600 truncate">🏷️ En la tira: {alert.apodo}</p>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -313,6 +316,13 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [textPosition, setTextPosition] = useState('below');
   // Color de texto propio de ESTA alerta ('' = sigue el estilo general).
   const [textColor, setTextColor] = useState('');
+  // Nombre corto para la tira de regalos con alerta (overlay 'ticker', solo
+  // alertas de un regalo puntual) -- se autocompleta con el nombre del
+  // archivo elegido (audio primero, visual si no hay audio) hasta que el
+  // streamer lo edita a mano (apodoTouched), igual criterio que cualquier
+  // "autocompletar hasta que se toque" -- ver el efecto más abajo.
+  const [apodo, setApodo] = useState('');
+  const [apodoTouched, setApodoTouched] = useState(false);
 
   const [duration, setDuration] = useState(5);
   const [position, setPosition] = useState('center');
@@ -362,6 +372,16 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setAudioFileUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [audioFile]);
+
+  // Autocompleta el apodo con el nombre del archivo elegido -- el audio
+  // manda, el visual solo si no hay audio -- mientras el streamer no lo haya
+  // tocado a mano (ver el input de abajo).
+  useEffect(() => {
+    if (apodoTouched) return;
+    const stripExt = (name) => String(name || '').replace(/\.[^./\\]+$/, '');
+    const auto = audioFile ? stripExt(audioFile.name) : visualFile ? stripExt(visualFile.name) : '';
+    if (auto) setApodo(auto);
+  }, [audioFile, visualFile, apodoTouched]);
 
   // Qué recurso se va a mandar/mostrar realmente: archivo recién elegido >
   // (si no se pidió quitar) el que ya tenía la alerta en edición > nada.
@@ -488,6 +508,8 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setText('');
     setTextPosition('below');
     setTextColor('');
+    setApodo('');
+    setApodoTouched(false);
     setDuration(5);
     setPosition('center');
     setEntranceAnim('fade');
@@ -530,6 +552,11 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     setText(alert.text || '');
     setTextPosition(alert.textPosition || 'below');
     setTextColor(alert.textColor || '');
+    // Tocado desde ya: si el streamer cambia el archivo mientras edita, no
+    // le pisamos un apodo que ya tenía (aunque sea el de respaldo, el nombre
+    // del regalo) sin que lo haya pedido.
+    setApodo(alert.apodo || '');
+    setApodoTouched(true);
     setDuration((alert.durationMs || 5000) / 1000);
     setPosition(alert.position || 'center');
     setEntranceAnim(alert.entranceAnim || 'fade');
@@ -568,6 +595,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       form.append('text', text.trim());
       form.append('textPosition', textPosition);
       form.append('textColor', textColor);
+      form.append('apodo', apodo.trim());
       form.append('durationMs', String(Math.round(duration * 1000)));
       form.append('position', position);
       form.append('entranceAnim', entranceAnim);
@@ -926,6 +954,19 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           />
           <p className="text-[11px] text-gray-500 mt-1">MP3/WAV/OGG — hasta 15MB. Suena junto al visual, sin importar si el video tiene su propio audio o está mudo.</p>
         </div>
+
+        {triggerType === 'gift' && (
+          <div className="mb-5">
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🏷️ APODO</label>
+            <input
+              type="text" value={apodo}
+              onChange={(e) => { setApodo(e.target.value.slice(0, 60)); setApodoTouched(true); }}
+              placeholder="Ej: zorro no te lo lleves"
+              className="theme-input w-full p-3 outline-none text-sm placeholder-gray-600"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">Así se va a llamar este regalo en la tira de regalos con alerta (overlay nuevo en Overlays). Se completa solo con el nombre del audio (o del visual, si no hay audio), pero puedes cambiarlo.</p>
+          </div>
+        )}
 
         <div>
           <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💬 TEXTO</label>

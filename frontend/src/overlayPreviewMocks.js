@@ -59,6 +59,14 @@ export function buildPreviewMock(overlayId) {
           { id: 'm3', username: 'Test3', uniqueId: 'test3', avatar: MOCK_AVATAR, comment: 'primera vez en el directo', isModerator: false, isSuperFan: false },
         ],
       };
+    case 'ticker':
+      return {
+        items: [
+          { id: 't1', apodo: 'zorro no te lo lleves', giftIcon: '', giftName: 'Rosa' },
+          { id: 't2', apodo: 'despertar', giftIcon: '', giftName: 'Dona' },
+          { id: 't3', apodo: 'a bailar', giftIcon: '', giftName: 'Corazón' },
+        ],
+      };
     case 'musicqueue':
       return {
         state: {

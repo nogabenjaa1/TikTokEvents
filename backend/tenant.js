@@ -384,8 +384,13 @@ class Tenant {
         this.lastSocketActivityAt = Date.now();
         socket.on('disconnect', () => { this.lastSocketActivityAt = Date.now(); });
 
-        // Fire-and-forget: ver el comentario de loadAlertConfigs.
-        this.loadAlertConfigs();
+        // Fire-and-forget: ver el comentario de loadAlertConfigs. Al terminar,
+        // este socket recibe la tira de regalos con alerta (overlay 'ticker') --
+        // no hace falta esperar a loadPersistedSettings, alertConfigs no depende
+        // de eso.
+        this.loadAlertConfigs().then(async () => {
+            socket.emit('ticker_alerts_update', await this.getGiftTickerSnapshot());
+        });
 
         // A diferencia de alertConfigs (que se auto-corrige solo con el
         // próximo regalo si llega a faltar por una fracción de segundo),

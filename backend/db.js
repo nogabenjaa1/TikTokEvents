@@ -121,6 +121,11 @@ const ready = pool.query(`
   // goal_progress (más abajo) -- esta columna es solo la configuración
   // persistente del sonido.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
+  // Preferencias del modo Versus que sobreviven a un reinicio aunque no esté
+  // corriendo ninguna ronda -- { heroLabel, villainLabel, extensibleLinkEnabled }
+  // (ver lib/tenant/versus.js). Los regalos de cada lado van en la tabla
+  // versus_configs (más abajo), no acá.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS versus_settings JSONB`))
   // El catálogo se consulta de nuevo con cada LIVE. Retira únicamente la
   // caché antigua; los regalos asignados a alertas y juegos viven aparte.
   .then(() => pool.query(`ALTER TABLE licenses DROP COLUMN IF EXISTS gift_catalog`))
@@ -326,6 +331,12 @@ const ready = pool.query(`
   // alertas generales con el mismo mínimo, mismo criterio que ya evita dos
   // alertas para el mismo regalo.
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS min_coins INTEGER`))
+  // Nombre corto para mostrar en la tira de regalos con alerta (overlay
+  // 'ticker'): por defecto el nombre del archivo de audio subido (o del
+  // visual si no hay audio), pero editable -- ver POST /api/alerts. NULL en
+  // una fila vieja (el nombre original del archivo nunca se guardó antes de
+  // esto): serializeAlert la completa con el nombre del regalo al servir.
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS apodo TEXT`))
   // Backfill de una sola vez: una alerta vieja (guardada antes de que
   // existieran visual_*/audio_*) tenia su unico archivo en media_type/
   // media_url/media_path -- 'audio' va a audio_*, cualquier otro tipo
@@ -339,6 +350,30 @@ const ready = pool.query(`
   .then(() => pool.query(`
       UPDATE alert_configs SET visual_url = media_url, visual_path = media_path, visual_type = media_type
       WHERE media_type IS NOT NULL AND media_type != 'audio' AND visual_url IS NULL AND media_url IS NOT NULL
+  `))
+  // Modo Versus (héroes vs. villanos, ver lib/tenant/versus.js): una fila por
+  // regalo asignado a un lado. Dos listas independientes por licencia --
+  // `kind` las separa: 'hero'/'villain' (marcador normal, con `action_text`,
+  // ej. "hablar"/"silencio") y 'ext_hero'/'ext_villain' (vínculo opcional con
+  // el modo Extensible, con `seconds_delta`, +/- segundos). Un mismo regalo
+  // puede estar en las dos listas a la vez (son cosas distintas) pero no dos
+  // veces en la MISMA lista ni en los dos lados de esa misma lista -- eso se
+  // valida al guardar (ver POST/socket en versus.js), acá solo se evita la
+  // fila exactamente duplicada. Filas independientes (no upsert-por-clave
+  // como alert_configs): agregar/quitar un regalo es un INSERT/DELETE
+  // suelto, más parecido a una lista para completar que a un mapa 1:1.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS versus_configs (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      kind TEXT NOT NULL,
+      gift_name TEXT NOT NULL,
+      gift_id TEXT,
+      action_text TEXT,
+      seconds_delta INTEGER,
+      created_at BIGINT NOT NULL,
+      UNIQUE(license_id, kind, gift_name)
+    )
   `))
   // Precios editables desde el panel de Licencias (pedido explicito:
   // "Modificacion manual de precios de licencias desde el panel de
@@ -795,11 +830,12 @@ async function upsertAlertConfig({
     audioUrl, audioPath,
     text, textPosition, textColor = null, giftId = null,
     durationMs, position, entranceAnim, exitAnim, triggerType, minCoins = null,
+    apodo = null,
 }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $18)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, apodo, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $21, $18)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             visual_url = EXCLUDED.visual_url,
@@ -818,6 +854,7 @@ async function upsertAlertConfig({
             exit_anim = EXCLUDED.exit_anim,
             trigger_type = EXCLUDED.trigger_type,
             min_coins = EXCLUDED.min_coins,
+            apodo = EXCLUDED.apodo,
             created_at = EXCLUDED.created_at
     `, [
         id, licenseId, giftName,
@@ -828,6 +865,7 @@ async function upsertAlertConfig({
         Date.now(),
         textColor,
         giftId,
+        apodo,
     ]);
     return getAlertConfig(id);
 }
@@ -835,6 +873,39 @@ async function upsertAlertConfig({
 async function deleteAlertConfig(id, licenseId) {
     await ready;
     await pool.query('DELETE FROM alert_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
+}
+
+// ==========================================
+// MODO VERSUS (ver la tabla versus_configs arriba)
+// ==========================================
+async function listVersusConfigs(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM versus_configs WHERE license_id = $1 ORDER BY created_at ASC', [licenseId]);
+    return rows;
+}
+
+// Sin upsert-por-clave a propósito (a diferencia de alert_configs): cada fila
+// es un regalo agregado a una lista, no "el" registro de un disparador --
+// insertar de nuevo con el mismo (license_id, kind, gift_name) simplemente
+// falla por el UNIQUE (el caller ya revisó duplicados antes, ver versus.js).
+async function insertVersusConfig({ id, licenseId, kind, giftName, giftId = null, actionText = null, secondsDelta = null }) {
+    await ready;
+    const { rows } = await pool.query(`
+        INSERT INTO versus_configs (id, license_id, kind, gift_name, gift_id, action_text, seconds_delta, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *
+    `, [id, licenseId, kind, giftName, giftId, actionText, secondsDelta, Date.now()]);
+    return rows[0];
+}
+
+async function deleteVersusConfig(id, licenseId) {
+    await ready;
+    await pool.query('DELETE FROM versus_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
+}
+
+async function setVersusSettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET versus_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
 }
 
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
@@ -1223,6 +1294,7 @@ module.exports = {
     getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
+    listVersusConfigs, insertVersusConfig, deleteVersusConfig, setVersusSettings,
     getPricingOverrides, setPricingOverride, getPricingHistory,
     ping, upsertErrorReport, listErrorReports, clearErrorReports, pruneErrorReports, countErrorReportsSince,
     insertAuditLog, listAuditLog, pruneAuditLog,

@@ -35,7 +35,7 @@ function load() {
   const feed = [];
   tenant.pushFeed = (item) => feed.push(item);
   tenant.broadcast = { emit: (name, payload) => emitted.push({ name, payload }) };
-  for (const method of ['processGiftKing', 'processGiftZub', 'processGiftElim', 'processGiftRoulette', 'processGiftGifterBoard', 'processGiftExtensible', 'processGiftGoal']) {
+  for (const method of ['processGiftKing', 'processGiftZub', 'processGiftElim', 'processGiftRoulette', 'processGiftGifterBoard', 'processGiftVersus', 'processGiftExtensible', 'processGiftGoal']) {
     tenant[method] = (event) => games.push({ method, event });
   }
   tenant.processAlertTrigger = (payload) => alerts.push(payload);

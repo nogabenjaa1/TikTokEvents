@@ -95,6 +95,10 @@ export default function App() {
   // propio overlay horizontal (?screen=extensible) — no participa del
   // selector activeApp.
   const [extensibleState, setExtensibleState] = useState({ isActive: false, finished: false, baseTime: 60, secondsPerFollow: 5, secondsPerGift: 3, timeLeft: 0 });
+  // Modo Versus: héroes contra villanos, sin timer (contador, no cuenta
+  // regresiva) — con su propio overlay (?screen=versus), tampoco participa
+  // del selector activeApp.
+  const [versusState, setVersusState] = useState({ isActive: false, paused: false, heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false, heroes: [], villains: [], extHeroes: [], extVillains: [] });
   // Objetivo (meta de regalos en monedas o de seguidores nuevos, pedido
   // explícito) — acumulador simple sin paso del tiempo, con su propio
   // overlay horizontal (?screen=goal), no participa del selector activeApp.
@@ -345,6 +349,7 @@ export default function App() {
     socket.on('taptap_diagnostics_update', setTapTapDiagnostics);
     socket.on('gifter_state_update', setGifterState);
     socket.on('extensible_state_update', setExtensibleState);
+    socket.on('versus_state_update', setVersusState);
     socket.on('goal_state_update', setGoalState);
     socket.on('viewer_count_update', ({ viewerCount: count }) => setViewerCount(count || 0));
     socket.on('spotify_queue_update', setSpotifyQueueState);
@@ -637,7 +642,7 @@ export default function App() {
         socket={socket} state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize}
         overlayTheme={overlayTheme} overlayCustomization={overlayCustomization} diceState={diceState}
         tapTapState={tapTapState} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
-        extensibleState={extensibleState} goalState={goalState} viewerCount={viewerCount}
+        extensibleState={extensibleState} versusState={versusState} goalState={goalState} viewerCount={viewerCount}
       />
     );
   }
@@ -657,7 +662,7 @@ export default function App() {
   // pasar con un modo todavía "activo" sin ganador porque la conexión se
   // cortó a mitad de partida, y bloquear el campo en ese caso solo dejaba
   // al streamer sin forma de ingresar otro usuario ni de reintentar.
-  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive);
+  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive || versusState.isActive);
 
   // Solo Color Says y Tema son de acceso libre; el resto necesita sesión
   // (licencia paga o prueba gratis) — sin ella se muestra el login
@@ -744,7 +749,7 @@ export default function App() {
         {sidebarMode === 'overlay' && (
           <OverlayLink
             socket={socket} tapTapState={tapTapState} tapTapDiagnostics={tapTapDiagnostics} gifterState={gifterState} spotifyQueueState={spotifyQueueState}
-            extensibleState={extensibleState} diceState={diceState}
+            extensibleState={extensibleState} versusState={versusState} diceState={diceState}
             goalState={goalState} viewerCount={viewerCount}
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />
@@ -756,7 +761,7 @@ export default function App() {
             ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
             socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
             overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
-            state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} extensibleState={extensibleState} goalState={goalState}
+            state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} extensibleState={extensibleState} versusState={versusState} goalState={goalState}
             spotifyQueueState={spotifyQueueState} spotifySettingsState={spotifySettingsState}
             spotifyOAuthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
             panelOverlayDraft={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}

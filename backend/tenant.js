@@ -162,6 +162,15 @@ class Tenant {
         };
         this.extensibleTimerInterval = null;
 
+        // ── VERSUS (héroes vs. villanos) ── ver lib/tenant/versus.js.
+        // Sin timer -- counts es efímero (se resetea al Iniciar/Reiniciar, se
+        // restaura en pausa tras un reinicio del server como el resto, ver
+        // runtimeState.js), heroLabel/villainLabel/extensibleLinkEnabled
+        // sobreviven al reinicio aunque no esté corriendo (versus_settings en
+        // la licencia, ver loadPersistedSettings).
+        this.versusState = { isActive: false, paused: false, counts: {} }; // counts: { [configId]: number }
+        this.versusSettings = { heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false };
+
         // ── OBJETIVO (meta de regalos o de seguidores, pedido explícito) ──
         // A diferencia de Extensible (cuenta regresiva con su propio
         // `setInterval`), acá no hay paso del tiempo -- es un simple
@@ -262,6 +271,11 @@ class Tenant {
         this.alertConfigs = {};
         this.alertConfigsLoaded = false;
         this.alertTriggerCounter = 0;
+        // Regalos asignados a cada lado de Versus (ver lib/tenant/versus.js) --
+        // a diferencia de alertConfigs, esto lo carga loadPersistedSettings
+        // (ver persistence.js), no un flag propio: viaja junto a
+        // heroLabel/villainLabel, que sí necesitan esperar esa carga.
+        this.versusConfigs = { heroes: [], villains: [], extHeroes: [], extVillains: [] };
         // Feed de actividad en vivo (ver lib/tenant/feed.js): lo último que
         // pasó en el directo, para el Dashboard.
         this.feed = [];
@@ -384,8 +398,13 @@ class Tenant {
         this.lastSocketActivityAt = Date.now();
         socket.on('disconnect', () => { this.lastSocketActivityAt = Date.now(); });
 
-        // Fire-and-forget: ver el comentario de loadAlertConfigs.
-        this.loadAlertConfigs();
+        // Fire-and-forget: ver el comentario de loadAlertConfigs. Al terminar,
+        // este socket recibe la tira de regalos con alerta (overlay 'ticker') --
+        // no hace falta esperar a loadPersistedSettings, alertConfigs no depende
+        // de eso.
+        this.loadAlertConfigs().then(async () => {
+            socket.emit('ticker_alerts_update', await this.getGiftTickerSnapshot());
+        });
 
         // A diferencia de alertConfigs (que se auto-corrige solo con el
         // próximo regalo si llega a faltar por una fracción de segundo),
@@ -400,7 +419,7 @@ class Tenant {
         // guardado -- y en el peor caso, otro ajuste hecho en ESE instante
         // desde ese dispositivo podría pisar sin querer lo real con esos
         // valores de fábrica.
-        this.loadPersistedSettings().then(() => {
+        this.loadPersistedSettings().then(async () => {
             socket.emit('theme_updated', this.theme);
             socket.emit('overlay_customization_update', this.overlayCustomization);
             socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
@@ -417,6 +436,11 @@ class Tenant {
             socket.emit('gifter_state_update', this.getGifterPublicState());
             socket.emit('taptap_state_update', this.getTapTapPublicState());
             socket.emit('extensible_state_update', this.getExtensiblePublicState());
+            // heroLabel/villainLabel y los regalos de cada lado los carga
+            // loadPersistedSettings junto con el resto (ver persistence.js) --
+            // por eso este emit va acá adentro, no en un `.then()` propio como
+            // el de las alertas.
+            socket.emit('versus_state_update', await this.getVersusPublicState());
             this.startRuntimePersistence();
         });
 
@@ -432,6 +456,11 @@ class Tenant {
         socket.emit('taptap_diagnostics_update', this.getTapTapDiagnostics());
         socket.emit('extensible_state_update', this.getExtensiblePublicState());
         socket.emit('goal_state_update', this.getGoalPublicState());
+        // Async (resuelve el ícono de cada regalo, ver getVersusPublicState) --
+        // para una reconexión a un Tenant ya despierto (versusConfigs/
+        // versusSettings ya en memoria desde antes) esto llega casi al
+        // instante, sin esperar a que loadPersistedSettings vuelva a resolver.
+        this.getVersusPublicState().then((state) => socket.emit('versus_state_update', state));
         socket.emit('viewer_count_update', { viewerCount: this.viewerCount });
         // Pedido explícito: el overlay de Playlist tiene que poder mostrar
         // "now playing" apenas alguien lo abre, sin depender de que ya
@@ -467,6 +496,7 @@ class Tenant {
         this.registerElimHandlers(socket);
         this.registerRouletteHandlers(socket);
         this.registerExtensibleHandlers(socket);
+        this.registerVersusHandlers(socket);
         this.registerGoalHandlers(socket);
         this.registerLeaderboardHandlers(socket);
         this.registerSpotifyHandlers(socket);
@@ -492,6 +522,7 @@ Object.assign(Tenant.prototype, require('./lib/tenant/elim'));
 Object.assign(Tenant.prototype, require('./lib/tenant/roulette'));
 Object.assign(Tenant.prototype, require('./lib/tenant/leaderboards'));
 Object.assign(Tenant.prototype, require('./lib/tenant/extensible'));
+Object.assign(Tenant.prototype, require('./lib/tenant/versus'));
 Object.assign(Tenant.prototype, require('./lib/tenant/goal'));
 Object.assign(Tenant.prototype, require('./lib/tenant/settings'));
 Object.assign(Tenant.prototype, require('./lib/tenant/misc'));

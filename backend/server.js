@@ -1132,19 +1132,26 @@ const EXIT_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'zoom'];
 const TEXT_POSITIONS = ['above', 'below', 'beside'];
 
 function serializeAlert(row) {
+    const giftName = row.gift_name.startsWith('__draft_gift__:') ? '' : row.gift_name;
+    const triggerType = row.trigger_type || 'gift';
     return {
-        id: row.id, giftName: row.gift_name.startsWith('__draft_gift__:') ? '' : row.gift_name,
+        id: row.id, giftName,
         visualUrl: row.visual_url, visualType: row.visual_type, visualMuted: !!row.visual_muted,
         audioUrl: row.audio_url,
         text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
         giftId: row.gift_id || null,
         durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
-        triggerType: row.trigger_type || 'gift',
+        triggerType,
         minCoins: row.min_coins != null ? Number(row.min_coins) : null,
         // Solo las alertas de UN sticker del club de fans (su clave es sticker:<id>); la
         // general de "cualquier sticker" no lleva id.
         stickerId: row.trigger_type === 'sticker' ? stickerIdFromKey(row.gift_name) || null : null,
+        // Nombre corto para la tira de regalos (overlay 'ticker', solo alertas de un
+        // regalo puntual). Una alerta vieja nunca guardó el nombre real del archivo
+        // que se subió (no se capturaba antes de esto) -- se completa con el nombre
+        // del regalo para que la tira nunca muestre un ítem sin texto.
+        apodo: row.apodo || (triggerType === 'gift' ? giftName : '') || '',
     };
 }
 
@@ -1305,6 +1312,17 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             return res.status(400).json({ success: false, error: 'Agrega al menos un recurso visual, un audio o un texto' });
         }
 
+        // Apodo para la tira de regalos (overlay 'ticker'): lo que haya mandado el
+        // panel gana; si no mandó nada, se deriva del archivo recién subido (audio
+        // primero, visual si no hay audio) sin su extensión; si tampoco hay archivo
+        // nuevo (edición que no tocó ningún recurso), se conserva el que ya tenía.
+        const stripExt = (name) => String(name || '').replace(/\.[^./\\]+$/, '').trim().slice(0, 60);
+        const bodyApodo = typeof req.body?.apodo === 'string' ? req.body.apodo.trim().slice(0, 60) : '';
+        const finalApodo = bodyApodo
+            || (audioFile ? stripExt(audioFile.originalname) : '')
+            || (visualFile ? stripExt(visualFile.originalname) : '')
+            || existing?.apodo || null;
+
         // El disparador cambió a mitad de una edición -- la fila vieja (con
         // su clave anterior) no la va a pisar el upsert de abajo (choca por
         // license_id+gift_name, y la clave ya es otra), así que se borra
@@ -1327,6 +1345,7 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
                 : bodyGiftId ?? (isEditing && !(typeof giftName === 'string' && giftName.trim()) ? (editingRow.gift_id ?? null) : null),
             durationMs: finalDuration, position: finalPosition,
             entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType, minCoins,
+            apodo: finalApodo,
         });
         // Mantiene al día el cache en memoria que usa processAlertTrigger —
         // sin esto, la alerta recién guardada no dispararía hasta el

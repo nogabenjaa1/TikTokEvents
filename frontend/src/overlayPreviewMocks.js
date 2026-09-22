@@ -59,6 +59,23 @@ export function buildPreviewMock(overlayId) {
           { id: 'm3', username: 'Test3', uniqueId: 'test3', avatar: MOCK_AVATAR, comment: 'primera vez en el directo', isModerator: false, isSuperFan: false },
         ],
       };
+    case 'versus':
+      return {
+        state: {
+          isActive: true, paused: false, heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false,
+          heroes: [{ id: 'h1', giftName: 'Rosa', giftIcon: '', actionText: 'hablar', count: 12 }],
+          villains: [{ id: 'v1', giftName: 'TikTok', giftIcon: '', actionText: 'silencio', count: 7 }],
+          extHeroes: [], extVillains: [],
+        },
+      };
+    case 'ticker':
+      return {
+        items: [
+          { id: 't1', apodo: 'zorro no te lo lleves', giftIcon: '', giftName: 'Rosa' },
+          { id: 't2', apodo: 'despertar', giftIcon: '', giftName: 'Dona' },
+          { id: 't3', apodo: 'a bailar', giftIcon: '', giftName: 'Corazón' },
+        ],
+      };
     case 'musicqueue':
       return {
         state: {

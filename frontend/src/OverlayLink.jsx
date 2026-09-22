@@ -251,7 +251,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
-      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal).',
+      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, 900×700.',
       'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
     ],
   },
@@ -262,6 +262,7 @@ const OBS_HELP = {
       'Configúrala como fondo transparente, sin bordes — la alerta solo ocupa espacio mientras se está mostrando.',
       'Este overlay es SOLO visual (imagen, video y texto): el sonido de la alerta y el de sus videos lo reproduce tu panel en el navegador, y tu directo lo capta junto con el audio de la computadora. Así todos lo oyen una sola vez. Deja el panel abierto mientras transmites.',
       'Si OBS está en otra computadora y no puedes dejar el panel abierto ahí, agrega &audio=1 al final de esta URL: ese overlay sí reproducirá el sonido. En ese caso apaga el sonido del panel en Alertas → Ajustes generales.',
+      'Tira de regalos con alerta: fuente aparte, 960×200 (horizontal), en bucle todo el tiempo — muestra la imagen y el apodo de cada regalo con una alerta específica asignada. El apodo se edita en cada alerta.',
     ],
   },
   tops: {
@@ -290,7 +291,7 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, diceState, goalState, viewerCount, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, versusState, diceState, goalState, viewerCount, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -308,9 +309,11 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
   const alertsUrl = buildOverlayUrl('alerts');
+  const tickerUrl = buildOverlayUrl('ticker');
   const tapTapUrl = buildOverlayUrl('taptap');
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
+  const versusUrl = buildOverlayUrl('versus');
   const musicQueueUrl = buildOverlayUrl('musicqueue');
   const goalUrl = buildOverlayUrl('goal');
   const chatUrl = buildOverlayUrl('chat');
@@ -393,6 +396,13 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               url={colorsUrl}
               onCustomize={() => setCustomizingId('colors')}
             />
+            <OverlayUrlCard
+              title="Versus (héroes vs. villanos)"
+              description="Overlay aparte con las dos columnas de regalos y sus contadores — asigna los regalos y ajusta las etiquetas desde su propia pestaña en TikTokEvents."
+              dimensions="900×700 px"
+              url={versusUrl}
+              onCustomize={() => setCustomizingId('versus')}
+            />
           </>
         )}
 
@@ -400,12 +410,21 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             cada disparador, editar, probar, etc.) se mudó a TikTokEvents
             (ver App.jsx) — acá queda solo la URL para pegar en OBS. */}
         {tab === 'alerts' && (
-          <OverlayUrlCard
-            title="Overlay de Alertas"
-            description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
-            dimensions="1080×1920 px (vertical, toda la escena)"
-            url={alertsUrl}
-          />
+          <>
+            <OverlayUrlCard
+              title="Overlay de Alertas"
+              description="Una sola URL para todas tus alertas — cada una aparece en la posición que le configures desde la pestaña Alertas, en TikTokEvents. Pégala como una fuente que cubra toda tu escena."
+              dimensions="1080×1920 px (vertical, toda la escena)"
+              url={alertsUrl}
+            />
+            <OverlayUrlCard
+              title="Tira de regalos con alerta"
+              description="Franja horizontal en bucle con la imagen y el apodo de cada regalo que tenga una alerta específica asignada (no las generales por mínimo, ni seguimiento/sticker). El apodo se edita en cada alerta, en la pestaña Alertas."
+              dimensions="960×200 px (horizontal)"
+              url={tickerUrl}
+              onCustomize={() => setCustomizingId('ticker')}
+            />
+          </>
         )}
 
         {tab === 'tops' && (
@@ -502,7 +521,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           // que ya configuraron) en vez de datos inventados. El resto de
           // los overlays SÍ dependen del LIVE, así que siguen usando
           // espectadores de prueba (ver overlayPreviewMocks.js).
-          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : customizingId === 'goal' ? goalState : null}
+          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : customizingId === 'goal' ? goalState : customizingId === 'versus' ? versusState : null}
         />
       )}
     </div>

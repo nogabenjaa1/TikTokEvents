@@ -47,7 +47,7 @@ module.exports = {
     // CONEXIÓN TIKTOK
     // ==========================================
     anyContestNeedsConnection() {
-        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || this.goalState.isActive || !!this.desiredUsername;
+        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || this.versusState.isActive || this.goalState.isActive || !!this.desiredUsername;
     },
 
     disconnectTikTok() {
@@ -146,6 +146,7 @@ module.exports = {
         if (this.elimState.isActive) this.stopElimination();
         if (this.rouletteState.isActive) this.stopRoulette();
         if (this.extensibleState.isActive) this.stopExtensible();
+        if (this.versusState.isActive) this.stopVersus();
     },
 
     // Pedido explícito ("Reinicio automático de overlays al establecer una

@@ -5,6 +5,11 @@ const {
     EXTENSIBLE_TICK_MS,
 } = require('../../lib/tenantHelpers');
 
+// 120 minutos (7200s) de tope para el tiempo base y para cualquier ajuste —
+// mismo límite que el slider del panel (ver Extensible.jsx), reforzado acá
+// por si algo más allá del panel manda el config.
+const MAX_EXTENSIBLE_BASE_SECONDS = 120 * 60;
+
 module.exports = {
     // ==========================================
     // LÓGICA: MODO EXTENSIBLE (cuenta regresiva que crece con follows/regalos)
@@ -86,6 +91,32 @@ module.exports = {
         this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
     },
 
+    // Ajuste manual (o programático) de tiempo mientras el contador está
+    // activo -- cuerpo de lo que era el handler `adjust_extensible_time`
+    // (ver más abajo), sacado a un método propio para que el modo Versus
+    // (ver lib/tenant/versus.js) también pueda sumar/restar tiempo cuando un
+    // regalo vinculado llega, sin pasar por un evento de socket. A
+    // diferencia de los follows/regalos normales de Extensible, esto SÍ
+    // puede "revivir" una cuenta que ya había llegado a 0: es una acción
+    // explícita (del admin, o de Versus en su nombre), no una entrada
+    // automática, así que si el nuevo total queda arriba de 0 el timer se
+    // re-arma solo.
+    adjustExtensibleTime(deltaSeconds) {
+        if (!this.extensibleState.isActive) return;
+        const delta = Math.max(-MAX_EXTENSIBLE_BASE_SECONDS, Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.round(Number(deltaSeconds) || 0)));
+        if (!delta) return;
+        const state = this.extensibleState;
+        state.timeLeft = Math.max(0, state.timeLeft + delta);
+        if (state.timeLeft > 0 && state.finished) {
+            state.finished = false;
+            this.startExtensibleTimer();
+        } else if (state.timeLeft <= 0) {
+            state.finished = true;
+            if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
+        }
+        this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
+    },
+
     // Ver comentario de stopKingContest.
     stopExtensible() {
         this.extensibleState.isActive = false;
@@ -98,10 +129,6 @@ module.exports = {
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
     registerExtensibleHandlers(socket) {
         // ── MODO EXTENSIBLE ──────────────────────────
-        // 120 minutos (7200s) de tope para el tiempo base — mismo límite que
-        // el slider del panel (ver Extensible.jsx), reforzado acá por si
-        // algún día algo más allá del panel manda el config.
-        const MAX_EXTENSIBLE_BASE_SECONDS = 120 * 60;
         const clampBaseTime = (value, fallback) => Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.max(1, Number(value) || fallback));
 
         socket.on('start_extensible', (config) => {
@@ -142,26 +169,9 @@ module.exports = {
         // Ajuste manual de tiempo mientras el contador está activo (pedido
         // explícito: +1/+5 min, -1/-5 min, o un valor a medida desde el
         // panel) — reemplaza la antigua edición en vivo del tiempo base, que
-        // ahora queda bloqueada (ver update_extensible_settings). A
-        // diferencia de los follows/regalos, esto SÍ puede "revivir" una
-        // cuenta que ya había llegado a 0: es una acción explícita del admin,
-        // no una entrada automática, así que si el nuevo total queda arriba
-        // de 0 el timer se re-arma solo.
-        socket.on('adjust_extensible_time', ({ deltaSeconds } = {}) => {
-            if (!this.extensibleState.isActive) return;
-            const delta = Math.max(-MAX_EXTENSIBLE_BASE_SECONDS, Math.min(MAX_EXTENSIBLE_BASE_SECONDS, Math.round(Number(deltaSeconds) || 0)));
-            if (!delta) return;
-            const state = this.extensibleState;
-            state.timeLeft = Math.max(0, state.timeLeft + delta);
-            if (state.timeLeft > 0 && state.finished) {
-                state.finished = false;
-                this.startExtensibleTimer();
-            } else if (state.timeLeft <= 0) {
-                state.finished = true;
-                if (this.extensibleTimerInterval) clearInterval(this.extensibleTimerInterval);
-            }
-            this.broadcast.emit('extensible_state_update', this.getExtensiblePublicState());
-        });
+        // ahora queda bloqueada (ver update_extensible_settings). Ver
+        // adjustExtensibleTime más arriba (también la usa el modo Versus).
+        socket.on('adjust_extensible_time', ({ deltaSeconds } = {}) => this.adjustExtensibleTime(deltaSeconds));
 
         socket.on('restart_extensible', (config) => {
             if (!this.extensibleState.isActive) return;

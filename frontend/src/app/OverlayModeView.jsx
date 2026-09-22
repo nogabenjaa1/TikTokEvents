@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay } from '../Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, GiftTickerOverlay, VersusOverlay } from '../Overlay';
 import DiceOverlay from '../DiceOverlay';
 import { accentStyleVars } from '../ThemeContext';
 import { getOverlayScreen } from '../auth';
@@ -9,7 +9,7 @@ import { getOverlayScreen } from '../auth';
 // cambiar cómo se elige la pantalla ni qué recibe cada una.
 export default function OverlayModeView({
   socket, state, zubState, elimState, rouletteState, activeApp, prize, overlayTheme, overlayCustomization,
-  diceState, tapTapState, gifterState, spotifyQueueState, extensibleState, goalState, viewerCount,
+  diceState, tapTapState, gifterState, spotifyQueueState, extensibleState, versusState, goalState, viewerCount,
 }) {
   // TODOS los overlays se componen sobre la escena real de OBS — acá NO debe
   // quedar ningún fondo sólido detrás del recuadro/fila además del que elija
@@ -78,6 +78,20 @@ export default function OverlayModeView({
     return (
       <div className="themed-app min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
         <AlertOverlay socket={socket} customize={overlayCustomization.alerts} />
+      </div>
+    );
+  }
+  if (screen === 'ticker') {
+    return (
+      <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <GiftTickerOverlay socket={socket} customize={overlayCustomization.ticker} />
+      </div>
+    );
+  }
+  if (screen === 'versus') {
+    return (
+      <div className="themed-app grid place-items-center min-h-screen" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <VersusOverlay state={versusState} customize={overlayCustomization.versus} />
       </div>
     );
   }

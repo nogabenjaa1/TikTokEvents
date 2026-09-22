@@ -13,7 +13,7 @@ const VALID_THEME_ACCENTS = ['purple', 'blue', 'pink', 'custom'];
 // Overlays, y qué valores son válidos para cada campo — mismo criterio que
 // VALID_THEME_STYLES/VALID_THEME_ACCENTS, para que un socket manipulado a
 // mano no pueda meter un `background` con CSS arbitrario.
-const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'goal', 'chat'];
+const OVERLAY_CUSTOMIZE_IDS = ['games', 'colors', 'taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'goal', 'chat', 'ticker', 'versus'];
 const VALID_BG_TYPES = ['transparent', 'solid', 'gradient', 'rainbow'];
 const VALID_USERNAME_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
 const VALID_FONT_SIZES = ['normal', 'large', 'xlarge'];

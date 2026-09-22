@@ -92,6 +92,21 @@ module.exports = {
                 this.goalAudioUrl = typeof gs.audioUrl === 'string' ? gs.audioUrl : null;
                 this.goalAudioPath = typeof gs.audioPath === 'string' ? gs.audioPath : null;
             }
+            if (license.versus_settings) {
+                const vs = license.versus_settings;
+                this.versusSettings = {
+                    heroLabel: typeof vs.heroLabel === 'string' && vs.heroLabel.trim() ? vs.heroLabel.trim().slice(0, 30) : this.versusSettings.heroLabel,
+                    villainLabel: typeof vs.villainLabel === 'string' && vs.villainLabel.trim() ? vs.villainLabel.trim().slice(0, 30) : this.versusSettings.villainLabel,
+                    extensibleLinkEnabled: !!vs.extensibleLinkEnabled,
+                };
+            }
+            // Regalos de cada lado de Versus (tabla aparte, no una columna
+            // JSONB de licenses) -- se cargan acá, no con un flag propio como
+            // alertConfigs, porque heroLabel/villainLabel de arriba necesitan
+            // esperar a esta misma carga (ver el comentario grande de
+            // applyVersusConfigRows en lib/tenant/versus.js).
+            const versusRows = await db.listVersusConfigs(this.licenseId);
+            this.applyVersusConfigRows(versusRows);
         } catch (err) {
             console.error(`[${this.logId}] No se pudieron cargar los ajustes guardados:`, err.message);
         }

@@ -1,8 +1,11 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
+import { loadDraft, saveDraft } from './gameDraftStorage';
+
+const DRAFT_KEY = 'tkc_zub_draft';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -23,11 +26,20 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con el King.
 // ─────────────────────────────────────────────
 export default function Zubastinis({ state, socket, username, connectionStatus, prize }) {
+  // Lo último configurado en este dispositivo sin llegar a presionar Iniciar (ver
+  // gameDraftStorage.js) -- mientras el concurso está EN VIVO manda el servidor
+  // (antes ni siquiera se intentaba leer de ahí: el panel siempre arrancaba en
+  // 60/15/15/0 aunque hubiera una ronda activa con otros valores).
+  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
   const [startError, setStartError] = useState('');
-  const [mainTime, setMainTime]         = useState(60);
-  const [snipeTime, setSnipeTime]       = useState(15);
-  const [tiebreakTime, setTiebreakTime] = useState(15);
-  const [minCoins, setMinCoins]         = useState(0); // 0 = NO MINIMUM
+  const [mainTime, setMainTime]         = useState(() => state.isActive ? (state.mainTime ?? 60) : (draft.mainTime ?? 60));
+  const [snipeTime, setSnipeTime]       = useState(() => state.isActive ? (state.snipeTime ?? 15) : (draft.snipeTime ?? 15));
+  const [tiebreakTime, setTiebreakTime] = useState(() => state.isActive ? (state.tiebreakTime ?? 15) : (draft.tiebreakTime ?? 15));
+  const [minCoins, setMinCoins]         = useState(() => state.isActive ? (state.minCoins ?? 0) : (draft.minCoins ?? 0)); // 0 = NO MINIMUM
+
+  useEffect(() => {
+    saveDraft(DRAFT_KEY, { mainTime, snipeTime, tiebreakTime, minCoins });
+  }, [mainTime, snipeTime, tiebreakTime, minCoins]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una

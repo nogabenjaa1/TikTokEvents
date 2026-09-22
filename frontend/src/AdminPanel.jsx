@@ -1,9 +1,12 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
+import { loadDraft, saveDraft } from './gameDraftStorage';
+
+const DRAFT_KEY = 'tkc_king_draft';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -19,12 +22,26 @@ const NO_INSTA_WIN = {
 // comparte con Zubastinis y cualquier módulo futuro.
 // ─────────────────────────────────────────────
 export default function AdminPanel({ state, socket, username, connectionStatus, giftsList, prize }) {
+  // Lo último que se dejó configurado en este dispositivo SIN llegar a presionar
+  // Iniciar (ver gameDraftStorage.js) -- se lee una sola vez al montar. El servidor
+  // manda un regalo/tiempos reales en cuanto el concurso se inició alguna vez (ni
+  // siquiera se borran al detenerlo), así que sigue ganando sobre el borrador.
+  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
   const [startError, setStartError] = useState('');
-  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
-  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : NO_INSTA_WIN);
+  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
+  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : (draft.selectedInstaWin ?? NO_INSTA_WIN));
 
-  const [mainTime, setMainTime]   = useState(state.mainTime ?? 15);
-  const [snipeTime, setSnipeTime] = useState(state.snipeTime ?? 5);
+  const [mainTime, setMainTime]   = useState(() => state.isActive ? (state.mainTime ?? 15) : (draft.mainTime ?? 15));
+  const [snipeTime, setSnipeTime] = useState(() => state.isActive ? (state.snipeTime ?? 5) : (draft.snipeTime ?? 5));
+
+  // Guarda el borrador en cuanto algo cambia -- aunque el concurso esté corriendo
+  // (así, si se detiene, la próxima vez ya arranca con lo mismo). Nunca choca con
+  // el efecto de arriba: ese manda al SERVIDOR (solo si ya está activo), este
+  // guarda en ESTE dispositivo (siempre) -- cosas distintas, sin ningún guard en
+  // común que compartir.
+  useEffect(() => {
+    saveDraft(DRAFT_KEY, { selectedGift, selectedInstaWin, mainTime, snipeTime });
+  }, [selectedGift, selectedInstaWin, mainTime, snipeTime]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una

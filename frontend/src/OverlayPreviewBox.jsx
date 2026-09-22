@@ -118,7 +118,15 @@ export default function OverlayPreviewBox({ overlayId, entry, liveState }) {
   const boxH = Math.round(natural.h * PREVIEW_SCALE);
 
   return (
-    <div className="rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, background: '#0A0614' }}>
+    // `tkc-overlay-preview` (ver index.css): igual que la página real del overlay, este fondo
+    // oscuro representa "lo que sea que haya detrás en OBS" -- el `.themed-app` que arma cada
+    // PreviewContent trae su propio fondo temático de página (`--page-bg`) para el uso normal
+    // del panel, así que esa clase lo anula acá, igual que `body.tkc-overlay-transparent` lo
+    // anula en la página real (ver OverlayModeView.jsx). Sin esto, "Transparente" en el fondo
+    // del overlay se veía bien en el recuadro/fila propios pero la vista previa entera seguía
+    // mostrando un rectángulo sólido del color del tema alrededor -- exactamente el bug que
+    // esto previene, pero adentro del modal en vez de en OBS.
+    <div className="tkc-overlay-preview rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, background: '#0A0614' }}>
       <div style={{ width: natural.w, height: natural.h, transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
         <PreviewContent overlayId={overlayId} entry={entry} theme={theme} liveState={liveState} />
       </div>

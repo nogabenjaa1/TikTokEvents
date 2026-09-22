@@ -11,24 +11,29 @@ export default function OverlayModeView({
   socket, state, zubState, elimState, rouletteState, activeApp, prize, overlayTheme, overlayCustomization,
   diceState, tapTapState, gifterState, spotifyQueueState, extensibleState, goalState, viewerCount,
 }) {
-  // Todos los overlays MENOS "juegos" (Rey del Trono/Zubastinis/
-  // Eliminación/Ruleta) se componen sobre la escena real de OBS — acá NO
-  // debe quedar ningún fondo sólido detrás del recuadro además del que
-  // elija la personalización de cada uno (ver overlayCustomization.js).
-  // `body` tiene un color de fondo fijo (ver index.css) que de otra forma
-  // se colaría por fuera del recuadro/fila — se anula solo mientras el
-  // overlay activo es uno de estos, nunca en "juegos" (ahí el fondo
-  // temático de página SÍ es parte del diseño de siempre).
-  // BUG corregido (pedido explícito): "colors" faltaba en esta lista —
-  // Extensible ya lo tenía pero Colores, aunque comparte exactamente el
-  // mismo patrón de tarjeta única (`theme-die-frame` de 960x260), se había
-  // quedado afuera. Sin esto, el `.themed-app` que envuelve a DiceOverlay
-  // seguía pintando su fondo de página sólido por detrás/alrededor del
-  // marco, así que "transparente" en la personalización nunca se veía
-  // realmente transparente en OBS.
+  // TODOS los overlays se componen sobre la escena real de OBS — acá NO debe
+  // quedar ningún fondo sólido detrás del recuadro/fila además del que elija
+  // la personalización de cada uno (ver overlayCustomization.js). `body`
+  // tiene un color de fondo fijo (ver index.css) que de otra forma se
+  // colaría por fuera del recuadro/fila — se anula siempre que la página se
+  // abre como overlay (`?overlay=true`), sin excepción.
+  // BUG corregido (pedido explícito, dos veces sobre esta misma lista):
+  // primero faltaba "colors" (Extensible ya lo tenía, Colores no pese a
+  // compartir el mismo patrón de tarjeta única `theme-die-frame` 960x260);
+  // después seguía faltando "games" (Rey del Trono/Zubastinis/Eliminación/
+  // Ruleta) — a ese, a diferencia de los demás, se lo dejó a propósito
+  // pintando el fondo temático de página completo, así que elegir
+  // "Transparente" en su personalización solo volvía invisible el propio
+  // recuadro de 380x700 (y sus filas internas) pero el `.themed-app` que lo
+  // envuelve seguía mostrando un rectángulo sólido del color del tema
+  // (--page-bg, un tono más oscuro que --surface-bg) por detrás y
+  // alrededor -- exactamente lo mismo que le pasaba a Colores antes de
+  // agregarlo acá. Ya no hay ningún overlay con este comportamiento
+  // especial: se simplifica a "siempre transparente" en vez de mantener una
+  // lista de excepciones que hay que recordar actualizar cada vez que se
+  // agrega un overlay nuevo.
   useEffect(() => {
-    const transparent = ['taptap', 'gifter', 'extensible', 'musicqueue', 'alerts', 'colors', 'goal', 'chat'].includes(getOverlayScreen());
-    document.body.classList.toggle('tkc-overlay-transparent', transparent);
+    document.body.classList.add('tkc-overlay-transparent');
     return () => document.body.classList.remove('tkc-overlay-transparent');
   }, []);
 

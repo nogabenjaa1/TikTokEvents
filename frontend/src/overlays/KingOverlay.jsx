@@ -19,7 +19,7 @@ export function KingOverlay({ state, prize, customize }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.lastParticipant?.username, state?.winner]);
 
-  if (!state.isActive && state.mode !== 'finished') return <OfflineCard />;
+  if (!state.isActive && state.mode !== 'finished') return <OfflineCard customize={customize} />;
 
   return (
     <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { elimSnapshot, elimSounds } from '../eventSoundRules';
-import { bordersOffStyle, getUsernameOverride, resolveBackgroundStyle, rowBorder } from '../overlayCustomization';
+import { getUsernameOverride, resolveBackgroundStyle, rowBorder } from '../overlayCustomization';
 import { formatMMSS } from '../timeFormat';
 import { RESULT_DISPLAY_CAP, playOverlaySounds } from './helpers';
 import { EliminationResultVisual, OfflineCard, PhaseProgressBar, PrizeStrip, TimeWarningBadge } from './shared';
@@ -94,7 +94,7 @@ export function EliminationOverlay({ state, prize, customize }) {
     return () => ro.disconnect();
   }, [participants.length, instaWinGiftName, prize, elimMode]);
 
-  if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
+  if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard customize={customize} />;
 
   const timerTitle = state.mode === 'rejoin' ? 'REINGRESO' : 'TIEMPO PARA UNIRSE';
   const showLabel = boxSize >= 18;
@@ -196,12 +196,12 @@ export function EliminationOverlay({ state, prize, customize }) {
             )}
           </div>
         ) : state.mode === 'revealing' ? (
-          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
+          <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={resolveBackgroundStyle(customize, 'var(--surface-bg-alt)')}>
             <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎲 SORTEANDO...</p>
             <PhaseProgressBar active={state.mode === 'revealing'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
-          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>
+          <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={resolveBackgroundStyle(customize, 'var(--surface-bg-alt)')}>
             <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminados</p>
             <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>

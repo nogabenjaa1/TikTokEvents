@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { resolveBackgroundStyle } from '../overlayCustomization';
 import { formatMMSS } from '../timeFormat';
 import { RESULT_DISPLAY_CAP } from './helpers';
 
@@ -33,9 +34,16 @@ export function PrizeStrip({ prize }) {
   );
 }
 
-export function OfflineCard() {
+// `customize` (opcional): el mismo objeto de personalización del overlay que
+// muestra esta tarjeta mientras no hay partida activa -- pedido explícito
+// ("todo el fondo debe ser transparente"): antes esta tarjeta ignoraba la
+// personalización y siempre pintaba `var(--surface-bg)`, así que elegir
+// "Transparente" solo se notaba una vez que arrancaba un juego, nunca en la
+// pantalla de espera (que es, además, lo primero que se ve al pegar la URL
+// en OBS antes de iniciar nada).
+export function OfflineCard({ customize } = {}) {
   return (
-    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans">
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center justify-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
       <div className="w-32 h-32 rounded-full border-4 border-dashed flex items-center justify-center mb-8 animate-pulse" style={{ borderColor: 'var(--surface-border-color)', background: 'color-mix(in oklch, var(--surface-bg-alt) 50%, transparent)' }}>
         <span className="text-5xl opacity-40">💤</span>
       </div>

@@ -773,10 +773,12 @@ export default function App() {
             sonido (solo llegaban a los espectadores por OBS) -- esto suena
             en SU navegador sin importar en qué pestaña del panel esté, no
             solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
-            tiene pegada esa URL aparte). */}
-        {soundEnabled && (
-          <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} />
-        )}
+            tiene pegada esa URL aparte). SIEMPRE montado (antes era
+            `{soundEnabled && (...)}`): desmontarlo tira la cola entera (ver
+            el comentario en AlertSoundListener) y perdía alertas ya
+            encoladas cada vez que se apagaba el sonido un momento -- ahora
+            solo se le pasa `muted` y la cola sigue viva. */}
+        <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} muted={!soundEnabled} />
 
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el

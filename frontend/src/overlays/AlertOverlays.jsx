@@ -61,17 +61,40 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
     if (videoElRef.current) videoElRef.current.volume = vol;
   }, [customize?.volume, alert?.audioUrl, alert?.visualUrl]);
   // La duración de la alerta manda sobre el recurso: si el audio o el video
-  // duran más, se cortan cuando la alerta cumple su tiempo (los elementos se
-  // leen al disparar, no antes: para entonces el elemento pudo haber cambiado o
-  // desaparecido). Es un temporizador y no la limpieza de un efecto a propósito:
-  // el modo estricto de React simula desmontajes de efectos y de refs, y cortar
-  // ahí dejaría el audio sin fuente en desarrollo. Al quitar la alerta de la
-  // página el navegador ya pausa el elemento; esto cubre el resto.
+  // duran más, se cortan cuando la alerta cumple su tiempo. OJO orden de
+  // temporizadores: la cola (alertQueue.js) arma SU propio timer para pasar
+  // a la siguiente alerta con la misma duración, pero programado un
+  // instante antes que este (arma el suyo antes de que React llegue a
+  // montar este componente y correr este efecto) -- así que en el flujo
+  // normal la cola SIEMPRE avanza (desmontando esta alerta, con key nueva
+  // para la próxima) antes de que el setTimeout de abajo llegue a disparar.
+  // Sin parar el audio/video también en el cleanup, a nadie le toca hacerlo
+  // nunca: queda sonando suelto hasta su fin natural (ver alertMedia.js),
+  // encimado con la alerta siguiente -- con alertas frecuentes (un streamer
+  // con muchas configuradas) se acumulan varios sonando a la vez y algunas
+  // terminan por no escucharse.
+  // Frenar en el cleanup Y no solo pausar (sino soltar la fuente, como hace
+  // stopMedia) tiene un costo: el modo estricto de React (ver main.jsx)
+  // simula un desmontaje+remontaje instantáneo justo después de montar, para
+  // detectar efectos no idempotentes -- sin este guardia, ESE desmontaje de
+  // mentira dejaría el audio sin fuente para el remontaje real que sigue en
+  // el mismo instante (silencio en desarrollo, siempre, para toda alerta).
+  // Un desmontaje de verdad (la cola avanzando, o el streamer saliendo de la
+  // página) pasa como mínimo a los 500ms (MIN_DURATION_MS en alertQueue.js),
+  // muy por encima del margen de abajo -- así que el guardia solo frena la
+  // simulación de React, nunca un desmontaje real.
   const alertDurationMs = alert ? alertTiming(alert).duration : 0;
   useEffect(() => {
     if (!alert) return undefined;
-    const timer = setTimeout(() => { stopMedia(audioElRef.current); stopMedia(videoElRef.current); }, alertDurationMs);
-    return () => clearTimeout(timer);
+    const audioEl = audioElRef.current;
+    const videoEl = videoElRef.current;
+    const mountedAt = Date.now();
+    const timer = setTimeout(() => { stopMedia(audioEl); stopMedia(videoEl); }, alertDurationMs);
+    return () => {
+      clearTimeout(timer);
+      if (Date.now() - mountedAt < 100) return;
+      stopMedia(audioEl); stopMedia(videoEl);
+    };
   }, [alert, alertDurationMs]);
 
   if (!alert) return null;
@@ -176,7 +199,19 @@ export function AlertOverlay({ socket, customize }) {
   return <AlertVisual key={alert?.playbackId || 'idle'} alert={alert} phase={phase} customize={customize} silent={silent} />;
 }
 
-function QueuedAlertSound({ alert, customize, sinkId }) {
+// `muted`: el streamer apagó el sonido del panel (ver AlertSoundListener) --
+// la cola sigue viva igual (para no perder lo que se encole mientras está
+// apagado). A propósito NO deja de renderizar el <audio>/<video> mientras
+// dure la alerta actual (a diferencia de `silent` en AlertVisual, que sí
+// puede: ahí es fijo durante toda la vida del overlay, nunca cambia a mitad
+// de una alerta) -- este `muted` SÍ puede cambiar a mitad de una, con el
+// streamer tocando el interruptor mientras algo está sonando. Sacar el
+// elemento del DOM en ese momento (como antes) lo desmonta SIN pasar por el
+// cleanup de abajo -- mismo hueco que el desmontaje temprano por la cola
+// (ver el comentario largo en AlertVisual), confirmado con el mismo
+// navegador: queda sonando suelto un rato. `muted` como propiedad nativa
+// del elemento (silencia sin desmontar) no tiene ese problema.
+function QueuedAlertSound({ alert, customize, sinkId, muted = false }) {
   const audioRef = useRef(null);
   const videoRef = useRef(null);
   useEffect(() => {
@@ -189,20 +224,38 @@ function QueuedAlertSound({ alert, customize, sinkId }) {
     routeToSink(audioRef.current, sinkId);
     routeToSink(videoRef.current, sinkId);
   }, [sinkId, alert]);
-  // Al cumplirse la duración de la alerta, el sonido también se corta (ver AlertVisual).
+  // Al cumplirse la duración de la alerta el sonido también se corta, y en el
+  // cleanup también (ver el comentario largo en AlertVisual: sin esto, el
+  // audio queda sonando suelto y se pisa con la alerta siguiente). Mismo
+  // guardia de tiempo que ahí, y por la misma razón: no pisar el modo
+  // estricto de React.
   useEffect(() => {
-    const timer = setTimeout(() => { stopMedia(audioRef.current); stopMedia(videoRef.current); }, alertTiming(alert).duration);
-    return () => clearTimeout(timer);
+    const audioEl = audioRef.current;
+    const videoEl = videoRef.current;
+    const mountedAt = Date.now();
+    const timer = setTimeout(() => { stopMedia(audioEl); stopMedia(videoEl); }, alertTiming(alert).duration);
+    return () => {
+      clearTimeout(timer);
+      if (Date.now() - mountedAt < 100) return;
+      stopMedia(audioEl); stopMedia(videoEl);
+    };
   }, [alert]);
   return (
     <div style={{ display: 'none' }}>
-      {alert.audioUrl && <audio ref={audioRef} src={alert.audioUrl} autoPlay />}
-      {alert.visualType === 'video' && alert.visualUrl && !alert.visualMuted && <video ref={videoRef} src={alert.visualUrl} autoPlay />}
+      {alert.audioUrl && <audio ref={audioRef} src={alert.audioUrl} autoPlay muted={muted} />}
+      {alert.visualType === 'video' && alert.visualUrl && !alert.visualMuted && <video ref={videoRef} src={alert.visualUrl} autoPlay muted={muted} />}
     </div>
   );
 }
 
-export function AlertSoundListener({ socket, customize, sinkId }) {
+// `muted`: solo omite el audio/video (ver QueuedAlertSound) -- el listener y
+// su cola SIEMPRE están montados mientras el panel vive, sin importar el
+// switch de sonido del streamer. Antes App.jsx desmontaba este componente
+// entero con `{soundEnabled && (...)}`, y CADA desmontaje (por ejemplo al
+// apagar el sonido un momento) tira `queue.dispose()` (ver useAlertPlayback)
+// y borra de un saque cualquier alerta que estuviera esperando turno --
+// se perdían para siempre, sonido reactivado o no.
+export function AlertSoundListener({ socket, customize, sinkId, muted = false }) {
   const { alert } = useAlertPlayback(socket);
-  return alert ? <QueuedAlertSound key={alert.playbackId} alert={alert} customize={customize} sinkId={sinkId} /> : null;
+  return alert ? <QueuedAlertSound key={alert.playbackId} alert={alert} customize={customize} sinkId={sinkId} muted={muted} /> : null;
 }

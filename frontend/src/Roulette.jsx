@@ -1,9 +1,12 @@
 import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
+import { loadDraft, saveDraft } from './gameDraftStorage';
+
+const DRAFT_KEY = 'tkc_roulette_draft';
 
 // Los bloques de entradas se van achicando a medida que hay más gente, para
 // que el recuadro siga cabiendo todo el elenco — mismo criterio que
@@ -40,24 +43,33 @@ const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', resu
 // normalizada desde App.jsx, compartida con los demás módulos.
 // ─────────────────────────────────────────────
 export default function Roulette({ state, socket, username, connectionStatus, giftsList, prize }) {
+  // Lo último configurado en este dispositivo sin llegar a presionar Iniciar (ver
+  // gameDraftStorage.js) -- el servidor sigue ganando mientras el sorteo está EN
+  // VIVO (antes estos campos siempre leían de `state`, que nunca se toca hasta
+  // Iniciar/Reiniciar, así que un ajuste sin arrancar se perdía apenas se salía
+  // de esta pantalla y se volvía).
+  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
   const [startError, setStartError] = useState('');
-  const [entryMode, setEntryMode]         = useState(state.entryMode ?? 'chat');
-  const [keyword, setKeyword]             = useState(state.keyword ?? 'participo');
-  const [entryWindowSec, setEntryWindowSec] = useState(state.entryWindowSec ?? 300);
-  const [selectedGift, setSelectedGift]   = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
-  const [winnerRule, setWinnerRule]       = useState(state.winnerRule ?? 'first');
-  const [winnerPosition, setWinnerPosition] = useState(state.winnerPosition ?? 1);
+  const [entryMode, setEntryMode]         = useState(() => state.isActive ? (state.entryMode ?? 'chat') : (draft.entryMode ?? 'chat'));
+  const [keyword, setKeyword]             = useState(() => state.isActive ? (state.keyword ?? 'participo') : (draft.keyword ?? 'participo'));
+  const [entryWindowSec, setEntryWindowSec] = useState(() => state.isActive ? (state.entryWindowSec ?? 300) : (draft.entryWindowSec ?? 300));
+  const [selectedGift, setSelectedGift]   = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
+  const [winnerRule, setWinnerRule]       = useState(() => state.isActive ? (state.winnerRule ?? 'first') : (draft.winnerRule ?? 'first'));
+  const [winnerPosition, setWinnerPosition] = useState(() => state.isActive ? (state.winnerPosition ?? 1) : (draft.winnerPosition ?? 1));
   // Mismo criterio que Eliminación (ver ese archivo): fastMode reduce las
   // fases de selección/resultado a la mitad, eliminationsPerRound agrupa
   // varias eliminaciones por paso del sorteo. Sin lockedMode a propósito
   // (pedido explícito, se sacó del panel): en Ruleta las entradas YA solo
   // se aceptan mientras se está "uniendo" gente, tanto en Chat como en
   // Gift — no hay nada que un toggle pudiera cambiar de verdad.
-  const [fastMode, setFastMode]           = useState(state.fastMode ?? false);
-  const [eliminationsPerRound, setEliminationsPerRound] = useState(state.eliminationsPerRound ?? 1);
+  const [fastMode, setFastMode]           = useState(() => state.isActive ? (state.fastMode ?? false) : (draft.fastMode ?? false));
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(() => state.isActive ? (state.eliminationsPerRound ?? 1) : (draft.eliminationsPerRound ?? 1));
   const [manualUsername, setManualUsername] = useState('');
   const [manualCount, setManualCount]       = useState(1);
 
+  useEffect(() => {
+    saveDraft(DRAFT_KEY, { entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound });
+  }, [entryMode, keyword, entryWindowSec, selectedGift, winnerRule, winnerPosition, fastMode, eliminationsPerRound]);
 
   // Compartido por Iniciar/Reiniciar/la actualización en vivo — así los
   // tres mandan siempre exactamente los mismos campos, en el mismo formato.

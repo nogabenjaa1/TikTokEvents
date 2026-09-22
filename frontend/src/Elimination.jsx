@@ -4,6 +4,9 @@ import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
+import { loadDraft, saveDraft } from './gameDraftStorage';
+
+const DRAFT_KEY = 'tkc_elim_draft';
 
 const NO_PARTICIPANTS = [];
 
@@ -54,21 +57,28 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con los demás módulos.
 // ─────────────────────────────────────────────
 export default function Elimination({ state, socket, username, connectionStatus, giftsList, prize }) {
+  // Lo último configurado en este dispositivo sin llegar a presionar Iniciar (ver
+  // gameDraftStorage.js) -- el servidor sigue ganando en cuanto la dinámica se
+  // arrancó alguna vez (ni siquiera se borra al detenerla).
+  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
   const [startError, setStartError] = useState('');
-  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : null);
-  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : NO_INSTA_WIN);
-  const [baseTime, setBaseTime]                 = useState(state.baseTime ?? 60);
-  const [rejoinTime, setRejoinTime]             = useState(state.rejoinTime ?? 20);
+  const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
+  const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : (draft.selectedInstaWin ?? NO_INSTA_WIN));
+  const [baseTime, setBaseTime]                 = useState(() => state.isActive ? (state.baseTime ?? 60) : (draft.baseTime ?? 60));
+  const [rejoinTime, setRejoinTime]             = useState(() => state.isActive ? (state.rejoinTime ?? 20) : (draft.rejoinTime ?? 20));
   // fastMode: fases de selección/resultado de 1s en vez de 2s.
   // eliminationsPerRound: cuántos slots caen por ronda de sorteo (antes
   // siempre 1). lockedMode: solo entra gente durante la ventana inicial de
   // unirse, nadie se suma ya arrancada la dinámica (ni en "rejoin").
-  const [fastMode, setFastMode]                 = useState(state.fastMode ?? false);
-  const [eliminationsPerRound, setEliminationsPerRound] = useState(state.eliminationsPerRound ?? 1);
-  const [lockedMode, setLockedMode]             = useState(state.lockedMode ?? false);
+  const [fastMode, setFastMode]                 = useState(() => state.isActive ? (state.fastMode ?? false) : (draft.fastMode ?? false));
+  const [eliminationsPerRound, setEliminationsPerRound] = useState(() => state.isActive ? (state.eliminationsPerRound ?? 1) : (draft.eliminationsPerRound ?? 1));
+  const [lockedMode, setLockedMode]             = useState(() => state.isActive ? (state.lockedMode ?? false) : (draft.lockedMode ?? false));
   const [manualUsername, setManualUsername]     = useState('');
   const [manualCount, setManualCount]           = useState(1);
 
+  useEffect(() => {
+    saveDraft(DRAFT_KEY, { selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode });
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // Igual que en Zubastinis: solo emitimos si el cambio es en los ajustes

@@ -157,18 +157,27 @@ input[type=range]::-moz-range-thumb {
 .tkc-alert-anim-out-zoom { animation: tkc-alert-out-zoom var(--tkc-anim-ms, 400ms) ease-in forwards; }
 .tkc-alert-anim-in-bounce { animation: tkc-alert-in-bounce var(--tkc-anim-ms, 400ms) cubic-bezier(0.34, 1.56, 0.64, 1) backwards; }
 
-/* Overlays angostos que se componen sobre la escena real de OBS (Top
-   Tap-Tap, Top Gifter, Modo Extensible) — a diferencia del overlay de
-   juegos/Colores (pensados para llenar casi todo el recorte con su propia
-   tarjeta), acá SOLO debe verse el recuadro, con todo lo demás
-   transparente. `body` tiene un `background-color` sólido fijo más abajo
-   y `.themed-app` el suyo propio (`--page-bg`, temático) — ambos se anulan
-   con esta clase, que App.jsx prende/apaga en el <body> solo mientras el
-   overlay activo es uno de estos tres (ver el useEffect de overlayMode).
-   Sin esto se veía un rectángulo sólido del color del tema tapando media
-   escena en vez de dejar pasar la cámara/juego de fondo. */
+/* Todos los overlays (juegos, Colores, Top Tap-Tap, Top Gifter, Extensible,
+   Alertas, Objetivo, Chat, Cola de Spotify) se componen sobre la escena real
+   de OBS -- ahí SOLO debe verse el recuadro/fila de cada uno, con todo lo
+   demás transparente, sin importar si ese recuadro llena casi todo el
+   recorte (juegos/Colores) o es angosto y flota sobre la cámara (el resto).
+   `body` tiene un `background-color` sólido fijo más abajo y `.themed-app`
+   el suyo propio (`--page-bg`, temático) — ambos se anulan con esta clase,
+   que OverlayModeView.jsx prende en el <body> siempre que la página se abre
+   como overlay (ver su useEffect). Sin esto se veía un rectángulo sólido
+   del color del tema tapando media escena en vez de dejar pasar la
+   cámara/juego de fondo -- pasó primero con Colores y, hasta que se agregó
+   'games' a la misma regla, también con Rey del Trono/Zubastinis/
+   Eliminación/Ruleta en cuanto su propia personalización de fondo se ponía
+   en "Transparente" (el recuadro se volvía invisible, pero por detrás
+   seguía este mismo rectángulo). */
 body.tkc-overlay-transparent { background-color: transparent; }
 body.tkc-overlay-transparent .themed-app { background: transparent; }
+/* Mismo anulado, pero para la vista previa en vivo del modal de "Personalizar"
+   (ver OverlayPreviewBox.jsx) -- ahí no hay ningún `<body>` de overlay real que
+   marcar, así que la clase va en el propio contenedor de la vista previa. */
+.tkc-overlay-preview .themed-app { background: transparent; }
 /* Transiciones suaves al cambiar de tema: las superficies, sidebar, inputs
    y botones interpolan color/sombra/borde sin cortes abruptos. */
 .theme-surface,

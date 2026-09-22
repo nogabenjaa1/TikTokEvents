@@ -18,7 +18,7 @@ export function ZubastinisOverlay({ state, prize, customize }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.mode, state?.winner]);
 
-  if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard />;
+  if (!state || (!state.isActive && state.mode !== 'finished')) return <OfflineCard customize={customize} />;
 
   const top3 = state.top3 || [];
   const noWinnerMessage = state.mode === 'finished' && !state.winner

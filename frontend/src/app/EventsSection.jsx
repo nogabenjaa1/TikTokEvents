@@ -10,6 +10,7 @@ const AdminPanel = lazyPanel(() => import('../AdminPanel'));
 const Zubastinis = lazyPanel(() => import('../Zubastinis'));
 const Elimination = lazyPanel(() => import('../Elimination'));
 const Roulette = lazyPanel(() => import('../Roulette'));
+const Versus = lazyPanel(() => import('../Versus'));
 const Extensible = lazyPanel(() => import('../Extensible'));
 const Spotify = lazyPanel(() => import('../Spotify'));
 const Goal = lazyPanel(() => import('../Goal'));
@@ -20,7 +21,7 @@ const AlertsAdmin = lazyPanel(() => import('../AlertsAdmin'));
 export default function EventsSection({
   eventsTab, onSelectTab, socketConnected, connectionStatus, ttsEnabled, ttsEngine, needsAccess, onLoggedIn, onGoMembership,
   socket, username, giftsList, prize, activeApp, overlayTheme, overlayCustomization,
-  state, zubState, elimState, rouletteState, extensibleState, goalState,
+  state, zubState, elimState, rouletteState, extensibleState, versusState, goalState,
   spotifyQueueState, spotifySettingsState, spotifyOAuthResult, onOAuthResultConsumed,
   panelOverlayDraft, onCustomizeChange, onApplyToAll,
   soundEnabled, onSoundEnabledChange, alertsOverlayConnected, monitorSink, onMonitorSinkChange,
@@ -109,6 +110,16 @@ export default function EventsSection({
             />
             <MobileOverlayPreview state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />
           </>
+        )
+      )}
+      {eventsTab === 'versus' && (
+        needsAccess('versus') ? (
+          <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={onGoMembership} notice="Necesitas una licencia o una prueba gratis para usar Versus." />
+        ) : (
+          <Versus
+            state={versusState} socket={socket}
+            username={username} connectionStatus={connectionStatus} giftsList={giftsList}
+          />
         )
       )}
       {eventsTab === 'extensible' && (

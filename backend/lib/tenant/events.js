@@ -90,6 +90,7 @@ module.exports = {
         this.processGiftElim(event);
         this.processGiftRoulette(event);
         this.processGiftGifterBoard(event);
+        this.processGiftVersus(event);
         this.processGiftExtensible(event);
         this.processGiftGoal(event.totalCoins);
         this.processAlertTrigger({

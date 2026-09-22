@@ -121,6 +121,11 @@ const ready = pool.query(`
   // goal_progress (más abajo) -- esta columna es solo la configuración
   // persistente del sonido.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS goal_settings JSONB`))
+  // Preferencias del modo Versus que sobreviven a un reinicio aunque no esté
+  // corriendo ninguna ronda -- { heroLabel, villainLabel, extensibleLinkEnabled }
+  // (ver lib/tenant/versus.js). Los regalos de cada lado van en la tabla
+  // versus_configs (más abajo), no acá.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS versus_settings JSONB`))
   // El catálogo se consulta de nuevo con cada LIVE. Retira únicamente la
   // caché antigua; los regalos asignados a alertas y juegos viven aparte.
   .then(() => pool.query(`ALTER TABLE licenses DROP COLUMN IF EXISTS gift_catalog`))
@@ -345,6 +350,30 @@ const ready = pool.query(`
   .then(() => pool.query(`
       UPDATE alert_configs SET visual_url = media_url, visual_path = media_path, visual_type = media_type
       WHERE media_type IS NOT NULL AND media_type != 'audio' AND visual_url IS NULL AND media_url IS NOT NULL
+  `))
+  // Modo Versus (héroes vs. villanos, ver lib/tenant/versus.js): una fila por
+  // regalo asignado a un lado. Dos listas independientes por licencia --
+  // `kind` las separa: 'hero'/'villain' (marcador normal, con `action_text`,
+  // ej. "hablar"/"silencio") y 'ext_hero'/'ext_villain' (vínculo opcional con
+  // el modo Extensible, con `seconds_delta`, +/- segundos). Un mismo regalo
+  // puede estar en las dos listas a la vez (son cosas distintas) pero no dos
+  // veces en la MISMA lista ni en los dos lados de esa misma lista -- eso se
+  // valida al guardar (ver POST/socket en versus.js), acá solo se evita la
+  // fila exactamente duplicada. Filas independientes (no upsert-por-clave
+  // como alert_configs): agregar/quitar un regalo es un INSERT/DELETE
+  // suelto, más parecido a una lista para completar que a un mapa 1:1.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS versus_configs (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL REFERENCES licenses(id),
+      kind TEXT NOT NULL,
+      gift_name TEXT NOT NULL,
+      gift_id TEXT,
+      action_text TEXT,
+      seconds_delta INTEGER,
+      created_at BIGINT NOT NULL,
+      UNIQUE(license_id, kind, gift_name)
+    )
   `))
   // Precios editables desde el panel de Licencias (pedido explicito:
   // "Modificacion manual de precios de licencias desde el panel de
@@ -846,6 +875,39 @@ async function deleteAlertConfig(id, licenseId) {
     await pool.query('DELETE FROM alert_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
 }
 
+// ==========================================
+// MODO VERSUS (ver la tabla versus_configs arriba)
+// ==========================================
+async function listVersusConfigs(licenseId) {
+    await ready;
+    const { rows } = await pool.query('SELECT * FROM versus_configs WHERE license_id = $1 ORDER BY created_at ASC', [licenseId]);
+    return rows;
+}
+
+// Sin upsert-por-clave a propósito (a diferencia de alert_configs): cada fila
+// es un regalo agregado a una lista, no "el" registro de un disparador --
+// insertar de nuevo con el mismo (license_id, kind, gift_name) simplemente
+// falla por el UNIQUE (el caller ya revisó duplicados antes, ver versus.js).
+async function insertVersusConfig({ id, licenseId, kind, giftName, giftId = null, actionText = null, secondsDelta = null }) {
+    await ready;
+    const { rows } = await pool.query(`
+        INSERT INTO versus_configs (id, license_id, kind, gift_name, gift_id, action_text, seconds_delta, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *
+    `, [id, licenseId, kind, giftName, giftId, actionText, secondsDelta, Date.now()]);
+    return rows[0];
+}
+
+async function deleteVersusConfig(id, licenseId) {
+    await ready;
+    await pool.query('DELETE FROM versus_configs WHERE id = $1 AND license_id = $2', [id, licenseId]);
+}
+
+async function setVersusSettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET versus_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
 async function extendLicense(id, licenseType, expiresAt, diceTier) {
     await ready;
     await pool.query(
@@ -1232,6 +1294,7 @@ module.exports = {
     getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,
     listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
+    listVersusConfigs, insertVersusConfig, deleteVersusConfig, setVersusSettings,
     getPricingOverrides, setPricingOverride, getPricingHistory,
     ping, upsertErrorReport, listErrorReports, clearErrorReports, pruneErrorReports, countErrorReportsSince,
     insertAuditLog, listAuditLog, pruneAuditLog,

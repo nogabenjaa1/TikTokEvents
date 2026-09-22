@@ -251,7 +251,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
-      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal).',
+      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, 900×700.',
       'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
     ],
   },
@@ -291,7 +291,7 @@ const OBS_HELP = {
 // Pantalla de ayuda para obtener las URLs de overlay (?overlay=true&key=...)
 // y pegarlas como fuente de navegador en OBS/TikTok LIVE Studio. La key ya
 // viene incluida (ver auth.buildOverlayUrl) — nunca se pide de nuevo acá.
-export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, diceState, goalState, viewerCount, overlayCustomization, onCustomizeChange, onApplyToAll }) {
+export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gifterState, spotifyQueueState, extensibleState, versusState, diceState, goalState, viewerCount, overlayCustomization, onCustomizeChange, onApplyToAll }) {
   const [tab, setTab] = useState('events');
   // Id del overlay que tiene abierto el modal de "Personalizar" ahora mismo
   // (uno de OVERLAY_CUSTOMIZE_IDS), o null si está cerrado.
@@ -313,6 +313,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   const tapTapUrl = buildOverlayUrl('taptap');
   const gifterUrl = buildOverlayUrl('gifter');
   const extensibleUrl = buildOverlayUrl('extensible');
+  const versusUrl = buildOverlayUrl('versus');
   const musicQueueUrl = buildOverlayUrl('musicqueue');
   const goalUrl = buildOverlayUrl('goal');
   const chatUrl = buildOverlayUrl('chat');
@@ -394,6 +395,13 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               dimensions="960×260 px (horizontal)"
               url={colorsUrl}
               onCustomize={() => setCustomizingId('colors')}
+            />
+            <OverlayUrlCard
+              title="Versus (héroes vs. villanos)"
+              description="Overlay aparte con las dos columnas de regalos y sus contadores — asigna los regalos y ajusta las etiquetas desde su propia pestaña en TikTokEvents."
+              dimensions="900×700 px"
+              url={versusUrl}
+              onCustomize={() => setCustomizingId('versus')}
             />
           </>
         )}
@@ -513,7 +521,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           // que ya configuraron) en vez de datos inventados. El resto de
           // los overlays SÍ dependen del LIVE, así que siguen usando
           // espectadores de prueba (ver overlayPreviewMocks.js).
-          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : customizingId === 'goal' ? goalState : null}
+          liveState={customizingId === 'extensible' ? extensibleState : customizingId === 'colors' ? diceState : customizingId === 'goal' ? goalState : customizingId === 'versus' ? versusState : null}
         />
       )}
     </div>

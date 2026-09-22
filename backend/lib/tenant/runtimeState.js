@@ -34,6 +34,7 @@ module.exports = {
         if (this.elimState.isActive) { snap.elim = this.elimState; snap.elimSlotCounter = this.elimSlotCounter; }
         if (this.rouletteState.isActive) { snap.roulette = this.rouletteState; snap.rouletteSlotCounter = this.rouletteSlotCounter; }
         if (this.extensibleState.isActive && !this.extensibleState.finished) snap.extensible = this.extensibleState;
+        if (this.versusState.isActive) snap.versus = this.versusState;
         if (Object.keys(this.gifterState.leaderboard).length) snap.gifter = this.gifterState.leaderboard;
         if (Object.keys(this.tapTapState.leaderboard).length) snap.taptap = this.tapTapState.leaderboard;
         if (this.spotifyQueueState.queue.length) snap.spotifyQueue = this.spotifyQueueState.queue;
@@ -123,6 +124,14 @@ module.exports = {
         if (isPlainObject(ext) && ext.isActive && !ext.finished && !this.extensibleState.isActive) {
             this.extensibleState = { ...this.extensibleState, ...ext, isActive: true, finished: false, paused: true };
             this.startExtensibleTimer();
+            restored += 1;
+        }
+
+        // Versus: sin timer que rearmar (es un contador, no una cuenta
+        // regresiva) -- alcanza con restaurar los counts tal cual quedaron.
+        const versus = saved.versus;
+        if (isPlainObject(versus) && versus.isActive && !this.versusState.isActive) {
+            this.versusState = { ...this.versusState, ...versus, isActive: true, paused: true };
             restored += 1;
         }
 

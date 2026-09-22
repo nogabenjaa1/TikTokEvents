@@ -1,4 +1,4 @@
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, GiftTickerVisual } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, GiftTickerVisual, VersusOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
 import { buildPreviewMock } from './overlayPreviewMocks';
@@ -22,6 +22,7 @@ const NATURAL_SIZE = {
   goal: { w: 960, h: 260 },
   chat: { w: 380, h: 700 },
   ticker: { w: 960, h: 200 },
+  versus: { w: 900, h: 700 },
 };
 
 const PREVIEW_SCALE = 0.42;
@@ -96,6 +97,15 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       return (
         <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <ChatOverlay viewerCount={mock.viewerCount} previewMessages={mock.messages} customize={entry} />
+        </div>
+      );
+    case 'versus':
+      // Mismo criterio que Extensible/Goal: no depende del LIVE, se muestra
+      // la configuración REAL del streamer (regalos ya asignados y sus
+      // contadores) en vez de una inventada (ver liveState en OverlayLink.jsx).
+      return (
+        <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
+          <VersusOverlay state={liveState || mock.state} customize={entry} />
         </div>
       );
     case 'ticker':

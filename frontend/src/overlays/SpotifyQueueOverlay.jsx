@@ -1,4 +1,4 @@
-import { bordersOffStyle, getUsernameOverride, resolveBackgroundStyle } from '../overlayCustomization';
+import { bordersOffStyle, getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, labelScaleStyle } from '../overlayCustomization';
 
 // SPOTIFY: cola de canciones pedidas por chat (!play) — mismo criterio que
 // Top Tap-Tap/Top Gifter (sin panel/fondo propio, alto fijo de 700px
@@ -23,7 +23,7 @@ function SpotifySongRow({ song, playing, customize, rowBg, nameOverride }) {
     >
       {song.albumArt
         ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
-        : <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>}
+        : <span className="tkc-ovl-fill w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-white truncate">{song.title}</p>
         <p className="text-[10px] text-gray-400 truncate">
@@ -36,7 +36,7 @@ function SpotifySongRow({ song, playing, customize, rowBg, nameOverride }) {
         </p>
       </div>
       {playing && (
-        <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex items-center gap-1 flex-shrink-0">
+        <span className="text-[9px] font-black uppercase tracking-widest text-green-400 flex items-center gap-1 flex-shrink-0" style={labelScaleStyle(customize)}>
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" /> Sonando
         </span>
       )}
@@ -60,21 +60,21 @@ export function SpotifyQueueOverlay({ state, customize }) {
   const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
   const nameOverride = getUsernameOverride(customize);
   return (
-    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">🎵 Playlist</p>
+    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
+      <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>🎵 Playlist</p>
 
       {nowPlaying ? (
         <SpotifySongRow song={nowPlaying} playing customize={customize} rowBg={rowBg} nameOverride={nameOverride} />
       ) : (
         <div className="flex items-center gap-3 rounded-xl px-3 py-2 border" style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
-          <span className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>
-          <p className="text-xs italic text-gray-500">Esperando canción...</p>
+          <span className="tkc-ovl-fill w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>
+          <p {...labelProps(customize, 'text-xs italic text-gray-500')}>Esperando canción...</p>
         </div>
       )}
 
       {queue.length > 0 && (
         <>
-          <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold flex-shrink-0">Siguientes:</p>
+          <p {...labelProps(customize, 'text-[9px] uppercase tracking-widest text-gray-500 font-bold flex-shrink-0')}>Siguientes:</p>
           <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
             {queue.map((song) => (
               <SpotifySongRow key={song.id} song={song} playing={false} customize={customize} rowBg={rowBg} nameOverride={nameOverride} />

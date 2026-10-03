@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getUsernameOverride, resolveBackgroundStyle } from '../overlayCustomization';
+import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps } from '../overlayCustomization';
 
 // CHAT EN VIVO + ESPECTADORES (pedido explícito): reusa el mismo broadcast
 // que ya alimenta al TTS (`tts_chat_message`, SIN filtrar por sus ajustes —
@@ -44,10 +44,10 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
   const animClass = messageAnim !== 'none' ? `tkc-alert-anim-in-${messageAnim}` : '';
 
   return (
-    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
+    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
       <div className="flex items-center justify-between flex-shrink-0">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">💬 Chat en vivo</p>
-        <span className="text-xs font-black text-white bg-black/30 px-2.5 py-1 rounded-full flex items-center gap-1 flex-shrink-0">
+        <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>💬 Chat en vivo</p>
+        <span className="tkc-ovl-fill text-xs font-black text-white bg-black/30 px-2.5 py-1 rounded-full flex items-center gap-1 flex-shrink-0">
           👁️ {Math.max(0, viewerCount || 0).toLocaleString('es-MX')}
         </span>
       </div>
@@ -58,7 +58,7 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
               {m.avatar ? (
                 <img src={m.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
               ) : (
-                <span className="w-7 h-7 rounded-full bg-gray-700 flex-shrink-0" />
+                <span className="tkc-ovl-fill w-7 h-7 rounded-full bg-gray-700 flex-shrink-0" />
               )}
               <div className="min-w-0">
                 <p className={`text-xs font-black truncate ${nameOverride.className}`} style={nameOverride.cssVars}>
@@ -71,7 +71,7 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-600 text-xs italic text-center">Esperando mensajes del chat...</p>
+          <p {...labelProps(customize, 'text-gray-600 text-xs italic text-center')}>Esperando mensajes del chat...</p>
         </div>
       )}
     </div>

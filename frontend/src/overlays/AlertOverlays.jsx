@@ -4,7 +4,7 @@ import { preloadAlertMedia, stopMedia } from '../alertMedia';
 import { createTicker } from '../ticker';
 import { routeToSink } from '../alertMonitor';
 import { overlayAudioAllowed } from '../overlayAudio';
-import { FONT_SCALES, getUsernameOverride } from '../overlayCustomization';
+import { FONT_SCALES, getUsernameOverride, overlayRootProps } from '../overlayCustomization';
 
 // Dónde se planta la alerta dentro de la pantalla completa del overlay —
 // mapea la `position` guardada en cada alerta (ver AlertsAdmin.jsx) a las
@@ -144,7 +144,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
   const layoutClass = !hasVisual ? '' : alert.textPosition === 'beside' ? 'flex-row items-center gap-6' : 'flex-col items-center gap-4';
 
   return (
-    <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`}>
+    <div className={`tkc-alert-viewport ${embedded ? 'tkc-alert-embedded' : ''} flex pointer-events-none ${positionClass}`} {...overlayRootProps(customize)}>
       <div className={`relative flex ${layoutClass} ${animClass}`} style={{ '--tkc-anim-ms': `${animationMs}ms` }}>
         {hasVisual && alert.textPosition === 'above' && textNode}
         {visualNode}

@@ -57,12 +57,17 @@ function sanitizeUsernameOverrides(raw) {
 // más abajo) — cualquier id/campo inválido o faltante cae al default en vez
 // de rechazar todo el mensaje, para que un solo overlay mal formado no tire
 // abajo la personalización de los demás.
+// Ver LABEL_SCALES / OVERLAY_FONTS en frontend/src/overlayCustomization.js.
+const VALID_LABEL_SIZES = ['small', 'normal', 'large', 'xlarge'];
+const VALID_OVERLAY_FONTS = ['sora', 'poppins', 'nunito', 'oswald', 'bebas', 'system'];
+
 function sanitizeOverlayCustomization(raw) {
     const out = {};
     for (const id of OVERLAY_CUSTOMIZE_IDS) {
         const entry = raw?.[id] || {};
         const bg = entry.background || {};
         const uc = entry.usernameColor || {};
+        const lt = entry.labelText || {};
         out[id] = {
             background: {
                 type: VALID_BG_TYPES.includes(bg.type) ? bg.type : 'solid',
@@ -84,6 +89,16 @@ function sanitizeOverlayCustomization(raw) {
             // Switch de bordes por overlay (pedido explícito) -- encendido
             // por defecto, ver bordersEnabled en overlayCustomization.js.
             borders: typeof entry.borders === 'boolean' ? entry.borders : true,
+            // Textos fijos del overlay (títulos, etiquetas) y fuente -- ver
+            // getLabelOverride/overlayRootProps en overlayCustomization.js.
+            labelText: {
+                type: VALID_USERNAME_COLOR_TYPES.includes(lt.type) ? lt.type : 'default',
+                color: sanitizeHexColor(lt.color, '#FFFFFF'),
+                from: sanitizeHexColor(lt.from, '#7C3AED'),
+                to: sanitizeHexColor(lt.to, '#3B82F6'),
+                fontSize: VALID_LABEL_SIZES.includes(lt.fontSize) ? lt.fontSize : 'normal',
+            },
+            font: VALID_OVERLAY_FONTS.includes(entry.font) ? entry.font : 'sora',
         };
     }
     return out;

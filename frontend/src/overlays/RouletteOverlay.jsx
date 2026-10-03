@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { rouletteSnapshot, rouletteSounds } from '../eventSoundRules';
-import { getUsernameFill, getUsernameOverride, resolveBackgroundStyle, rowBorder } from '../overlayCustomization';
+import { getUsernameFill, getUsernameOverride, resolveBackgroundStyle, rowBorder, overlayRootProps, labelProps, labelScaleStyle } from '../overlayCustomization';
 import { formatMMSS } from '../timeFormat';
 import { playOverlaySounds } from './helpers';
 import { EliminationResultVisual, OfflineCard, PhaseProgressBar, PrizeStrip, TimeWarningBadge } from './shared';
@@ -205,23 +205,23 @@ export function RouletteOverlay({ state, prize, customize }) {
     : `Comenta "${state.keyword || '...'}"`;
 
   return (
-    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[380px] h-[700px] p-8 flex flex-col items-center relative overflow-hidden font-sans" {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
       {/* impeccable-disable-next-line ai-color-palette: el morado es el color de marca del sitio (acento #7C3AED); franja de estado del sorteo en curso */}
-      {state.mode === 'spinning' && <div className="absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
+      {state.mode === 'spinning' && <div style={labelScaleStyle(customize)} className="tkc-ovl-fill absolute top-0 left-0 w-full bg-gradient-to-r from-purple-600 to-fuchsia-700 text-center font-black text-white uppercase tracking-[0.3em] text-xs py-2 animate-pulse shadow-lg">🎡 GIRANDO 🎡</div>}
 
       <div className="mt-6 w-full">
-        <TimeWarningBadge label="Cierra en" seconds={state.mode === 'joining' ? state.timeLeft : undefined} />
+        <TimeWarningBadge label="Cierra en" seconds={state.mode === 'joining' ? state.timeLeft : undefined} customize={customize} />
       </div>
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <div className="flex items-center gap-2 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold">🎡 RULETA</p>
+          <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold')}>🎡 RULETA</p>
           {/* Pedido explícito: el público tiene que saber en qué modo
               están jugando. Sin condición (a diferencia de Eliminación):
               en Ruleta esto siempre está "trabado" por naturaleza del
               juego, tanto en modo Chat como en modo Gift — nunca se puede
               entrar tarde, no depende de ningún toggle configurable. */}
-          <span className="bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
+          <span className="tkc-ovl-fill bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
         </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
@@ -230,7 +230,7 @@ export function RouletteOverlay({ state, prize, customize }) {
           </div>
         </div>
 
-        <PrizeStrip prize={prize} />
+        <PrizeStrip prize={prize} customize={customize} />
       </div>
 
       <div ref={wheelBoxRef} className="w-full flex-1 flex items-center justify-center my-2 overflow-hidden relative">
@@ -246,7 +246,7 @@ export function RouletteOverlay({ state, prize, customize }) {
             </div>
           )
         ) : state.mode === 'result' ? (
-          <EliminationResultVisual list={state.lastEliminatedList} />
+          <EliminationResultVisual list={state.lastEliminatedList} customize={customize} />
         ) : state.mode === 'spinning' ? (
           aliveOrder.length > 0 ? (
             <>
@@ -286,17 +286,17 @@ export function RouletteOverlay({ state, prize, customize }) {
           </div>
         ) : state.mode === 'spinning' ? (
           <div className="border border-fuchsia-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={resolveBackgroundStyle(customize, 'var(--surface-bg-alt)')}>
-            <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse">🎡 GIRANDO...</p>
+            <p className="text-2xl font-black text-fuchsia-300 uppercase tracking-widest animate-pulse" style={labelScaleStyle(customize)}>🎡 GIRANDO...</p>
             <PhaseProgressBar active={state.mode === 'spinning'} durationMs={state.revealSelectMs} colorClass="bg-fuchsia-400" />
           </div>
         ) : state.mode === 'result' ? (
           <div className="border border-red-700/50 rounded-[2rem] py-6 px-4 shadow-inner" style={resolveBackgroundStyle(customize, 'var(--surface-bg-alt)')}>
-            <p className="text-lg font-black text-red-300 uppercase tracking-widest">💀 Eliminadas</p>
+            <p className="text-lg font-black text-red-300 uppercase tracking-widest" style={labelScaleStyle(customize)}>💀 Eliminadas</p>
             <PhaseProgressBar active={state.mode === 'result'} durationMs={state.revealResultMs} colorClass="bg-red-400" />
           </div>
         ) : (
           <div className="rounded-[2rem] py-2 px-4 shadow-inner" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
-            <p className="text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5">TIEMPO PARA ENTRAR</p>
+            <p {...labelProps(customize, 'text-[9px] uppercase tracking-[0.4em] text-gray-500 font-bold mb-0.5')}>TIEMPO PARA ENTRAR</p>
             <p className="text-[52px] leading-none font-black tabular-nums tracking-tighter text-white">{formatMMSS(state.timeLeft)}</p>
           </div>
         )}

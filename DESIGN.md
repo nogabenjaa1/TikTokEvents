@@ -373,6 +373,18 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 - **Posiciones de un ranking:** el número, no una medalla. **Monedas:** la palabra "monedas", no la moneda dibujada.
 - Un ícono nuevo de navegación se agrega a `NavIcon.jsx` con la misma grilla de 24×24 y el mismo trazo.
 
+## Overlays: personalización y fondo transparente
+
+Cada overlay se personaliza por separado desde su tarjeta en Overlays (`OverlayCustomizePanel`, vista previa fija a la izquierda y controles en filas de botones a la derecha):
+- **Fondo y bordes**: transparente, del tema, degradado o arcoíris; bordes y separadores con un interruptor.
+- **Nombres de usuario**: color (original, del tema, un color, degradado, arcoíris) y tamaño.
+- **Textos fijos**: lo mismo para los textos que trae el overlay (títulos, etiquetas, la acción de cada regalo en Versus). "Original" conserva el color de siempre. El tamaño se aplica con `zoom` (ocupa espacio real, no se encima). Los avisos de estado (snipe, pausado, eliminado) solo cambian de tamaño: su color comunica algo.
+- **Fuente** de todo el overlay: Sora (la de siempre), Poppins, Nunito, Oswald, Bebas Neue o la del sistema. Las de Google se descargan solo si se eligen.
+
+**La Regla del Transparente Completo.** Con fondo "Transparente", el elemento raíz del overlay lleva `data-ovl-bg="transparent"` (`overlayRootProps`) y ningún fondo de adentro queda pintado: cajas, píldoras de monedas, avisos, dados vacíos o girando, carátulas y avatares de relleno. Todo fondo interno nuevo de un overlay lleva la clase `tkc-ovl-fill` (o usa `resolveBackgroundStyle`) para obedecer esta regla. Solo quedan pintados los indicadores que son contenido (la barra de progreso, el punto de "en vivo", el color de un dado ya asentado).
+
+**Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).
+
 ## Do's and Don'ts
 
 ### Do:

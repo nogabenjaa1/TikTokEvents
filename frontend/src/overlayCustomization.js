@@ -66,6 +66,9 @@ function defaultEntry() {
     // overlay): el marco exterior y los separadores entre filas. Encendido
     // por defecto -- así nadie ve un cambio hasta que lo apaga a propósito.
     borders: true,
+    // Textos fijos del overlay y fuente: ver getLabelOverride/overlayRootProps.
+    labelText: { type: 'default', color: '#FFFFFF', from: '#7C3AED', to: '#3B82F6', fontSize: 'normal' },
+    font: 'sora',
   };
 }
 
@@ -78,7 +81,9 @@ function isValidEntry(e) {
     && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type)
     && (e.messageAnimation === undefined || VALID_MESSAGE_ANIMATIONS.includes(e.messageAnimation))
     && (e.volume === undefined || (typeof e.volume === 'number' && e.volume >= 0 && e.volume <= 1))
-    && (e.borders === undefined || typeof e.borders === 'boolean');
+    && (e.borders === undefined || typeof e.borders === 'boolean')
+    && (e.labelText === undefined || (!!e.labelText && VALID_LABEL_COLOR_TYPES.includes(e.labelText.type)))
+    && (e.font === undefined || typeof e.font === 'string');
 }
 
 export function loadOverlayCustomization() {
@@ -227,4 +232,97 @@ export function getUsernameFill(entry, fallback) {
   if (uc.type === 'rainbow') return 'url(#tkc-rainbow-grad)';
   if (uc.type === 'gradient') return 'url(#tkc-custom-grad)';
   return uc.color || fallback;
+}
+
+// ── Textos fijos y fuente (pedido explícito) ────────────────────────────
+// Los textos que trae cada overlay (títulos como "REY DEL TRONO", "TIEMPO",
+// "STEAL SPOT WITH:", la acción de cada regalo en Versus, el título de
+// ColorSays...) no se podían cambiar: solo los nombres de usuario tenían
+// color y tamaño. `labelText` les da lo mismo, por separado, y `font`
+// cambia la fuente de TODO el overlay. Los dos son opcionales en el entry:
+// sin ellos (datos guardados antes), el overlay se ve exactamente igual.
+export const VALID_LABEL_COLOR_TYPES = ['default', 'theme', 'custom', 'gradient', 'rainbow'];
+// Multiplicador real del tamaño (con `zoom`, que sí ocupa espacio: el texto
+// más grande empuja a lo de al lado en vez de encimarse, a diferencia del
+// `transform: scale()` de los nombres).
+export const LABEL_SCALES = { small: 0.85, normal: 1, large: 1.2, xlarge: 1.4 };
+export const LABEL_SCALE_LABELS = { small: 'Chico', normal: 'Normal', large: 'Grande', xlarge: 'Extra grande' };
+
+// Fuentes del overlay. Las de Google se descargan solo si alguien las elige
+// (ver ensureOverlayFont): un overlay con la fuente de siempre no pide nada.
+export const OVERLAY_FONTS = {
+  sora: { label: 'Sora (la de siempre)', family: null },
+  poppins: { label: 'Poppins', family: "'Poppins', ui-sans-serif, sans-serif", google: 'Poppins:wght@400;600;700;800;900' },
+  nunito: { label: 'Nunito (redondeada)', family: "'Nunito', ui-sans-serif, sans-serif", google: 'Nunito:wght@400;700;800;900' },
+  oswald: { label: 'Oswald (angosta)', family: "'Oswald', ui-sans-serif, sans-serif", google: 'Oswald:wght@400;500;600;700' },
+  bebas: { label: 'Bebas Neue (titular)', family: "'Bebas Neue', 'Oswald', ui-sans-serif, sans-serif", google: 'Bebas+Neue' },
+  system: { label: 'Del sistema', family: 'ui-sans-serif, system-ui, sans-serif' },
+};
+export const VALID_OVERLAY_FONTS = Object.keys(OVERLAY_FONTS);
+
+const loadedFonts = new Set();
+export function ensureOverlayFont(fontId) {
+  const font = OVERLAY_FONTS[fontId];
+  if (!font?.google || loadedFonts.has(fontId) || typeof document === 'undefined') return;
+  loadedFonts.add(fontId);
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${font.google}&display=swap`;
+  document.head.appendChild(link);
+}
+
+// Lo que va en el elemento RAÍZ de cada overlay: la fuente elegida y la
+// marca de fondo transparente. Con "Transparente", TODOS los fondos de
+// adentro (cajas, píldoras de monedas, avisos, dados vacíos, carátulas)
+// pasan a transparentes también -- ver `.tkc-ovl-fill` en index.css. Bug
+// real: en ColorDice el marco se volvía transparente pero los dados seguían
+// con el color del tema.
+export function overlayRootProps(entry, style = {}) {
+  const font = OVERLAY_FONTS[entry?.font];
+  if (font?.google) ensureOverlayFont(entry.font);
+  return {
+    'data-ovl-bg': entry?.background?.type || 'solid',
+    style: font?.family ? { ...style, fontFamily: font.family, '--font-sans': font.family } : style,
+  };
+}
+
+// Color y tamaño de un texto fijo. `{ className, style }` para mezclar en el
+// elemento. 'default' no agrega color: el texto conserva el suyo de siempre.
+export function getLabelOverride(entry) {
+  const lt = entry?.labelText || {};
+  const scale = LABEL_SCALES[lt.fontSize] ?? 1;
+  const style = scale !== 1 ? { zoom: scale } : {};
+  if (!lt.type || lt.type === 'default') return { className: '', style };
+  if (lt.type === 'theme') return { className: 'tkc-username-theme', style };
+  if (lt.type === 'rainbow') return { className: 'tkc-username-rainbow', style };
+  if (lt.type === 'gradient') {
+    return { className: 'tkc-username-gradient', style: { ...style, '--tkc-username-from': lt.from || '#7C3AED', '--tkc-username-to': lt.to || '#3B82F6' } };
+  }
+  return { className: 'tkc-username-custom', style: { ...style, '--tkc-username-color': lt.color || '#FFFFFF' } };
+}
+
+// Atajo para un texto fijo: <p {...labelProps(customize, 'text-xs font-black')}>.
+export function labelProps(entry, className = '', style = {}) {
+  const o = getLabelOverride(entry);
+  return { className: `${className} ${o.className}`.trim(), style: { ...style, ...o.style } };
+}
+
+// Solo el tamaño de un texto fijo, sin tocar su color: para avisos de estado
+// (snipe, pausado, eliminado) cuyo color comunica algo y no debe cambiar.
+export function labelScaleStyle(entry, style = {}) {
+  const scale = LABEL_SCALES[entry?.labelText?.fontSize] ?? 1;
+  return scale !== 1 ? { ...style, zoom: scale } : style;
+}
+
+// Títulos que antes seguían el color del nombre de usuario (Extensible,
+// ColorSays, Versus): mientras "Textos fijos" esté en Predeterminado lo
+// siguen haciendo, para no cambiarle el look a quien ya los había
+// personalizado así; al elegir un color de texto fijo, manda ese.
+export function titleProps(entry, className = '', style = {}) {
+  const lt = entry?.labelText;
+  if (!lt?.type || lt.type === 'default') {
+    const name = getUsernameOverride(entry, { scale: false });
+    return { className: `${className} ${name.className}`.trim(), style: { ...style, ...name.cssVars, ...labelScaleStyle(entry) } };
+  }
+  return labelProps(entry, className, style);
 }

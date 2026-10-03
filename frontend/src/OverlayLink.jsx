@@ -250,7 +250,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
-      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, 900×700.',
+      'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, cualquier ancho (se adapta solo; 900×420 es un buen punto de partida).',
       'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
     ],
   },
@@ -397,7 +397,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             <OverlayUrlCard
               title="Versus (héroes vs. villanos)"
               description="Overlay aparte con las dos columnas de regalos y sus contadores — asigna los regalos y ajusta las etiquetas desde su propia pestaña en TikTokEvents."
-              dimensions="900×700 px"
+              dimensions="900×420 px (se adapta)"
               url={versusUrl}
               onCustomize={() => setCustomizingId('versus')}
             />

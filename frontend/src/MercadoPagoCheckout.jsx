@@ -75,6 +75,32 @@ const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
 // encima del iframe), y el iframe ocupa todo el contenedor.
 const SECURE_HOST_CLASS = 'theme-input relative h-12 w-full overflow-hidden [&_iframe]:block [&_iframe]:w-full [&_iframe]:h-full [&_iframe]:border-0';
 
+// La misma fuente que carga index.html para todo el sitio: los Secure Fields
+// viven en iframes de MercadoPago y no la heredan, hay que pedírsela.
+const SITE_FONT_CSS = 'https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap';
+
+// Texto de los Secure Fields igual al del campo "Nombre como aparece en la
+// tarjeta" (un input normal con theme-input): se leen sus estilos ya
+// calculados, así sigue al tema activo (claro/oscuro, estilo) sin repetir
+// colores aquí. MercadoPago solo deja pasar estas propiedades al iframe.
+function secureFieldStyle() {
+  const reference = document.getElementById('mp-checkout__cardholderName');
+  if (!reference) return undefined;
+  const computed = getComputedStyle(reference);
+  return {
+    color: computed.color,
+    // Mismo criterio que .placeholder-gray-600 en index.css (el color del
+    // texto al 55%): el navegador no deja leer el ::placeholder calculado.
+    placeholderColor: `color-mix(in srgb, ${computed.color} 55%, transparent)`,
+    fontFamily: computed.fontFamily,
+    fontSize: computed.fontSize,
+    fontWeight: computed.fontWeight,
+    padding: `0 ${computed.paddingRight} 0 ${computed.paddingLeft}`,
+    webkitFontSmoothing: 'antialiased',
+    mozOsxFontSmoothing: 'grayscale',
+  };
+}
+
 export default function MercadoPagoCheckout() {
   const navigate = useNavigate();
   const [purchase] = useState(() => loadMpCheckout());
@@ -167,14 +193,16 @@ export default function MercadoPagoCheckout() {
         frame = requestAnimationFrame(() => {
           if (cancelled) return;
           const mp = new window.MercadoPago(publicKey, { locale: 'es-MX' });
+          const style = secureFieldStyle();
+          const customFonts = [{ src: SITE_FONT_CSS }];
           cardFormRef.current = mp.cardForm({
             amount: Number(purchase.amount).toFixed(2),
             iframe: true,
             form: {
               id: 'mp-checkout-form',
-              cardNumber: { id: 'mp-checkout__cardNumber', placeholder: '1234 1234 1234 1234' },
-              expirationDate: { id: 'mp-checkout__expirationDate', placeholder: 'MM/AA' },
-              securityCode: { id: 'mp-checkout__securityCode', placeholder: 'CVV' },
+              cardNumber: { id: 'mp-checkout__cardNumber', placeholder: '1234 1234 1234 1234', style, customFonts },
+              expirationDate: { id: 'mp-checkout__expirationDate', placeholder: 'MM/AA', style, customFonts },
+              securityCode: { id: 'mp-checkout__securityCode', placeholder: 'CVV', style, customFonts },
               cardholderName: { id: 'mp-checkout__cardholderName' },
               issuer: { id: 'mp-checkout__issuer' },
               installments: { id: 'mp-checkout__installments' },

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import MorphButton from './MorphButton';
 import LegalLinks from './LegalLinks';
 import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
-import CardPaymentForm from './CardPaymentForm';
+import { saveMpCheckout } from './mpCheckoutHandoff';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
 import RewardedAdGate from './RewardedAdGate';
@@ -26,7 +27,7 @@ const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
 const SPOTIFY_ADDON_ID = 'spotify_addon';
 const DEFAULT_SPOTIFY_ADDON_MXN = 180;
 // Chequeo minimo de formato -- solo para decidir cuando ya hay un correo
-// utilizable con el que crear el Card Payment Brick (ver mas abajo); el
+// utilizable antes de abrir el formulario de pago (ver mas abajo); el
 // backend sigue siendo quien de verdad valida el formato antes de cobrar.
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // Referencia aproximada MXN por USD -- pedido explicito: que la
@@ -48,17 +49,14 @@ const DICE_TIER_LABELS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'A
 
 const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizaciones estándar. Funciones o servicios con costos operativos especiales —como IA, voces premium, servidores o integraciones de pago— podrán ofrecerse por separado.';
 
-// Pantalla de autoservicio de pago (Checkout API + Card Payment Brick).
+// Pantalla de autoservicio de pago (Stripe embebido aquí; MercadoPago en su
+// propia pantalla, MercadoPagoCheckout.jsx).
 // Funciona con o sin sesión: sin sesión se ven los planes igual (precio
 // público) pero hace falta un alias antes de pagar — se usa para crear la
 // cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
 // Login.jsx. El formato final lo sigue validando el backend antes de
 // cobrar (ver /api/payments/charge); EMAIL_RE de acá solo decide cuándo ya
-// hay un correo usable para crear el Card Payment Brick (ver más abajo:
-// crearlo antes, con el campo vacío, hacía que el propio Brick mostrara su
-// propio input de correo duplicado, y ese quedaba clavado con el valor
-// vacío de aquel momento aunque el streamer después completara el de
-// arriba).
+// hay un correo usable para abrir el formulario de pago.
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
@@ -105,7 +103,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // Pedido explicito de MercadoPago (checklist de calidad de
   // integracion, "Dirección del comprador"): opcional para el
   // streamer -- solo se manda si completa las 3 partes juntas (ver
-  // CardPaymentForm.jsx). Ayuda a bajar rechazos del motor antifraude.
+  // MercadoPagoCheckout.jsx). Ayuda a bajar rechazos del motor antifraude.
   // Tambien se precarga desde localStorage, mismo criterio que el email.
   const [zipCode, setZipCode] = useState(() => loadBillingInfo().zipCode || '');
   const [streetName, setStreetName] = useState(() => loadBillingInfo().streetName || '');
@@ -142,7 +140,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // lo decide el banco, no acá), pero le da a Stripe/MercadoPago evidencia
   // real (aceptación explícita, CON FECHA) para pelear y ganar la disputa
   // si llega. `policyAcceptedAt` (null = no aceptó todavía) es lo que de
-  // verdad viaja al backend (ver StripePaymentForm/CardPaymentForm más
+  // verdad viaja al backend (ver StripePaymentForm/MercadoPagoCheckout más
   // abajo) -- se guarda el momento exacto del check, no `Date.now()` leído
   // de nuevo en cada render.
   const [policyAcceptedAt, setPolicyAcceptedAt] = useState(null);
@@ -365,6 +363,26 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // Se llama cuando /api/payments/charge confirma un pago aprobado -- mismo
   // flujo que ya usaba el banner de exito del redirect (refrescar la sesion
   // y mostrar la clave rotada si el plan nuevo genero una).
+  // Pago con MercadoPago: el formulario de tarjeta vive en su propia
+  // pantalla (MercadoPagoCheckout.jsx, /membership/mercadopago). Aquí solo se
+  // deja lo que se compra y los datos de contacto ya llenados, y se navega.
+  const navigate = useNavigate();
+  const startMercadoPagoCheckout = () => {
+    saveMpCheckout({
+      planType: buyingAddon ? undefined : payingPlan,
+      spotifyAddon: buyingAddon || undefined,
+      amount: payingAmountMxn,
+      email: email.trim(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      zipCode: zipCode.trim(),
+      streetName: streetName.trim(),
+      streetNumber: streetNumber.trim(),
+      policyAcceptedAt,
+    });
+    navigate('/membership/mercadopago');
+  };
+
   const handlePaymentSuccess = async () => {
     setPayingPlan(null);
     setBanner('success');
@@ -653,7 +671,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           </div>
 
           {/* Dirección: solo la usa MercadoPago (ayuda a su motor
-              antifraude, ver CardPaymentForm.jsx/server.js) -- no tiene
+              antifraude, ver MercadoPagoCheckout.jsx/server.js) -- no tiene
               sentido pedirla si el streamer eligió Stripe. */}
           {paymentProvider === 'mercadopago' && (
             <div className="w-full max-w-2xl">
@@ -711,20 +729,10 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 onCancel={() => setPayingPlan(null)}
               />
             ) : (
-              <CardPaymentForm
-                planType={buyingAddon ? undefined : payingPlan}
-                spotifyAddon={buyingAddon}
-                amount={payingAmountMxn}
-                email={email.trim()}
-                firstName={firstName.trim()}
-                lastName={lastName.trim()}
-                zipCode={zipCode.trim()}
-                streetName={streetName.trim()}
-                streetNumber={streetNumber.trim()}
-                policyAcceptedAt={policyAcceptedAt}
-                onSuccess={handlePaymentSuccess}
-                onCancel={() => setPayingPlan(null)}
-              />
+              <button type="button" data-mp-checkout-cta="checkout-api" onClick={startMercadoPagoCheckout}
+                className="theme-btn-primary theme-btn-md w-full max-w-2xl font-black tracking-widest uppercase transition-all">
+                Pagar con Mercado Pago
+              </button>
             )
           ) : (
             <button type="button" onClick={attemptContinue}

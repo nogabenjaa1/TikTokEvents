@@ -57,6 +57,10 @@ export const SECTION_PATHS = {
   downloader: 'downloader',
   theme: 'theme',
   membership: 'membership',
+  // Pantalla de pago con tarjeta de MercadoPago (CardForm de MercadoPago.js):
+  // va aparte de Membresía, con su propia dirección. Se entra desde el botón
+  // "Pagar con Mercado Pago" de Membership.jsx, nunca desde la barra lateral.
+  mpcheckout: 'membership/mercadopago',
   licenses: 'licenses',
   system: 'system',
   // Páginas legales (enlazadas desde el pie del Dashboard, Membresía y el
@@ -91,6 +95,9 @@ export const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PAT
 export function sectionFromPath(pathname) {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return { section: 'dashboard', tab: null };
+  // Secciones cuya dirección tiene dos tramos (membership/mercadopago).
+  const nested = PATH_TO_SECTION[segments.join('/')];
+  if (nested && segments.length === 2) return { section: nested, tab: null };
   const section = PATH_TO_SECTION[segments[0]];
   // Una ruta que no existe muestra la página 404 (antes caía en el Dashboard
   // sin avisar). Mismo criterio que lib/sitePages.js del backend, que además
@@ -107,7 +114,7 @@ export function sectionFromPath(pathname) {
 // marca del sitio es BenjaApis; "TikTokEvents" se conserva solo como
 // prefijo dentro de esa sección puntual (el nombre de la funcionalidad en
 // sí, no el nombre del producto -- pedido explícito de mantenerlo así).
-const ADMIN_SECTION_LABELS = { licenses: 'Licencias', system: 'Sistema', legal: 'Aviso legal', privacy: 'Aviso de privacidad', cookies: 'Cookies', notfound: 'Página no encontrada' };
+const ADMIN_SECTION_LABELS = { mpcheckout: 'Pago con Mercado Pago', licenses: 'Licencias', system: 'Sistema', legal: 'Aviso legal', privacy: 'Aviso de privacidad', cookies: 'Cookies', notfound: 'Página no encontrada' };
 
 // Descripción de cada página para buscadores y para cuando se comparte un
 // enlace (ver useSectionRouting, que la aplica a <meta name="description">).

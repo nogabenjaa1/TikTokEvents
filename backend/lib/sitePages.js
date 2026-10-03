@@ -3,7 +3,7 @@
 // para tres cosas: devolver un 404 de verdad (con la página personalizada)
 // cuando la ruta no existe, armar el sitemap y aceptar solo estas rutas en la
 // analítica. site-pages.test.js comprueba que coincidan con navigation.js.
-const SECTION_PATHS = ['dashboard', 'overlays', 'tiktokevents', 'colordice', 'downloader', 'theme', 'membership', 'licenses', 'system', 'aviso-legal', 'privacidad', 'cookies'];
+const SECTION_PATHS = ['dashboard', 'overlays', 'tiktokevents', 'colordice', 'downloader', 'theme', 'membership', 'membership/mercadopago', 'licenses', 'system', 'aviso-legal', 'privacidad', 'cookies'];
 const EVENT_TAB_PATHS = ['kingthrone', 'zubastinis', 'elimination', 'roulette', 'versus', 'extensible', 'objetivo', 'spotify', 'alerts', 'tts'];
 
 // Lo que se ofrece a los buscadores (lo público; el resto pide sesión o es
@@ -23,6 +23,8 @@ const SITEMAP_PAGES = [
 function isKnownPage(rawPath) {
     const path = String(rawPath || '').toLowerCase().replace(/\/+$/, '') || '/';
     if (path === '/') return true;
+    // Secciones con dirección de dos tramos (membership/mercadopago).
+    if (SECTION_PATHS.includes(path.slice(1))) return true;
     const [first, second, ...rest] = path.split('/').filter(Boolean);
     if (rest.length > 0 || !SECTION_PATHS.includes(first)) return false;
     if (second === undefined) return true;

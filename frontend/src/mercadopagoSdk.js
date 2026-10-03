@@ -1,8 +1,8 @@
 const MP_SDK_SRC = 'https://sdk.mercadopago.com/js/v2';
 const MP_SECURITY_SRC = 'https://www.mercadopago.com/v2/security.js';
 
-// Compartido entre CardVerifyForm.jsx (verificar tarjeta para prueba gratis)
-// y CardPaymentForm.jsx (cobro real vía Card Payment Brick) — mismo patrón
+// Lo usa MercadoPagoCheckout.jsx (cobro real vía CardForm; la verificación
+// de tarjeta de la prueba gratis es con Stripe, ver CardVerifyForm.jsx) — mismo patrón
 // de "inyectar un <script> externo una vez" que ya usa NativeAdBanner.jsx
 // para Adsterra, cargado recién cuando alguien realmente lo necesita.
 export function loadMercadoPagoSdk() {

@@ -1,4 +1,4 @@
-import { getUsernameOverride, resolveBackgroundStyle } from '../overlayCustomization';
+import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, labelScaleStyle, titleProps } from '../overlayCustomization';
 import { formatHHMMSS } from '../timeFormat';
 import { MEDALS } from './helpers';
 
@@ -42,8 +42,8 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
   const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
   const nameOverride = getUsernameOverride(customize);
   return (
-    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0">{icon} {title}</p>
+    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
+      <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>{icon} {title}</p>
       {entries.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {entries.map((e, i) => (
@@ -51,12 +51,12 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
               <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>
               <img src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
               <span className={`flex-1 text-sm font-bold text-white truncate ${nameOverride.className}`} style={nameOverride.cssVars}>{nameIcon ? `${nameIcon} ` : ''}@{e.username}</span>
-              <span className={`${valueColorClass} text-sm font-black px-2 py-1 rounded-lg flex-shrink-0`}>{e[valueKey]}{valueSuffix}</span>
+              <span className={`tkc-ovl-fill ${valueColorClass} text-sm font-black px-2 py-1 rounded-lg flex-shrink-0`}>{e[valueKey]}{valueSuffix}</span>
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-gray-600 text-xs italic text-center py-4">{emptyLabel}</p>
+        <p {...labelProps(customize, 'text-gray-600 text-xs italic text-center py-4')}>{emptyLabel}</p>
       )}
     </div>
   );
@@ -97,9 +97,8 @@ export function ExtensibleOverlay({ state, customize }) {
   // en vez de sumar — para que el público entienda la dinámica al toque.
   const reverse = !!s.reverseMode;
   const sign = reverse ? '-' : '+';
-  const titleOverride = getUsernameOverride(customize);
   return (
-    <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} style={resolveBackgroundStyle(customize)}>
+    <div className={`theme-die-frame w-[960px] h-[260px] px-12 flex items-center justify-between gap-10 font-sans overflow-hidden ${finished ? 'animate-pulse' : ''}`} {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
       {/* flex-shrink-0 en los DOS lados a propósito: sin esto, el bloque de
           texto de la izquierda se comprimía apenas el contador arrancaba
           (el número de la derecha ocupa más ancho corriendo que en 00:00),
@@ -107,20 +106,20 @@ export function ExtensibleOverlay({ state, customize }) {
           explícito de que el tamaño quede fijo en reposo y en marcha. */}
       <div className="flex flex-col gap-3 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <p className={`theme-accent-text text-sm uppercase tracking-[0.3em] font-black ${titleOverride.className}`} style={titleOverride.cssVars}>⏱️ Extensible</p>
+          <p {...titleProps(customize, 'theme-accent-text text-sm uppercase tracking-[0.3em] font-black')}>⏱️ Extensible</p>
           {reverse && (
-            <span className="bg-red-950/60 border border-red-500/60 text-red-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔻 Inverso</span>
+            <span className="tkc-ovl-fill bg-red-950/60 border border-red-500/60 text-red-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0" style={labelScaleStyle(customize)}>🔻 Inverso</span>
           )}
         </div>
         {/* Pedido explícito: que el público vea claramente cuánto suma (o
             resta, en Modo Inverso) cada acción — texto grande, no una nota
             chica al pie. */}
         <p className={`text-3xl font-black leading-tight ${reverse ? 'text-red-300' : 'text-gray-300'}`}>
-          👤 {sign}{s.secondsPerFollow ?? 0}s <span className="text-lg font-bold text-gray-500">por follow</span><br />
-          🪙 {sign}{s.secondsPerGift ?? 0}s <span className="text-lg font-bold text-gray-500">por moneda del regalo</span>
+          👤 {sign}{s.secondsPerFollow ?? 0}s <span {...labelProps(customize, 'text-lg font-bold text-gray-500')}>por follow</span><br />
+          🪙 {sign}{s.secondsPerGift ?? 0}s <span {...labelProps(customize, 'text-lg font-bold text-gray-500')}>por moneda del regalo</span>
         </p>
-        {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest">Tiempo agotado</p>}
-        {paused && <p className="text-gray-400 text-xs font-black uppercase tracking-widest">Pausado</p>}
+        {finished && <p className="text-yellow-300 text-xs font-black uppercase tracking-widest" style={labelScaleStyle(customize)}>Tiempo agotado</p>}
+        {paused && <p {...labelProps(customize, 'text-gray-400 text-xs font-black uppercase tracking-widest')}>Pausado</p>}
       </div>
       <p className={`text-7xl font-black tabular-nums leading-none flex-shrink-0 ${finished ? 'text-yellow-300' : paused ? 'text-gray-500' : reverse ? 'text-red-400' : 'text-white'}`}>
         {formatHHMMSS(seconds)}

@@ -15,12 +15,15 @@ export const COLORS = [
 // NUNCA el color resultante una vez asentado: ese color es del juego
 // (COLORS[i].bgClass/borderClass), no del tema — theme-die-shape solo le
 // pone el radio/sombra/blur del estilo activo encima, sin tocar el color.
+// `tkc-ovl-fill` en el dado vacío y girando: con el fondo del overlay en
+// "Transparente" esos dos también lo son (bug real: seguían con el color del
+// tema). El dado ya asentado conserva su color: es el resultado del juego.
 export function Die({ colorIdx, rolling, size = 'w-20 h-20 text-4xl' }) {
   const c = colorIdx !== null && colorIdx !== undefined ? COLORS[colorIdx] : null;
   return (
     <div className={[size, 'flex items-center justify-center flex-shrink-0 transition-all duration-300',
-        rolling ? 'animate-[dieRoll_0.1s_ease-in-out_infinite_alternate] theme-die-rolling'
-                : (c ? `${c.bgClass} ${c.borderClass} border-2 theme-die-shape` : 'theme-surface'),
+        rolling ? 'animate-[dieRoll_0.1s_ease-in-out_infinite_alternate] theme-die-rolling tkc-ovl-fill'
+                : (c ? `${c.bgClass} ${c.borderClass} border-2 theme-die-shape` : 'theme-surface tkc-ovl-fill'),
       ].join(' ')}>
       {rolling ? '❓' : (c ? c.emoji : '⬜')}
     </div>

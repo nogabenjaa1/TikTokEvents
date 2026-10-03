@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, GiftTickerVisual, VersusOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
@@ -22,10 +23,13 @@ const NATURAL_SIZE = {
   goal: { w: 960, h: 260 },
   chat: { w: 380, h: 700 },
   ticker: { w: 960, h: 200 },
-  versus: { w: 900, h: 700 },
+  versus: { w: 900, h: 420 },
 };
 
-const PREVIEW_SCALE = 0.42;
+// La vista previa se escala para caber en el ancho que tenga (la columna del
+// panel de personalización), sin pasar de un alto cómodo ni agrandarse de más.
+const PREVIEW_MAX_SCALE = 0.6;
+const PREVIEW_MAX_HEIGHT = 440;
 
 // Contenido real de cada overlay, alimentado con datos de prueba (ver
 // overlayPreviewMocks.js) — es el MISMO componente que corre en OBS, así
@@ -45,6 +49,10 @@ const PREVIEW_SCALE = 0.42;
 // entera fuera del recorte visible del modal, dando la sensación de
 // "vista previa vacía" cuando en realidad el contenido SÍ estaba ahí, solo
 // que a un scroll de distancia hacia abajo.
+// Sin regalos configurados, el estado real de Versus no muestra nada útil para
+// juzgar colores y tamaños: se usan los de prueba.
+const hasVersusGifts = (s) => !!s && ((s.heroes?.length || 0) + (s.villains?.length || 0)) > 0;
+
 function PreviewContent({ overlayId, entry, theme, liveState }) {
   const mock = buildPreviewMock(overlayId);
   switch (overlayId) {
@@ -105,7 +113,7 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       // contadores) en vez de una inventada (ver liveState en OverlayLink.jsx).
       return (
         <div className="themed-app grid place-items-center h-full" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
-          <VersusOverlay state={liveState || mock.state} customize={entry} />
+          <VersusOverlay state={hasVersusGifts(liveState) ? liveState : mock.state} customize={entry} />
         </div>
       );
     case 'ticker':
@@ -133,8 +141,20 @@ export default function OverlayPreviewBox({ overlayId, entry, liveState }) {
   const { style, accent, customColor } = useTheme();
   const theme = { style, accent, customColor };
   const natural = NATURAL_SIZE[overlayId] || { w: 380, h: 260 };
-  const boxW = Math.round(natural.w * PREVIEW_SCALE);
-  const boxH = Math.round(natural.h * PREVIEW_SCALE);
+  const wrapRef = useRef(null);
+  const [available, setAvailable] = useState(null);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return undefined;
+    const measure = () => setAvailable(el.clientWidth);
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, []);
+  const scale = Math.min(PREVIEW_MAX_SCALE, PREVIEW_MAX_HEIGHT / natural.h, available ? available / natural.w : 0.42);
+  const boxW = Math.round(natural.w * scale);
+  const boxH = Math.round(natural.h * scale);
 
   return (
     // `tkc-overlay-preview` (ver index.css): igual que la página real del overlay, este fondo
@@ -145,9 +165,11 @@ export default function OverlayPreviewBox({ overlayId, entry, liveState }) {
     // del overlay se veía bien en el recuadro/fila propios pero la vista previa entera seguía
     // mostrando un rectángulo sólido del color del tema alrededor -- exactamente el bug que
     // esto previene, pero adentro del modal en vez de en OBS.
-    <div className="tkc-overlay-preview rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, background: '#0A0614' }}>
-      <div style={{ width: natural.w, height: natural.h, transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-        <PreviewContent overlayId={overlayId} entry={entry} theme={theme} liveState={liveState} />
+    <div ref={wrapRef} className="w-full">
+      <div className="tkc-overlay-preview rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, background: '#0A0614' }}>
+        <div style={{ width: natural.w, height: natural.h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+          <PreviewContent overlayId={overlayId} entry={entry} theme={theme} liveState={liveState} />
+        </div>
       </div>
     </div>
   );

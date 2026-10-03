@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { resolveBackgroundStyle, getUsernameOverride, FONT_SCALES } from '../overlayCustomization';
+import { resolveBackgroundStyle, getUsernameOverride, FONT_SCALES, overlayRootProps, labelProps } from '../overlayCustomization';
 
 // Cuántos segundos tarda la tira en dar una vuelta completa, por ítem -- así
 // la VELOCIDAD (no la duración total) se siente pareja sin importar cuántas
@@ -18,8 +18,8 @@ export function GiftTickerVisual({ items, customize }) {
 
   if (!items || items.length === 0) {
     return (
-      <div className="theme-die-frame w-[960px] h-[200px] flex items-center justify-center font-sans" style={resolveBackgroundStyle(customize)}>
-        <p className="text-gray-500 text-sm italic">Todavía no hay alertas de un regalo específico configuradas.</p>
+      <div className="theme-die-frame w-[960px] h-[200px] flex items-center justify-center font-sans" {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
+        <p {...labelProps(customize, 'text-gray-500 text-sm italic')}>Todavía no hay alertas de un regalo específico configuradas.</p>
       </div>
     );
   }
@@ -32,7 +32,7 @@ export function GiftTickerVisual({ items, customize }) {
   const track = [...items, ...items];
 
   return (
-    <div className="theme-die-frame w-[960px] h-[200px] overflow-hidden font-sans" style={resolveBackgroundStyle(customize)}>
+    <div className="theme-die-frame w-[960px] h-[200px] overflow-hidden font-sans" {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
       <div className="flex items-center h-full" style={{ width: 'max-content', animation: `tkc-ticker-scroll ${loopSeconds}s linear infinite` }}>
         {track.map((item, i) => (
           <div key={`${item.id}-${i}`} className="flex flex-col items-center gap-2 px-8 flex-shrink-0">
@@ -42,8 +42,8 @@ export function GiftTickerVisual({ items, customize }) {
               <span className="w-20 h-20 flex items-center justify-center text-5xl" role="img" aria-label="Regalo">🎁</span>
             )}
             <p
-              className={`text-sm font-black text-center max-w-[160px] truncate ${textOverride.className}`}
-              style={{ ...textOverride.cssVars, fontSize: `${Math.round(16 * textScale)}px` }}
+              className={`text-sm font-black text-center max-w-[180px] truncate ${textOverride.className}`}
+              style={{ ...textOverride.cssVars, fontSize: `${Math.round(20 * textScale)}px` }}
             >
               {item.apodo}
             </p>

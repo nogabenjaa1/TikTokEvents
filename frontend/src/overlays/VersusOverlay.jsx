@@ -1,28 +1,39 @@
-import { getUsernameOverride, resolveBackgroundStyle, rowBorder, FONT_SCALES } from '../overlayCustomization';
+import { getUsernameOverride, resolveBackgroundStyle, rowBorder, FONT_SCALES, overlayRootProps, labelProps, labelScaleStyle, titleProps } from '../overlayCustomization';
 import vsImage from '../assets/versus-vs.png';
 
-// Una fila: la imagen del regalo del lado de AFUERA (héroes: a la izquierda;
-// villanos: a la derecha, con `reverse`) y el texto del lado de ADENTRO,
-// apuntando siempre hacia el VS del medio. `mode 'action'`: acción + cuántos
-// van enviando (lista base, con marcador). `mode 'seconds'`: cuántos
-// segundos suma o resta (vínculo con Extensible) -- pedido explícito, dos
-// contenidos distintos en la misma fila según de cuál lista salga.
-function VersusRow({ entry, mode, reverse, customize }) {
+// Overlay del modo Versus (rediseño, pedido explícito: "demasiado grande,
+// letras muy chicas y separadas, mucho espacio desperdiciado"). Ahora:
+//  - Se adapta al tamaño de la fuente de OBS: todo se mide en `cqw` (un
+//    porcentaje del ANCHO disponible, ver .tkc-vs en index.css), así que se
+//    ve proporcionado igual a 600 que a 1200 px de ancho, sin tocar nada.
+//  - El alto lo pone el contenido: con un regalo por lado es una franja
+//    baja; no reserva 700 px vacíos.
+//  - Cada fila es solo lo que importa: imagen del regalo, la acción (texto
+//    fijo, personalizable) y el contador, grande.
+// Héroes a la izquierda y villanos a la derecha, con la imagen hacia afuera
+// y el contador hacia el VS del medio. Se ve aunque no esté iniciado: los
+// contadores están en 0 hasta que llegue el primer regalo.
+
+function GiftImage({ src }) {
+  return src
+    ? <img src={src} alt="" className="tkc-vs-gift object-contain flex-shrink-0" />
+    : <span className="tkc-vs-gift tkc-ovl-fill rounded-xl flex-shrink-0" style={{ background: 'var(--surface-bg-alt)' }} aria-hidden="true" />;
+}
+
+// `mode 'action'`: acción + cuántos van (lista base). `mode 'seconds'`:
+// cuántos segundos suma o resta (vínculo con Extensible).
+function VersusRow({ entry, mode, reverse, customize, countOverride }) {
   return (
-    <div className={`flex items-center gap-3 px-3 py-2 rounded-xl ${reverse ? 'flex-row-reverse text-right' : ''}`} style={{ border: rowBorder(customize) }}>
-      {entry.giftIcon ? (
-        <img src={entry.giftIcon} className="w-12 h-12 object-contain flex-shrink-0" />
-      ) : (
-        <span className="w-12 h-12 flex items-center justify-center text-3xl flex-shrink-0" role="img" aria-label="Regalo">🎁</span>
-      )}
-      <div className="min-w-0 flex-1">
+    <div className={`tkc-vs-row flex items-center ${reverse ? 'flex-row-reverse text-right' : ''}`} style={{ border: rowBorder(customize) }}>
+      <GiftImage src={entry.giftIcon} />
+      <div className={`min-w-0 flex flex-col ${reverse ? 'items-end' : 'items-start'}`}>
+        <p {...labelProps(customize, 'tkc-vs-action font-bold text-white leading-tight truncate max-w-full')}>{entry.actionText || entry.giftName}</p>
         {mode === 'action' ? (
-          <>
-            <p className="text-sm font-bold text-white truncate">{entry.actionText || entry.giftName}</p>
-            <p className="text-xs text-yellow-300 font-black">{entry.count || 0}</p>
-          </>
+          <p className={`tkc-vs-count font-black tabular-nums leading-none text-yellow-300 ${countOverride.className}`} style={countOverride.cssVars}>
+            {entry.count || 0}
+          </p>
         ) : (
-          <p className={`text-lg font-black ${entry.secondsDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+          <p className={`tkc-vs-count font-black tabular-nums leading-none ${entry.secondsDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
             {entry.secondsDelta > 0 ? '+' : ''}{entry.secondsDelta}s
           </p>
         )}
@@ -31,60 +42,53 @@ function VersusRow({ entry, mode, reverse, customize }) {
   );
 }
 
-function VersusColumn({ title, actionList, extList, showExt, reverse, textOverride, textScale, customize }) {
+function VersusColumn({ title, actionList, extList, showExt, reverse, customize, countOverride, titleZoom }) {
   const empty = actionList.length === 0 && (!showExt || extList.length === 0);
   return (
-    <div className="flex flex-col gap-3 w-[380px] min-w-0">
-      <p
-        className={`text-center uppercase tracking-[0.3em] font-black ${textOverride.className}`}
-        style={{ ...textOverride.cssVars, fontSize: `${Math.round(18 * textScale)}px` }}
-      >
-        {title}
-      </p>
-      <div className="flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 520 }}>
-        {empty && <p className="text-gray-600 text-xs italic text-center py-4">Sin regalos configurados.</p>}
-        {actionList.map((e) => <VersusRow key={e.id} entry={e} mode="action" reverse={reverse} customize={customize} />)}
-        {showExt && extList.length > 0 && (
-          <>
-            <p className="text-center text-[10px] uppercase tracking-widest text-gray-500 font-bold mt-2">⏱️ Extensible</p>
-            {extList.map((e) => <VersusRow key={e.id} entry={e} mode="seconds" reverse={reverse} customize={customize} />)}
-          </>
-        )}
-      </div>
+    <div className="min-w-0 flex flex-col tkc-vs-col">
+      <p {...titleProps(customize, `tkc-vs-title uppercase font-black leading-none ${reverse ? 'text-right' : 'text-left'}`, titleZoom)}>{title}</p>
+      {empty && <p {...labelProps(customize, `tkc-vs-action text-gray-500 italic ${reverse ? 'text-right' : ''}`)}>Sin regalos</p>}
+      {actionList.map((e) => <VersusRow key={e.id} entry={e} mode="action" reverse={reverse} customize={customize} countOverride={countOverride} />)}
+      {showExt && extList.length > 0 && (
+        <>
+          <p {...labelProps(customize, `tkc-vs-sub uppercase font-bold text-gray-400 ${reverse ? 'text-right' : ''}`)}>⏱️ Extensible</p>
+          {extList.map((e) => <VersusRow key={e.id} entry={e} mode="seconds" reverse={reverse} customize={customize} countOverride={countOverride} />)}
+        </>
+      )}
     </div>
   );
 }
 
-// Overlay del modo Versus: dos columnas (héroes a la izquierda, villanos a
-// la derecha) con un "VS" al medio -- a diferencia de Alertas, SÍ tiene
-// fondo propio (como Rey del Trono/Zubastinis/Extensible), así que se
-// personaliza igual que esos, sin `hideBackground`. No depende de estar
-// "iniciado" para mostrar algo (mismo criterio que ExtensibleOverlay): los
-// regalos configurados y sus contadores se ven siempre, en 0 hasta que
-// llegue el primero.
 export function VersusOverlay({ state, customize }) {
   const s = state || {};
-  const textOverride = getUsernameOverride(customize, { scale: false });
-  const textScale = FONT_SCALES[customize?.usernameColor?.fontSize] ?? 1;
   const paused = s.isActive && s.paused;
+  // El contador es el "dato vivo" del overlay: toma el color del nombre de
+  // usuario solo si el streamer lo personalizó (por defecto, amarillo), y su
+  // tamaño, con un tamaño real (no un scale que se encima).
+  const nameColor = customize?.usernameColor?.type;
+  const nameOverride = getUsernameOverride(customize, { scale: false });
+  const countOverride = !nameColor || nameColor === 'default' ? { className: '', cssVars: {} } : nameOverride;
+  const countScale = FONT_SCALES[customize?.usernameColor?.fontSize] ?? 1;
 
   return (
-    <div className="theme-die-frame w-[900px] h-[700px] p-8 flex flex-col items-center gap-4 font-sans overflow-hidden" style={resolveBackgroundStyle(customize)}>
-      {paused && (
-        <span className="bg-gray-950/60 border border-gray-500/60 text-gray-300 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full flex-shrink-0">
-          ⏸ Pausado
-        </span>
-      )}
-      <div className="flex-1 min-h-0 w-full flex items-start justify-center gap-6">
-        <VersusColumn
-          title={s.heroLabel || 'HÉROES'} actionList={s.heroes || []} extList={s.extHeroes || []}
-          showExt={!!s.extensibleLinkEnabled} reverse={false} textOverride={textOverride} textScale={textScale} customize={customize}
-        />
-        <img src={vsImage} alt="VS" className="w-20 h-20 object-contain flex-shrink-0 self-center" />
-        <VersusColumn
-          title={s.villainLabel || 'VILLANOS'} actionList={s.villains || []} extList={s.extVillains || []}
-          showExt={!!s.extensibleLinkEnabled} reverse textOverride={textOverride} textScale={textScale} customize={customize}
-        />
+    <div className="tkc-vs w-full" style={{ '--tkc-vs-count-scale': countScale }}>
+      <div className="theme-die-frame tkc-vs-frame w-fit max-w-full mx-auto font-sans overflow-hidden flex flex-col" {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
+        {paused && (
+          <span className="tkc-ovl-fill tkc-vs-sub self-center bg-gray-950/60 border border-gray-500/60 text-gray-300 font-black uppercase tracking-widest px-3 py-1 rounded-full" style={labelScaleStyle(customize)}>
+            ⏸ Pausado
+          </span>
+        )}
+        <div className="flex items-start justify-center tkc-vs-cols">
+          <VersusColumn
+            title={s.heroLabel || 'HÉROES'} actionList={s.heroes || []} extList={s.extHeroes || []}
+            showExt={!!s.extensibleLinkEnabled} reverse={false} customize={customize} countOverride={countOverride}
+          />
+          <img src={vsImage} alt="VS" className="tkc-vs-badge object-contain flex-shrink-0 self-center" />
+          <VersusColumn
+            title={s.villainLabel || 'VILLANOS'} actionList={s.villains || []} extList={s.extVillains || []}
+            showExt={!!s.extensibleLinkEnabled} reverse customize={customize} countOverride={countOverride}
+          />
+        </div>
       </div>
     </div>
   );

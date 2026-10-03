@@ -45,7 +45,7 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
+    <div className="tkc-backdrop fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
       <div className="theme-surface w-full max-w-sm p-6 flex flex-col gap-4">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</p>
         {description && <p className="text-[11px] text-gray-500 leading-snug">{description}</p>}

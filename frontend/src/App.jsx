@@ -13,7 +13,7 @@ import { addFeedItem, FEED_MAX } from './feedLogic';
 import TtsChat from './TtsChat';
 import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
-import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, logoutSession } from './auth';
+import { isOverlayMode, loadSession, saveSession, clearSession, buildAuthenticatedSocket, logoutSession, checkSession } from './auth';
 import AppSidebar from './app/AppSidebar';
 import ViewEnter from './app/ViewEnter';
 import NavIcon from './app/NavIcon';
@@ -307,12 +307,55 @@ export default function App() {
   // key de la URL en modo overlay, o el JWT de la sesión logueada. Cada
   // licencia vive en su propio "room" del lado del backend (Tenant), así
   // que este mismo socket ya llega aislado del resto de las licencias.
+  //
+  // Depende del token y no de la sesión entera: la sesión se actualiza sola
+  // cuando cambia la licencia (ver 'license_updated'), y eso no debe cortar
+  // y rehacer la conexión.
+  //
+  // Si el servidor rechaza la conexión por la licencia (vencida, revocada),
+  // socket.io no vuelve a intentar solo. El overlay de OBS reintenta cada
+  // 30 s, así que vuelve por su cuenta cuando el admin extiende la licencia
+  // (antes quedaba muerto hasta recargarlo, y eso empujaba a regenerar la
+  // clave). El panel pregunta si su sesión sigue valiendo: si no, lleva al
+  // inicio de sesión con el motivo; si sí (un rechazo pasajero), reintenta.
+  const sessionToken = session?.token || null;
   useEffect(() => {
-    if (!overlayMode && !session) { setSocket(null); return; }
+    if (!overlayMode && !sessionToken) { setSocket(null); return; }
     const s = buildAuthenticatedSocket();
     setSocket(s);
-    return () => s?.disconnect();
-  }, [overlayMode, session]);
+    if (!s) return undefined;
+    let retryTimer = null;
+    let disposed = false;
+    const retry = (ms) => { clearTimeout(retryTimer); retryTimer = setTimeout(() => { if (!disposed) s.connect(); }, ms); };
+    const onConnectError = (err) => {
+      if (s.active || err?.message !== 'unauthorized') return; // los cortes de red los reintenta socket.io solo
+      if (overlayMode) { retry(30000); return; }
+      checkSession().then(({ valid, error }) => {
+        if (disposed) return;
+        if (valid === false) handleSessionInvalid(error || 'Tu licencia venció o fue desactivada.');
+        else retry(15000);
+      });
+    };
+    s.on('connect_error', onConnectError);
+    return () => { disposed = true; clearTimeout(retryTimer); s.off('connect_error', onConnectError); s.disconnect(); };
+  }, [overlayMode, sessionToken, handleSessionInvalid]);
+
+  // La licencia cambió (el admin la extendió o la editó, se aplicó una
+  // compra) o el panel se acaba de conectar: se actualiza la sesión guardada
+  // al momento, sin volver a iniciar sesión. Ver pushLicenseState en el backend.
+  useEffect(() => {
+    if (overlayMode || !socket) return undefined;
+    const onLicenseUpdated = (license) => {
+      const current = loadSession();
+      if (!current?.token || !license) return;
+      const updated = { ...current, ...license };
+      if (JSON.stringify(updated) === JSON.stringify(current)) return;
+      saveSession(updated);
+      setSession(updated);
+    };
+    socket.on('license_updated', onLicenseUpdated);
+    return () => socket.off('license_updated', onLicenseUpdated);
+  }, [socket, overlayMode]);
 
   useEffect(() => {
     if (!socket) return;

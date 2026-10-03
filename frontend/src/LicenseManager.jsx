@@ -1,4 +1,6 @@
 import { SkeletonRows } from './PanelHelp';
+import MorphButton from './MorphButton';
+import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import AdminStats from './AdminStats';
@@ -60,6 +62,7 @@ function ToastStack({ toasts }) {
         <div key={t.id} className={[
           'theme-surface px-4 py-3 text-xs font-bold shadow-lg flex items-center gap-2',
           t.type === 'error' ? 'text-red-700' : 'text-emerald-700',
+          t.leaving ? 'tkc-leaving' : '',
         ].join(' ')}>
           <span>{t.message}</span>
         </div>
@@ -116,7 +119,9 @@ export default function LicenseManager({ onSessionInvalid }) {
   // Complemento de Spotify de regalo al crear la licencia (ver backend/spotify.js:
   // un Mensual solo tiene Spotify con el complemento).
   const [spotifyAddon, setSpotifyAddon] = useState(false);
-  const [creating, setCreating] = useState(false);
+  // idle | loading | success | error: lo cuenta el botón con su forma (ver MorphButton).
+  const [createStatus, setCreateStatus] = useState('idle');
+  const creating = createStatus === 'loading' || createStatus === 'success';
   const [newKey, setNewKey] = useState(null); // se muestra una sola vez: { key, username, regenerated? }
   // El panel de la clave nueva vive arriba de todo y la lista de licencias
   // queda muy abajo: al regenerar una clave hay que llevarlo a la vista.
@@ -132,7 +137,12 @@ export default function LicenseManager({ onSessionInvalid }) {
   // openEditor / saveEdit). `renew` vacío = no cambiar plan ni vencimiento.
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(null);
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [editStatus, setEditStatus] = useState('idle');
+  const savingEdit = editStatus === 'loading' || editStatus === 'success';
+  // La licencia recién editada destella un momento en la lista, para que se
+  // vea dónde quedó el cambio; las que se eliminan se desvanecen antes de irse.
+  const [flashId, setFlashId] = useState(null);
+  const [leavingIds, setLeavingIds] = useState(() => new Set());
 
   // Selección para eliminar en bloque (pedido explícito: evitar revocar +
   // eliminar licencia por licencia una por una). Un Set de ids, filtrado
@@ -145,7 +155,7 @@ export default function LicenseManager({ onSessionInvalid }) {
   // cuesta cada plan para TODOS), aunque compartan el mismo panel de admin.
   const [prices, setPrices] = useState(null); // { month, annual, lifetime } en centavos
   const [priceInputs, setPriceInputs] = useState({});
-  const [savingPlan, setSavingPlan] = useState(null);
+  const [priceStatus, setPriceStatus] = useState({ plan: null, status: 'idle' });
   const [priceHistory, setPriceHistory] = useState(null); // null = nunca se pidio
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -154,6 +164,8 @@ export default function LicenseManager({ onSessionInvalid }) {
   const pushToast = useCallback((message, type = 'success') => {
     const id = Date.now() + Math.random();
     setToasts(t => [...t, { id, message, type }]);
+    // Se desvanece antes de irse, en vez de desaparecer de golpe.
+    setTimeout(() => setToasts(t => t.map(x => (x.id === id ? { ...x, leaving: true } : x))), 3200);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
 
@@ -165,8 +177,11 @@ export default function LicenseManager({ onSessionInvalid }) {
     onSessionInvalid?.(data.error || 'Tu sesión ya no es válida. Inicia sesión de nuevo.');
   }, [onSessionInvalid]);
 
-  const fetchLicenses = useCallback(async (isRetry = false) => {
-    setLoading(true);
+  // `quiet`: refresco después de una acción. La lista se actualiza en su
+  // lugar; el marcador de carga es solo para la primera vez (antes la lista
+  // entera desaparecía y volvía a aparecer con cada cambio).
+  const fetchLicenses = useCallback(async ({ isRetry = false, quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     setError('');
     try {
       const res = await fetch(`${backendUrl()}/api/licenses`, { headers: authHeaders() });
@@ -176,7 +191,7 @@ export default function LicenseManager({ onSessionInvalid }) {
           // session_id que todavía no terminó de propagarse — se reintenta
           // una vez antes de asumir que de verdad hay que volver a loguearse.
           await new Promise(r => setTimeout(r, 800));
-          return fetchLicenses(true);
+          return fetchLicenses({ isRetry: true, quiet });
         }
         await handleUnauthorized(res);
         return;
@@ -218,23 +233,28 @@ export default function LicenseManager({ onSessionInvalid }) {
       return;
     }
     const amountCents = Math.round(pesos * 100);
-    setSavingPlan(planType);
+    setPriceStatus({ plan: planType, status: 'loading' });
+    const minLoading = wait(MORPH_MIN_LOADING_MS);
     try {
       const res = await fetch(`${backendUrl()}/api/admin/pricing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ planType, amountCents }),
       });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
+      if (res.status === 401) { setPriceStatus({ plan: null, status: 'idle' }); await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo guardar el precio');
+      await minLoading;
+      setPriceStatus({ plan: planType, status: 'success' });
       pushToast(`Precio de ${PRICING_PLAN_LABELS[planType]} actualizado`);
-      fetchPrices();
+      await wait(MORPH_SUCCESS_HOLD_MS);
+      await fetchPrices();
       if (historyOpen) fetchHistory();
+      setPriceStatus({ plan: null, status: 'idle' });
     } catch (err) {
+      await minLoading;
       pushToast(err.message, 'error');
-    } finally {
-      setSavingPlan(null);
+      setPriceStatus({ plan: planType, status: 'error' });
     }
   };
 
@@ -258,25 +278,30 @@ export default function LicenseManager({ onSessionInvalid }) {
   const createLicense = async (e) => {
     e.preventDefault();
     if (!username.trim() || creating) return;
-    setCreating(true);
+    setCreateStatus('loading');
     setError('');
+    const minLoading = wait(MORPH_MIN_LOADING_MS);
     try {
       const res = await fetch(`${backendUrl()}/api/licenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ username: username.trim(), licenseType, diceTier, spotifyAddon: spotifyAddon ? true : undefined }),
       });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
+      if (res.status === 401) { setCreateStatus('idle'); await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo crear la licencia');
+      await minLoading;
+      setCreateStatus('success');
+      await wait(MORPH_SUCCESS_HOLD_MS);
       setNewKey({ key: data.key, username: data.license.username });
       setUsername('');
       setSpotifyAddon(false);
-      fetchLicenses();
+      fetchLicenses({ quiet: true });
+      setCreateStatus('idle');
     } catch (err) {
+      await minLoading;
       pushToast(err.message, 'error');
-    } finally {
-      setCreating(false);
+      setCreateStatus('error');
     }
   };
 
@@ -288,7 +313,8 @@ export default function LicenseManager({ onSessionInvalid }) {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo revocar');
       pushToast('Licencia revocada');
-      fetchLicenses();
+      setFlashId(id);
+      fetchLicenses({ quiet: true });
     } catch (err) {
       pushToast(err.message, 'error');
     }
@@ -305,12 +331,22 @@ export default function LicenseManager({ onSessionInvalid }) {
       if (res.status === 401) { await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo eliminar');
+      await removeRows([lic.id]);
       pushToast('Licencia eliminada');
       setSelectedIds(prev => { if (!prev.has(lic.id)) return prev; const next = new Set(prev); next.delete(lic.id); return next; });
-      fetchLicenses();
+      fetchLicenses({ quiet: true });
     } catch (err) {
       pushToast(err.message, 'error');
     }
+  };
+
+  // Las filas borradas se desvanecen (.tkc-leaving) y recién después salen de
+  // la lista, en vez de desaparecer de golpe.
+  const removeRows = async (ids) => {
+    setLeavingIds(new Set(ids));
+    await wait(280);
+    setLicenses(prev => prev.filter(l => !ids.includes(l.id)));
+    setLeavingIds(new Set());
   };
 
   const toggleSelected = (id) => {
@@ -343,8 +379,9 @@ export default function LicenseManager({ onSessionInvalid }) {
           ? `${data.deleted} licencia(s) eliminada(s), ${data.skipped} omitida(s)`
           : `${data.deleted} licencia(s) eliminada(s)`
       );
+      await removeRows(ids);
       setSelectedIds(new Set());
-      fetchLicenses();
+      fetchLicenses({ quiet: true });
     } catch (err) {
       pushToast(err.message, 'error');
     } finally {
@@ -353,6 +390,7 @@ export default function LicenseManager({ onSessionInvalid }) {
   };
 
   const openEditor = (lic) => {
+    setEditStatus('idle');
     if (editingId === lic.id) { setEditingId(null); return; }
     setEditingId(lic.id);
     setEditForm({
@@ -374,23 +412,28 @@ export default function LicenseManager({ onSessionInvalid }) {
     if (editForm.winBonus !== !!lic.diceWinBonusUnlocked) body.winBonus = editForm.winBonus;
     if (Object.keys(body).length === 0) { setEditingId(null); return; }
     if (body.multiDevice && !window.confirm(`¿Convertir la licencia de @${lic.username} en "todopoderosa"? Va a poder usarse en cualquier cantidad de dispositivos a la vez, sin restricciones.`)) return;
-    setSavingEdit(true);
+    setEditStatus('loading');
+    const minLoading = wait(MORPH_MIN_LOADING_MS);
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(body),
       });
-      if (res.status === 401) { await handleUnauthorized(res); return; }
+      if (res.status === 401) { setEditStatus('idle'); await handleUnauthorized(res); return; }
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo guardar');
+      await minLoading;
+      setEditStatus('success');
       pushToast(`Licencia de @${lic.username} actualizada`);
+      await Promise.all([fetchLicenses({ quiet: true }), wait(MORPH_SUCCESS_HOLD_MS)]);
       setEditingId(null);
-      fetchLicenses();
+      setEditStatus('idle');
+      setFlashId(lic.id);
     } catch (err) {
+      await minLoading;
       pushToast(err.message, 'error');
-    } finally {
-      setSavingEdit(false);
+      setEditStatus('error');
     }
   };
 
@@ -407,7 +450,8 @@ export default function LicenseManager({ onSessionInvalid }) {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo regenerar la clave');
       setNewKey({ key: data.key, username: data.license.username, regenerated: true });
-      fetchLicenses();
+      setFlashId(lic.id);
+      fetchLicenses({ quiet: true });
     } catch (err) {
       pushToast(err.message, 'error');
     }
@@ -446,8 +490,8 @@ export default function LicenseManager({ onSessionInvalid }) {
 
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
-        <div ref={newKeyPanelRef} className="w-full max-w-lg bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-5">
-          <p className="text-xs font-black uppercase tracking-widest text-red-700 mb-2">Guarda esta clave ahora — no se vuelve a mostrar</p>
+        <div ref={newKeyPanelRef} className="w-full max-w-lg theme-notice theme-notice-warning theme-notice-roomy tkc-rise">
+          <p className="text-xs font-black uppercase tracking-widest mb-2">Guarda esta clave ahora — no se vuelve a mostrar</p>
           <p className="text-sm text-gray-300 mb-2">
             {newKey.regenerated ? 'Clave nueva' : 'Licencia'} para <strong className="text-white">@{newKey.username}</strong>:
           </p>
@@ -457,10 +501,10 @@ export default function LicenseManager({ onSessionInvalid }) {
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{newKey.key}</code>
             <button onClick={copyKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-              {copied ? 'Copiado' : 'Copiar'}
+              <span key={copied ? 'copied' : 'copy'} className="tkc-pop">{copied ? 'Copiado' : 'Copiar'}</span>
             </button>
           </div>
-          <button onClick={() => setNewKey(null)} className="mt-3 text-[11px] text-gray-500 hover:text-gray-300 underline">Cerrar</button>
+          <button onClick={() => setNewKey(null)} className="theme-link mt-1">Cerrar</button>
         </div>
       )}
 
@@ -501,10 +545,10 @@ export default function LicenseManager({ onSessionInvalid }) {
             lo incluyen, así que ahí no cambia nada. */}
         <EditSwitch label="Complemento de Spotify" hint="Pago único. Sirve sobre todo para el plan Mensual: Anual y Lifetime ya lo incluyen."
           checked={spotifyAddon} onChange={setSpotifyAddon} />
-        <button type="submit" disabled={creating || !username.trim()}
-          className="theme-btn-primary theme-btn-md font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-          {creating ? 'CREANDO...' : 'CREAR LICENCIA'}
-        </button>
+        <MorphButton type="submit" status={createStatus} loadingLabel="Creando la licencia…" disabled={!creating && !username.trim()}
+          className="theme-btn-primary theme-btn-md font-black tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+          Crear licencia
+        </MorphButton>
       </form>
 
       {/* Precios de licencias -- pedido explicito: "Modificacion manual de
@@ -530,13 +574,18 @@ export default function LicenseManager({ onSessionInvalid }) {
                   onChange={e => setPriceInputs(p => ({ ...p, [planType]: e.target.value }))}
                   className="theme-input flex-1 min-w-0 p-2 outline-none text-sm"
                 />
-                <button
-                  onClick={() => savePrice(planType)}
-                  disabled={savingPlan === planType || priceInputs[planType] === (prices[planType] / 100).toString()}
-                  className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {savingPlan === planType ? 'Guardando...' : 'Guardar'}
-                </button>
+                <div className="w-24 flex-shrink-0">
+                  <MorphButton
+                    type="button"
+                    onClick={() => { if (priceStatus.status !== 'loading' && priceStatus.status !== 'success') savePrice(planType); }}
+                    status={priceStatus.plan === planType ? priceStatus.status : 'idle'}
+                    loadingLabel="Guardando el precio…"
+                    disabled={priceStatus.plan !== planType && priceInputs[planType] === (prices[planType] / 100).toString()}
+                    className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Guardar
+                  </MorphButton>
+                </div>
               </div>
             ))}
             <p className="text-[10px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
@@ -620,7 +669,8 @@ export default function LicenseManager({ onSessionInvalid }) {
         ) : filteredLicenses.map(lic => {
           const status = statusOf(lic);
           return (
-            <div key={lic.id} className="theme-surface p-4 flex flex-col gap-1">
+            <div key={lic.id} className={['theme-surface p-4 flex flex-col gap-1', leavingIds.has(lic.id) ? 'tkc-leaving' : '', flashId === lic.id ? 'tkc-flash' : ''].join(' ')}
+              onAnimationEnd={(e) => { if (e.animationName === 'tkc-flash') setFlashId(null); }}>
               {/* Con las insignias de Spotify el nombre puede llevar bastante texto:
                   el grupo baja de línea (flex-wrap + min-w-0) en vez de empujar
                   la etiqueta de estado fuera de la tarjeta. */}
@@ -654,7 +704,7 @@ export default function LicenseManager({ onSessionInvalid }) {
                     </span>
                   )}
                 </span>
-                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border shrink-0 ${status.className}`}>{status.label}</span>
+                <span key={status.id} className={`tkc-pop text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border shrink-0 ${status.className}`}>{status.label}</span>
               </div>
               <p className="text-[11px] text-gray-500">clave: {lic.keyPrefix}••••••••• · tipo: {DURATION_LABELS[lic.licenseType] || lic.licenseType} · nivel Color Says: {DICE_TIERS[lic.diceTier] || lic.diceTier}</p>
               <p className="text-[11px] text-gray-500">creada: {fmtDate(lic.createdAt)} · expira: {lic.expiresAt ? fmtDate(lic.expiresAt) : 'Nunca'}</p>
@@ -677,7 +727,7 @@ export default function LicenseManager({ onSessionInvalid }) {
               </div>
 
               {editingId === lic.id && editForm && (
-                <div className="theme-input p-4 mt-2 flex flex-col gap-4" role="group" aria-label={`Editar la licencia de @${lic.username}`}>
+                <div className="theme-input p-4 mt-2 flex flex-col gap-4 tkc-msg-enter" role="group" aria-label={`Editar la licencia de @${lic.username}`}>
                   <div className="flex flex-col gap-3">
                     <EditSwitch label="Multi-dispositivo" hint="Se puede usar en cualquier cantidad de dispositivos a la vez."
                       checked={editForm.multiDevice} onChange={v => setEditForm(f => ({ ...f, multiDevice: v }))} />
@@ -712,17 +762,19 @@ export default function LicenseManager({ onSessionInvalid }) {
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => saveEdit(lic)} disabled={savingEdit}
-                      className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                      {savingEdit ? 'Guardando...' : 'Guardar cambios'}
-                    </button>
-                    <button type="button" onClick={() => setEditingId(null)}
+                    <div className="w-40 flex-shrink-0">
+                      <MorphButton type="button" onClick={() => { if (!savingEdit) saveEdit(lic); }} status={editStatus} loadingLabel="Guardando los cambios…"
+                        className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
+                        Guardar cambios
+                      </MorphButton>
+                    </div>
+                    <button type="button" onClick={() => setEditingId(null)} disabled={savingEdit}
                       className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
                       Cancelar
                     </button>
                     {!lic.isAdmin && (
-                      <button type="button" onClick={() => deleteLicenseRow(lic)}
-                        className="ml-auto px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/50 text-red-700 hover:bg-red-500/10">
+                      <button type="button" onClick={() => deleteLicenseRow(lic)} disabled={savingEdit}
+                        className="ml-auto theme-btn-danger theme-btn-sm font-black uppercase tracking-widest">
                         Eliminar
                       </button>
                     )}
@@ -731,12 +783,12 @@ export default function LicenseManager({ onSessionInvalid }) {
                   {!lic.isAdmin && (
                     <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--surface-border-color)]">
                       {!lic.revoked && (
-                        <button type="button" onClick={() => revoke(lic.id)} className="text-[10px] font-bold text-red-700 hover:underline py-2">
+                        <button type="button" onClick={() => revoke(lic.id)} className="theme-link theme-link-danger">
                           Revocar acceso
                         </button>
                       )}
                       {!lic.revoked && (
-                        <button type="button" onClick={() => regenerateKey(lic)} className="text-[10px] font-bold text-amber-700 hover:underline py-2">
+                        <button type="button" onClick={() => regenerateKey(lic)} className="theme-link theme-link-warning">
                           Regenerar clave
                         </button>
                       )}

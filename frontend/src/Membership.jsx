@@ -411,7 +411,7 @@ export default function Membership({ session, onSessionUpdate }) {
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs break-all select-all">{revealedKey}</code>
             <button type="button" onClick={copyRevealedKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-              {keyCopied ? 'Copiado' : 'Copiar'}
+              <span key={keyCopied ? 'done' : 'idle'} className="tkc-pop">{keyCopied ? 'Copiado' : 'Copiar'}</span>
             </button>
           </div>
         </div>
@@ -474,7 +474,7 @@ export default function Membership({ session, onSessionUpdate }) {
               <div className="flex items-center gap-2">
                 <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{trialResult.key}</code>
                 <button type="button" onClick={copyTrialKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-                  {trialCopied ? 'Copiado' : 'Copiar'}
+                  <span key={trialCopied ? 'done' : 'idle'} className="tkc-pop">{trialCopied ? 'Copiado' : 'Copiar'}</span>
                 </button>
               </div>
               <button

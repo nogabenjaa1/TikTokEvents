@@ -40,6 +40,7 @@ function adminRoutes({ existing = {} } = {}) {
       delete: (path, ...handlers) => { routes[`DELETE ${path}`] = handlers.at(-1); },
     },
     auth, crypto, adminLimiter: null,
+    pushLicenseState: () => {}, // avisar al panel del streamer tiene su propia prueba
     // The admin history and the storage cleanup are stubs here: each has its own tests.
     // Plain data again, so deepEqual compares them across the vm boundary.
     audit: (req, action, target, details) => events.audited.push({ admin: req.license.username, action, target: { ...target }, details: details ? { ...details } : null }),

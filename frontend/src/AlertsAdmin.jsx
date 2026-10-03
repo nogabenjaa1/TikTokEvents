@@ -13,6 +13,8 @@ import { quotaSummary } from './alertQuota';
 import OverlayCustomizePanel from './OverlayCustomizePanel';
 import AlertMonitorSettings from './AlertMonitorSettings';
 import { OVERLAY_CUSTOMIZE_LABELS } from './overlayCustomization';
+import MorphButton from './MorphButton';
+import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 
 const POSITIONS = [
   { id: 'center', label: 'Centro' },
@@ -328,7 +330,9 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
   const [position, setPosition] = useState('center');
   const [entranceAnim, setEntranceAnim] = useState('fade');
   const [exitAnim, setExitAnim] = useState('fade');
-  const [saving, setSaving] = useState(false);
+  // idle | loading | success | error: lo cuenta el botón de guardar con su forma (ver MorphButton).
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const saving = saveStatus === 'loading' || saveStatus === 'success';
   const [error, setError] = useState('');
 
   // null = creando una alerta nueva. Si no, es la alerta que se está
@@ -574,8 +578,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     if (!effectiveVisualUrl && !effectiveAudioUrl && !text.trim()) {
       return setError('Agrega al menos un recurso visual, un audio o un texto.');
     }
+    if (saving) return;
     setError('');
-    setSaving(true);
+    setSaveStatus('loading');
+    const minLoading = wait(MORPH_MIN_LOADING_MS);
     try {
       const form = new FormData();
       if (editingId) form.append('alertId', editingId);
@@ -589,6 +595,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       // El id evita que la alerta no dispare cuando el nombre del regalo en
       // vivo no coincide con el del catálogo.
       if (triggerType === 'gift' && selectedGift?.id != null) form.append('giftId', String(selectedGift.id));
+      if (triggerType === 'gift' && selectedGift?.icon) form.append('giftIcon', selectedGift.icon);
       if (triggerType === 'gift_global') form.append('minCoins', String(Math.trunc(Number(minCoins))));
       // Sin id es la alerta general de "cualquier sticker del club de fans", como siempre.
       if (triggerType === 'sticker' && selectedSticker?.id) form.append('stickerId', selectedSticker.id);
@@ -607,15 +614,19 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         if (data.quota) { setQuota(data.quota); setQuotaMessage(data.error || null); }
         throw new Error(data.error || 'No se pudo guardar la alerta');
       }
+      await minLoading;
+      setSaveStatus('success');
+      await wait(MORPH_SUCCESS_HOLD_MS);
       const wasEditing = !!editingId;
       resetForm();
       setView('list');
       showNotice(wasEditing ? 'Cambios guardados.' : 'Alerta creada.');
+      setSaveStatus('idle');
       await fetchAlerts();
     } catch (err) {
+      await minLoading;
       setError(err.message);
-    } finally {
-      setSaving(false);
+      setSaveStatus('error');
     }
   };
 
@@ -1077,16 +1088,19 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           botón de guardar no debe quedar perdido hasta el final. */}
       <div className="sticky bottom-0 z-30 w-full max-w-2xl pb-2">
         <div className="theme-surface p-3">
-          {error && <p role="alert" className="text-[11px] font-bold text-red-500 mb-2 px-1">{error}</p>}
+          {error && <p role="alert" className="text-[11px] font-bold text-red-500 mb-2 px-1 tkc-msg-enter">{error}</p>}
           <div className="flex gap-2">
-            <button
-              onClick={save}
-              disabled={saving}
-              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? 'GUARDANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
-            </button>
-            <button onClick={closeForm} type="button" className="theme-btn-secondary theme-btn-md font-bold tracking-wide uppercase">
+            <div className="flex-1 min-w-0 flex">
+              <MorphButton
+                onClick={save}
+                status={saveStatus}
+                loadingLabel="Guardando la alerta…"
+                className="theme-btn-primary theme-btn-lg font-bold tracking-wide shadow-lg"
+              >
+                {editingId ? 'GUARDAR CAMBIOS' : 'GUARDAR ALERTA'}
+              </MorphButton>
+            </div>
+            <button onClick={closeForm} type="button" disabled={saving} className="theme-btn-secondary theme-btn-md font-bold tracking-wide uppercase disabled:opacity-40">
               Cancelar
             </button>
           </div>

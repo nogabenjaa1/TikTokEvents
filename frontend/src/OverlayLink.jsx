@@ -75,7 +75,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
           </p>
           <div className="flex gap-3">
             <button onClick={copyUrl} className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
-              {copied ? 'Copiado' : 'Copiar URL'}
+              <span key={copied ? 'done' : 'idle'} className="tkc-pop">{copied ? 'Copiado' : 'Copiar URL'}</span>
             </button>
             {/* Enlace real (no window.open): un <a target="_blank"> nunca lo
                 bloquea un bloqueador de ventanas emergentes, a diferencia de

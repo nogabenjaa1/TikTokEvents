@@ -424,6 +424,28 @@ function sessionLicense(row) {
     };
 }
 
+// Un cambio en una licencia (el admin la extiende o la edita, una compra se
+// aplica) tiene que verse YA en el panel del streamer, no al volver a iniciar
+// sesión: el panel guarda su plan y vencimiento, y el Tenant en memoria
+// guarda el tipo de licencia (lo usan las reglas de la prueba gratis). Bug
+// real: una prueba extendida a mensual seguía viéndose vencida hasta que se
+// regeneró la clave. Solo a los paneles (JWT): los overlays no necesitan
+// datos de la licencia. Nunca lanza: es un aviso, no parte de la operación.
+async function pushLicenseState(licenseId) {
+    try {
+        const row = await db.findById(licenseId);
+        if (!row) return;
+        const tenant = tenants.get(licenseId);
+        if (tenant) tenant.licenseType = row.license_type;
+        const payload = sessionLicense(row);
+        for (const socket of await io.in(licenseId).fetchSockets()) {
+            if (socket.authMethod === 'jwt') socket.emit('license_updated', payload);
+        }
+    } catch (err) {
+        console.error(`[Licencias] No se pudo avisar el cambio de la licencia ${licenseId}:`, err.message);
+    }
+}
+
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const { key } = req.body || {};
     if (!key || typeof key !== 'string') {
@@ -726,6 +748,7 @@ app.post('/api/licenses/:id/regenerate-key', auth.requireAuth, auth.requireAdmin
     await db.setLicenseKey(row.id, { keyHash: auth.hashKey(key), keyPrefix: auth.keyPrefix(key) });
     console.log(`[Licencias] ${req.license.username} regeneró la clave de la licencia ${row.id} (@${row.username}).`);
     audit(req, 'license.regenerate_key', { id: row.id, label: row.username });
+    pushLicenseState(row.id);
     res.json({ success: true, key, license: { id: row.id, username: row.username } });
 });
 
@@ -746,6 +769,7 @@ app.post('/api/licenses/:id/multi-device', auth.requireAuth, auth.requireAdmin, 
     const { enabled } = req.body || {};
     await db.setMultiDevice(row.id, !!enabled);
     audit(req, 'license.multi_device', { id: row.id, label: row.username }, { enabled: !!enabled });
+    pushLicenseState(row.id);
     res.json({ success: true });
 });
 
@@ -760,6 +784,7 @@ app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adm
     const { enabled } = req.body || {};
     await db.setWinBonusUnlocked(row.id, !!enabled);
     audit(req, 'license.win_bonus', { id: row.id, label: row.username }, { enabled: !!enabled });
+    pushLicenseState(row.id);
     res.json({ success: true });
 });
 
@@ -772,6 +797,7 @@ app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin,
     const { enabled } = req.body || {};
     await db.setSpotifyAddon(row.id, !!enabled);
     audit(req, 'license.spotify_addon', { id: row.id, label: row.username }, { enabled: !!enabled });
+    pushLicenseState(row.id);
     res.json({ success: true });
 });
 
@@ -829,6 +855,7 @@ app.post('/api/licenses/:id/edit', auth.requireAuth, auth.requireAdmin, adminLim
     if (spotifyAddon !== undefined && spotifyAddon !== !!row.spotify_addon) changes.spotifyAddon = spotifyAddon;
     if (winBonus !== undefined && winBonus !== !!row.dice_win_bonus_unlocked) changes.winBonus = winBonus;
     audit(req, 'license.edit', { id: row.id, label: row.username }, changes);
+    pushLicenseState(row.id);
     res.json({ success: true });
 });
 
@@ -847,6 +874,7 @@ app.post('/api/licenses/:id/extend', auth.requireAuth, auth.requireAdmin, adminL
     }
     await db.extendLicense(row.id, licenseType, auth.computeExpiresAt(licenseType), diceTier);
     audit(req, 'license.extend', { id: row.id, label: row.username }, { licenseType, diceTier });
+    pushLicenseState(row.id);
     res.json({ success: true });
 });
 
@@ -1170,6 +1198,7 @@ function serializeAlert(row) {
         audioUrl: row.audio_url,
         text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
         giftId: row.gift_id || null,
+        giftIcon: row.gift_icon || null,
         durationMs: row.duration_ms, position: row.position,
         entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
         triggerType,
@@ -1264,6 +1293,10 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
     // encuentra aunque el nombre del evento en vivo no coincida con el del
     // catálogo (ver findAlertConfig en lib/tenant/alerts.js).
     const bodyGiftId = /^\d{1,20}$/.test(String(req.body?.giftId ?? '')) ? String(req.body.giftId) : null;
+    // La imagen del regalo tal como la mostró el selector: la tira de regalos
+    // la necesita si el regalo todavía no llegó en ningún directo. Solo https
+    // y de largo razonable: termina en un <img> del overlay.
+    const bodyGiftIcon = typeof req.body?.giftIcon === 'string' && /^https:\/\//i.test(req.body.giftIcon) && req.body.giftIcon.length <= 500 ? req.body.giftIcon : null;
     const visualMuted = req.body?.visualMuted === 'true';
     const clearVisual = req.body?.clearVisual === 'true';
     const clearAudio = req.body?.clearAudio === 'true';
@@ -1373,6 +1406,9 @@ app.post('/api/alerts', auth.requireAuth, generalLimiter, uploadAlertMedia, asyn
             // regalo, vale el del nuevo (o ninguno, nunca el del anterior).
             giftId: triggerType !== 'gift' ? null
                 : bodyGiftId ?? (isEditing && !(typeof giftName === 'string' && giftName.trim()) ? (editingRow.gift_id ?? null) : null),
+            // Mismo criterio que giftId.
+            giftIcon: triggerType !== 'gift' ? null
+                : bodyGiftIcon ?? (isEditing && !(typeof giftName === 'string' && giftName.trim()) ? (editingRow.gift_icon ?? null) : null),
             durationMs: finalDuration, position: finalPosition,
             entranceAnim: finalEntranceAnim, exitAnim: finalExitAnim, triggerType, minCoins,
             apodo: finalApodo,
@@ -1729,6 +1765,7 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
             if (Object.keys(update).length > 0) {
                 await db.applyPurchase(licenseId, update);
                 console.log(`[${label}] ✅ Pago aplicado — licencia ${licenseId}:`, update);
+                pushLicenseState(licenseId);
             }
             // Si este pago había quedado anotado como pendiente y ahora sí se aplicó (un
             // reintento del proveedor), el aviso se cierra solo.
@@ -2334,6 +2371,9 @@ app.get('/api/setup/:username', auth.requireAuth, async (req, res) => {
         // Más los que TikTok ya entregó en cualquier directo (ver giftDirectory).
         await giftDirectory.load();
         const validGifts = mergeGiftCatalogs(roomGifts, gifts, giftDirectory.list(), tenant.getSeenGifts());
+        // Las alertas guardadas antes de que se guardara la imagen del regalo
+        // la toman de este catálogo (ver backfillAlertGiftIcons).
+        Promise.resolve().then(() => tenant.backfillAlertGiftIcons(validGifts)).catch(() => { /* no afecta la respuesta */ });
         res.json({ success: true, gifts: validGifts });
     } catch (error) {
         res.json({ success: false });
@@ -2444,7 +2484,17 @@ io.on('connection', (socket) => {
     socket.emit('server_boot', { bootId: BOOT_ID });
     socket.join(socket.licenseId);
     const tenant = getOrCreateTenant(socket.licenseId, socket.licenseType);
+    // El Tenant pudo crearse con otro tipo de licencia (sigue en memoria
+    // hasta 30 min sin pantallas): el que vale es el de esta conexión.
+    tenant.licenseType = socket.licenseType;
     tenant.attachSocket(socket);
+    // Un panel que se conecta (o reconecta) recibe su licencia al día: cubre
+    // un cambio hecho mientras estaba cerrado o desconectado.
+    if (socket.authMethod === 'jwt') {
+        db.findById(socket.licenseId)
+            .then((row) => { if (row) socket.emit('license_updated', sessionLicense(row)); })
+            .catch(() => { /* sin la base, el panel sigue con lo que tenía */ });
+    }
 });
 
 // Solo existe backend/public/index.html cuando el frontend se buildeó y

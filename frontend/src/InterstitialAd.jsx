@@ -38,7 +38,7 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
+    <div className="tkc-backdrop fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
       <div className="theme-surface w-full max-w-sm p-6 flex flex-col items-center gap-4">
         <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</p>
         <AdIframeBanner zone={INTERSTITIAL_AD_ZONE} active={open} />

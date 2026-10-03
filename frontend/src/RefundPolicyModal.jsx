@@ -20,7 +20,7 @@ const REFUND_POLICY_PARAGRAPHS = [
 
 export default function RefundPolicyModal({ onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto">
         <p className="theme-label text-xs uppercase tracking-widest font-semibold">Política de reembolsos</p>
         {REFUND_POLICY_PARAGRAPHS.map((paragraph, i) => (

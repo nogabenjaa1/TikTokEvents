@@ -214,7 +214,7 @@ export default function Versus({ state, socket, username, connectionStatus, gift
           <button type="button" onClick={saveSettings} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest">
             Guardar ajustes
           </button>
-          {settingsSaved && <span className="text-[11px] font-bold text-green-400">Guardado</span>}
+          {settingsSaved && <span className="text-[11px] font-bold text-green-400 tkc-pop">Guardado</span>}
         </div>
       </section>
 

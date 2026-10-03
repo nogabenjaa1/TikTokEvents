@@ -762,6 +762,34 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   to   { background-position: 400% 0; }
 }
 
+/* Fondo "arcoíris" de un overlay o de una fila (ver rainbowBackgroundStyle):
+   una capa aparte, el doble de ancha y con el arcoíris dos veces, que se
+   desliza por detrás del contenido. Moverla es solo componer en la GPU; antes
+   se animaba background-position y se repintaba todo el recuadro en cada
+   cuadro. El elemento lleva la variable --tkc-rainbow-bg en su style. */
+[style*="--tkc-rainbow-bg"] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+[style*="--tkc-rainbow-bg"]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  z-index: -1;
+  pointer-events: none;
+  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b);
+  will-change: transform;
+  animation: tkc-rainbow-slide 8s linear infinite;
+}
+@keyframes tkc-rainbow-slide {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
 /* Overlay "tira" (ticker) de regalos con alerta: la lista se duplica una vez
    (ver GiftTickerOverlay.jsx) y esto la corre exactamente la mitad de su
    ancho -- como el contenido se repite, el final de la primera copia
@@ -812,13 +840,22 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    background-clip. */
 .themed-app[data-theme-style] .tkc-username-rainbow {
   background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
-  background-size: 400% 100% !important;
+  background-size: 100% 100% !important;
   /* impeccable-disable-next-line gradient-text: opción "arcoíris" que el streamer elige en Personalizar para el nombre de usuario del overlay; es una función, no decoración */
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
-  will-change: background-position;
-  animation: tkc-rainbow-move 3s linear infinite;
+  /* Rendimiento (bug real: la tira de regalos se trababa en OBS): antes se
+     animaba background-position, que obliga a repintar el texto en CADA
+     cuadro desde el hilo principal. Ahora el degradado queda fijo y lo que
+     se anima es el tono con un filtro, que lo resuelve la GPU sin repintar:
+     los colores siguen recorriendo el arcoíris. */
+  will-change: filter;
+  animation: tkc-hue-spin 4s linear infinite;
+}
+@keyframes tkc-hue-spin {
+  from { filter: hue-rotate(0deg); }
+  to   { filter: hue-rotate(360deg); }
 }
 /* "Color sólido del tema" para texto/username — mismo tono que ya usan
    theme-label/theme-accent-text (--accent-soft), como opción explícita

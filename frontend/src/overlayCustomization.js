@@ -132,12 +132,13 @@ export const RAINBOW_GRADIENT = 'linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#
 // arrastrar el mismo error que tenía `.tkc-username-rainbow` (ver
 // comentario en index.css) si en algún momento se agrega otro campo de
 // `background-*` acá al lado.
+// Rendimiento: el arcoíris en movimiento lo dibuja una capa aparte que se
+// desliza (ver [style*="--tkc-rainbow-bg"] en index.css), no un
+// background-position animado, que repintaba el recuadro entero en cada
+// cuadro y trababa los overlays en OBS. El color de base es el del propio
+// arcoíris, para el primer cuadro antes de que la capa se componga.
 function rainbowBackgroundStyle() {
-  return {
-    backgroundImage: RAINBOW_GRADIENT,
-    backgroundSize: '400% 100%',
-    animation: 'tkc-rainbow-move 8s linear infinite',
-  };
+  return { background: '#a855f7', '--tkc-rainbow-bg': '1' };
 }
 
 // Bordes on/off (pedido explícito). `borders` es opcional en el entry: si

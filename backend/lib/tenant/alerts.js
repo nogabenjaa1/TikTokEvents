@@ -31,6 +31,7 @@ module.exports = {
                     audioUrl: row.audio_url,
                     text: row.alert_text || '', textPosition: row.text_position || 'below', textColor: row.text_color || null,
                     giftId: row.gift_id || null,
+                    giftIcon: row.gift_icon || null,
                     durationMs: row.duration_ms, position: row.position,
                     entranceAnim: row.entrance_anim, exitAnim: row.exit_anim,
                     minCoins: row.min_coins != null ? Number(row.min_coins) : null,
@@ -78,12 +79,37 @@ module.exports = {
             const byName = wanted ? gifts.find((g) => giftNameKey(g.name) === wanted) : null;
             return byName?.icon || '';
         };
+        // Primero el directorio (regalos que ya llegaron en vivo, el ícono más
+        // fiel); si ese regalo nunca llegó, la imagen que se guardó con la
+        // alerta al elegirlo en el selector. Bug real: una alerta de un regalo
+        // que nadie había mandado todavía salía en la tira sin imagen.
+        const iconFor = (alert) => findIcon(alert.giftId, alert.giftName) || alert.giftIcon || '';
         return Object.values(this.alertConfigs)
             .filter((alert) => alert.triggerType === 'gift' && alert.giftName && !alert.giftName.startsWith('__draft_gift__:'))
             .map((alert) => ({
                 id: alert.id, apodo: alert.apodo || alert.giftName,
-                giftName: alert.giftName, giftIcon: findIcon(alert.giftId, alert.giftName),
+                giftName: alert.giftName, giftIcon: iconFor(alert),
             }));
+    },
+
+    // Las alertas de regalo guardadas sin imagen (antes de existir gift_icon)
+    // la toman del catálogo que el panel acaba de bajar al conectarse al LIVE
+    // (ver /api/setup en server.js): se guarda una vez y la tira se actualiza.
+    async backfillAlertGiftIcons(catalog) {
+        if (!Array.isArray(catalog) || catalog.length === 0) return;
+        let changed = false;
+        for (const alert of Object.values(this.alertConfigs)) {
+            if (alert.triggerType !== 'gift' || alert.giftIcon || !alert.giftName || alert.giftName.startsWith('__draft_gift__:')) continue;
+            const wanted = giftNameKey(alert.giftName);
+            const match = (alert.giftId && catalog.find((g) => String(g.id) === String(alert.giftId)))
+                || catalog.find((g) => giftNameKey(g.name) === wanted);
+            const icon = typeof match?.icon === 'string' && /^https:\/\//i.test(match.icon) ? match.icon : '';
+            if (!icon) continue;
+            alert.giftIcon = icon;
+            changed = true;
+            await db.setAlertGiftIcon(alert.id, this.licenseId, icon);
+        }
+        if (changed) await this.emitGiftTickerSnapshot();
     },
 
     async emitGiftTickerSnapshot() {

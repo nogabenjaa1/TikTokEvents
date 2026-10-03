@@ -18,7 +18,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const YTDlpWrap = require('yt-dlp-wrap-plus').default;
 const ffmpegPath = require('ffmpeg-static');
-const { parseDownloadUrl, friendlyDownloaderError, redactSecrets, checkDownloadCapacity } = require('./lib/downloaderSafety');
+const { parseDownloadUrl, friendlyDownloaderError, redactSecrets, checkDownloadCapacity, isYouTubeBotCheck, YOUTUBE_BOT_CHECK_MESSAGE } = require('./lib/downloaderSafety');
 
 const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
@@ -35,6 +35,43 @@ function getTikTokProxy() {
     const proxy = process.env.YTDL_PROXY;
     if (!proxy) throw new Error('Falta YTDL_PROXY en las variables de entorno (mismo proxy que usa YTDownloader)');
     return proxy;
+}
+
+// YouTube les pide "confirmar que no eres un bot" a las IP de centros de datos
+// como la de Render, así que desde ahí casi ningún video se puede leer tal
+// cual. Hay dos salidas, y las dos se configuran solo con variables de entorno:
+//   YTDL_YOUTUBE_PROXY   'on' = usar también para YouTube el proxy de TikTok
+//                        (YTDL_PROXY); o la URL de otro proxy. Un proxy
+//                        residencial suele bastar.
+//   YTDL_YOUTUBE_COOKIES_FILE  ruta a un cookies.txt (formato Netscape) de una
+//                        cuenta de Google, p. ej. un Secret File de Render en
+//                        /etc/secrets/. O YTDL_YOUTUBE_COOKIES con el contenido.
+//                        Mejor una cuenta secundaria: YouTube puede bloquearla.
+// yt-dlp reescribe el archivo de cookies al terminar, y un Secret File es de
+// solo lectura: por eso se copia a un archivo temporal propio.
+function prepareYouTubeCookies() {
+    try {
+        let content = process.env.YTDL_YOUTUBE_COOKIES || '';
+        if (!content && process.env.YTDL_YOUTUBE_COOKIES_FILE) content = fs.readFileSync(process.env.YTDL_YOUTUBE_COOKIES_FILE, 'utf8');
+        if (!content.trim()) return null;
+        const file = path.join(require('os').tmpdir(), `tkc-yt-cookies-${process.pid}.txt`);
+        fs.writeFileSync(file, content, { mode: 0o600 });
+        console.log('[Downloader] YouTube usará las cookies configuradas.');
+        return file;
+    } catch (err) {
+        console.error('[Downloader] No se pudieron leer las cookies de YouTube:', err.message);
+        return null;
+    }
+}
+const YOUTUBE_COOKIES_PATH = prepareYouTubeCookies();
+
+function youtubeArgs() {
+    const args = [];
+    const proxySetting = process.env.YTDL_YOUTUBE_PROXY;
+    if (proxySetting === 'on') args.push('--proxy', getTikTokProxy());
+    else if (proxySetting) args.push('--proxy', proxySetting);
+    if (YOUTUBE_COOKIES_PATH) args.push('--cookies', YOUTUBE_COOKIES_PATH);
+    return args;
 }
 
 const _BROWSER_TARGETS = [
@@ -56,7 +93,7 @@ const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000;
 const INFO_MAX_BUFFER = 8 * 1024 * 1024; // el JSON de un solo video pesa unos cientos de kB
 
 // Lo que jamás debe llegar al navegador (el proxy lleva usuario y contraseña).
-const hiddenSecrets = () => [process.env.YTDL_PROXY];
+const hiddenSecrets = () => [process.env.YTDL_PROXY, process.env.YTDL_YOUTUBE_PROXY];
 
 // ─────────────────────────────────────────────
 // Jobs en memoria -- Node es de un solo hilo, así que a diferencia del
@@ -115,6 +152,8 @@ async function getVideoInfo(rawUrl) {
             const args = ['--dump-json', '--no-warnings', '--skip-download', '--no-check-certificates', '--no-playlist', '--playlist-items', '1'];
             if (tiktok) {
                 args.push('--proxy', getTikTokProxy(), '--impersonate', randomBrowserTarget());
+            } else {
+                args.push(...youtubeArgs());
             }
             // Todo lo que va después de "--" es la URL, nunca una opción de yt-dlp.
             args.push('--', url);
@@ -153,6 +192,7 @@ async function getVideoInfo(rawUrl) {
             };
         } catch (e) {
             lastError = e.message || String(e);
+            if (isYouTubeBotCheck(lastError)) break; // reintentar no cambia nada (ver youtubeArgs)
             if (/403|404|Forbidden/.test(lastError)) {
                 await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
                 continue;
@@ -163,6 +203,7 @@ async function getVideoInfo(rawUrl) {
     // El detalle completo (sin secretos) queda en el registro del servidor; al
     // usuario solo le llega la razón que dio yt-dlp.
     console.error('[Downloader] No se pudo obtener la información del video:', redactSecrets(lastError, hiddenSecrets()).slice(0, 600));
+    if (isYouTubeBotCheck(lastError)) throw new Error(YOUTUBE_BOT_CHECK_MESSAGE);
     throw new Error(`No se pudo obtener la información del video. Detalle: ${friendlyDownloaderError(lastError, hiddenSecrets())}`);
 }
 
@@ -184,7 +225,7 @@ function buildArgs({ url, fmt, quality, outTmpl, tiktok }) {
     if (tiktok) {
         args.push('--proxy', getTikTokProxy(), '--impersonate', randomBrowserTarget());
     } else {
-        args.push('--concurrent-fragments', '5');
+        args.push('--concurrent-fragments', '5', ...youtubeArgs());
     }
 
     if (fmt === 'mp3') {
@@ -332,6 +373,7 @@ function handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attemp
 
     console.error(`[Downloader] Job ${jobId} falló:`, redactSecrets(message, hiddenSecrets()).slice(0, 600));
     job.status = 'error';
+    if (isYouTubeBotCheck(message)) { job.error = YOUTUBE_BOT_CHECK_MESSAGE; job.finishedAt = Date.now(); return; }
     job.error = `Bloqueado tras ${attempt + 1} intento(s). Detalle: ${friendlyDownloaderError(message, hiddenSecrets())}`;
     job.finishedAt = Date.now();
 }

@@ -109,7 +109,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
           <div className="flex items-center gap-2 mt-2">
             <code className="theme-input flex-1 px-3 py-2 text-[11px] text-green-300 break-all select-all">{redirectUri}</code>
             <button type="button" onClick={copyRedirectUri} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-              {copied ? 'Copiado' : 'Copiar'}
+              <span key={copied ? 'done' : 'idle'} className="tkc-pop">{copied ? 'Copiado' : 'Copiar'}</span>
             </button>
           </div>
         </Step>

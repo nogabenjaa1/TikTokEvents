@@ -275,7 +275,7 @@ export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amou
         Pago 100% seguro procesado por <strong>Mercado Pago</strong>
       </p>
       {challenge && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="theme-surface w-full max-w-md p-4 flex flex-col gap-3">
             <p className="theme-label text-xs uppercase tracking-widest font-semibold text-center">
               Verificación adicional de tu banco

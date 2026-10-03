@@ -71,7 +71,7 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
   const setUc = (patch) => onChange({ ...entry, usernameColor: { ...uc, ...patch } });
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="tkc-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="theme-surface w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 mb-5">
           <h2 className="theme-heading text-base font-bold leading-tight">Personalizar<br /><span className="text-sm font-semibold text-gray-400">{title}</span></h2>

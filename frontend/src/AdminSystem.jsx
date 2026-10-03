@@ -48,11 +48,14 @@ export default function AdminSystem({ onSessionInvalid }) {
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">Administración</p>
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">Sistema</h1>
         </div>
+        {/* El contenido de cada pestaña sube al elegirla (ver .tkc-reveal). */}
+        <div key={tab} className="tkc-reveal contents">
         {tab === 'status' && <SystemStatus onUnauthorized={onSessionInvalid} />}
         {tab === 'errors' && <SystemErrors onUnauthorized={onSessionInvalid} />}
         {tab === 'audit' && <SystemAudit onUnauthorized={onSessionInvalid} />}
         {tab === 'payments' && <SystemPayments onUnauthorized={onSessionInvalid} />}
         {tab === 'storage' && <SystemStorage onUnauthorized={onSessionInvalid} />}
+        </div>
       </div>
     </div>
   );

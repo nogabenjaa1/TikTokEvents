@@ -388,6 +388,7 @@ function purchaseContext() {
   const events = { payments: [], stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const context = vm.createContext({
+    pushLicenseState: () => {}, // avisar al panel del streamer tiene su propia prueba
     pricing, spotify, crypto: require('node:crypto'), Date,
     PLAN_KEY_LABELS: { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' },
     auth: {

@@ -337,6 +337,11 @@ const ready = pool.query(`
   // una fila vieja (el nombre original del archivo nunca se guardó antes de
   // esto): serializeAlert la completa con el nombre del regalo al servir.
   .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS apodo TEXT`))
+  // Imagen del regalo de la alerta, tal como la mostró el catálogo del panel:
+  // la tira de regalos (overlay 'ticker') la usa cuando ese regalo todavía no
+  // llegó en ningún directo y no está en el directorio global (ver
+  // getGiftTickerSnapshot en lib/tenant/alerts.js).
+  .then(() => pool.query(`ALTER TABLE alert_configs ADD COLUMN IF NOT EXISTS gift_icon TEXT`))
   // Backfill de una sola vez: una alerta vieja (guardada antes de que
   // existieran visual_*/audio_*) tenia su unico archivo en media_type/
   // media_url/media_path -- 'audio' va a audio_*, cualquier otro tipo
@@ -830,12 +835,12 @@ async function upsertAlertConfig({
     audioUrl, audioPath,
     text, textPosition, textColor = null, giftId = null,
     durationMs, position, entranceAnim, exitAnim, triggerType, minCoins = null,
-    apodo = null,
+    apodo = null, giftIcon = null,
 }) {
     await ready;
     await pool.query(`
-        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, apodo, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $21, $18)
+        INSERT INTO alert_configs (id, license_id, gift_name, visual_url, visual_path, visual_type, visual_muted, audio_url, audio_path, alert_text, text_position, text_color, gift_id, duration_ms, position, entrance_anim, exit_anim, trigger_type, min_coins, apodo, gift_icon, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $19, $20, $12, $13, $14, $15, $16, $17, $21, $22, $18)
         ON CONFLICT (license_id, gift_name) DO UPDATE SET
             id = EXCLUDED.id,
             visual_url = EXCLUDED.visual_url,
@@ -855,6 +860,7 @@ async function upsertAlertConfig({
             trigger_type = EXCLUDED.trigger_type,
             min_coins = EXCLUDED.min_coins,
             apodo = EXCLUDED.apodo,
+            gift_icon = EXCLUDED.gift_icon,
             created_at = EXCLUDED.created_at
     `, [
         id, licenseId, giftName,
@@ -866,8 +872,15 @@ async function upsertAlertConfig({
         textColor,
         giftId,
         apodo,
+        giftIcon,
     ]);
     return getAlertConfig(id);
+}
+
+// Completa la imagen del regalo de una alerta vieja (ver gift_icon arriba).
+async function setAlertGiftIcon(id, licenseId, giftIcon) {
+    await ready;
+    await pool.query('UPDATE alert_configs SET gift_icon = $1 WHERE id = $2 AND license_id = $3', [giftIcon, id, licenseId]);
 }
 
 async function deleteAlertConfig(id, licenseId) {
@@ -1293,7 +1306,7 @@ module.exports = {
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,
-    listAlertConfigs, getAlertConfig, upsertAlertConfig, deleteAlertConfig,
+    listAlertConfigs, getAlertConfig, upsertAlertConfig, setAlertGiftIcon, deleteAlertConfig,
     listVersusConfigs, insertVersusConfig, deleteVersusConfig, setVersusSettings,
     getPricingOverrides, setPricingOverride, getPricingHistory,
     ping, upsertErrorReport, listErrorReports, clearErrorReports, pruneErrorReports, countErrorReportsSince,

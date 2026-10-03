@@ -157,6 +157,23 @@ export async function refreshSession() {
   return { ...updated, revealedKey: data.newKey || null };
 }
 
+// ¿La sesión guardada sigue valiendo? Sin efectos secundarios (a diferencia
+// de refreshSession, no consume la clave nueva de una compra). Devuelve
+// { valid: true }, { valid: false, error } si el servidor la rechazó, o
+// { valid: null } si no se pudo preguntar (sin red: no hay que deducir nada).
+export async function checkSession() {
+  try {
+    const res = await fetch(`${backendUrl()}/api/auth/overlay-key`, { headers: authHeaders() });
+    if (res.status === 401) {
+      const data = await res.json().catch(() => ({}));
+      return { valid: false, error: data.error };
+    }
+    return { valid: res.ok ? true : null };
+  } catch {
+    return { valid: null };
+  }
+}
+
 // Pide el token del overlay para una sesión abierta antes de que existiera y lo
 // guarda. No toca nada más de la sesión (a diferencia de refreshSession, que
 // también consume la clave nueva de una compra). Devuelve true si guardó uno.

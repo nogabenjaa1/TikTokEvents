@@ -94,6 +94,16 @@ function friendlyDownloaderError(raw, secrets = [], fallback = 'No se pudo proce
     return text || fallback;
 }
 
+// YouTube les pide "confirmar que no eres un bot" a las IP de centros de datos
+// (Render incluido): no es un fallo del enlace ni algo que se arregle
+// reintentando, así que se reconoce aparte para darle al streamer un mensaje
+// que entienda en vez del texto en inglés de yt-dlp.
+const YOUTUBE_BOT_CHECK_RE = /confirm you(?:'|’| a)?re not a bot|confirm you are not a bot/i;
+function isYouTubeBotCheck(raw) {
+    return YOUTUBE_BOT_CHECK_RE.test(String(raw || ''));
+}
+const YOUTUBE_BOT_CHECK_MESSAGE = 'YouTube está bloqueando las descargas desde nuestro servidor por ahora. Intenta de nuevo más tarde; los enlaces de TikTok siguen funcionando.';
+
 // Cuántas descargas puede haber en marcha, por licencia y en todo el servidor.
 function checkDownloadCapacity(activeForLicense, activeTotal, { perLicense, total }) {
     if (activeForLicense >= perLicense) {
@@ -107,5 +117,6 @@ function checkDownloadCapacity(activeForLicense, activeTotal, { perLicense, tota
 
 module.exports = {
     parseDownloadUrl, extraHostsFromEnv, friendlyDownloaderError, redactSecrets, checkDownloadCapacity,
+    isYouTubeBotCheck, YOUTUBE_BOT_CHECK_MESSAGE,
     DownloadUrlError, DownloadLimitError,
 };

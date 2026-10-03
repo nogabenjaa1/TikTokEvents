@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     parseDownloadUrl, extraHostsFromEnv, friendlyDownloaderError, redactSecrets, checkDownloadCapacity,
+    isYouTubeBotCheck, YOUTUBE_BOT_CHECK_MESSAGE,
     DownloadUrlError, DownloadLimitError,
 } = require('./lib/downloaderSafety');
 
@@ -102,4 +103,13 @@ test('the download caps stop a license and the whole server from piling up jobs'
     assert.throws(() => checkDownloadCapacity(1, 6, caps), (err) => err instanceof DownloadLimitError && /muy ocupado/.test(err.message));
     const single = { perLicense: 1, total: 6 };
     assert.throws(() => checkDownloadCapacity(1, 1, single), /Ya tienes 1 descarga en curso\. Espera a que termine para iniciar otra\./);
+});
+
+test('el bloqueo de YouTube por "no eres un bot" se reconoce para mostrar un mensaje claro', () => {
+    const raw = "ERROR: [youtube] l1W9EeomZ_g: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.";
+    assert.equal(isYouTubeBotCheck(raw), true);
+    assert.equal(isYouTubeBotCheck("Sign in to confirm you're not a bot"), true);
+    assert.equal(isYouTubeBotCheck('ERROR: Video unavailable'), false);
+    assert.equal(isYouTubeBotCheck(undefined), false);
+    assert.match(YOUTUBE_BOT_CHECK_MESSAGE, /YouTube/);
 });

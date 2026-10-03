@@ -223,7 +223,7 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
       <div ref={containerRef} id="checkout-form" className={loading ? 'hidden' : 'rounded bg-white p-3'} />
       {pending && <p className="text-[10px] text-gray-500 text-center">Procesando pago...</p>}
       {submitError && <p className="theme-notice">{submitError}</p>}
-      <p className="text-[9px] text-gray-500 text-center flex items-center justify-center gap-1">
+      <p className="text-[10px] text-gray-500 text-center flex items-center justify-center gap-1">
         Pago 100% seguro procesado por <strong>Stripe</strong>
       </p>
     </div>

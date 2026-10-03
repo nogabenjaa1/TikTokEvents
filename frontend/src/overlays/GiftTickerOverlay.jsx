@@ -33,7 +33,7 @@ export function GiftTickerVisual({ items, customize }) {
 
   return (
     <div className="theme-die-frame w-[960px] h-[200px] overflow-hidden font-sans" {...overlayRootProps(customize, resolveBackgroundStyle(customize))}>
-      <div className="flex items-center h-full" style={{ width: 'max-content', animation: `tkc-ticker-scroll ${loopSeconds}s linear infinite` }}>
+      <div className="tkc-ticker-track flex items-center h-full" style={{ width: 'max-content', animation: `tkc-ticker-scroll ${loopSeconds}s linear infinite` }}>
         {track.map((item, i) => (
           <div key={`${item.id}-${i}`} className="flex flex-col items-center gap-2 px-8 flex-shrink-0">
             {item.giftIcon ? (

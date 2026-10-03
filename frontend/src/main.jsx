@@ -6,9 +6,14 @@ import App from './App.jsx'
 import { ThemeProvider } from './ThemeContext.jsx'
 import AppErrorBoundary from './AppErrorBoundary.jsx'
 import { installErrorReporting } from './errorReporter.js'
+import { applyAdsConsent } from './cookieConsent.js'
 
 // Los errores del navegador (y de los overlays de OBS) llegan al admin en Sistema > Errores.
 installErrorReporting()
+
+// La elección sobre los anuncios (aviso de cookies) se aplica antes de que
+// AdSense pida el primer anuncio: sin elección, no personalizados.
+applyAdsConsent()
 
 // La hoja de la fuente (index.html) se pide con <link rel="preload"> para no bloquear el primer dibujo y se
 // activa aquí, no con un "onload" en el HTML: así la política de seguridad no necesita permitir scripts en línea.

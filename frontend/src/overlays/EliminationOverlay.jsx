@@ -128,7 +128,7 @@ export function EliminationOverlay({ state, prize, customize }) {
         </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
-            {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
+            {state.targetGiftIcon && <img alt="" src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
           </div>
           <span className="tkc-ovl-fill text-yellow-400 text-lg font-black bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-xl shadow-inner">{state.targetGiftCoins} 🪙</span>
@@ -137,7 +137,7 @@ export function EliminationOverlay({ state, prize, customize }) {
         {state.instaWinGiftName && state.instaWinGiftName.length > 0 && (
           <div className="tkc-ovl-fill mt-3 flex items-center justify-between bg-yellow-900/30 border border-yellow-600/50 px-4 py-2 rounded-xl w-full">
             <div className="flex items-center gap-2">
-              <img src={state.instaWinGiftIcon} className="w-6 h-6" />
+              <img alt="" src={state.instaWinGiftIcon} className="w-6 h-6" />
               <div className="text-left leading-tight">
                 <span {...labelProps(customize, 'block text-[8px] uppercase tracking-widest text-yellow-500 font-bold')}>O INSTA-WIN:</span>
                 <span className="text-sm font-bold text-yellow-100">{state.instaWinGiftName}</span>
@@ -158,7 +158,7 @@ export function EliminationOverlay({ state, prize, customize }) {
                 {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
-                <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
+                <img alt="" src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
               </div>
             </div>
           )
@@ -170,7 +170,7 @@ export function EliminationOverlay({ state, prize, customize }) {
             return (
               <div key={p.id} title={p.username} style={{ width: boxSize }}
                 className={`flex flex-col items-center gap-0.5 transition-all duration-150 ${state.mode === 'revealing' ? (isHighlighted ? 'scale-125 z-10' : 'opacity-30 scale-90') : ''}`}>
-                <img src={p.avatar} style={{ width: boxSize, height: boxSize, borderColor: isHighlighted ? undefined : 'var(--accent)' }}
+                <img alt="" src={p.avatar} style={{ width: boxSize, height: boxSize, borderColor: isHighlighted ? undefined : 'var(--accent)' }}
                   className={`rounded-full border-2 object-cover flex-shrink-0 ${isHighlighted ? 'border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.7)]' : ''}`} />
                 {showLabel && (
                   <span style={{ fontSize: Math.max(4, Math.round(boxSize * 0.22)), ...getUsernameOverride(customize).cssVars }} className={`max-w-full truncate ${isHighlighted ? 'text-yellow-300 font-bold' : 'text-gray-300'} ${getUsernameOverride(customize).className}`}>@{p.username}</span>

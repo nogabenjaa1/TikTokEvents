@@ -3,6 +3,7 @@ import TikTokLoginBar from './TikTokLoginBar';
 import SystemHealth from './SystemHealth';
 import LiveFeed from './LiveFeed';
 import NavIcon from './app/NavIcon';
+import LegalLinks from './LegalLinks';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
@@ -175,15 +176,23 @@ export default function Dashboard({
         )}
       </header>
 
+      {/* Una sola llamada a la acción para quien llega sin licencia: probar
+          gratis (en Membresía, donde vive la prueba). Iniciar sesión queda
+          como enlace secundario, para quien ya tiene clave. */}
       {!session && (
         <div className="w-full max-w-4xl theme-surface-featured p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="theme-heading text-lg font-black">Desbloquea todo tu panel</h2>
-            <p className="text-xs text-gray-400 mt-1 max-w-lg">Con una licencia (o la prueba gratis) accedes a los juegos, las alertas, el TTS y más. Los accesos con candado te llevan directo a iniciar sesión.</p>
+            <p className="text-xs text-gray-400 mt-1 max-w-lg">Juegos con regalos, alertas, TTS del chat, Spotify y overlays para OBS. Pruébalo gratis, sin pagar nada.</p>
           </div>
-          <button type="button" onClick={() => onGoEventTab('king')} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg flex-shrink-0">
-            Iniciar sesión
-          </button>
+          <div className="flex flex-col items-stretch sm:items-end gap-1 flex-shrink-0">
+            <button type="button" onClick={() => onGoSection('membership')} className="theme-btn-primary theme-btn-lg font-black uppercase tracking-widest shadow-lg">
+              Probar gratis
+            </button>
+            <button type="button" onClick={() => onGoEventTab('king')} className="theme-link self-center sm:self-end">
+              Ya tengo licencia: iniciar sesión
+            </button>
+          </div>
         </div>
       )}
 
@@ -317,6 +326,8 @@ export default function Dashboard({
           ))}
         </div>
       </section>
+
+      <LegalLinks onNavigate={onGoSection} className="w-full max-w-4xl" />
     </div>
   );
 }

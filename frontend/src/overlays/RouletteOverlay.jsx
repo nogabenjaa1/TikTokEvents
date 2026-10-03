@@ -225,7 +225,7 @@ export function RouletteOverlay({ state, prize, customize }) {
         </div>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
-            {state.entryMode === 'gift' && state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
+            {state.entryMode === 'gift' && state.targetGiftIcon && <img alt="" src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-lg font-black text-white">{entryRuleLabel}</span>
           </div>
         </div>
@@ -241,7 +241,7 @@ export function RouletteOverlay({ state, prize, customize }) {
                 {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
                 <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>
                 <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-yellow-500" />
-                <img src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
+                <img alt="" src={state.winner.avatar} className="w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl border-yellow-400" />
               </div>
             </div>
           )

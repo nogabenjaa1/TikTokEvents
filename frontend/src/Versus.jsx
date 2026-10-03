@@ -17,7 +17,7 @@ function GiftRow({ entry, valueLabel, onRemove }) {
   return (
     <div className="theme-input flex items-center gap-3 px-3 py-2">
       {entry.giftIcon ? (
-        <img src={entry.giftIcon} className="w-8 h-8 object-contain flex-shrink-0" />
+        <img alt="" src={entry.giftIcon} className="w-8 h-8 object-contain flex-shrink-0" />
       ) : (
         <span className="w-8 h-8 rounded-lg flex-shrink-0 theme-input" role="img" aria-label="Regalo sin imagen" />
       )}

@@ -1,0 +1,12 @@
+# BenjaApis · https://benjaapis.dev
+User-agent: *
+Allow: /
+# Secciones del administrador y de la API: no son páginas para buscadores.
+Disallow: /licenses
+Disallow: /system
+Disallow: /api/
+# Los enlaces de overlay de OBS llevan un token: nunca se indexan.
+Disallow: /*?overlay=
+Disallow: /*&key=
+
+Sitemap: https://benjaapis.dev/sitemap.xml

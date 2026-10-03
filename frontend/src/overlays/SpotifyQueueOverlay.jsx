@@ -22,7 +22,7 @@ function SpotifySongRow({ song, playing, customize, rowBg, nameOverride }) {
       style={playing ? { borderColor: '#22c55e', ...rowBg } : { borderColor: 'var(--surface-border-color)', ...rowBg }}
     >
       {song.albumArt
-        ? <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
+        ? <img alt="" src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />
         : <span className="tkc-ovl-fill w-9 h-9 rounded flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'var(--surface-bg-alt)', ...bordersOffStyle(customize) }}>🎵</span>}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-white truncate">{song.title}</p>

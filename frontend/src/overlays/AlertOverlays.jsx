@@ -132,7 +132,7 @@ export function AlertVisual({ alert, phase = 'visible', embedded = false, custom
   const visualNode = hasVisual ? (
     <>
       {(alert.visualType === 'image' || alert.visualType === 'gif') && (
-        <img src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain flex-shrink-0" />
+        <img alt="" src={alert.visualUrl} className="max-w-[600px] max-h-[600px] object-contain flex-shrink-0" />
       )}
       {alert.visualType === 'video' && (
         <video ref={videoElRef} src={alert.visualUrl} className="max-w-[720px] max-h-[720px] object-contain flex-shrink-0" autoPlay muted={!!alert.visualMuted || previewMuted || silent} />

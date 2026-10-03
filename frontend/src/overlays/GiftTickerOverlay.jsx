@@ -37,7 +37,7 @@ export function GiftTickerVisual({ items, customize }) {
         {track.map((item, i) => (
           <div key={`${item.id}-${i}`} className="flex flex-col items-center gap-2 px-8 flex-shrink-0">
             {item.giftIcon ? (
-              <img src={item.giftIcon} className="w-20 h-20 object-contain drop-shadow-lg" />
+              <img alt="" src={item.giftIcon} className="w-20 h-20 object-contain drop-shadow-lg" />
             ) : (
               <span className="w-20 h-20 flex items-center justify-center text-5xl" role="img" aria-label="Regalo">🎁</span>
             )}

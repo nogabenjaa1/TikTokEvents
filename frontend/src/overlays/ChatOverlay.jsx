@@ -56,7 +56,7 @@ export function ChatOverlay({ socket, viewerCount, customize, previewMessages })
           {messages.map((m) => (
             <div key={m.id} className={`flex items-start gap-2 rounded-xl px-3 py-2 border ${animClass}`} style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
               {m.avatar ? (
-                <img src={m.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                <img alt="" src={m.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
               ) : (
                 <span className="tkc-ovl-fill w-7 h-7 rounded-full bg-gray-700 flex-shrink-0" />
               )}

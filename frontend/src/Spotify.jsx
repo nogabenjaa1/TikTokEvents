@@ -480,7 +480,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           <h2 className="theme-heading text-lg font-semibold mb-4">Sonando ahora</h2>
           {nowPlaying ? (
             <div className="theme-input flex items-center gap-3 px-3 py-2 border border-green-500/60">
-              {nowPlaying.albumArt && <img src={nowPlaying.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />}
+              {nowPlaying.albumArt && <img alt="" src={nowPlaying.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white truncate">{nowPlaying.title}</p>
                 <p className="text-[10px] text-gray-500 truncate">
@@ -510,7 +510,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
             <div className="flex flex-col gap-2">
               {queue.map((song) => (
                 <div key={song.id} className={`theme-input flex items-center gap-3 px-3 py-2 ${song.playing ? 'border border-green-500/60' : ''}`}>
-                  {song.albumArt && <img src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />}
+                  {song.albumArt && <img alt="" src={song.albumArt} className="w-9 h-9 rounded object-cover flex-shrink-0" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white truncate">{song.title}</p>
                     <p className="text-[10px] text-gray-500 truncate">{song.artist} · pedido por @{song.requestedBy}</p>

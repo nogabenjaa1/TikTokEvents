@@ -52,7 +52,7 @@ export function ZubastinisOverlay({ state, prize, customize }) {
         {top3.length > 0 ? top3.map((g, i) => (
           <div key={g.username} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.35)]' : 'border'}`} style={i === 0 ? resolveBackgroundStyle(customize, 'var(--surface-bg-alt)') : { borderColor: 'var(--surface-border-color)', ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)') }}>
             <span className="text-2xl">{MEDALS[i]}</span>
-            <img src={g.avatar} className={`w-12 h-12 rounded-full border-2 object-cover ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
+            <img alt="" src={g.avatar} className={`w-12 h-12 rounded-full border-2 object-cover ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
             <span className={`flex-1 font-black text-white truncate ${getUsernameOverride(customize).className}`} style={getUsernameOverride(customize).cssVars}>@{g.username}</span>
             <span className="tkc-ovl-fill text-yellow-400 font-black bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-xl">{g.coins} 🪙</span>
           </div>

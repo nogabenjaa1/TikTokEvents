@@ -49,7 +49,7 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
           {entries.map((e, i) => (
             <div key={e.username} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === 0 ? 'border border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border'}`} style={i === 0 ? rowBg : { borderColor: 'var(--surface-border-color)', ...rowBg }}>
               <span className="w-5 text-center text-xs font-black text-gray-400">{MEDALS[i] || i + 1}</span>
-              <img src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
+              <img alt="" src={e.avatar} className={`w-9 h-9 rounded-full border-2 object-cover flex-shrink-0 ${i === 0 ? 'border-yellow-400' : ''}`} style={i === 0 ? undefined : { borderColor: 'var(--accent)' }} />
               <span className={`flex-1 text-sm font-bold text-white truncate ${nameOverride.className}`} style={nameOverride.cssVars}>{nameIcon ? `${nameIcon} ` : ''}@{e.username}</span>
               <span className={`tkc-ovl-fill ${valueColorClass} text-sm font-black px-2 py-1 rounded-lg flex-shrink-0`}>{e[valueKey]}{valueSuffix}</span>
             </div>

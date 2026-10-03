@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import logoMark from '../assets/logo-mark.png';
+import logoMark from '../assets/logo-mark.webp';
 import { SECTIONS } from './navigation';
 import NavIndicator from './NavIndicator';
 import NavIcon from './NavIcon';
@@ -79,8 +79,8 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
 
       <div className="hidden md:block flex-1" />
       {!session && (
-        <button type="button" onClick={onEnter} title="Inicia sesión o prueba gratis"
-          className={[NAV_BTN, 'theme-btn-primary'].join(' ')}>
+        <button type="button" onClick={onEnter} title="Inicia sesión con tu clave"
+          className={[NAV_BTN, 'bg-transparent border-transparent'].join(' ')}>
           <NavIcon name="enter" />
           <span className={NAV_LABEL}>Entrar</span>
         </button>

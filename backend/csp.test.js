@@ -115,6 +115,13 @@ test('the page shell has no inline scripts or event-handler attributes, so the s
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   assert.ok(scripts.length >= 1);
   for (const [, attributes, body] of scripts) {
+    // A JSON-LD block (structured data for search engines) is data, not code:
+    // the browser never runs it, so script-src does not apply. It must still
+    // be valid JSON, so it can never smuggle code in.
+    if (/\btype\s*=\s*"application\/ld\+json"/.test(attributes)) {
+      assert.doesNotThrow(() => JSON.parse(body), 'the JSON-LD block must be valid JSON');
+      continue;
+    }
     assert.ok(/\bsrc\s*=/.test(attributes) && body.trim() === '', `an inline script: <script${attributes}>`);
   }
   assert.deepEqual(html.match(/\son[a-z]+\s*=/gi) || [], [], 'no onload/onclick attributes: they would need unsafe-inline');

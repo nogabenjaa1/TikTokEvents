@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SECTION_PATHS, EVENT_TAB_PATHS, sectionFromPath, sectionTitle } from './navigation';
+import { SECTION_PATHS, EVENT_TAB_PATHS, sectionFromPath, sectionTitle, sectionDescription } from './navigation';
+import { trackPageview } from '../analytics';
 
 // Mantiene sincronizados la sección/pestaña del panel y la barra de direcciones (más el título de la pestaña del
 // navegador). `sidebarMode`/`eventsTab` siguen siendo el estado de siempre en App.jsx; esto solo habla con el router.
@@ -25,7 +26,8 @@ export default function useSectionRouting({ overlayMode, sidebarMode, setSidebar
   // corta temprano en modo overlay -- esa URL (?overlay=true&screen=...) es
   // la que ya está pegada en OBS de streamers reales, no se toca para nada.
   useEffect(() => {
-    if (overlayMode) return;
+    // La página 404 deja la dirección tal cual (la ruta que no existe).
+    if (overlayMode || sidebarMode === 'notfound') return;
     const targetPath = sidebarMode === 'events'
       ? `/${SECTION_PATHS.events}/${EVENT_TAB_PATHS[eventsTab] || EVENT_TAB_PATHS.king}`
       : `/${SECTION_PATHS[sidebarMode] || SECTION_PATHS.dashboard}`;
@@ -71,11 +73,23 @@ export default function useSectionRouting({ overlayMode, sidebarMode, setSidebar
     document.querySelector('[data-events-tab-active="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   }, [overlayMode, sidebarMode, eventsTab]);
 
+  // Analítica propia (sin cookies): una visita por página abierta. Solo
+  // rutas reales; las que no existen las descarta el servidor.
+  useEffect(() => {
+    if (overlayMode) return;
+    trackPageview(location.pathname);
+  }, [overlayMode, location.pathname]);
+
   // Título de la pestaña del navegador (pedido explícito: que siempre sea
   // visible en qué sección está, no un "TikTokEvents" fijo sin importar
   // dónde navegue).
   useEffect(() => {
     if (overlayMode) return;
     document.title = sectionTitle(sidebarMode, eventsTab);
+    // Descripción y enlace canónico de cada página (buscadores y vista previa
+    // al compartir). index.html trae los de la portada para quien no corre JS.
+    document.querySelector('meta[name="description"]')?.setAttribute('content', sectionDescription(sidebarMode));
+    const canonical = document.querySelector('link[rel="canonical"]');
+    if (canonical && sidebarMode !== 'notfound') canonical.setAttribute('href', `${window.location.origin}${window.location.pathname}`);
   }, [overlayMode, sidebarMode, eventsTab]);
 }

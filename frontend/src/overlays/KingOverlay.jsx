@@ -34,7 +34,7 @@ export function KingOverlay({ state, prize, customize }) {
         <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold mb-3')}>ROBA EL LUGAR CON:</p>
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
-            {state.targetGiftIcon && <img src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
+            {state.targetGiftIcon && <img alt="" src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
             <span className="text-xl font-black text-white">{state.targetGiftName}</span>
           </div>
           <span className="tkc-ovl-fill text-yellow-400 text-lg font-black bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-xl shadow-inner">{state.targetGiftCoins} 🪙</span>
@@ -43,7 +43,7 @@ export function KingOverlay({ state, prize, customize }) {
         {state.instaWinGiftName && state.instaWinGiftName.length > 0 && (
           <div className="tkc-ovl-fill mt-3 flex items-center justify-between bg-yellow-900/30 border border-yellow-600/50 px-4 py-2 rounded-xl w-full">
             <div className="flex items-center gap-2">
-              <img src={state.instaWinGiftIcon} className="w-6 h-6" />
+              <img alt="" src={state.instaWinGiftIcon} className="w-6 h-6" />
               <div className="text-left leading-tight">
                 <span {...labelProps(customize, 'block text-[8px] uppercase tracking-widest text-yellow-500 font-bold')}>O INSTA-WIN:</span>
                 <span className="text-sm font-bold text-yellow-100">{state.instaWinGiftName}</span>
@@ -63,7 +63,7 @@ export function KingOverlay({ state, prize, customize }) {
               {/* impeccable-disable-next-line bounce-easing: el rebote de la corona del ganador es parte de la identidad del show (decisión del dueño) */}
               {state.mode === 'finished' && <div className="absolute -top-12 -right-8 text-[80px] drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] z-30 animate-bounce">👑</div>}
               <div className={`absolute inset-0 rounded-full blur-xl opacity-60 ${state.mode === 'finished' ? 'bg-yellow-500' : ''}`} style={state.mode === 'finished' ? undefined : { background: 'var(--accent)' }} />
-              <img src={state.lastParticipant.avatar} className={`w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl ${state.mode === 'finished' ? 'border-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { borderColor: 'var(--accent)' }} />
+              <img alt="" src={state.lastParticipant.avatar} className={`w-32 h-32 rounded-full border-4 relative z-10 object-cover shadow-2xl ${state.mode === 'finished' ? 'border-yellow-400' : ''}`} style={state.mode === 'finished' ? undefined : { borderColor: 'var(--accent)' }} />
             </div>
             <p className={`text-2xl font-black mt-6 tracking-wide drop-shadow-md ${state.mode === 'finished' ? 'text-yellow-400' : ''} ${getUsernameOverride(customize).className}`} style={{ ...(state.mode === 'finished' ? undefined : { color: 'var(--accent-soft)' }), ...getUsernameOverride(customize).cssVars }}>@{state.lastParticipant.username}</p>
           </div>

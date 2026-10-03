@@ -5,6 +5,7 @@ import SystemErrors from './adminSystem/SystemErrors';
 import SystemPayments from './adminSystem/SystemPayments';
 import SystemStatus from './adminSystem/SystemStatus';
 import SystemStorage from './adminSystem/SystemStorage';
+import SystemAnalytics from './adminSystem/SystemAnalytics';
 
 const TABS = [
   { id: 'status', label: 'Estado' },
@@ -12,6 +13,7 @@ const TABS = [
   { id: 'audit', label: 'Historial' },
   { id: 'payments', label: 'Pagos' },
   { id: 'storage', label: 'Archivos' },
+  { id: 'visits', label: 'Visitas' },
 ];
 
 // Sección "Sistema" (solo administradores): cómo está el servidor, qué errores hay, qué se hizo desde este panel, si
@@ -55,6 +57,7 @@ export default function AdminSystem({ onSessionInvalid }) {
         {tab === 'audit' && <SystemAudit onUnauthorized={onSessionInvalid} />}
         {tab === 'payments' && <SystemPayments onUnauthorized={onSessionInvalid} />}
         {tab === 'storage' && <SystemStorage onUnauthorized={onSessionInvalid} />}
+        {tab === 'visits' && <SystemAnalytics onUnauthorized={onSessionInvalid} />}
         </div>
       </div>
     </div>

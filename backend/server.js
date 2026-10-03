@@ -2519,7 +2519,7 @@ setInterval(() => {
 const healthChecker = createHealthChecker({ ping: () => db.ping() });
 registerSystemRoutes(app, {
     auth, db, storage, io, tenants, errorReporter, healthChecker, getStripeClient,
-    applyPaymentWithRetry, applyApprovedStripePaymentIfNew, audit, bootId: BOOT_ID,
+    applyPaymentWithRetry, applyApprovedStripePaymentIfNew, audit, bootId: BOOT_ID, downloader,
 });
 
 // ==========================================

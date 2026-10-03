@@ -65,13 +65,45 @@ function prepareYouTubeCookies() {
 }
 const YOUTUBE_COOKIES_PATH = prepareYouTubeCookies();
 
+// Cómo se interpreta YTDL_YOUTUBE_PROXY. Bug real: solo valía 'on' exacto
+// ("On", "true" o "on " con un espacio no activaban nada, y cualquier otro
+// texto se le pasaba a yt-dlp como si fuera la dirección de un proxy). Ahora:
+//  - on / true / 1 / sí / yes (sin importar mayúsculas) = el proxy de TikTok;
+//  - una dirección http(s):// o socks5:// = ese proxy;
+//  - cualquier otra cosa se ignora, con un aviso en el registro.
+const TRUTHY = new Set(['on', 'true', '1', 'si', 'sí', 'yes']);
+function youtubeProxyMode() {
+    const raw = String(process.env.YTDL_YOUTUBE_PROXY || '').trim();
+    if (!raw) return { mode: 'none' };
+    if (TRUTHY.has(raw.toLowerCase())) return process.env.YTDL_PROXY ? { mode: 'tiktok', url: process.env.YTDL_PROXY } : { mode: 'invalid', reason: 'YTDL_YOUTUBE_PROXY pide el proxy de TikTok, pero YTDL_PROXY está vacío' };
+    if (/^(https?|socks5h?):\/\/\S+$/i.test(raw)) return { mode: 'custom', url: raw };
+    return { mode: 'invalid', reason: 'YTDL_YOUTUBE_PROXY no es "on" ni una dirección de proxy (http://, https:// o socks5://)' };
+}
+{
+    const proxy = youtubeProxyMode();
+    if (proxy.mode === 'invalid') console.warn(`[Downloader] ${proxy.reason}: se ignora.`);
+    console.log(`[Downloader] YouTube: proxy ${proxy.mode === 'tiktok' ? 'el de TikTok' : proxy.mode === 'custom' ? 'propio' : 'no'}, cookies ${YOUTUBE_COOKIES_PATH ? 'sí' : 'no'}.`);
+}
+
 function youtubeArgs() {
     const args = [];
-    const proxySetting = process.env.YTDL_YOUTUBE_PROXY;
-    if (proxySetting === 'on') args.push('--proxy', getTikTokProxy());
-    else if (proxySetting) args.push('--proxy', proxySetting);
+    const proxy = youtubeProxyMode();
+    if (proxy.url) args.push('--proxy', proxy.url);
     if (YOUTUBE_COOKIES_PATH) args.push('--cookies', YOUTUBE_COOKIES_PATH);
     return args;
+}
+
+// Lo que ve el servidor (para Sistema): sin secretos, solo si cada cosa está.
+function youtubeConfigSummary() {
+    const proxy = youtubeProxyMode();
+    return { proxy: proxy.mode, proxyProblem: proxy.mode === 'invalid' ? proxy.reason : null, cookies: !!YOUTUBE_COOKIES_PATH };
+}
+
+let ytDlpVersion = null;
+async function getYtDlpVersion() {
+    if (ytDlpVersion) return ytDlpVersion;
+    try { ytDlpVersion = String(await ytDlpWrap.getVersion()).trim(); } catch { ytDlpVersion = null; }
+    return ytDlpVersion;
 }
 
 const _BROWSER_TARGETS = [
@@ -202,7 +234,8 @@ async function getVideoInfo(rawUrl) {
     }
     // El detalle completo (sin secretos) queda en el registro del servidor; al
     // usuario solo le llega la razón que dio yt-dlp.
-    console.error('[Downloader] No se pudo obtener la información del video:', redactSecrets(lastError, hiddenSecrets()).slice(0, 600));
+    const config = youtubeConfigSummary();
+    console.error(`[Downloader] No se pudo obtener la información del video${tiktok ? '' : ` (YouTube con proxy: ${config.proxy}, cookies: ${config.cookies ? 'sí' : 'no'})`}:`, redactSecrets(lastError, hiddenSecrets()).slice(0, 600));
     if (isYouTubeBotCheck(lastError)) throw new Error(YOUTUBE_BOT_CHECK_MESSAGE);
     throw new Error(`No se pudo obtener la información del video. Detalle: ${friendlyDownloaderError(lastError, hiddenSecrets())}`);
 }
@@ -382,4 +415,4 @@ function getJob(jobId) {
     return jobs.get(jobId) || null;
 }
 
-module.exports = { getVideoInfo, startDownload, getJob };
+module.exports = { getVideoInfo, startDownload, getJob, youtubeConfigSummary, getYtDlpVersion };

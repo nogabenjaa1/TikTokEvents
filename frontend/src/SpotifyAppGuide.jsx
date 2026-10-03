@@ -160,7 +160,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
               aria-label={showSecret ? 'Ocultar el Client secret' : 'Mostrar el Client secret'}
               className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest flex-shrink-0"
             >
-              {showSecret ? '🙈' : '👁️'}
+              {showSecret ? 'Ocultar' : 'Ver'}
             </button>
           </div>
         </div>

@@ -263,7 +263,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
 
   return (
     <div className="flex-1 min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-16 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎲 Colores</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Colores</p>
 
       <div className="flex gap-x-3 gap-y-1 justify-center flex-wrap max-w-sm">
         {COLORS.map((c, i) => (
@@ -404,7 +404,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
         <div className="theme-surface w-full max-w-xs md:fixed md:top-80 md:right-4 md:w-60 p-4">
-          <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">🔒 Modo Seguro</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
             {COLORS.map((c, i) => (
@@ -434,8 +434,8 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
 
           <p className="text-[9px] text-gray-500 mt-3 leading-snug">
             {safeModeAction === 'none' && 'Elige un color y una acción. Sin nada activo, tira con sesgo normal.'}
-            {safeModeAction === 'ensure' && safeModeColor !== null && <>✅ Asegurando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: sale exactamente 1 vez.</>}
-            {safeModeAction === 'block' && safeModeColor !== null && <>🔒 Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
+            {safeModeAction === 'ensure' && safeModeColor !== null && <>Asegurando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: sale exactamente 1 vez.</>}
+            {safeModeAction === 'block' && safeModeColor !== null && <>Bloqueando <span className={COLORS[safeModeColor].textClass}>{COLORS[safeModeColor].name}</span>: camino fácil.</>}
           </p>
         </div>
       )}

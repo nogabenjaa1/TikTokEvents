@@ -44,7 +44,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
         <h2 className="theme-heading text-lg font-bold">{title}</h2>
         {onCustomize && (
           <button onClick={onCustomize} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0 whitespace-nowrap">
-            🎨 Personalizar
+            Personalizar
           </button>
         )}
       </div>
@@ -54,7 +54,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
           de más abajo. */}
       {dimensions && (
         <p className="mb-3">
-          <span className="theme-chip inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full" title="Tamaño exacto que debes poner en la fuente de navegador de OBS">📐 Tamaño en OBS: {dimensions}</span>
+          <span className="theme-chip inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full" title="Tamaño exacto que debes poner en la fuente de navegador de OBS">Tamaño en OBS: {dimensions}</span>
         </p>
       )}
 
@@ -67,7 +67,7 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
           <div className="flex items-center gap-2 mb-1">
             <code className={`theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all${revealed ? ' select-all' : ''}`}>{revealed ? url : maskOverlayUrl(url)}</code>
             <button type="button" onClick={() => setRevealed((r) => !r)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0" aria-pressed={revealed}>
-              {revealed ? '🙈 Ocultar' : '👁️ Mostrar'}
+              {revealed ? 'Ocultar' : 'Mostrar'}
             </button>
           </div>
           <p className="text-[11px] text-gray-500 mb-4">
@@ -75,14 +75,14 @@ function OverlayUrlCard({ title, description, dimensions, url, onReset, resetLab
           </p>
           <div className="flex gap-3">
             <button onClick={copyUrl} className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
-              {copied ? '✅ Copiado' : '📋 Copiar URL'}
+              {copied ? 'Copiado' : 'Copiar URL'}
             </button>
             {/* Enlace real (no window.open): un <a target="_blank"> nunca lo
                 bloquea un bloqueador de ventanas emergentes, a diferencia de
                 una ventana abierta por script. */}
             <a href={url} target="_blank" rel="noopener noreferrer"
               className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest text-center">
-              👁️ Vista previa
+              Vista previa
             </a>
           </div>
           {onReset && (
@@ -112,7 +112,7 @@ function TapTapDiagnosticsBox({ diagnostics }) {
     // lo modera el propio tema Cute (ver --radius-cute-box en index.css): ya no
     // hace falta pisar el radio a mano acá.
     <div className="theme-input w-full max-w-xl p-4 -mt-2 text-xs">
-      <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">🩺 Diagnóstico (likes crudos recibidos de TikTok)</p>
+      <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">Diagnóstico (likes crudos recibidos de TikTok)</p>
       <div className="grid grid-cols-2 gap-2 text-gray-300">
         <p>Total recibidos: <span className="font-black text-white">{d.totalReceived ?? 0}</span></p>
         <p>Asentados al ranking: <span className="font-black text-white">{d.totalSettled ?? 0}</span></p>
@@ -142,12 +142,12 @@ function OverlayIntro() {
   };
   return (
     <details open={open} onToggle={onToggle} className="theme-surface-featured w-full max-w-xl p-5">
-      <summary className="cursor-pointer text-sm font-black theme-heading">🚀 ¿Primera vez? Así agregas un overlay a tu stream</summary>
+      <summary className="cursor-pointer text-sm font-black theme-heading">¿Primera vez? Así agregas un overlay a tu stream</summary>
       <ol className="mt-3 text-xs text-gray-400 space-y-2 list-decimal list-inside">
         <li><span className="font-bold text-white">Copia la URL</span> del overlay que quieras con el botón "Copiar URL".</li>
         <li>En <span className="font-bold text-white">OBS</span> (o TikTok LIVE Studio) agrega una fuente nueva de tipo <span className="font-bold text-white">Navegador</span>.</li>
-        <li><span className="font-bold text-white">Pega la URL</span> y escribe el ancho y el alto que indica la tarjeta (📐).</li>
-        <li>Personaliza cómo se ve con <span className="font-bold text-white">🎨 Personalizar</span>: los cambios se aplican solos, sin volver a pegar nada.</li>
+        <li><span className="font-bold text-white">Pega la URL</span> y escribe el ancho y el alto que indica la tarjeta.</li>
+        <li>Personaliza cómo se ve con <span className="font-bold text-white">Personalizar</span>: los cambios se aplican solos, sin volver a pegar nada.</li>
       </ol>
     </details>
   );
@@ -171,7 +171,6 @@ function OverlayKeyNotice() {
   return (
     <div role="status" className="w-full max-w-xl rounded-xl border-2 bg-amber-500/15 border-amber-500 text-[11px] py-2 px-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <span className="flex-1 min-w-[14rem] text-white">
-        <span aria-hidden="true">🔒 </span>
         <span className="font-bold">Estos enlaces ya no llevan tu clave de licencia.</span>{' '}
         Si tenías overlays en OBS de antes, cambia su URL por la de aquí: la anterior sigue funcionando, pero con ella se puede iniciar sesión como tú.
       </span>
@@ -204,7 +203,7 @@ function OverlayKeyRotation({ onRotated }) {
 
   return (
     <details className="theme-surface w-full max-w-xl p-5">
-      <summary className="cursor-pointer text-sm font-black theme-heading">🔐 ¿Se vio uno de tus enlaces? Renuévalos</summary>
+      <summary className="cursor-pointer text-sm font-black theme-heading">¿Se vio uno de tus enlaces? Renuévalos</summary>
       <div className="mt-3 text-xs text-gray-400 space-y-2">
         <p>
           Cada URL de overlay lleva un código secreto. Si alguien la ve (por ejemplo en una captura o al compartir tu pantalla), puede abrir tus overlays y ver lo que muestran.
@@ -238,11 +237,11 @@ function OverlayKeyRotation({ onRotated }) {
 // vitrina de enlaces deje de ser una sola página larga y quede agrupada por
 // tipo de overlay.
 const OVERLAY_TABS = [
-  { id: 'events', label: 'Eventos de TikTok', icon: '🎉' },
-  { id: 'alerts', label: 'Alertas', icon: '🔔' },
-  { id: 'tops', label: 'Tops', icon: '🏆' },
-  { id: 'playlist', label: 'Playlist y Extensible', icon: '🎵' },
-  { id: 'goalchat', label: 'Objetivo y Chat', icon: '🎯' },
+  { id: 'events', label: 'Eventos de TikTok' },
+  { id: 'alerts', label: 'Alertas' },
+  { id: 'tops', label: 'Tops' },
+  { id: 'playlist', label: 'Playlist y Extensible' },
+  { id: 'goalchat', label: 'Objetivo y Chat' },
 ];
 
 const OBS_HELP = {
@@ -354,7 +353,6 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               'bg-transparent border-transparent',
             ].join(' ')}
           >
-            <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
             <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
               {t.label}
             </span>
@@ -372,7 +370,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
           title="Recarga todas las ventanas de overlay abiertas — no borra ningún ranking ni estado"
           className="theme-btn-secondary w-full max-w-xl h-10 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
         >
-          🔄 Refrescar overlays
+          Refrescar overlays
         </button>
       </div>
 
@@ -435,7 +433,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               dimensions="380×700 px (vertical)"
               url={tapTapUrl}
               onReset={() => socket?.emit('reset_taptap_leaderboard')}
-              resetLabel="🗑️ Reiniciar ranking de likes"
+              resetLabel="Reiniciar ranking de likes"
               resetConfirm="¿Reiniciar el ranking de Top Tap-Tap? Se borra todo lo acumulado hasta ahora."
               onCustomize={() => setCustomizingId('taptap')}
             />
@@ -446,7 +444,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               dimensions="380×700 px (vertical)"
               url={gifterUrl}
               onReset={() => socket?.emit('reset_gifter_leaderboard')}
-              resetLabel="🗑️ Reiniciar ranking de regalos"
+              resetLabel="Reiniciar ranking de regalos"
               resetConfirm="¿Reiniciar el ranking de Top Gifter? Se borra todo lo acumulado hasta ahora."
               onCustomize={() => setCustomizingId('gifter')}
             />
@@ -468,7 +466,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               dimensions="380×700 px (vertical)"
               url={musicQueueUrl}
               onReset={() => socket?.emit('clear_spotify_queue')}
-              resetLabel="🗑️ Vaciar cola de canciones"
+              resetLabel="Vaciar cola de canciones"
               resetConfirm="¿Vaciar la cola de Spotify pedida por chat? Esto no afecta la reproducción real en Spotify, solo lo que se muestra acá."
               onCustomize={() => setCustomizingId('musicqueue')}
             />

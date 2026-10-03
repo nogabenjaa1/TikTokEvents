@@ -14,8 +14,8 @@ function loadSavedConfig() {
 }
 
 const TARGET_TYPES = [
-  { id: 'coins', label: '🎁 Monedas en regalos' },
-  { id: 'followers', label: '👤 Seguidores nuevos' },
+  { id: 'coins', label: 'Monedas en regalos' },
+  { id: 'followers', label: 'Seguidores nuevos' },
 ];
 
 // ─────────────────────────────────────────────
@@ -126,7 +126,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   // Sin objetivo activo la vista previa muestra lo que se está armando en el
   // formulario (título, meta y barra en 0), para verlo antes de iniciar.
   const previewTitle = (state.isActive ? state.title : title.trim())
-    || ((state.isActive ? state.targetType : targetType) === 'followers' ? '👤 Objetivo de seguidores' : '🎁 Objetivo de regalos');
+    || ((state.isActive ? state.targetType : targetType) === 'followers' ? 'Objetivo de seguidores' : 'Objetivo de regalos');
   const previewCurrent = state.isActive ? (state.current || 0) : 0;
   const previewTarget = state.isActive ? (state.target || 0) : (targetValid ? parsedTarget : 0);
 
@@ -136,7 +136,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
       {/* Preview */}
       <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
         {state.finished && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black relative z-10 mb-3">🎯 OBJETIVO</p>
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black relative z-10 mb-3">OBJETIVO</p>
         <div className="relative z-10">
           <p className="text-sm font-bold text-gray-300 truncate mb-2">{previewTitle}</p>
           <div className="w-full h-6 rounded-full overflow-hidden border mb-2" style={{ borderColor: 'var(--surface-border-color)', background: 'rgba(0,0,0,0.25)' }}>
@@ -145,7 +145,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
           <p className="text-center text-2xl font-black tabular-nums">
             {previewCurrent.toLocaleString('es-MX')} <span className="text-gray-500 text-base">/ {previewTarget.toLocaleString('es-MX')}</span>
           </p>
-          {state.finished && <p className="text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">🎉 ¡Objetivo alcanzado!</p>}
+          {state.finished && <p className="text-center text-xs font-black text-yellow-300 mt-2 uppercase tracking-widest">¡Objetivo alcanzado!</p>}
           {!state.isActive && <p className="text-center text-[10px] text-gray-600 italic mt-1">Vista previa — todavía no arrancó</p>}
         </div>
       </div>
@@ -191,7 +191,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-6">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">📝 ¿PARA QUÉ ES ESTE OBJETIVO?</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">¿PARA QUÉ ES ESTE OBJETIVO?</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value.slice(0, 60))}
@@ -202,12 +202,12 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-6">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🔊 SONIDO AL COMPLETAR (OPCIONAL)</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SONIDO AL COMPLETAR (OPCIONAL)</label>
           {state.audioUrl && (
             <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
-              <span className="text-[10px] text-gray-400 truncate">🎧 Ya tiene un sonido guardado</span>
+              <span className="text-[10px] text-gray-400 truncate">Ya tiene un sonido guardado</span>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <button type="button" onClick={testAudio} className="text-[10px] font-bold text-sky-400 hover:text-sky-300">▶ Probar</button>
+                <button type="button" onClick={testAudio} className="text-[10px] font-bold text-sky-400 hover:text-sky-300">Probar</button>
                 <button type="button" onClick={removeAudio} className="theme-link theme-link-danger">Quitar</button>
               </div>
             </div>
@@ -244,7 +244,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
                 REINICIAR PROGRESO ⟲
               </button>
               <button onClick={stopGoal} className="theme-btn-danger theme-btn-lg font-bold transition-all">
-                ⏹
+                DETENER
               </button>
             </>
           )}

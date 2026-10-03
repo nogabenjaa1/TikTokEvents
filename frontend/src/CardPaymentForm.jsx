@@ -272,7 +272,7 @@ export default function CardPaymentForm({ planType, diceTier, spotifyAddon, amou
           "Logos oficiales de Mercado Pago"): refuerza confianza en el
           comprador -- no impacta el puntaje, pero ayuda a la conversion. */}
       <p className="text-[9px] text-gray-500 text-center flex items-center justify-center gap-1">
-        🔒 Pago 100% seguro procesado por <strong>Mercado Pago</strong>
+        Pago 100% seguro procesado por <strong>Mercado Pago</strong>
       </p>
       {challenge && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

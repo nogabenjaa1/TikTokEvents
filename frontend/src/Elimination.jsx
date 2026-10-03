@@ -170,7 +170,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
         {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
 
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">💀 ELIMINACIÓN</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">ELIMINACIÓN</p>
           <div className="text-right">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
             <p className={`text-3xl font-black tabular-nums transition-colors ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500' : 'text-white'}`}>
@@ -185,7 +185,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
               <div key={e.username + i} className="flex items-center gap-2 theme-notice">
                 <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
                 <span className="text-xs font-bold text-red-300">
-                  💀 @{e.username} {e.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
+                  @{e.username} {e.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
                 </span>
               </div>
             ))}
@@ -194,7 +194,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
         {state.mode === 'finished' ? (
           <p className="relative z-10 text-center text-sm font-black text-yellow-300">
-            {state.winner ? `👑 GANADOR: @${state.winner.username}` : 'SIN GANADOR — nadie participó'}
+            {state.winner ? `GANADOR: @${state.winner.username}` : 'SIN GANADOR — nadie participó'}
           </p>
         ) : participants.length > 0 ? (
           <div className="flex flex-wrap gap-2 justify-center relative z-10 max-h-52 overflow-y-auto">
@@ -241,7 +241,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {/* Selector regalo para unirse */}
             <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎯 REGALO PARA UNIRSE</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO PARA UNIRSE</label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
@@ -255,7 +255,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
-              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">👑 INSTA-WIN</label>
+              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">INSTA-WIN</label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -290,7 +290,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {/* Cuántos caen por ronda */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💀 ELIMINADOS POR RONDA</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">ELIMINADOS POR RONDA</label>
               <input
                 type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
@@ -304,13 +304,13 @@ export default function Elimination({ state, socket, username, connectionStatus,
               <button type="button" onClick={() => setFastMode(f => !f)}
                 className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
                 title="Reduce las animaciones de sorteo/resultado a la mitad (1s en vez de 2s)">
-                ⚡ Fast Mode
+                Fast Mode
               </button>
               <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)}
                 disabled={lockedModeLocked}
                 className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'} ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
                 title={lockedModeLocked ? 'No se puede desactivar hasta Detener o Reiniciar la ronda' : 'Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después'}>
-                🔒 Locked Mode
+                Locked Mode
               </button>
             </div>
 
@@ -320,7 +320,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 insta-win, etc.). A propósito ignora Locked Mode: es una
                 acción explícita del admin, no una entrada automática. */}
             <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">➕ AGREGAR ENTRADA MANUAL</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">AGREGAR ENTRADA MANUAL</label>
               <div className="flex gap-2">
                 <input
                   value={manualUsername} onChange={e => setManualUsername(e.target.value)}
@@ -361,7 +361,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                     disabled={state.mode === 'finished'}
                     className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
                   </button>
                   <button
                     onClick={restartElimination}
@@ -375,7 +375,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 onClick={stopElimination}
                 className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
-                ⏹
+                DETENER
               </button>
             </div>
           </div>

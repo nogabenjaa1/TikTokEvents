@@ -7,11 +7,11 @@ import SystemStatus from './adminSystem/SystemStatus';
 import SystemStorage from './adminSystem/SystemStorage';
 
 const TABS = [
-  { id: 'status', label: 'Estado', icon: '📈' },
-  { id: 'errors', label: 'Errores', icon: '🐞' },
-  { id: 'audit', label: 'Historial', icon: '📜' },
-  { id: 'payments', label: 'Pagos', icon: '💳' },
-  { id: 'storage', label: 'Archivos', icon: '🗂️' },
+  { id: 'status', label: 'Estado' },
+  { id: 'errors', label: 'Errores' },
+  { id: 'audit', label: 'Historial' },
+  { id: 'payments', label: 'Pagos' },
+  { id: 'storage', label: 'Archivos' },
 ];
 
 // Sección "Sistema" (solo administradores): cómo está el servidor, qué errores hay, qué se hizo desde este panel, si
@@ -35,7 +35,6 @@ export default function AdminSystem({ onSessionInvalid }) {
                 'bg-transparent border-transparent',
               ].join(' ')}
             >
-              <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
               <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
                 {t.label}
               </span>
@@ -46,7 +45,7 @@ export default function AdminSystem({ onSessionInvalid }) {
 
       <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-5 font-sans flex-1 overflow-y-auto">
         <div className="w-full max-w-3xl">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🛠️ Administración</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">Administración</p>
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">Sistema</h1>
         </div>
         {tab === 'status' && <SystemStatus onUnauthorized={onSessionInvalid} />}

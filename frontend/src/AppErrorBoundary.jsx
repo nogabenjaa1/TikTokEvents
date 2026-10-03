@@ -12,7 +12,6 @@ function ErrorFallback({ onRetry }) {
   return (
     <ThemedShell className="flex items-center justify-center p-6">
       <div role="alert" className="theme-surface w-full max-w-md p-6 text-center flex flex-col items-center gap-3">
-        <p className="text-3xl" aria-hidden="true">🛠️</p>
         <h1 className="theme-heading text-lg font-black">Algo salió mal en esta pantalla</h1>
         <p className="text-xs text-gray-400 leading-relaxed">
           No se pudo mostrar. Tu sesión y tus ajustes están a salvo: recarga la página para continuar.

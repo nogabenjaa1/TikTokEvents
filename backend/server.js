@@ -291,6 +291,9 @@ app.use(cors({ origin: CORS_ORIGIN }));
 // sirve el index.html sin esa etiqueta; el panel normal y el rastreador de
 // AdSense siguen recibiendo el HTML completo, sin cambios.
 const OVERLAY_ADSENSE_TAG = /<script[^>]*pagead2\.googlesyndication\.com[^>]*><\/script>/i;
+// La pantalla de carga del panel (fondo pastel + aro) taparía la escena del
+// directo mientras carga la fuente de OBS: el overlay arranca transparente.
+const OVERLAY_BOOT_LOADER = /<!--tkc-loader-->[\s\S]*?<!--\/tkc-loader-->/;
 let overlayIndexCache = null; // { mtimeMs, html }
 app.use((req, res, next) => {
     if (req.method !== 'GET' || req.query.overlay !== 'true') return next();
@@ -298,7 +301,7 @@ app.use((req, res, next) => {
     try {
         const { mtimeMs } = fs.statSync(indexPath);
         if (!overlayIndexCache || overlayIndexCache.mtimeMs !== mtimeMs) {
-            overlayIndexCache = { mtimeMs, html: fs.readFileSync(indexPath, 'utf8').replace(OVERLAY_ADSENSE_TAG, '') };
+            overlayIndexCache = { mtimeMs, html: fs.readFileSync(indexPath, 'utf8').replace(OVERLAY_ADSENSE_TAG, '').replace(OVERLAY_BOOT_LOADER, '') };
         }
         res.set('Cache-Control', 'no-cache').type('html').send(overlayIndexCache.html);
     } catch {

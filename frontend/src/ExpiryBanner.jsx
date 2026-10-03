@@ -29,7 +29,7 @@ export default function ExpiryBanner({ session, onRenew, hidden = false }) {
       role={urgent ? 'alert' : 'status'}
       className={`w-full border-b-2 text-[11px] py-2 px-3 flex-shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 ${urgent ? 'bg-red-500/15 border-red-500' : 'bg-amber-500/15 border-amber-500'}`}
     >
-      <span className="font-bold tracking-wide text-white"><span aria-hidden="true">{urgent ? '⚠️' : '⏳'} </span>{notice.message}</span>
+      <span className="font-bold tracking-wide text-white">{notice.message}</span>
       <span className="hidden sm:inline text-gray-300">{notice.detail}</span>
       <button type="button" onClick={onRenew} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
         {notice.trial ? 'Elegir un plan' : 'Renovar'}

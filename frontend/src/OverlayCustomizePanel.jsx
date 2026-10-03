@@ -58,7 +58,7 @@ function NamePreview({ type, from, to }) {
 // texto/nombre de usuario (predeterminado / color sólido del tema /
 // personalizado / degradado propio / arcoíris en movimiento), con un
 // tamaño de fuente opcional (normal/grande/extra grande, ver FONT_SCALES en
-// overlayCustomization.js). Se abre desde el botón "🎨 Personalizar" de
+// overlayCustomization.js). Se abre desde el botón "Personalizar" de
 // cada tarjeta en OverlayLink.jsx. Cada cambio se aplica al instante (mismo
 // criterio "en vivo" que el resto del panel, sin botón de guardar) — el
 // padre (App.jsx) es quien persiste en localStorage y reemite por socket.
@@ -74,7 +74,7 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="theme-surface w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 mb-5">
-          <h2 className="theme-heading text-base font-bold leading-tight">🎨 Personalizar<br /><span className="text-sm font-semibold text-gray-400">{title}</span></h2>
+          <h2 className="theme-heading text-base font-bold leading-tight">Personalizar<br /><span className="text-sm font-semibold text-gray-400">{title}</span></h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl leading-none flex-shrink-0">✕</button>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
-import { HowItWorks } from './PanelHelp';
+import { HowItWorks, SkeletonRows } from './PanelHelp';
 import SpotifyAppGuide from './SpotifyAppGuide';
 
 // Días de conexión a partir de los cuales el panel avisa que hay que renovarla
@@ -232,17 +232,17 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-6">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🎵 Spotify</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Spotify</p>
 
       {banner === 'connected' && (
         <div role="status" className="w-full max-w-md theme-notice theme-notice-success theme-notice-roomy flex items-start justify-between gap-3">
-          <span>✅ CUENTA DE SPOTIFY CONECTADA. Por seguridad el TTS se apaga al volver: si lo usabas, vuelve a activarlo.</span>
+          <span>CUENTA DE SPOTIFY CONECTADA. Por seguridad el TTS se apaga al volver: si lo usabas, vuelve a activarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {banner === 'error' && (
         <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
-          <span>❌ NO SE PUDO CONECTAR CON SPOTIFY. INTENTA DE NUEVO.</span>
+          <span>NO SE PUDO CONECTAR CON SPOTIFY. INTENTA DE NUEVO.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
@@ -252,7 +252,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           genérico la gente apretaba "Conectar" una y otra vez. */}
       {banner === 'not_registered' && (
         <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
-          <span>❌ TU CUENTA DE SPOTIFY TODAVÍA NO ESTÁ HABILITADA. Spotify solo deja conectar las cuentas que el administrador agregó a la plataforma: envíale el correo con el que inicias sesión en Spotify y, cuando te confirme que ya la agregó, vuelve a intentarlo.</span>
+          <span>TU CUENTA DE SPOTIFY TODAVÍA NO ESTÁ HABILITADA. Spotify solo deja conectar las cuentas que el administrador agregó a la plataforma: envíale el correo con el que inicias sesión en Spotify y, cuando te confirme que ya la agregó, vuelve a intentarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
@@ -260,19 +260,19 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           no hay a quién pedirle nada, el arreglo es suyo (paso 4 de la guía). */}
       {banner === 'not_registered_own' && (
         <div role="alert" className="w-full max-w-md theme-notice theme-notice-roomy flex items-start justify-between gap-3">
-          <span>❌ TU CUENTA DE SPOTIFY NO ESTÁ EN LOS USUARIOS DE TU APP. En el dashboard de Spotify abre tu app, entra a Settings → User Management → Add new user, agrega tu nombre y el correo de tu cuenta de Spotify, y vuelve a intentarlo.</span>
+          <span>TU CUENTA DE SPOTIFY NO ESTÁ EN LOS USUARIOS DE TU APP. En el dashboard de Spotify abre tu app, entra a Settings → User Management → Add new user, agrega tu nombre y el correo de tu cuenta de Spotify, y vuelve a intentarlo.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {banner === 'app_saved' && (
         <div role="status" className="w-full max-w-md theme-notice theme-notice-success theme-notice-roomy flex items-start justify-between gap-3">
-          <span>✅ TU APP DE SPOTIFY QUEDÓ GUARDADA. Ahora pulsa "Conectar con Spotify" para autorizar tu cuenta.</span>
+          <span>TU APP DE SPOTIFY QUEDÓ GUARDADA. Ahora pulsa "Conectar con Spotify" para autorizar tu cuenta.</span>
           <button type="button" onClick={() => setBanner(null)} aria-label="Cerrar aviso" className="flex-shrink-0 leading-none">✕</button>
         </div>
       )}
       {errorToast && (
         <div className="w-full max-w-md theme-notice theme-notice-warning theme-notice-roomy">
-          ⚠️ {errorToast}
+          {errorToast}
         </div>
       )}
 
@@ -296,8 +296,9 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
           <p>Necesitas <span className="font-bold text-white">Spotify Premium</span> y tener Spotify <span className="font-bold text-white">abierto y sonando</span> en algún dispositivo mientras transmites.</p>
         </HowItWorks>
 
+        <div key={loading || !access ? 'loading' : 'ready'} className="tkc-reveal contents">
         {loading || !access ? (
-          <p className="text-gray-500 text-sm italic">Verificando...</p>
+          <SkeletonRows count={2} label="Verificando tu conexión con Spotify…" />
         ) : !access.entitled ? (
           access.addonRequired ? (
             <>
@@ -401,6 +402,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
             )}
           </>
         )}
+        </div>
       </div>
 
       {connected && (
@@ -466,9 +468,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
         <div className="theme-surface w-full max-w-md p-6">
           <h2 className="theme-heading text-lg font-semibold mb-4">Volumen</h2>
           <div className="flex items-center gap-4">
-            <span className="text-lg flex-shrink-0">🔈</span>
             <input type="range" min="0" max="100" value={volume} onChange={(event) => changeVolume(Number(event.target.value))} className="flex-1" />
-            <span className="text-lg flex-shrink-0">🔊</span>
             <span className="theme-chip w-14 text-center font-bold px-2 py-1.5 rounded text-xs flex-shrink-0">{volume}%</span>
           </div>
           <p className="text-[10px] text-gray-500 mt-2">Controla el volumen del dispositivo activo de Spotify — necesita estar sonando en algún dispositivo.</p>
@@ -488,7 +488,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                   {nowPlaying.requestedBy && ` · pedido por @${nowPlaying.requestedBy}`}
                 </p>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">Sonando</span>
             </div>
           ) : (
             <p className="text-gray-600 text-xs italic">Nada sonando en este momento.</p>
@@ -516,7 +516,7 @@ export default function Spotify({ socket, queueState, settingsState, oauthResult
                     <p className="text-[10px] text-gray-500 truncate">{song.artist} · pedido por @{song.requestedBy}</p>
                   </div>
                   {song.playing && (
-                    <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">🔊 Sonando</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-green-400 flex-shrink-0">Sonando</span>
                   )}
                 </div>
               ))}

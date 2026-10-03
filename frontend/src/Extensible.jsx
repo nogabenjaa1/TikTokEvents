@@ -124,7 +124,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
         {state.finished && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
 
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">⏱️ MODO EXTENSIBLE</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">MODO EXTENSIBLE</p>
         </div>
 
         <p className={`relative z-10 text-center text-6xl font-black tabular-nums ${state.finished ? 'text-yellow-300' : state.paused ? 'text-gray-500' : 'text-white'}`}>
@@ -167,7 +167,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Ajuste manual de tiempo en vivo */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">⏱️ AJUSTAR TIEMPO EN VIVO</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">AJUSTAR TIEMPO EN VIVO</label>
               <div className="grid grid-cols-4 gap-2 mb-2">
                 <button type="button" onClick={() => adjustTime(-300)} disabled={!state.isActive}
                   className="theme-btn-danger theme-btn-md font-bold disabled:opacity-40 disabled:cursor-not-allowed">-5m</button>
@@ -197,7 +197,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Segundos por follow */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">👤 SEGUNDOS POR FOLLOW</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR FOLLOW</label>
               <input
                 type="number" min="0"
                 value={secondsPerFollow}
@@ -209,7 +209,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Segundos por regalo */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 SEGUNDOS POR MONEDA DEL REGALO</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR MONEDA DEL REGALO</label>
               <input
                 type="number" min="0"
                 value={secondsPerGift}
@@ -224,7 +224,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
               <button type="button" onClick={() => setReverseMode(r => !r)}
                 className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${reverseMode ? 'theme-btn-danger' : 'theme-btn-secondary'}`}
                 title="Cada follow o regalo RESTA tiempo en vez de sumar">
-                {reverseMode ? '🔻 Modo Inverso (RESTA tiempo)' : '🔺 Modo Normal (SUMA tiempo)'}
+                {reverseMode ? 'Modo Inverso (RESTA tiempo)' : 'Modo Normal (SUMA tiempo)'}
               </button>
               <p className="text-[10px] text-gray-500 mt-1">Se puede cambiar en cualquier momento, incluso con el contador activo.</p>
             </div>
@@ -248,7 +248,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
                     disabled={state.finished}
                     className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
                   </button>
                   <button
                     onClick={restartExtensible}
@@ -262,7 +262,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
                 onClick={stopExtensible}
                 className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
-                ⏹
+                DETENER
               </button>
             </div>
           </div>

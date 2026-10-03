@@ -44,10 +44,10 @@ const TEXT_POSITIONS = [
 // busca cuando el regalo no tiene la suya propia (ver
 // findGlobalAlertForCoins en tenant.js).
 const TRIGGER_TYPES = [
-  { id: 'gift', label: 'Regalo específico', icon: '🎁' },
-  { id: 'gift_global', label: 'Alerta general (por monedas)', icon: '🌐' },
-  { id: 'follow', label: 'Seguimiento', icon: '👣' },
-  { id: 'sticker', label: 'Sticker de club de fans', icon: '🎫' },
+  { id: 'gift', label: 'Regalo específico' },
+  { id: 'gift_global', label: 'Alerta general (por monedas)' },
+  { id: 'follow', label: 'Seguimiento' },
+  { id: 'sticker', label: 'Sticker de club de fans' },
 ];
 const TRIGGER_LABELS = Object.fromEntries(TRIGGER_TYPES.map((t) => [t.id, t.label]));
 const MIN_COINS_CAP = 999999; // mismo tope que MIN_COINS_CAP en server.js
@@ -71,7 +71,7 @@ const ANIMATION_OUT_OPTIONS = [
   { id: 'zoom', label: 'Zoom' },
 ];
 
-const VISUAL_TYPE_ICON = { image: '🖼️', gif: '🎞️', video: '🎬' };
+const VISUAL_TYPE_LABEL = { image: 'imagen', gif: 'GIF', video: 'video' };
 const MAX_TEXT_LENGTH = 200; // mismo tope que aplica el backend (String.slice)
 
 // Mismo límite que ya aplica el backend (ver server.js) y el propio
@@ -206,7 +206,7 @@ function AlertTypeIcon({ alert, giftIcon, stickerIcon }) {
   }
   const fixed = TRIGGER_ICONS[alert.triggerType];
   const src = fixed ? fixed.src : giftIcon;
-  if (!src) return <span className="w-9 h-9 flex items-center justify-center text-2xl flex-shrink-0" role="img" aria-label="Regalo">🎁</span>;
+  if (!src) return <span className="w-9 h-9 rounded-lg flex-shrink-0 theme-input" role="img" aria-label="Regalo sin imagen" />;
   return <img src={src} alt={fixed ? fixed.label : 'Regalo'} className="w-9 h-9 object-contain flex-shrink-0" />;
 }
 
@@ -220,23 +220,23 @@ function AlertRow({ alert, giftIcon, stickerIcon, testFire, previewSaved, startE
           <p className="text-sm font-bold text-white truncate">{name}</p>
           <p className="text-[11px] text-gray-500 truncate">
             {(alert.durationMs / 1000).toFixed(0)}s · {POSITIONS.find((p) => p.id === alert.position)?.label || alert.position}
-            {(alert.visualType || alert.audioUrl || alert.text) ? ` · ${alert.visualType ? (VISUAL_TYPE_ICON[alert.visualType] || '📎') : ''}${alert.audioUrl ? '🎧' : ''}${alert.text ? '💬' : ''}` : ''}
+            {[alert.visualType && (VISUAL_TYPE_LABEL[alert.visualType] || 'archivo'), alert.audioUrl && 'audio'].filter(Boolean).map((part) => ` · ${part}`).join('')}
             {alert.text ? ` · "${alert.text}"` : ''}
           </p>
           {(!alert.triggerType || alert.triggerType === 'gift') && alert.apodo && (
-            <p className="text-[11px] text-gray-600 truncate">🏷️ En la tira: {alert.apodo}</p>
+            <p className="text-[11px] text-gray-600 truncate">En la tira: {alert.apodo}</p>
           )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 flex-wrap">
         <button onClick={() => testFire(alert.id)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-wide" title="Dispara la alerta real en tu stream" aria-label={`Probar la alerta ${name}`}>
-          🔥 Probar
+          Probar
         </button>
         <button onClick={() => previewSaved(alert)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-wide" title="Verla aquí, sin disparar nada" aria-label={`Vista previa de la alerta ${name}`}>
-          👁️ Ver
+          Ver
         </button>
         <button onClick={() => startEdit(alert)} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-wide" aria-label={`Editar la alerta ${name}`}>
-          ✏️ Editar
+          Editar
         </button>
         <button onClick={() => remove(alert.id)} className="text-[10px] font-bold text-red-400 hover:text-red-300 underline px-1" aria-label={`Borrar la alerta ${name}`}>
           Borrar
@@ -627,7 +627,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     await fetchAlerts();
   };
 
-  // Botón "🔥 Probar" — dispara la alerta real (ver testFireAlert en
+  // Botón "Probar" — dispara la alerta real (ver testFireAlert en
   // tenant.js), la misma que verían los espectadores en OBS, más la
   // confirmación en vivo de acá abajo.
   const testFire = (id) => socket?.emit('test_alert', id);
@@ -667,12 +667,12 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     <>
       <div className="w-full max-w-2xl flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🔔 Alertas</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">Alertas</p>
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">Mis alertas</h1>
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
           {quotaView && !loading && (
             quotaView.unlimited ? (
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mt-2">♾️ {quotaView.label}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mt-2">{quotaView.label}</p>
             ) : (
               <div className="mt-2 max-w-xs">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-1">{quotaView.label}</p>
@@ -705,7 +705,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
       {notice && (
         <div role="status" className="w-full max-w-2xl theme-notice theme-notice-success theme-notice-roomy">
-          ✅ {notice}
+          {notice}
         </div>
       )}
 
@@ -715,7 +715,6 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
       ) : totalAlerts === 0 ? (
         <div className="theme-surface w-full max-w-2xl p-8 text-center">
-          <p className="text-4xl mb-3">🔔</p>
           <h2 className="theme-heading text-lg font-semibold mb-2">Aún no tienes alertas</h2>
           <p className="text-sm text-gray-400 max-w-md mx-auto mb-6">Crea tu primera alerta en tres pasos rápidos. No necesitas estar en vivo para armarla.</p>
           <ol className="text-left text-xs text-gray-400 max-w-sm mx-auto mb-6 flex flex-col gap-2">
@@ -724,7 +723,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             <li className="flex gap-3"><span className="theme-chip w-5 h-5 rounded-full flex items-center justify-center font-black flex-shrink-0">3</span> Mira la vista previa, ajusta y guarda.</li>
           </ol>
           <button type="button" onClick={openNew} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest shadow-lg">
-            ＋ Crear mi primera alerta
+            Crear mi primera alerta
           </button>
         </div>
       ) : (
@@ -736,11 +735,11 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
                 <p className="text-[11px] text-gray-500 mt-0.5">Afectan a TODAS tus alertas a la vez. Para algo propio de una alerta (como su color), edítala.</p>
               </div>
               <button type="button" onClick={() => setCustomizingText(true)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0" title="Color, degradado y tamaño del texto de todas las alertas">
-                🎨 Personalizar
+                Personalizar
               </button>
             </div>
             <div className="flex items-center justify-between gap-3 mb-2">
-              <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">🔊 Volumen general</span>
+              <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">Volumen general</span>
               <span className="theme-chip font-bold px-2 rounded text-xs">{Math.round((customization?.volume ?? 1) * 100)}%</span>
             </div>
             <input
@@ -797,7 +796,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
     <>
       <div className="w-full max-w-2xl">
         <button type="button" onClick={closeForm} className="text-[11px] font-bold text-gray-400 hover:text-white mb-3 inline-flex items-center gap-1">
-          ← Volver a mis alertas
+          Volver a mis alertas
         </button>
         <div className="flex items-center gap-3">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
@@ -819,7 +818,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
               onClick={() => { setTriggerType(t.id); if (t.id !== 'gift') setSelectedGift(null); if (t.id !== 'sticker') setSelectedSticker(null); if (t.id !== 'gift_global') setMinCoins(''); }}
               aria-pressed={triggerType === t.id}
               className={`font-black uppercase tracking-wide transition-all theme-btn-sm ${triggerType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-              {t.icon} {t.label}
+              {t.label}
             </button>
           ))}
         </div>
@@ -840,7 +839,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
         {triggerType === 'gift_global' && (
           <div className="mt-4">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🪙 MÍNIMO DE MONEDAS</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">MÍNIMO DE MONEDAS</label>
             <input
               type="number" min="1" max={MIN_COINS_CAP} step="1"
               value={minCoins}
@@ -856,7 +855,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
         {triggerType === 'gift' && (
           <div className="mt-4 relative z-20">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎁 REGALO</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO</label>
             <GiftPicker
               gifts={giftsList.filter((g) => g.coins > 0)}
               selected={selectedGift}
@@ -870,7 +869,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         )}
         {triggerType === 'sticker' && (
           <div className="mt-4 relative z-20">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎫 STICKER</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">STICKER</label>
             <StickerPicker
               stickers={stickers}
               selected={selectedSticker}
@@ -894,10 +893,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
       <FormSection step="2" title="¿Qué se muestra?" hint="Usa uno, dos o los tres. Con que haya al menos uno, ya vale.">
         <div className="mb-5">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🖼️ VISUAL (imagen, gif o video)</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">VISUAL (imagen, gif o video)</label>
           {visualFile ? (
             <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
-              <span className="text-[11px] text-gray-400 truncate">📎 {visualFile.name}</span>
+              <span className="text-[11px] text-gray-400 truncate">{visualFile.name}</span>
               <button
                 type="button"
                 onClick={() => { setVisualFile(null); if (visualInputRef.current) visualInputRef.current.value = ''; }}
@@ -907,7 +906,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             </div>
           ) : effectiveVisualUrl ? (
             <div className="theme-input flex items-center justify-between p-2 mb-2">
-              <span className="text-[11px] text-gray-400">{VISUAL_TYPE_ICON[effectiveVisualType] || '📎'} Ya tiene un archivo guardado</span>
+              <span className="text-[11px] text-gray-400">Ya tiene un archivo guardado</span>
               <button type="button" onClick={() => setClearVisual(true)} className="text-[11px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
             </div>
           ) : null}
@@ -928,10 +927,10 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         </div>
 
         <div className="mb-5">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🎧 AUDIO</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">AUDIO</label>
           {audioFile ? (
             <div className="theme-input flex items-center justify-between gap-2 p-2 mb-2">
-              <span className="text-[11px] text-gray-400 truncate">🎧 {audioFile.name}</span>
+              <span className="text-[11px] text-gray-400 truncate">{audioFile.name}</span>
               <button
                 type="button"
                 onClick={() => { setAudioFile(null); if (audioInputRef.current) audioInputRef.current.value = ''; }}
@@ -941,7 +940,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             </div>
           ) : effectiveAudioUrl ? (
             <div className="theme-input flex items-center justify-between p-2 mb-2">
-              <span className="text-[11px] text-gray-400">🎧 Ya tiene un audio guardado</span>
+              <span className="text-[11px] text-gray-400">Ya tiene un audio guardado</span>
               <button type="button" onClick={() => setClearAudio(true)} className="text-[11px] font-bold text-red-400 hover:text-red-300 underline">Quitar</button>
             </div>
           ) : null}
@@ -957,7 +956,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
         {triggerType === 'gift' && (
           <div className="mb-5">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">🏷️ APODO</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">APODO</label>
             <input
               type="text" value={apodo}
               onChange={(e) => { setApodo(e.target.value.slice(0, 60)); setApodoTouched(true); }}
@@ -969,7 +968,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         )}
 
         <div>
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">💬 TEXTO</label>
+          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">TEXTO</label>
           <textarea
             value={text} onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))} rows={2}
             placeholder="Ej: ¡Gracias por el {gift}, {username}!"
@@ -986,7 +985,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
           </p>
           <p className="text-[10px] text-gray-500 mt-1 text-right">{text.length}/{MAX_TEXT_LENGTH}</p>
           <div className="mt-2">
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">🎨 COLOR DEL TEXTO DE ESTA ALERTA</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">COLOR DEL TEXTO DE ESTA ALERTA</label>
             <div className="flex items-center gap-4 flex-wrap">
               <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
                 <input type="radio" name="alert-text-color" checked={!textColor} onChange={() => setTextColor('')} />
@@ -1004,7 +1003,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
                 />
               )}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">Este color es solo de esta alerta. El tamaño, el degradado y el estilo general de todas se cambian con "🎨 Personalizar" en los ajustes generales de la lista.</p>
+            <p className="text-[11px] text-gray-500 mt-1">Este color es solo de esta alerta. El tamaño, el degradado y el estilo general de todas se cambian con "Personalizar" en los ajustes generales de la lista.</p>
           </div>
           {effectiveVisualUrl && (
             <div className="mt-2">
@@ -1050,7 +1049,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
 
         <div className="grid sm:grid-cols-2 gap-5">
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE ENTRADA</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">ANIMACIÓN DE ENTRADA</label>
             <div className="flex gap-2 flex-wrap">
               {ANIMATION_IN_OPTIONS.map((a) => (
                 <button key={a.id} type="button" onClick={() => setEntranceAnim(a.id)} aria-pressed={entranceAnim === a.id}
@@ -1061,7 +1060,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             </div>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">✨ ANIMACIÓN DE SALIDA</label>
+            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">ANIMACIÓN DE SALIDA</label>
             <div className="flex gap-2 flex-wrap">
               {ANIMATION_OUT_OPTIONS.map((a) => (
                 <button key={a.id} type="button" onClick={() => setExitAnim(a.id)} aria-pressed={exitAnim === a.id}
@@ -1107,7 +1106,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
             onClick={closeSavedPreview}
             className="fixed top-4 right-4 z-[10000] theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest"
           >
-            ✕ Cerrar vista previa
+            Cerrar vista previa
           </button>
         </>
       )}

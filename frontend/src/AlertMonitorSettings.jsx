@@ -27,7 +27,7 @@ export default function AlertMonitorSettings({ enabled, onEnabledChange, overlay
   return (
     <div className="mt-5 pt-4 border-t border-[var(--surface-border-color)]">
       <div className="flex items-center justify-between gap-3 mb-2">
-        <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">🔊 Sonido en este navegador</span>
+        <span className="theme-label text-[10px] uppercase tracking-widest font-semibold">Sonido en este navegador</span>
         <span
           className="theme-chip font-bold px-2 rounded text-[10px]"
           title="El overlay de alertas en OBS o TikTok Studio es solo visual: muestra la imagen, el video y el texto"
@@ -62,7 +62,7 @@ export default function AlertMonitorSettings({ enabled, onEnabledChange, overlay
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={chooseOutput} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
-              🎧 Elegir dispositivo de salida
+              Elegir dispositivo de salida
             </button>
             {sinkId && (
               <button type="button" onClick={() => onSinkChange('', '')} className="text-[10px] font-bold text-gray-400 hover:text-white underline py-2">

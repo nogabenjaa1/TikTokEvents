@@ -7,13 +7,13 @@
 // principal con accesos directos, ver Dashboard.jsx) va primero porque es
 // el nuevo destino por default al entrar con sesión.
 export const SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard',   icon: '🏠' },
-  { id: 'overlay', label: 'Overlays',     icon: '🖥️' },
-  { id: 'events',  label: 'Eventos',      icon: '🎉' },
-  { id: 'color',   label: 'ColorDice',    icon: '🎲' },
-  { id: 'downloader', label: 'Downloader', icon: '⬇️' },
-  { id: 'theme',   label: 'Tema',         icon: '🎨' },
-  { id: 'membership', label: 'Membresía', icon: '💳' },
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'overlay', label: 'Overlays' },
+  { id: 'events',  label: 'Eventos' },
+  { id: 'color',   label: 'ColorDice' },
+  { id: 'downloader', label: 'Downloader' },
+  { id: 'theme',   label: 'Tema' },
+  { id: 'membership', label: 'Membresía' },
 ];
 
 // Primer id de cada grupo de EVENT_TABS (juegos | contadores y metas |
@@ -24,16 +24,16 @@ export const EVENT_TAB_GROUP_STARTS = ['extensible', 'spotify'];
 // Pestañas dentro de la sección "TikTokEvents" — cada una es uno de los
 // módulos que ya existían como botón de primer nivel.
 export const EVENT_TABS = [
-  { id: 'king',     label: 'Rey del Trono', icon: '👑' },
-  { id: 'zub',      label: 'Zubastinis',    icon: '🏆' },
-  { id: 'elim',     label: 'Eliminación',   icon: '💀' },
-  { id: 'roulette', label: 'Ruleta',        icon: '🎡' },
-  { id: 'versus',   label: 'Versus',        icon: '⚔️' },
-  { id: 'extensible', label: 'Extensible',  icon: '⏱️' },
-  { id: 'goal',     label: 'Objetivo',      icon: '🎯' },
-  { id: 'spotify',  label: 'Spotify',       icon: '🎵' },
-  { id: 'alerts',   label: 'Alertas',       icon: '🔔' },
-  { id: 'tts',      label: 'TTS',           icon: '🔊' },
+  { id: 'king',     label: 'Rey del Trono' },
+  { id: 'zub',      label: 'Zubastinis' },
+  { id: 'elim',     label: 'Eliminación' },
+  { id: 'roulette', label: 'Ruleta' },
+  { id: 'versus',   label: 'Versus' },
+  { id: 'extensible', label: 'Extensible' },
+  { id: 'goal',     label: 'Objetivo' },
+  { id: 'spotify',  label: 'Spotify' },
+  { id: 'alerts',   label: 'Alertas' },
+  { id: 'tts',      label: 'TTS' },
 ];
 
 // Pedido explicito: URLs reales para cada sección (benjaapis.dev/overlays,

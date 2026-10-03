@@ -61,7 +61,7 @@ export default function SystemStorage({ onUnauthorized }) {
       {scan && !scan.configured && <EmptyNote>El almacenamiento (Supabase) no está configurado en este servidor.</EmptyNote>}
 
       {scan?.configured && totals && (
-        <>
+        <div className="tkc-reveal contents">
           {scan.truncated && (
             <p role="status" className="theme-notice theme-notice-warning">La revisión no alcanzó a recorrer todo (hay demasiados archivos), así que los números son parciales. Repítela para seguir limpiando.</p>
           )}
@@ -109,7 +109,7 @@ export default function SystemStorage({ onUnauthorized }) {
               <p className="text-[10px] text-gray-500">Se borran de a 500 por vez. La lista de arriba se vuelve a calcular en el servidor al borrar: nunca se toca un archivo en uso.</p>
             </div>
           )}
-        </>
+        </div>
       )}
     </section>
   );

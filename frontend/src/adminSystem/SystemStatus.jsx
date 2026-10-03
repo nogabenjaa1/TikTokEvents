@@ -2,6 +2,7 @@ import { backendUrl } from '../auth';
 import { formatUptime } from '../systemFormat';
 import { useAdminData } from './api';
 import { Kpi, PanelBar } from './ui';
+import { SkeletonKpis } from '../PanelHelp';
 
 // Cómo está el servidor ahora mismo (se refresca solo cada 15 s mientras esta pestaña está a la vista).
 export default function SystemStatus({ onUnauthorized }) {
@@ -12,10 +13,10 @@ export default function SystemStatus({ onUnauthorized }) {
     <section className="w-full max-w-3xl flex flex-col gap-4" aria-label="Estado del servidor">
       <PanelBar title="Estado del servidor" hint="Se actualiza solo cada 15 segundos." onRefresh={reload} loading={loading} />
       {error && <p role="alert" className="theme-notice">{error}</p>}
-      {!system && !error && <p className="text-sm text-gray-500 italic">Cargando…</p>}
+      {!system && !error && <SkeletonKpis count={8} label="Cargando el estado del servidor…" />}
 
       {system && (
-        <>
+        <div className="tkc-reveal contents">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <Kpi label="Servidor" value={formatUptime(system.uptimeSeconds)} hint="encendido sin reiniciarse" />
             <Kpi
@@ -43,7 +44,7 @@ export default function SystemStatus({ onUnauthorized }) {
             </p>
             <p>El escritor de errores guardó {system.reporter.written} y descartó {system.reporter.dropped} por exceso de ráfagas desde que arrancó el servidor.</p>
           </div>
-        </>
+        </div>
       )}
     </section>
   );

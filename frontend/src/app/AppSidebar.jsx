@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import logoMark from '../assets/logo-mark.png';
 import { SECTIONS } from './navigation';
 import NavIndicator from './NavIndicator';
+import NavIcon from './NavIcon';
 
 // Botón del rail principal (pedido explícito: navegación profesional). En
 // mobile es una pastilla algo más ancha que alta para que entre el nombre
@@ -39,7 +40,7 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
           title={s.id === 'events' ? 'TikTokEvents: juegos, alertas, TTS y más' : s.label}
           className={[NAV_BTN, 'bg-transparent border-transparent'].join(' ')}
         >
-          <span className="text-xl leading-none" aria-hidden="true">{s.icon}</span>
+          <NavIcon name={s.id} />
           <span className={[NAV_LABEL, sidebarMode === s.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
             {s.label}
           </span>
@@ -54,7 +55,7 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
           aria-current={sidebarMode === 'licenses' ? 'page' : undefined}
           className={[NAV_BTN, 'bg-transparent border-transparent'].join(' ')}
         >
-          <span className="text-xl leading-none" aria-hidden="true">🔑</span>
+          <NavIcon name="licenses" />
           <span className={[NAV_LABEL, sidebarMode === 'licenses' ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
             Licencias
           </span>
@@ -69,7 +70,7 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
           aria-current={sidebarMode === 'system' ? 'page' : undefined}
           className={[NAV_BTN, 'bg-transparent border-transparent'].join(' ')}
         >
-          <span className="text-xl leading-none" aria-hidden="true">🛠️</span>
+          <NavIcon name="system" />
           <span className={[NAV_LABEL, sidebarMode === 'system' ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
             Sistema
           </span>
@@ -80,7 +81,7 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
       {!session && (
         <button type="button" onClick={onEnter} title="Inicia sesión o prueba gratis"
           className={[NAV_BTN, 'theme-btn-primary'].join(' ')}>
-          <span className="text-xl leading-none" aria-hidden="true">🔑</span>
+          <NavIcon name="enter" />
           <span className={NAV_LABEL}>Entrar</span>
         </button>
       )}
@@ -92,7 +93,7 @@ export default function AppSidebar({ sidebarMode, onNavigate, session, gameRunni
           }}
           title="Cerrar sesión"
           className="min-w-[64px] md:w-[68px] h-[52px] px-2 md:px-1 rounded-[14px] border border-transparent hover:bg-red-950/40 hover:border-red-900/50 flex flex-col items-center justify-center gap-1 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-          <span className="text-xl leading-none" aria-hidden="true">🚪</span>
+          <NavIcon name="exit" />
           <span className={[NAV_LABEL, 'text-gray-500'].join(' ')}>Salir</span>
         </button>
       )}

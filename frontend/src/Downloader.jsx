@@ -74,7 +74,7 @@ export default function Downloader() {
 
   const qualityOptions = fmt === 'mp3'
     ? MP3_QUALITIES
-    : (info?.heights?.length ? ['best', ...info.heights.map(String)] : DEFAULT_HEIGHTS).map((h) => ({ label: h === 'best' ? '✦ Mejor' : `${h}p`, value: h }));
+    : (info?.heights?.length ? ['best', ...info.heights.map(String)] : DEFAULT_HEIGHTS).map((h) => ({ label: h === 'best' ? 'Mejor' : `${h}p`, value: h }));
 
   const selectFmt = (f) => {
     setFmt(f);
@@ -159,7 +159,7 @@ export default function Downloader() {
 
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">⬇️ Downloader</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Downloader</p>
 
       <div className="theme-surface w-full max-w-xl p-6">
         <div className="flex gap-2 mb-4">
@@ -197,7 +197,7 @@ export default function Downloader() {
           </div>
         )}
 
-        {fetchError && <p className="text-[11px] font-bold text-red-500 mt-3">⚠ {fetchError}</p>}
+        {fetchError && <p className="text-[11px] font-bold text-red-500 mt-3">{fetchError}</p>}
       </div>
 
       {info && (
@@ -206,11 +206,11 @@ export default function Downloader() {
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button type="button" onClick={() => selectFmt('mp4')}
               className={`font-black uppercase tracking-wide transition-all theme-btn-md ${fmt === 'mp4' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-              🎬 MP4
+              MP4
             </button>
             <button type="button" onClick={() => selectFmt('mp3')}
               className={`font-black uppercase tracking-wide transition-all theme-btn-md ${fmt === 'mp3' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-              🎵 MP3
+              MP3
             </button>
           </div>
 
@@ -267,7 +267,7 @@ export default function Downloader() {
                   </button>
                 </div>
               )}
-              {job.status === 'error' && <p className="text-[11px] font-bold text-red-500 mt-2">⚠ {job.error}</p>}
+              {job.status === 'error' && <p className="text-[11px] font-bold text-red-500 mt-2">{job.error}</p>}
             </div>
           ))}
         </div>

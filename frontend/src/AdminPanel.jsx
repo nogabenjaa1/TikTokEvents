@@ -121,7 +121,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               <div className="flex items-center gap-3">
                 <div className="relative">
                   {state.mode === 'finished' && (
-                    <span className="absolute -top-3 -right-2 text-xl z-20">👑</span>
+                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 z-20 theme-chip px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Ganador</span>
                   )}
                   <img
                     src={state.lastParticipant.avatar}
@@ -165,7 +165,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector regalo normal */}
             <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">⚔️ REGALO OBJETIVO</label>
+              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO OBJETIVO</label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
@@ -179,7 +179,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
-              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">👑 INSTA-WIN</label>
+              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">INSTA-WIN</label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -228,7 +228,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                     disabled={state.mode === 'finished'}
                     className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
                   </button>
                   <button
                     onClick={restartContest}
@@ -242,7 +242,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                 onClick={stopContest}
                 className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
-                ⏹
+                DETENER
               </button>
             </div>
           </div>

@@ -22,7 +22,7 @@ export default function AudioUnlockBanner({ enabled }) {
   if (!blocked) return null;
   return (
     <div role="status" className="w-full border-b-2 bg-amber-500/15 border-amber-500 text-[11px] py-2 px-3 flex-shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
-      <span className="font-bold tracking-wide text-white"><span aria-hidden="true">🔇 </span>El sonido de las alertas está esperando tu primer clic.</span>
+      <span className="font-bold tracking-wide text-white">El sonido de las alertas está esperando tu primer clic.</span>
       <span className="hidden sm:inline text-gray-300">Tu navegador no deja reproducir audio hasta que interactúes con esta pestaña.</span>
       <button type="button" onClick={() => { unlockSounds(); setBlocked(false); }} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
         Activar sonido

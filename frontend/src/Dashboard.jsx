@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import TikTokLoginBar from './TikTokLoginBar';
 import SystemHealth from './SystemHealth';
 import LiveFeed from './LiveFeed';
+import NavIcon from './app/NavIcon';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
 // import circular). Si algún día se agrega/saca una sección, hay que
 // actualizar las listas.
 const SECTION_SHORTCUTS = [
-  { id: 'overlay', label: 'Overlays', icon: '🖥️', hint: 'Los enlaces que pegas en OBS', free: true },
-  { id: 'color', label: 'ColorDice', icon: '🎲', hint: 'Dados y colores', free: true },
-  { id: 'downloader', label: 'Downloader', icon: '⬇️', hint: 'Descarga videos sin marca de agua', free: false },
-  { id: 'theme', label: 'Tema', icon: '🎨', hint: 'Cambia el estilo del panel', free: true },
-  { id: 'membership', label: 'Membresía', icon: '💳', hint: 'Planes y precios', free: true },
+  { id: 'overlay', label: 'Overlays', hint: 'Los enlaces que pegas en OBS', free: true },
+  { id: 'color', label: 'ColorDice', hint: 'Dados y colores', free: true },
+  { id: 'downloader', label: 'Downloader', hint: 'Descarga videos sin marca de agua', free: false },
+  { id: 'theme', label: 'Tema', hint: 'Cambia el estilo del panel', free: true },
+  { id: 'membership', label: 'Membresía', hint: 'Planes y precios', free: true },
 ];
 
 // Los eventos van agrupados por lo que hacen, para que alguien nuevo
@@ -21,25 +22,25 @@ const EVENT_GROUPS = [
   {
     title: 'Juegos para tu directo',
     items: [
-      { id: 'king', label: 'Rey del Trono', icon: '👑', hint: 'Quien regala último se queda con el trono' },
-      { id: 'zub', label: 'Zubastinis', icon: '🏆', hint: 'Gana quien más monedas regale' },
-      { id: 'elim', label: 'Eliminación', icon: '💀', hint: 'Los participantes van saliendo hasta que queda uno' },
-      { id: 'roulette', label: 'Ruleta', icon: '🎡', hint: 'Sortea un ganador entre los participantes' },
+      { id: 'king', label: 'Rey del Trono', hint: 'Quien regala último se queda con el trono' },
+      { id: 'zub', label: 'Zubastinis', hint: 'Gana quien más monedas regale' },
+      { id: 'elim', label: 'Eliminación', hint: 'Los participantes van saliendo hasta que queda uno' },
+      { id: 'roulette', label: 'Ruleta', hint: 'Sortea un ganador entre los participantes' },
     ],
   },
   {
     title: 'Contadores y metas',
     items: [
-      { id: 'extensible', label: 'Extensible', icon: '⏱️', hint: 'Un tiempo que crece con seguidores y regalos' },
-      { id: 'goal', label: 'Objetivo', icon: '🎯', hint: 'Barra de meta de monedas o seguidores' },
+      { id: 'extensible', label: 'Extensible', hint: 'Un tiempo que crece con seguidores y regalos' },
+      { id: 'goal', label: 'Objetivo', hint: 'Barra de meta de monedas o seguidores' },
     ],
   },
   {
     title: 'Interacción con tu chat',
     items: [
-      { id: 'alerts', label: 'Alertas', icon: '🔔', hint: 'Imagen, sonido y texto cuando llega un regalo' },
-      { id: 'tts', label: 'TTS', icon: '🔊', hint: 'Lee el chat en voz alta' },
-      { id: 'spotify', label: 'Spotify', icon: '🎵', hint: 'Cola de canciones para tu directo' },
+      { id: 'alerts', label: 'Alertas', hint: 'Imagen, sonido y texto cuando llega un regalo' },
+      { id: 'tts', label: 'TTS', hint: 'Lee el chat en voz alta' },
+      { id: 'spotify', label: 'Spotify', hint: 'Cola de canciones para tu directo' },
     ],
   },
 ];
@@ -66,9 +67,9 @@ function ShortcutCard({ icon, label, hint, onClick, locked }) {
       aria-label={locked ? `${label} (requiere iniciar sesión)` : label}
       className="theme-surface p-4 flex flex-col items-start gap-1 text-left hover:opacity-90 hover:-translate-y-0.5 transition-all relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
-      {locked && <span className="absolute top-3 right-3 text-xs" aria-hidden="true">🔒</span>}
-      <span className="text-2xl leading-none" aria-hidden="true">{icon}</span>
-      <span className="text-sm font-black text-white mt-1">{label}</span>
+      {locked && <span className="absolute top-3 right-3 text-[9px] font-bold uppercase tracking-widest text-gray-500">Con licencia</span>}
+      {icon && <NavIcon name={icon} size={22} className="theme-accent-text mb-1" />}
+      <span className="text-sm font-black text-white">{label}</span>
       {hint && <span className="text-[11px] text-gray-500 leading-snug">{hint}</span>}
     </button>
   );
@@ -150,7 +151,7 @@ export default function Dashboard({
     <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 overflow-y-auto gap-8">
       <header className="w-full max-w-4xl flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🏠 Dashboard</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Dashboard</p>
           <h1 className="theme-heading text-2xl font-black">
             {session ? `Hola, @${session.username}` : 'Bienvenido a BenjaApis'}
           </h1>
@@ -211,7 +212,7 @@ export default function Dashboard({
                   <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{step.text}</p>
                   {step.action && !step.done && (
                     <button type="button" onClick={step.action.run} className="theme-btn-primary theme-btn-sm mt-2 font-black uppercase tracking-widest">
-                      {step.action.label} →
+                      {step.action.label}
                     </button>
                   )}
                 </div>
@@ -243,7 +244,7 @@ export default function Dashboard({
             <div className="theme-surface p-4 flex flex-col gap-2">
               <h2 className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">TTS del chat</h2>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-black">{ttsEnabled ? '🔊 Activado' : '🔇 Apagado'}</span>
+                <span className="text-sm font-black">{ttsEnabled ? 'Activado' : 'Apagado'}</span>
                 <button
                   type="button"
                   onClick={onToggleTts}
@@ -295,7 +296,7 @@ export default function Dashboard({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {group.items.map((t) => (
               <ShortcutCard
-                key={t.id} icon={t.icon} label={t.label} hint={t.hint}
+                key={t.id} label={t.label} hint={t.hint}
                 locked={!session}
                 onClick={() => onGoEventTab(t.id)}
               />
@@ -309,7 +310,7 @@ export default function Dashboard({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {SECTION_SHORTCUTS.map((s) => (
             <ShortcutCard
-              key={s.id} icon={s.icon} label={s.label} hint={s.hint}
+              key={s.id} icon={s.id} label={s.label} hint={s.hint}
               locked={!session && !s.free}
               onClick={() => onGoSection(s.id)}
             />

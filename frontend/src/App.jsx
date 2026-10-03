@@ -39,6 +39,7 @@ const Downloader = lazyPanel(() => import('./Downloader'));
 const LicenseManager = lazyPanel(() => import('./LicenseManager'));
 const AdminSystem = lazyPanel(() => import('./AdminSystem'));
 const Membership = lazyPanel(() => import('./Membership'));
+const MercadoPagoCheckout = lazyPanel(() => import('./MercadoPagoCheckout'));
 const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
 const OverlayLink = lazyPanel(() => import('./OverlayLink'));
 
@@ -792,7 +793,9 @@ export default function App() {
       <AudioUnlockBanner enabled={soundEnabled} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <AppSidebar
-        sidebarMode={sidebarMode} onNavigate={setSidebarMode} session={session}
+        /* La pantalla de pago de MercadoPago es parte de Membresía: la barra
+           lateral la marca como tal. */
+        sidebarMode={sidebarMode === 'mpcheckout' ? 'membership' : sidebarMode} onNavigate={setSidebarMode} session={session}
         gameRunning={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
         onEnter={() => goToEventTab('king')} onLogout={logout}
       />
@@ -862,6 +865,10 @@ export default function App() {
         {sidebarMode === 'membership' && (
           <Membership session={session} onSessionUpdate={setSession} onNavigate={setSidebarMode} />
         )}
+        {/* Pago con tarjeta de MercadoPago, en su propia dirección
+            (/membership/mercadopago): se llega desde el botón "Pagar con
+            Mercado Pago" de Membresía, que ya pidió sesión y datos. */}
+        {sidebarMode === 'mpcheckout' && <MercadoPagoCheckout />}
         {sidebarMode === 'legal' && <LegalNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'privacy' && <PrivacyNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'cookies' && <CookiesNotice onNavigate={setSidebarMode} />}

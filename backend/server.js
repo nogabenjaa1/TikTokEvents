@@ -182,7 +182,7 @@ const PLAN_KEY_LABELS = { trial: 'FREE7DAY', day: 'daily', week: 'weekly', month
 // Formato de email valido para el cobro directo (charge).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// El Card Payment Brick a veces devuelve un payment_method_id mas
+// MercadoPago.js (antes el Card Payment Brick, hoy el CardForm) a veces devuelve un payment_method_id mas
 // especifico que la marca generica (ej. "debmaster" para debito
 // Mastercard de ciertos bancos/fintechs como Nubank) aunque el logo
 // mostrado sea el generico -- bug real encontrado en produccion: la
@@ -1908,14 +1908,14 @@ function evaluateOrderStatus(order) {
     const isChallenge = !approved && orderPayment?.status_detail === 'pending_challenge' && !!challengeUrl;
     // "processing"/"action_required" son estados async reales de la Orders
     // API (ver doc oficial) -- se traducen a 'pending' para que el frontend
-    // (que ya sabe mostrar "pago pendiente", ver CardPaymentForm.jsx) no los
+    // (que ya sabe mostrar "pago pendiente", ver MercadoPagoCheckout.jsx) no los
     // confunda con un rechazo.
     const isPending = !approved && !isChallenge && (order.status === 'processing' || order.status === 'action_required');
     return { orderPayment, approved, isChallenge, challengeUrl, isPending };
 }
 
 // ==========================================
-// COBRO DIRECTO (Checkout API + Card Payment Brick) -- unico camino de
+// COBRO DIRECTO (Checkout API + CardForm de MercadoPago.js) -- unico camino de
 // cobro de la plataforma (el checkout hosteado de MercadoPago via
 // Preference API tenia un bug confirmado del lado de ellos --
 // challenge-orchestrator nunca resolvia por un CORS mal configurado en
@@ -1923,12 +1923,12 @@ function evaluateOrderStatus(order) {
 // "Pagar" de SU pagina nunca se habilitaba -- reproducido en dos
 // navegadores distintos, con y sin cuenta de MP -- asi que se elimino ese
 // endpoint en vez de mantenerlo muerto). Aca el comprador nunca sale de
-// este sitio: el Card Payment Brick tokeniza la tarjeta en un iframe de
-// MercadoPago (mismo mecanismo que ya usa CardVerifyForm.jsx para
-// verificar tarjetas sin cobrar) -- a este endpoint solo llega el token,
+// este sitio: el CardForm (pantalla MercadoPagoCheckout.jsx, en
+// /membership/mercadopago) tokeniza la tarjeta en un iframe de
+// MercadoPago -- a este endpoint solo llega el token,
 // nunca el numero de tarjeta real.
 app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, installments, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
+    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
     const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
     if (itemsError) {
         return res.status(400).json({ success: false, error: itemsError });
@@ -2061,6 +2061,11 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                 // precio de pricing.js en partes. "services" porque esto es
                 // una suscripcion digital, no un producto fisico.
                 items: [{
+                    // Checklist de calidad, "ID del item": en la Orders API
+                    // ese dato va en external_code (no en `id`). Código
+                    // estable de lo que se compra (ej. "month",
+                    // "spotify_addon", "month+spotify_addon").
+                    external_code: [planType, diceTier, spotifyAddon ? 'spotify_addon' : null].filter(Boolean).join('+'),
                     title: titleParts.join(' + ') || 'BenjaApis',
                     description: `Suscripción BenjaApis - ${titleParts.join(' + ')}`,
                     category_id: 'services',
@@ -2097,7 +2102,12 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
                             id: normalizedPaymentMethodId,
                             type: cardType,
                             token,
-                            installments: Number(installments) || 1,
+                            // Siempre 1, decidido acá: el formulario no
+                            // ofrece meses (checklist de calidad, "Maximo
+                            // de cuotas") y el select de cuotas que exige el
+                            // CardForm de MercadoPago.js va oculto -- su
+                            // valor nunca se toma del navegador.
+                            installments: 1,
                             // Pedido explicito de MercadoPago (checklist
                             // de calidad, "Descripción-Resumen de
                             // tarjeta") -- confirmado que la Orders API
@@ -2173,7 +2183,7 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
     }
 });
 
-// El frontend llama esto en loop corto (ver CardPaymentForm.jsx) mientras
+// El frontend llama esto en loop corto (ver MercadoPagoCheckout.jsx) mientras
 // el comprador completa el challenge 3DS en el iframe de su banco -- el
 // propio doc de MercadoPago aclara que el evento del iframe solo avisa que
 // el challenge termino, no que el pago ya tiene status final, asi que hay
@@ -2183,6 +2193,13 @@ app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, r
 // devolver nada.
 app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
     const { orderId } = req.params;
+    // Solo IDs de orden de la Orders API ("ORD01..." en vivo, "ORDTST01..." en
+    // pruebas): el valor va dentro de la URL que se pide con el Access Token,
+    // y Express decodifica %2F, así que sin esto se podría hacer que el
+    // servidor consulte otra ruta de api.mercadopago.com.
+    if (typeof orderId !== 'string' || !/^ORD[A-Z0-9]{1,60}$/.test(orderId)) {
+        return res.status(404).json({ success: false, error: 'Orden no encontrada' });
+    }
     try {
         const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${orderId}`, {
             headers: { Authorization: `Bearer ${getMpAccessToken()}` },

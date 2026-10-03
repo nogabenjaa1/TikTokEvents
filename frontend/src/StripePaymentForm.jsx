@@ -7,7 +7,7 @@ const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Intenta de nuevo o 
 const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos en cuanto se confirme.';
 
 // Cobro con el formulario de Checkout de Stripe (Checkout Session con
-// ui_mode 'form') -- segunda forma de pago junto a CardPaymentForm.jsx
+// ui_mode 'form') -- segunda forma de pago junto a MercadoPagoCheckout.jsx
 // (MercadoPago), seleccionable desde Membership.jsx. Stripe dibuja el
 // formulario completo (tarjeta, botón de pagar, guardar tarjeta) dentro de
 // su propio iframe; acá solo se pide la sesión al backend, se monta y, al

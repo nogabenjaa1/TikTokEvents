@@ -61,7 +61,6 @@ function ToastStack({ toasts }) {
           'theme-surface px-4 py-3 text-xs font-bold shadow-lg flex items-center gap-2',
           t.type === 'error' ? 'text-red-700' : 'text-emerald-700',
         ].join(' ')}>
-          <span>{t.type === 'error' ? '⚠️' : '✅'}</span>
           <span>{t.message}</span>
         </div>
       ))}
@@ -443,7 +442,7 @@ export default function LicenseManager({ onSessionInvalid }) {
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🔑 Licencias</p>
+      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Licencias</p>
 
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
@@ -458,7 +457,7 @@ export default function LicenseManager({ onSessionInvalid }) {
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{newKey.key}</code>
             <button onClick={copyKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-              {copied ? '✅ Copiado' : 'Copiar'}
+              {copied ? 'Copiado' : 'Copiar'}
             </button>
           </div>
           <button onClick={() => setNewKey(null)} className="mt-3 text-[11px] text-gray-500 hover:text-gray-300 underline">Cerrar</button>
@@ -514,7 +513,7 @@ export default function LicenseManager({ onSessionInvalid }) {
       <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
         <p className="theme-label text-xs uppercase tracking-widest font-semibold">Precios de licencias</p>
         {prices === null ? (
-          <p className="text-gray-600 text-sm italic">Cargando precios...</p>
+          <SkeletonRows count={3} label="Cargando precios…" />
         ) : (
           <div className="flex flex-col gap-2">
             {/* En pantallas angostas la etiqueta (la más larga es "Complemento
@@ -547,7 +546,7 @@ export default function LicenseManager({ onSessionInvalid }) {
             {historyOpen && (
               <div className="theme-input p-2 mt-1 flex flex-col gap-1 max-h-48 overflow-y-auto">
                 {historyLoading ? (
-                  <p className="text-[10px] text-gray-500 italic">Cargando historial...</p>
+                  <SkeletonRows count={2} height="h-6" label="Cargando historial…" />
                 ) : !priceHistory || priceHistory.length === 0 ? (
                   <p className="text-[10px] text-gray-500 italic">Todavía no hay cambios registrados.</p>
                 ) : priceHistory.map(h => (
@@ -637,20 +636,20 @@ export default function LicenseManager({ onSessionInvalid }) {
                     />
                   )}
                   @{lic.username} {lic.isAdmin && <span className="text-yellow-400 text-[10px] ml-1">ADMIN</span>}
-                  {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">🔓 MULTI-DISPOSITIVO</span>}
-                  {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">🎲 WIN BONUS</span>}
+                  {lic.multiDevice && <span className="text-emerald-400 text-[10px] ml-1">MULTI-DISPOSITIVO</span>}
+                  {lic.diceWinBonusUnlocked && <span className="text-pink-400 text-[10px] ml-1">WIN BONUS</span>}
                   {/* Quién tiene hoy cupo en la app de Spotify de la
                       plataforma: es a quien hay que cargar en User
                       Management del dashboard de Spotify (ver
                       backend/spotify.js). El resto conecta con su propia app. */}
-                  {lic.spotifySharedSlot && <span className="text-green-400 text-[10px] ml-1">🎵 CUPO SPOTIFY</span>}
-                  {lic.spotifyAddon && <span className="text-green-400 text-[10px] ml-1">🎵 COMPLEMENTO</span>}
+                  {lic.spotifySharedSlot && <span className="text-green-400 text-[10px] ml-1">CUPO SPOTIFY</span>}
+                  {lic.spotifyAddon && <span className="text-green-400 text-[10px] ml-1">COMPLEMENTO</span>}
                   {/* A qué cuenta de Spotify está vinculada. El tope de Spotify
                       cuenta cuentas DISTINTAS: dos licencias con la misma cuenta
                       valen un solo lugar, y aquí se ve quién la comparte. */}
                   {lic.spotifyAccount && (
                     <span className="text-green-400 text-[10px] ml-1">
-                      🎵 {lic.spotifyAccount.displayName || 'cuenta vinculada'}{lic.spotifyAccount.ownApp ? ' (app propia)' : ''}
+                      {lic.spotifyAccount.displayName || 'cuenta vinculada'}{lic.spotifyAccount.ownApp ? ' (app propia)' : ''}
                       {lic.spotifyAccount.sharedWith?.length > 0 && ` · misma cuenta que ${lic.spotifyAccount.sharedWith.map(name => `@${name}`).join(', ')}`}
                     </span>
                   )}
@@ -661,7 +660,7 @@ export default function LicenseManager({ onSessionInvalid }) {
               <p className="text-[11px] text-gray-500">creada: {fmtDate(lic.createdAt)} · expira: {lic.expiresAt ? fmtDate(lic.expiresAt) : 'Nunca'}</p>
               <p className="text-[11px] text-gray-600">último login: {fmtDate(lic.lastLoginAt)}</p>
               <p className="text-[11px] text-gray-600">
-                uso — 👑 {lic.kingStarts ?? 0} · 🏆 {lic.zubStarts ?? 0} · 💀 {lic.elimStarts ?? 0}
+                uso — Rey {lic.kingStarts ?? 0} · Zubastinis {lic.zubStarts ?? 0} · Eliminación {lic.elimStarts ?? 0}
                 {lic.lastActiveAt ? <> · última actividad: {fmtDate(lic.lastActiveAt)}</> : null}
               </p>
               {lic.licenseType === 'trial' && (
@@ -673,7 +672,7 @@ export default function LicenseManager({ onSessionInvalid }) {
               <div className="flex flex-wrap items-center gap-3 mt-1">
                 <button type="button" onClick={() => openEditor(lic)} aria-expanded={editingId === lic.id}
                   className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest">
-                  {editingId === lic.id ? 'Cerrar' : '✏️ Editar'}
+                  {editingId === lic.id ? 'Cerrar' : 'Editar'}
                 </button>
               </div>
 

@@ -19,7 +19,7 @@ function GiftRow({ entry, valueLabel, onRemove }) {
       {entry.giftIcon ? (
         <img src={entry.giftIcon} className="w-8 h-8 object-contain flex-shrink-0" />
       ) : (
-        <span className="w-8 h-8 flex items-center justify-center text-xl flex-shrink-0" role="img" aria-label="Regalo">🎁</span>
+        <span className="w-8 h-8 rounded-lg flex-shrink-0 theme-input" role="img" aria-label="Regalo sin imagen" />
       )}
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-white truncate">{entry.giftName}</p>
@@ -157,7 +157,7 @@ export default function Versus({ state, socket, username, connectionStatus, gift
       <div className="w-full max-w-4xl">
         <div className="flex items-center gap-3 mb-2">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">⚔️ VERSUS</h1>
+          <h1 className="theme-heading text-2xl font-semibold tracking-wide">VERSUS</h1>
         </div>
         <HowItWorks storageKey="versus">
           <p>Asigna regalos a <span className="font-bold text-white">héroes</span> y a <span className="font-bold text-white">villanos</span>, cada uno con su propia acción — el overlay muestra la imagen, la acción y cuántos van llegando de cada uno.</p>
@@ -178,14 +178,14 @@ export default function Versus({ state, socket, username, connectionStatus, gift
           ) : (
             <>
               <button onClick={state.paused ? resumeVersus : pauseVersus} className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all">
-                {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
               <button onClick={restartVersus} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all">
                 REINICIAR ⟲
               </button>
             </>
           )}
-          <button onClick={stopVersus} className="theme-btn-danger theme-btn-lg font-bold transition-all">⏹</button>
+          <button onClick={stopVersus} className="theme-btn-danger theme-btn-lg font-bold transition-all">DETENER</button>
         </div>
         {state.isActive && (
           <p className="text-[11px] text-gray-500 mt-3">
@@ -214,17 +214,17 @@ export default function Versus({ state, socket, username, connectionStatus, gift
           <button type="button" onClick={saveSettings} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest">
             Guardar ajustes
           </button>
-          {settingsSaved && <span className="text-[11px] font-bold text-green-400">✅ Guardado</span>}
+          {settingsSaved && <span className="text-[11px] font-bold text-green-400">Guardado</span>}
         </div>
       </section>
 
       <div className="w-full max-w-4xl flex flex-col sm:flex-row gap-4">
         <GiftSideEditor
-          title={`🦸 ${heroLabel || 'HÉROES'}`} kind="hero" mode="action"
+          title={heroLabel || 'HÉROES'} kind="hero" mode="action"
           list={heroes} siblingList={villains} giftsList={giftsList} cap={BASE_LIST_CAP} socket={socket}
         />
         <GiftSideEditor
-          title={`🦹 ${villainLabel || 'VILLANOS'}`} kind="villain" mode="action"
+          title={villainLabel || 'VILLANOS'} kind="villain" mode="action"
           list={villains} siblingList={heroes} giftsList={giftsList} cap={BASE_LIST_CAP} socket={socket}
         />
       </div>
@@ -232,11 +232,11 @@ export default function Versus({ state, socket, username, connectionStatus, gift
       {linkEnabled && (
         <div className="w-full max-w-4xl flex flex-col sm:flex-row gap-4">
           <GiftSideEditor
-            title={`⏱️ ${heroLabel || 'HÉROES'} (Extensible)`} kind="ext_hero" mode="seconds"
+            title={`${heroLabel || 'HÉROES'} (Extensible)`} kind="ext_hero" mode="seconds"
             list={extHeroes} siblingList={extVillains} giftsList={giftsList} cap={EXT_LIST_CAP} socket={socket}
           />
           <GiftSideEditor
-            title={`⏱️ ${villainLabel || 'VILLANOS'} (Extensible)`} kind="ext_villain" mode="seconds"
+            title={`${villainLabel || 'VILLANOS'} (Extensible)`} kind="ext_villain" mode="seconds"
             list={extVillains} siblingList={extHeroes} giftsList={giftsList} cap={EXT_LIST_CAP} socket={socket}
           />
         </div>

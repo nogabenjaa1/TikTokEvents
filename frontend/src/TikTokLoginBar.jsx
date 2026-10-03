@@ -21,9 +21,6 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
     <div className="flex flex-col gap-2">
       <div className="flex justify-between items-center">
         <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Usuario de TikTok</label>
-        {connectionStatus === 'checking' && <span className="text-[10px] text-yellow-400 animate-pulse">Buscando...</span>}
-        {connectionStatus === 'error'     && <span className="text-[10px] text-red-400 font-bold">❌</span>}
-        {(verifying || live)              && <span className="text-[10px] text-green-400 font-bold">✅</span>}
       </div>
       <input
         className={`theme-input w-full p-2.5 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { describePurchase, formatWhen, mxn, providerLabel, reasonLabel } from '../systemFormat';
 import { adminRequest, useAdminData } from './api';
 import { Badge, EmptyNote, PanelBar } from './ui';
+import { SkeletonRows } from '../PanelHelp';
 
 const RANGES = [7, 14, 30];
 
@@ -64,10 +65,10 @@ export default function SystemPayments({ onUnauthorized }) {
 
       {error && <p role="alert" className="theme-notice">{error}</p>}
       {notice && <p role="status" className={`theme-notice ${notice.tone === 'success' ? 'theme-notice-success' : ''}`}>{notice.text}</p>}
-      {!report && !error && <p className="text-sm text-gray-500 italic">Cargando…</p>}
+      {!report && !error && <SkeletonRows count={3} height="h-20" label="Cargando pagos…" />}
 
       {report && (
-        <>
+        <div className="tkc-reveal contents">
           <div className="flex flex-col gap-2">
             <h3 className="text-xs font-black uppercase tracking-widest">Pagos cobrados que no se aplicaron ({report.failures.length})</h3>
             {report.failures.length === 0 && <EmptyNote>Todo al día: no hay pagos pendientes.</EmptyNote>}
@@ -152,7 +153,7 @@ export default function SystemPayments({ onUnauthorized }) {
               </details>
             )}
           </div>
-        </>
+        </div>
       )}
     </section>
   );

@@ -63,11 +63,11 @@ const TEST_TEXT_DEFAULT = 'Así se va a escuchar tu voz del chat.';
 // de ahí varias voces dejan de entenderse — pedido explícito de evitar esa
 // distorsión.
 const EFFECT_PRESETS = {
-  normal:  { label: 'Normal',  emoji: '🎙️', pitch: 1,    rate: 1,    volume: 1,    hint: 'La voz tal cual, sin modificar.' },
-  helio:   { label: 'Helio',   emoji: '🎈', pitch: 1.4,  rate: 1.15, volume: 1,    hint: 'Aguda pero se entiende — más arriba de esto varias voces se distorsionan.' },
-  grave:   { label: 'Grave',   emoji: '🗿', pitch: 0.6,  rate: 0.9,  volume: 1,    hint: 'Más grave y pausada.' },
-  rapido:  { label: 'Rápido',  emoji: '⚡', pitch: 1,    rate: 1.6,  volume: 1,    hint: 'Lee más rápido, mismo tono.' },
-  susurro: { label: 'Susurro', emoji: '🤫', pitch: 0.9,  rate: 0.85, volume: 0.35, hint: 'Volumen bajo y ritmo pausado, para momentos especiales.' },
+  normal:  { label: 'Normal',  pitch: 1,    rate: 1,    volume: 1,    hint: 'La voz tal cual, sin modificar.' },
+  helio:   { label: 'Helio',   pitch: 1.4,  rate: 1.15, volume: 1,    hint: 'Aguda pero se entiende — más arriba de esto varias voces se distorsionan.' },
+  grave:   { label: 'Grave',   pitch: 0.6,  rate: 0.9,  volume: 1,    hint: 'Más grave y pausada.' },
+  rapido:  { label: 'Rápido',  pitch: 1,    rate: 1.6,  volume: 1,    hint: 'Lee más rápido, mismo tono.' },
+  susurro: { label: 'Susurro', pitch: 0.9,  rate: 0.85, volume: 0.35, hint: 'Volumen bajo y ritmo pausado, para momentos especiales.' },
 };
 
 // Cola propia (no la interna del navegador): pedido explícito de reducir el
@@ -594,7 +594,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     : !connected
       ? { text: 'Esperando LIVE', cls: 'bg-amber-950/70 border-amber-500/50 text-amber-300' }
       : engineStatus === 'recovered'
-        ? { text: '⚠ Motor recuperado', cls: 'bg-red-950/70 border-red-500/50 text-red-300' }
+        ? { text: 'Motor recuperado', cls: 'bg-red-950/70 border-red-500/50 text-red-300' }
         : { text: '● Al aire', cls: 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' };
 
   return (
@@ -602,7 +602,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
       <div className="max-w-4xl mx-auto">
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>
-            <p className="theme-label text-[10px] uppercase tracking-[0.3em] font-black">🔊 Voz del Live</p>
+            <p className="theme-label text-[10px] uppercase tracking-[0.3em] font-black">Voz del Live</p>
             <h1 className="text-2xl font-black tracking-wide mt-2">TTS</h1>
             <p className="text-sm text-gray-500 mt-2">Lee automáticamente los mensajes autorizados. Los mensajes con @ nunca se reproducen.</p>
           </div>
@@ -637,7 +637,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             {hiddenNotice && <p role="status" className="theme-notice theme-notice-warning mb-4">{hiddenNotice}</p>}
             {settings.enabled && (
               <p className="text-[11px] text-gray-500 leading-snug mb-4">
-                💡 Para que la voz no se pause, mantén esta pestaña visible (por ejemplo en una ventana aparte junto a tu transmisión): los navegadores frenan las pestañas ocultas.
+                Para que la voz no se pause, mantén esta pestaña visible (por ejemplo en una ventana aparte junto a tu transmisión): los navegadores frenan las pestañas ocultas.
               </p>
             )}
 
@@ -756,18 +756,17 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 </div>
               ) : (
                 <div className="text-center">
-                  <div className="text-4xl mb-3 opacity-60">🎙️</div>
                   <p className="text-sm font-bold text-gray-400">Aún no hay mensajes leídos</p>
                   <p className="text-xs text-gray-600 mt-2">El monitor se actualizará cuando un usuario autorizado escriba.</p>
                 </div>
               )}
             </div>
             {engineStatus === 'recovered' && (
-              <p className="text-[10px] text-red-400 font-bold mb-2 text-center">⚠ El motor de voz no respondió a tiempo y se reinició solo.</p>
+              <p className="text-[10px] text-red-400 font-bold mb-2 text-center">El motor de voz no respondió a tiempo y se reinició solo.</p>
             )}
             <div className="flex gap-2">
               <button type="button" onClick={stop} disabled={!queueCount && engineStatus === 'idle'} className="theme-btn-secondary theme-btn-md flex-1 font-black tracking-widest disabled:opacity-40">DETENER Y VACIAR COLA</button>
-              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary theme-btn-md font-black tracking-widest">↻ Reiniciar voz</button>
+              <button type="button" onClick={resetEngine} title="Fuerza un reinicio del motor de voz si algo se traba" className="theme-btn-secondary theme-btn-md font-black tracking-widest">Reiniciar voz</button>
             </div>
           </aside>
         </div>
@@ -782,7 +781,6 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
                 {/* El efecto se elige con un botón de verdad (antes era un div clicable
                     que el teclado no alcanzaba); el ▶ de abajo solo lo escucha. */}
                 <button type="button" onClick={() => applyPreset(key)} aria-pressed={settings.activePreset === key} title={preset.hint} className="w-full flex flex-col items-center gap-1.5 cursor-pointer">
-                  <span className="text-lg leading-none" aria-hidden="true">{preset.emoji}</span>
                   <span className="text-[9px] font-black uppercase tracking-wide text-center">{preset.label}</span>
                 </button>
                 <button
@@ -800,7 +798,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             <Toggle
               checked={settings.randomVoice}
               onChange={(v) => update('randomVoice', v)}
-              label="🎲 Voz aleatoria"
+              label="Voz aleatoria"
               description={`Cada mensaje usa una voz distinta en español (${randomVoicePool(voices).length} disponibles en este navegador), en vez de la fija de abajo.`}
             />
           </div>

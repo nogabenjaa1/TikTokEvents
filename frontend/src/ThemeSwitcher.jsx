@@ -47,7 +47,7 @@ export default function ThemeSwitcher() {
 
       {/* ── Encabezado ── */}
       <div>
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">🎨 TEMA</p>
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">TEMA</p>
         <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
         <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. En computadora pasa el mouse (o usa el teclado) sobre un skin para probarlo antes de confirmarlo; en el celular solo tócalo.</p>
       </div>
@@ -136,7 +136,7 @@ export default function ThemeSwitcher() {
           disabled={!previous}
           className="text-[11px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors flex items-center gap-1.5 py-2"
         >
-          ↩ Volver al anterior
+          Volver al anterior
         </button>
       </div>
 

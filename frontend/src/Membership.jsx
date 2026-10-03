@@ -375,7 +375,7 @@ export default function Membership({ session, onSessionUpdate }) {
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
       <div className="w-full max-w-2xl flex flex-col gap-1">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">💳 Membresía</p>
+        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Membresía</p>
         <h1 className="theme-heading text-2xl font-black">{session ? 'Tu plan y tus pagos' : 'Elige cómo empezar'}</h1>
         <p className="text-xs text-gray-500">
           {session
@@ -392,9 +392,9 @@ export default function Membership({ session, onSessionUpdate }) {
           banner === 'success' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600'
             : banner === 'pending' ? 'bg-amber-500/10 border-amber-500/40 text-amber-600'
             : 'bg-red-500/10 border-red-500/40 text-red-700'].join(' ')}>
-          {banner === 'success' && '✅ ¡PAGO APROBADO! TU LICENCIA YA SE ACTUALIZÓ.'}
-          {banner === 'pending' && '⏳ TU PAGO ESTÁ PENDIENTE DE APROBACIÓN — SE APLICA SOLO APENAS SE CONFIRME.'}
-          {banner === 'failure' && '❌ EL PAGO NO SE PUDO COMPLETAR. PUEDES INTENTAR DE NUEVO CUANDO QUIERAS.'}
+          {banner === 'success' && '¡PAGO APROBADO! TU LICENCIA YA SE ACTUALIZÓ.'}
+          {banner === 'pending' && 'TU PAGO ESTÁ PENDIENTE DE APROBACIÓN — SE APLICA SOLO APENAS SE CONFIRME.'}
+          {banner === 'failure' && 'EL PAGO NO SE PUDO COMPLETAR. PUEDES INTENTAR DE NUEVO CUANDO QUIERAS.'}
         </div>
       )}
 
@@ -466,7 +466,7 @@ export default function Membership({ session, onSessionUpdate }) {
         <div className="theme-surface w-full max-w-2xl p-6 flex flex-col gap-4">
           {trialResult ? (
             <div className="flex flex-col gap-3">
-              <p role="status" className="theme-label text-xs uppercase tracking-widest font-semibold">⚠️ Guarda tu clave ahora</p>
+              <p role="status" className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave ahora</p>
               <p className="text-[11px] text-gray-500">
                 Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
                 plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
@@ -638,12 +638,12 @@ export default function Membership({ session, onSessionUpdate }) {
               <button type="button" onClick={() => setPaymentProvider('stripe')}
                 className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
                   paymentProvider === 'stripe' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
-                💳 Tarjeta de crédito/débito (Stripe)
+                Tarjeta de crédito/débito (Stripe)
               </button>
               <button type="button" onClick={() => setPaymentProvider('mercadopago')}
                 className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
                   paymentProvider === 'mercadopago' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
-                💳 Tarjeta de crédito/débito (MercadoPago)
+                Tarjeta de crédito/débito (MercadoPago)
               </button>
             </div>
           </div>
@@ -740,7 +740,7 @@ export default function Membership({ session, onSessionUpdate }) {
           <p className="theme-label text-[10px] mb-3">Complementos</p>
           <div className={`theme-surface p-4 flex items-center justify-between flex-wrap gap-3 ${canBuyAddon ? 'ring-2 ring-[var(--accent)]' : ''}`}>
             <div className="min-w-0 flex-1 basis-64">
-              <p className="text-xs font-black uppercase tracking-widest">🎵 Spotify · pago único</p>
+              <p className="text-xs font-black uppercase tracking-widest">Spotify · pago único</p>
               <p className="text-2xl font-black mt-1">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
               <p className="text-[10px] text-gray-400 leading-snug mt-1">
                 Pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded">!play</code>. Se paga una sola vez y queda en tu licencia:
@@ -796,12 +796,12 @@ export default function Membership({ session, onSessionUpdate }) {
                     /api/pricing (sin número si un backend anterior no lo manda). */}
                 <p className="text-[10px] text-gray-400 leading-snug mt-2">
                   {plan.id === 'lifetime' && (
-                    <>🎵 Incluye Spotify. {spotifySlots ? `Los ${spotifySlots.total} primeros Lifetime usan` : 'Los primeros Lifetime usan'} la app de Spotify de la plataforma
+                    <>Incluye Spotify. {spotifySlots ? `Los ${spotifySlots.total} primeros Lifetime usan` : 'Los primeros Lifetime usan'} la app de Spotify de la plataforma
                       {spotifySlotsLeft != null && (spotifySlotsLeft > 0 ? ` (quedan ${spotifySlotsLeft} de ${spotifySlots.total})` : ' (cupos agotados)')};
                       el resto conecta con su propia app de Spotify, con guía paso a paso.</>
                   )}
-                  {plan.id === 'annual' && <>🎵 Incluye Spotify: conectas con tu propia app de Spotify, con guía paso a paso.</>}
-                  {plan.id === 'month' && <>🎵 Spotify es opcional: complemento de pago único (MX${spotifyAddonMxn.toLocaleString('es-MX')}).</>}
+                  {plan.id === 'annual' && <>Incluye Spotify: conectas con tu propia app de Spotify, con guía paso a paso.</>}
+                  {plan.id === 'month' && <>Spotify es opcional: complemento de pago único (MX${spotifyAddonMxn.toLocaleString('es-MX')}).</>}
                 </p>
                 <div className="flex-1" />
                 {isCurrent ? (

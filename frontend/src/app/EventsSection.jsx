@@ -4,6 +4,7 @@ import Login from '../Login';
 import ScrollRow from '../ScrollRow';
 import SystemHealth from '../SystemHealth';
 import MobileOverlayPreview from './MobileOverlayPreview';
+import ViewEnter from './ViewEnter';
 import { EVENT_TABS, EVENT_TAB_GROUP_STARTS } from './navigation';
 
 const AdminPanel = lazyPanel(() => import('../AdminPanel'));
@@ -45,7 +46,6 @@ export default function EventsSection({
               'bg-transparent border-transparent',
             ].join(' ')}
           >
-            <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
             <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
               {t.label}
             </span>
@@ -60,7 +60,7 @@ export default function EventsSection({
           se mueve: su indicador ya se desliza). TTS con sesión no va acá: su
           panel vive siempre montado en App.jsx y anima por su cuenta. */}
       {(eventsTab !== 'tts' || needsAccess('tts')) && (
-      <div key={eventsTab} className="tkc-view-enter">
+      <ViewEnter key={eventsTab}>
 
       {eventsTab === 'king' && (
         needsAccess('king') ? (
@@ -183,7 +183,7 @@ export default function EventsSection({
       {eventsTab === 'tts' && needsAccess('tts') && (
         <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={onGoMembership} notice="Necesitas una licencia o una prueba gratis para usar TTS." />
       )}
-      </div>
+      </ViewEnter>
       )}
     </>
   );

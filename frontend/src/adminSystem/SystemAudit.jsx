@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { actionLabel, describeDetails, describeTarget, formatDateTime, formatWhen } from '../systemFormat';
 import { adminRequest, useAdminData } from './api';
 import { EmptyNote, PanelBar } from './ui';
+import { SkeletonRows } from '../PanelHelp';
 
 const PAGE_SIZE = 50;
 
@@ -47,7 +48,7 @@ export default function SystemAudit({ onUnauthorized }) {
         hint="Lo que se hizo desde este panel, lo más nuevo primero. No guarda claves. Se conserva un año."
       />
       {(error || moreError) && <p role="alert" className="theme-notice">{moreError || error}</p>}
-      {!data && !error && <p className="text-sm text-gray-500 italic">Cargando…</p>}
+      {!data && !error && <SkeletonRows count={5} label="Cargando historial…" />}
       {data && entries.length === 0 && <EmptyNote>Todavía no hay acciones registradas.</EmptyNote>}
 
       <ul className="flex flex-col gap-2">

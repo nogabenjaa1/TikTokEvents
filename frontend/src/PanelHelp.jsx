@@ -19,7 +19,7 @@ export function HowItWorks({ storageKey, children }) {
   };
   return (
     <details open={open} onToggle={onToggle} className="theme-input mb-6 px-4 py-3">
-      <summary className="cursor-pointer text-[11px] font-black uppercase tracking-widest theme-accent-text">💡 ¿Cómo funciona?</summary>
+      <summary className="cursor-pointer text-[11px] font-black uppercase tracking-widest theme-accent-text">¿Cómo funciona?</summary>
       <div className="mt-2 text-xs text-gray-400 leading-relaxed space-y-2">{children}</div>
     </details>
   );
@@ -46,13 +46,27 @@ export function StartRequirement({ connectionStatus, active, error }) {
   );
 }
 
-// Marcador de posición mientras cargan listas (alertas, licencias): filas
-// grises que laten en lugar de un texto suelto "Cargando...".
-export function SkeletonRows({ count = 3, label = 'Cargando...' }) {
+// Marcadores de carga (ver .tkc-skeleton en index.css): bloques del color de
+// los campos que laten despacio con la forma aproximada de lo que viene, en
+// lugar de un texto suelto "Cargando...". Cuando llega el dato, lo que lo
+// reemplaza sube con .tkc-reveal.
+export function SkeletonRows({ count = 3, label = 'Cargando...', height = 'h-12' }) {
   return (
-    <div role="status" aria-label={label} className="flex flex-col gap-2">
+    <div role="status" aria-label={label} className="tkc-skeleton flex flex-col gap-2">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="theme-input h-12 animate-pulse opacity-60" />
+        <div key={i} className={`tkc-skeleton-block ${height}`} style={{ animationDelay: `${i * 120}ms` }} />
+      ))}
+      <span className="sr-only">{label}</span>
+    </div>
+  );
+}
+
+// Grilla de cifras (Sistema, resumen del negocio).
+export function SkeletonKpis({ count = 4, label = 'Cargando...', className = 'grid grid-cols-2 md:grid-cols-4 gap-2' }) {
+  return (
+    <div role="status" aria-label={label} className={`tkc-skeleton ${className}`}>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="tkc-skeleton-block h-20" style={{ animationDelay: `${i * 120}ms` }} />
       ))}
       <span className="sr-only">{label}</span>
     </div>

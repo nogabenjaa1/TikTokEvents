@@ -187,7 +187,7 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
         </>
       )}
       <p className="text-[9px] text-gray-500 text-center flex items-center justify-center gap-1">
-        🔒 Pago 100% seguro procesado por <strong>Stripe</strong>
+        Pago 100% seguro procesado por <strong>Stripe</strong>
       </p>
     </div>
   );

@@ -15,6 +15,8 @@ import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, clearSession, buildAuthenticatedSocket, logoutSession } from './auth';
 import AppSidebar from './app/AppSidebar';
+import ViewEnter from './app/ViewEnter';
+import NavIcon from './app/NavIcon';
 import EventsSection from './app/EventsSection';
 import OverlayModeView from './app/OverlayModeView';
 import useGiftCatalog from './app/useGiftCatalog';
@@ -753,7 +755,7 @@ export default function App() {
             animación se repita en cada cambio; las secciones ya se montaban
             de cero al elegirlas, así que esto no cambia nada de su estado. */}
         {sidebarMode !== 'events' && (
-        <div key={sidebarMode} className="tkc-view-enter">
+        <ViewEnter key={sidebarMode}>
         {/* Pedido explicito: página principal con accesos directos. Sin
             sesión igual se ve (versión reducida, ver Dashboard.jsx) -- no
             hace falta needsAccess acá porque cada shortcut ya lleva a una
@@ -813,7 +815,7 @@ export default function App() {
         )}
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager onSessionInvalid={handleSessionInvalid} />}
         {sidebarMode === 'system' && session?.isAdmin && <AdminSystem onSessionInvalid={handleSessionInvalid} />}
-        </div>
+        </ViewEnter>
         )}
 
         {sidebarMode === 'events' && (
@@ -865,10 +867,10 @@ export default function App() {
       <div>
         <button
           onClick={() => setSidebarMode('events')}
-          title="Ir a TikTokEvents"
+          title="Ir a TikTokEvents" aria-label="Ir a TikTokEvents"
           className="theme-btn-primary fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
         >
-          🎉
+          <NavIcon name="events" size={24} />
         </button>
       </div>
     )}

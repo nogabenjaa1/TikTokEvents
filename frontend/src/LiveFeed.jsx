@@ -28,7 +28,7 @@ function FeedIcon({ item }) {
       ? <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />
       : <img src={iconSticker} alt="" className="w-7 h-7 object-contain" />;
   } else if (item.icon && !failed) content = <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />;
-  else content = <span className="text-xl leading-none" aria-hidden="true">🎁</span>;
+  else content = <span className="w-8 h-8 rounded-md theme-input" aria-hidden="true" />;
   return (
     <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'color-mix(in oklch, var(--accent) 14%, transparent)' }}>
       {content}
@@ -47,7 +47,7 @@ function FeedMeta({ item, now, compact }) {
         </span>
       )}
       {item.type === 'gift' && item.coins > 0 && (
-        <span className="text-white text-[11px] font-bold flex-shrink-0 whitespace-nowrap">{item.coins.toLocaleString('es-MX')} 🪙</span>
+        <span className="text-white text-[11px] font-bold flex-shrink-0 whitespace-nowrap">{item.coins.toLocaleString('es-MX')} monedas</span>
       )}
       <time className={`text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0 ${compact ? '' : 'w-16 text-right'}`} dateTime={new Date(item.at).toISOString()}>
         {relativeTime(item.at, now)}
@@ -102,7 +102,7 @@ export default function LiveFeed({ feed, connected }) {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-gray-500">
-            {visibleBase.length} {visibleBase.length === 1 ? 'evento' : 'eventos'}{coins > 0 ? ` · ${coins.toLocaleString('es-MX')} 🪙` : ''}
+            {visibleBase.length} {visibleBase.length === 1 ? 'evento' : 'eventos'}{coins > 0 ? ` · ${coins.toLocaleString('es-MX')} monedas` : ''}
           </span>
           {visibleBase.length > 0 && (
             <button type="button" onClick={() => setClearedAt(Date.now())} className="text-[10px] font-bold text-gray-400 hover:text-white underline py-2">
@@ -129,7 +129,6 @@ export default function LiveFeed({ feed, connected }) {
 
       {rows.length === 0 ? (
         <div className="theme-input px-4 py-8 text-center">
-          <p className="text-2xl mb-1" aria-hidden="true">📡</p>
           <p className="text-sm font-bold">
             {visibleBase.length > 0 ? 'No hay nada de este tipo todavía.' : connected ? 'Esperando actividad…' : 'Aquí verás lo que pase en tu directo.'}
           </p>

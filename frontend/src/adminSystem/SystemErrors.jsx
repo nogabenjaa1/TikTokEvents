@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { formatWhen, kindLabel, sourceLabel } from '../systemFormat';
 import { adminRequest, useAdminData } from './api';
 import { Badge, EmptyNote, PanelBar } from './ui';
+import { SkeletonRows } from '../PanelHelp';
 
 const FILTERS = [
   { id: 'all', label: 'Todos' },
@@ -65,7 +66,7 @@ export default function SystemErrors({ onUnauthorized }) {
       </div>
 
       {(error || actionError) && <p role="alert" className="theme-notice">{actionError || error}</p>}
-      {!data && !error && <p className="text-sm text-gray-500 italic">Cargando…</p>}
+      {!data && !error && <SkeletonRows count={4} label="Cargando errores…" />}
       {data && visible.length === 0 && <EmptyNote>No hay errores registrados{filter === 'all' ? '' : ' de este origen'}. Buena señal.</EmptyNote>}
 
       {data && data.last24h && errors.length > 0 && (

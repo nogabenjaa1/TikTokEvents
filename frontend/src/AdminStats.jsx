@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import { SkeletonKpis } from './PanelHelp';
 
 const PLAN_NAMES = {
   day: '1 día', week: '1 semana', month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', trial: 'Prueba',
@@ -68,7 +69,7 @@ export default function AdminStats({ onUnauthorized }) {
   return (
     <section className="theme-surface w-full max-w-lg p-5 flex flex-col gap-4" aria-labelledby="admin-stats-title">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="admin-stats-title" className="theme-label text-xs uppercase tracking-widest font-semibold">📊 Resumen del negocio</h2>
+        <h2 id="admin-stats-title" className="theme-label text-xs uppercase tracking-widest font-semibold">Resumen del negocio</h2>
         <div className="flex items-center gap-3">
           <button type="button" onClick={load} disabled={loading} className="theme-link theme-link-info disabled:opacity-40">
             {loading ? 'Actualizando…' : 'Actualizar'}
@@ -80,10 +81,10 @@ export default function AdminStats({ onUnauthorized }) {
       </div>
 
       {open && error && <p role="alert" className="text-xs font-bold text-red-700">{error}</p>}
-      {open && !stats && !error && <p className="text-sm text-gray-500 italic">Cargando resumen…</p>}
+      {open && !stats && !error && <SkeletonKpis label="Cargando resumen…" className="grid grid-cols-2 gap-2" />}
 
       {open && stats && (
-        <>
+        <div className="tkc-reveal contents">
           <div className="grid grid-cols-2 gap-2">
             <Kpi label="Ingresos del mes" value={mxn(rev.thisMonthCents)} hint={`${rev.thisMonthCount} pago${rev.thisMonthCount === 1 ? '' : 's'} · ${deltaText(rev.thisMonthCents, rev.lastMonthCents)}`} />
             <Kpi label="Licencias activas" value={stats.licenses.active} hint={`de ${stats.licenses.total} (${stats.licenses.expired} vencidas, ${stats.licenses.revoked} revocadas)`} />
@@ -114,8 +115,8 @@ export default function AdminStats({ onUnauthorized }) {
               {Object.entries(stats.licenses.byPlan).sort((a, b) => b[1] - a[1]).map(([plan, count]) => (
                 <span key={plan} className="theme-chip px-2.5 py-1 rounded-full text-[10px] font-bold">{PLAN_NAMES[plan] || plan}: {count}</span>
               ))}
-              {stats.licenses.spotifyAddon > 0 && <span className="theme-chip px-2.5 py-1 rounded-full text-[10px] font-bold">🎵 Con Spotify: {stats.licenses.spotifyAddon}</span>}
-              {stats.licenses.multiDevice > 0 && <span className="theme-chip px-2.5 py-1 rounded-full text-[10px] font-bold">🔓 Multi-dispositivo: {stats.licenses.multiDevice}</span>}
+              {stats.licenses.spotifyAddon > 0 && <span className="theme-chip px-2.5 py-1 rounded-full text-[10px] font-bold">Con Spotify: {stats.licenses.spotifyAddon}</span>}
+              {stats.licenses.multiDevice > 0 && <span className="theme-chip px-2.5 py-1 rounded-full text-[10px] font-bold">Multi-dispositivo: {stats.licenses.multiDevice}</span>}
             </div>
           </div>
 
@@ -149,7 +150,7 @@ export default function AdminStats({ onUnauthorized }) {
               </ul>
             </div>
           )}
-        </>
+        </div>
       )}
     </section>
   );

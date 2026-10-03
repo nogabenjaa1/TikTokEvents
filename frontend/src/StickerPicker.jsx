@@ -14,7 +14,7 @@ import { stickerLabel } from './stickerCatalog';
 function StickerImage({ sticker, size }) {
   const [failed, setFailed] = useState(false);
   if (!sticker?.imageUrl || failed) {
-    return <span className={`${size} flex-shrink-0 flex items-center justify-center text-lg`} aria-hidden="true">🎫</span>;
+    return <span className={`${size} flex-shrink-0 rounded-md theme-input`} aria-hidden="true" />;
   }
   return <img src={sticker.imageUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className={`${size} flex-shrink-0 object-contain`} />;
 }

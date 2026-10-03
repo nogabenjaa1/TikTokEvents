@@ -7,7 +7,6 @@ import { loadDraft, saveDraft } from './gameDraftStorage';
 
 const DRAFT_KEY = 'tkc_zub_draft';
 
-const MEDALS = ['🥇', '🥈', '🥉'];
 
 const MODE_LABEL = {
   main:     'TIEMPO',
@@ -87,7 +86,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
   const noWinnerMessage = state.mode === 'finished' && !state.winner
     ? (state.noWinnerReason === 'minimum'
-        ? `Nadie alcanzó el mínimo de ${state.minCoins} 🪙 — SIN GANADOR`
+        ? `Nadie alcanzó el mínimo de ${state.minCoins} monedas — SIN GANADOR`
         : 'SIN GANADOR — nadie participó')
     : null;
 
@@ -102,15 +101,15 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
         {/* Mínimo configurado, siempre visible arriba */}
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">🏆 ZUBASTINIS</p>
+          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">ZUBASTINIS</p>
           <span className="theme-input text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md text-gray-300">
-            MÍNIMO: {minCoins > 0 ? `${minCoins} 🪙` : 'SIN MÍNIMO'}
+            MÍNIMO: {minCoins > 0 ? `${minCoins} monedas` : 'SIN MÍNIMO'}
           </span>
         </div>
 
         <div className="flex justify-between items-center relative z-10 mb-3">
           {state.mode === 'tiebreak' && (
-            <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 animate-pulse">🤝 EMPATE</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 animate-pulse">EMPATE</span>
           )}
           <div className="text-right ml-auto">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerLabel}</p>
@@ -124,10 +123,10 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
           <div className="flex flex-col gap-2 relative z-10">
             {top3.map((g, i) => (
               <div key={g.username} className="theme-input flex items-center gap-3 px-3 py-2">
-                <span className="text-lg w-6 text-center">{MEDALS[i]}</span>
+                <span className="theme-accent-text text-sm font-black w-6 text-center">{i + 1}</span>
                 <img src={g.avatar} className="w-8 h-8 rounded-full border-2 border-purple-500 object-cover" />
                 <span className="flex-1 font-bold text-gray-100 text-sm truncate">@{g.username}</span>
-                <span className="text-yellow-400 text-xs font-black">{g.coins} 🪙</span>
+                <span className="text-yellow-400 text-xs font-black">{g.coins} monedas</span>
               </div>
             ))}
           </div>
@@ -137,7 +136,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
         {state.mode === 'finished' && (
           <p className={`relative z-10 mt-3 text-center text-sm font-black ${state.winner ? 'text-yellow-300' : 'text-red-400'}`}>
-            {state.winner ? `👑 @${state.winner.username} — ${state.winner.coins} 🪙` : noWinnerMessage}
+            {state.winner ? `@${state.winner.username} — ${state.winner.coins} monedas` : noWinnerMessage}
           </p>
         )}
       </div>
@@ -216,7 +215,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                     disabled={state.mode === 'finished'}
                     className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {state.paused ? 'REANUDAR ▶' : 'PAUSAR ⏸'}
+                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
                   </button>
                   <button
                     onClick={restartZubastinis}
@@ -230,7 +229,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                 onClick={stopZubastinis}
                 className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
-                ⏹
+                DETENER
               </button>
             </div>
           </div>

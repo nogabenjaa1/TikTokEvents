@@ -43,7 +43,7 @@ const VARIANTS = {
 function GiftIcon({ icon }) {
   return icon
     ? <img src={icon} alt="" className="w-6 h-6 flex-shrink-0" />
-    : <span className="w-6 h-6 flex-shrink-0 text-center leading-6" aria-hidden="true">🎁</span>;
+    : <span className="w-6 h-6 flex-shrink-0 rounded-md theme-input" aria-hidden="true" />;
 }
 
 export default function GiftPicker({
@@ -91,7 +91,7 @@ export default function GiftPicker({
               {renderBadge?.(selected)}
             </span>
             {showCoinsChip && selected.coins > 0 && (
-              <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md flex-shrink-0">{selected.coins} 🪙</span>
+              <span className="text-yellow-400 text-xs font-bold bg-yellow-400/10 px-2 py-1 rounded-md flex-shrink-0">{selected.coins} monedas</span>
             )}
           </>
         ) : (
@@ -130,7 +130,7 @@ export default function GiftPicker({
                   <span className={`${v.name} truncate`}>{gift.name}</span>
                   {renderBadge?.(gift)}
                 </div>
-                {gift.coins > 0 && <span className="text-yellow-400 text-xs flex-shrink-0">{gift.coins} 🪙</span>}
+                {gift.coins > 0 && <span className="text-yellow-400 text-xs flex-shrink-0">{gift.coins} monedas</span>}
               </button>
             ))}
           </div>

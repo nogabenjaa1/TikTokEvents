@@ -89,7 +89,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
               className="theme-input flex-1 min-w-0 p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
             />
             <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest flex-shrink-0">
-              {showKey ? '🙈' : '👁️'}
+              {showKey ? 'Ocultar' : 'Ver'}
             </button>
           </div>
 

@@ -73,7 +73,7 @@ export default function PrizeEditor({ socket, prize }) {
   return (
     <div className="theme-surface p-3 mt-4">
       <label className="block text-[10px] uppercase tracking-widest text-emerald-400 mb-2 font-black">
-        🎁 Premio <span className="text-gray-500 normal-case tracking-normal font-semibold">(visible en el overlay, opcional)</span>
+        Premio <span className="text-gray-500 normal-case tracking-normal font-semibold">(visible en el overlay, opcional)</span>
       </label>
       <div className="flex items-center gap-3">
         <button
@@ -89,7 +89,7 @@ export default function PrizeEditor({ socket, prize }) {
             dragOver ? 'border-emerald-400 bg-emerald-900/30' : 'border-gray-600 hover:border-emerald-500',
           ].join(' ')}
         >
-          {image ? <img src={image} alt="Imagen del premio" className="w-full h-full object-cover" /> : <span className="text-lg opacity-50" aria-hidden="true">🖼️</span>}
+          {image ? <img src={image} alt="Imagen del premio" className="w-full h-full object-cover" /> : null}
         </button>
         <input
           type="file" accept="image/*" ref={fileRef} className="hidden"

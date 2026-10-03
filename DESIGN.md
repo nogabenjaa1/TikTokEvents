@@ -341,6 +341,8 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 
 ### Patrones
 - **Entrada de vista** (`.tkc-view-enter`, `.tkc-app-enter`, `.tkc-rise`): fundido con 8px de subida. La app entera al cargar, cada sección al elegirla en la barra lateral, el panel de cada pestaña de Eventos (la barra de pestañas no se mueve: lo que se mueve es su indicador), y las tarjetas sueltas como el login (`.tkc-rise-2`/`-3` escalonan 70ms). Usa `animation-fill-mode: backwards`: el `transform` solo existe mientras corre, así que no cambia dónde se posicionan los modales `fixed` de adentro.
+- **Contenido que sube** (`ViewEnter` + `useStagger`, `.tkc-reveal`): dentro de una vista, cada tarjeta (`.theme-surface`) sube 16px y aparece con `--motion-slow`, una tras otra cada 55ms (con tope de 8 turnos, para que nada espere de más). Una tarjeta que se monta después —porque terminó de cargar su dato— sube enseguida, sin hacer fila. Lo que reemplaza a un marcador de carga va en `<div className="tkc-reveal contents">`: sus hijos suben en orden sin cambiar el layout.
+- **Marcador de carga** (`SkeletonRows`, `SkeletonKpis` en `PanelHelp.jsx`, `.tkc-skeleton`): mientras llega un dato del servidor se muestran bloques del color de los campos (`--surface-bg-alt`, radio del tema) con la forma aproximada de lo que viene, latiendo despacio; aparecen con 120ms de retraso para no parpadear en una respuesta rápida. Nunca un texto suelto "Cargando…". Al abrir el sitio, `index.html` trae su propia pantalla de carga (logo + aro, sin JavaScript) que React reemplaza al montar; el servidor la quita del HTML de los overlays de OBS.
 - **Indicador deslizante** (`NavIndicator`): el fondo del módulo activo viaja con `--motion-base` en posición y tamaño. Al aparecer por primera vez o al cambiar el tamaño de la ventana se coloca directo, sin viajar.
 - **Botón que se transforma** (`MorphButton`, `.tkc-morph`): para toda acción que valida datos contra el servidor (entrar con la clave, verificar la tarjeta de la prueba gratis, guardar la app de Spotify). `idle` es el botón normal a todo el ancho de su contenedor; `loading` se encoge a un círculo del alto del botón con un arco girando; `success` cierra el arco y dibuja una palomita, y se sostiene `MORPH_SUCCESS_HOLD_MS` (650ms) antes de seguir; `error` vuelve a su forma con un vaivén de 5px y el mensaje aparece aparte (`.tkc-msg-enter`). La espera mínima (`MORPH_MIN_LOADING_MS`, 450ms) vale para el éxito y para el error: si el servidor contesta al instante, el cambio de forma no se alcanzaría a ver. Mientras valida el botón no se deshabilita (se vería apagado): el componente que lo usa ignora los clics repetidos.
 - **Punto de estado** (`.tkc-status-dot`): la versión chica del mismo lenguaje para estados que no son un botón (la conexión con TikTok, un panel que se está descargando). Aro sin relleno en reposo, arco girando mientras busca o conecta, punto lleno con un halo que se expande al confirmar. Toma el color de su texto (`currentColor`), así que respeta los colores de estado.
@@ -352,6 +354,16 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 **La Regla del Mismo Color.** El movimiento no trae colores nuevos: el indicador lleva las clases del botón activo de cada material, el botón que se transforma conserva su relleno, y el punto de estado usa el color de su texto. Nada de gradientes, brillos ni neones agregados para "acompañar" una animación.
 
 **La Regla del Menos Movimiento.** Todo lo de esta sección vive dentro de `.themed-panel`, donde `prefers-reduced-motion: reduce` deja las animaciones y transiciones en 0.01ms; `wait()` tampoco espera. Los overlays de OBS quedan fuera a propósito: sus animaciones son parte de lo que ve la audiencia.
+
+## Iconografía
+
+**La interfaz es texto; los íconos son solo para navegar.** Únicamente la barra lateral, los accesos directos del Dashboard a cada sección y el botón flotante de Eventos llevan ícono, y siempre es un ícono de línea de `NavIcon.jsx`: un solo trazo de 1.8px, esquinas redondeadas, dibujado en `currentColor` (sigue al acento, al modo oscuro y al estado activo como cualquier texto). Nada de emojis en títulos, etiquetas, botones, pestañas, avisos ni estados vacíos: el color de estado y el texto ya dicen lo que hace falta.
+
+- **Se quedan** los glifos que son un control: ✕ (cerrar), ✓ (seleccionado o hecho), ✎ (editar, en botones compactos con `aria-label`), ▶ (escuchar una voz). Las flechas → dentro de un texto (precios, rutas de menú) también.
+- **Contenido del juego, no decoración:** los colores de ColorDice (`colorsData.jsx`) y todo lo que se ve en los overlays de OBS siguen como están: es lo que ve la audiencia.
+- **Imagen que falta** (un regalo o sticker sin ícono): un cuadro vacío con el fondo de los campos (`theme-input`), no un emoji de reemplazo.
+- **Posiciones de un ranking:** el número, no una medalla. **Monedas:** la palabra "monedas", no la moneda dibujada.
+- Un ícono nuevo de navegación se agrega a `NavIcon.jsx` con la misma grilla de 24×24 y el mismo trazo.
 
 ## Do's and Don'ts
 
@@ -372,5 +384,6 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 - **Don't** introducir un look plano/neutro tipo "SaaS corporativo" (fondo blanco puro o gris sin teñir, sombras suaves de dashboard B2B) en ningún material, incluidos Kawaii/Cute — el pastel de estos dos SIEMPRE lleva el matiz del acento activo (`oklch(from var(--accent)...)`), nunca un gris o blanco neutro; "claro" no es lo mismo que "sin color".
 - **Don't** usar el color de acento para estados de negocio (premio, error, aviso) — esos ya tienen su propio color fijo; mezclar los dos sistemas rompe la lectura rápida en medio de un live.
 - **Don't** agregar una quinta familia tipográfica o romper la regla de "una sola fuente, jerarquía por peso/tracking" sin decisión explícita.
+- **Don't** poner emojis en el copy del panel (títulos, etiquetas, botones, avisos): ver Iconografía.
 - **Don't** escribir duraciones o curvas sueltas (`transition: all 0.5s`) en una animación nueva: salen de los tokens `--motion-*` / `--ease-*-soft`.
 - **Don't** usar bounce/elastic easing en transiciones nuevas (incluidos Cute y Kawaii) — la calidez del material viene de la forma, el punteado/relleno pastel y el glow, nunca de una animación con rebote.

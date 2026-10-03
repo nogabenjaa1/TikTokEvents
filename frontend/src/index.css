@@ -1098,3 +1098,41 @@ select:disabled { cursor: not-allowed; }
 
 /* Mensajes que aparecen debajo de un campo (error, aviso): entran sin saltar. */
 .tkc-msg-enter { animation: tkc-view-in var(--motion-base) var(--ease-out-soft) backwards; }
+
+/* ---- Contenido que sube al aparecer ----
+   Las tarjetas (.theme-surface) de una vista suben 16px y aparecen, una tras
+   otra (Stagger.jsx les pone --tkc-i en el orden en que aparecen: 55ms entre
+   cada una, con tope para que nada espere de más). Una tarjeta que se monta
+   después —porque terminó de cargar su dato— sube igual, sin retraso. */
+@keyframes tkc-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+.tkc-view-enter .theme-surface,
+.tkc-reveal > * {
+  animation: tkc-slide-up var(--motion-slow) var(--ease-out-soft) backwards;
+  animation-delay: calc(min(var(--tkc-i, 0), 8) * 55ms);
+}
+/* Las barras flotantes de ColorDice son `fixed` en escritorio: no se mueven. */
+.tkc-view-enter .theme-surface[class*="md:fixed"] { animation-name: tkc-fade-in; }
+
+/* Marcador de carga: bloques del color de los campos que laten despacio, con
+   la forma aproximada de lo que viene. Aparece con un pequeño retraso, así en
+   una respuesta rápida no parpadea. */
+@keyframes tkc-skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.8; }
+}
+.tkc-skeleton {
+  animation: tkc-fade-in var(--motion-base) ease 120ms backwards;
+}
+.tkc-skeleton-block {
+  background: var(--surface-bg-alt);
+  border-radius: var(--surface-radius-sm);
+  animation: tkc-skeleton-pulse 1.4s var(--ease-in-out-soft) infinite;
+}
+/* Lo que reemplaza a un marcador de carga sube en orden, un poco escalonado. */
+.tkc-reveal > :nth-child(2) { animation-delay: 55ms; }
+.tkc-reveal > :nth-child(3) { animation-delay: 110ms; }
+.tkc-reveal > :nth-child(4) { animation-delay: 165ms; }
+.tkc-reveal > :nth-child(n+5) { animation-delay: 220ms; }

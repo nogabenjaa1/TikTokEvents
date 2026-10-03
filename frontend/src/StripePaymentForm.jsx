@@ -73,7 +73,11 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
       formRef.current = await mountCheckoutForm({
         clientSecret: data.clientSecret,
         container: containerRef.current,
-        defaultValues: { email },
+        // Sin defaultValues.email a propósito: la sesión ya trae el correo por
+        // su `customer` (ver /api/payments/stripe/checkout-session) y Stripe
+        // rechaza el formulario completo si se intenta poner otro
+        // ("You cannot update the email because a customer_email or customer
+        // with an email is already set") -- error real en producción.
         onReady: () => setLoading(false),
         onLoadError: (error) => {
           setLoading(false);

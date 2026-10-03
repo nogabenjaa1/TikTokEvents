@@ -76,12 +76,12 @@ export function reportStripeError(context, error) {
 // sacarlo del sitio (redirect 'if_required': el 3DS va en un modal) y
 // devuelve { type: 'success' | 'error', ... }. Devuelve el formulario (para
 // destroy()) o lanza si Stripe.js no se pudo iniciar.
-export async function mountCheckoutForm({ clientSecret, container, defaultValues, onReady, onLoadError, onConfirm }) {
+export async function mountCheckoutForm({ clientSecret, container, onReady, onLoadError, onConfirm }) {
   const stripe = await getStripePromise();
   if (!stripe || typeof stripe.initCheckoutFormSdk !== 'function' || !container) {
     throw new Error('Stripe.js no disponible');
   }
-  const checkout = stripe.initCheckoutFormSdk({ clientSecret, appearance: CHECKOUT_APPEARANCE, defaultValues });
+  const checkout = stripe.initCheckoutFormSdk({ clientSecret, appearance: CHECKOUT_APPEARANCE });
   const form = checkout.createForm({ layout: 'expanded' });
   form.on('ready', () => onReady?.());
   form.on('loaderror', (event) => onLoadError?.(event?.error || { message: 'loaderror' }));

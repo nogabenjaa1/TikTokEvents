@@ -1,6 +1,11 @@
 # Stripe: formulario de Checkout embebido
 
-El pago con tarjeta de Stripe dejó de usar el Payment Element con un PaymentIntent. Ahora usa el **formulario de Checkout** de Stripe: una Checkout Session con `ui_mode: 'form'` que se muestra dentro de la página de Membresía. MercadoPago no cambió.
+Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session con `ui_mode: 'form'`), con la misma versión, la misma apariencia y el mismo código de montaje ([frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js)):
+
+- **Cobro** de planes y addons: sesión en modo `payment`.
+- **Verificación de tarjeta de la prueba gratis**: sesión en modo `setup`, sin cobro.
+
+MercadoPago no cambió.
 
 ## Valores por reemplazar
 
@@ -34,7 +39,7 @@ Vienen de Checkout Studio y ya están puestos tal cual.
 | submit_type | `auto` |
 | saved_payment_method_options | `{ payment_method_save: 'enabled' }` |
 | integration_identifier | `custom_embedded_web_0001` |
-| Versión de API (solo en las llamadas de Checkout Sessions) | `2026-03-25.dahlia; custom_checkout_payment_form_preview=v1` |
+| Versión de API (solo en las llamadas de Checkout Sessions, cobro y verificación) | `2026-03-25.dahlia; custom_checkout_payment_form_preview=v1` |
 | Beta en el navegador | `custom_checkout_payment_form_1` |
 | Apariencia | `flat`, etiquetas `auto`, inputs `condensed`, colores de Checkout Studio |
 
@@ -44,7 +49,31 @@ Además, por cómo funciona el sitio:
 - `customer`: hay un cliente de Stripe por licencia, para que "guardar tarjeta" sirva en la siguiente compra de esa misma licencia. Se busca por la licencia y no por el correo, porque el correo lo escribe cualquiera sin verificarlo.
 - `payment_intent_data.metadata`: con estos datos el webhook, la conciliación de Sistema y el registro de pagos siguen funcionando igual que antes.
 
+## Verificación de tarjeta (prueba gratis)
+
+**Archivos:**
+- [backend/server.js](backend/server.js): `POST /api/free-trial/checkout-session` y `POST /api/free-trial`
+- [frontend/src/CardVerifyForm.jsx](frontend/src/CardVerifyForm.jsx)
+
+| Parámetro | Valor |
+|-----------|-------|
+| ui_mode | `form` |
+| mode | `setup` (no cobra nada) |
+| currency | `mxn` |
+| payment_method_types | `['card']` |
+| billing_address_collection | `auto` |
+| phone_number_collection | `{ enabled: false }` |
+| integration_identifier | `custom_embedded_web_0001` |
+
+En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_method_options`, y Stripe los rechaza. En el modo setup de Checkout, Stripe muestra su texto de autorización de cobros futuros, y no se puede quitar. Aun así, la tarjeta nunca se cobra ni se guarda en un cliente. El backend pide la sesión a Stripe, exige que esté completa y en modo `setup`, y guarda el fingerprint de la tarjeta para que no se use en dos pruebas gratis.
+
 ## Pasos pendientes
+
+0. **Comprueba que tu cuenta acepte el modo setup del formulario** antes de subir este cambio. El modo payment ya está comprobado. Cambia `TU_LLAVE` por tu llave secreta; si la respuesta trae `"id": "cs_..."`, funciona:
+
+   ```bash
+   curl https://api.stripe.com/v1/checkout/sessions -u "TU_LLAVE:" -H "Stripe-Version: 2026-03-25.dahlia; custom_checkout_payment_form_preview=v1" -d ui_mode=form -d mode=setup -d currency=mxn -d "payment_method_types[]=card" -d integration_identifier=custom_embedded_web_0001 -d "return_url=https://benjaapis.dev/?s={CHECKOUT_SESSION_ID}"
+   ```
 
 1. **Pide a Stripe la beta del formulario de Checkout.** `ui_mode: 'form'` y `initCheckoutFormSdk` son una vista previa. Si tu cuenta no la tiene, Stripe rechaza la sesión y el panel muestra "No se pudo iniciar el pago". Se solicita en https://support.stripe.com. Mientras tanto, MercadoPago sigue disponible.
 2. **Variables de entorno.** Son las mismas de antes:
@@ -66,7 +95,7 @@ Además, por cómo funciona el sitio:
 4. `POST /api/payments/stripe/confirm` vuelve a pedir la sesión a Stripe, comprueba que sea de esa licencia y aplica la compra con el ID del PaymentIntent.
 5. Si el navegador se cierra antes, el webhook `payment_intent.succeeded` aplica la compra. Nunca se cobra ni se aplica dos veces: los pagos tienen un UNIQUE por ese ID.
 
-No se creó ningún archivo nuevo de código. Cambiaron `backend/server.js` (rutas de Stripe) y `frontend/src/StripePaymentForm.jsx`. La ruta vieja `/api/payments/stripe/intent` se quitó.
+Cambiaron `backend/server.js` (rutas de Stripe), `frontend/src/StripePaymentForm.jsx` y `frontend/src/CardVerifyForm.jsx`. Lo común quedó en `frontend/src/stripeCheckout.js`. Se quitaron las rutas viejas `/api/payments/stripe/intent` y `/api/free-trial/setup-intent`, y la dependencia `@stripe/react-stripe-js`, que ya no se usa.
 
 ## Siguientes pasos
 

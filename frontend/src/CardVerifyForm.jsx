@@ -1,129 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { backendUrl, requestFreeTrial } from './auth';
-import MorphButton from './MorphButton';
 import { MORPH_SUCCESS_HOLD_MS, wait } from './motion';
+import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError, LOAD_ERROR_MESSAGE } from './stripeCheckout';
 
-// Mismo motivo que en StripePaymentForm.jsx: un solo script de Stripe.js
-// por carga de página, no uno por cada vez que se abre este formulario.
-let stripePromise = null;
-function getStripePromise() {
-  if (!stripePromise) {
-    const publicKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-    stripePromise = publicKey ? loadStripe(publicKey) : Promise.resolve(null);
-  }
-  return stripePromise;
-}
-
-// Mismo criterio que StripePaymentForm.jsx: pegar el `decline_code` (ej.
-// "do_not_honor") al mensaje genérico de Stripe -- es el dato que explica
-// POR QUÉ se rechazó, sin tener que ir a buscarlo al dashboard.
-function friendlyDeclineMessage(error) {
-  const message = error?.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.';
-  if (error?.decline_code) {
-    return `${message.replace(/\.?\s*$/, '')}: ${error.decline_code}`;
-  }
-  return message;
-}
-
-// Pedido explícito: Stripe.js resuelve confirmSetup DIRECTO en el
-// navegador, así que un rechazo nunca toca este backend por su cuenta --
-// sin esto no quedaba ningún rastro en los logs del servidor para poder
-// diagnosticarlo después (antes había que ir a buscarlo a mano en
-// devtools). Best-effort: si falla el propio reporte, no afecta el flujo.
-function reportStripeError(error) {
-  fetch(`${backendUrl()}/api/stripe/client-error`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context: 'free-trial-verify', error }),
-  }).catch(() => {});
-}
-
-// Tiene que vivir DENTRO de <Elements> -- useStripe()/useElements() leen el
-// contexto que arma <Elements> (ver el export default de más abajo).
-function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, submitting, setSubmitting, error, setError, onResult }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [verified, setVerified] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (submitting || !stripe || !elements || !alias.trim() || !cardholderName.trim()) return;
-    setSubmitting(true);
-    setError('');
-    try {
-      // redirect: 'if_required' evita sacar al streamer de este sitio --
-      // Stripe.js igual muestra su propio modal embebido si el banco exige
-      // 3DS (justo lo que hace que esta verificación sea más fuerte que el
-      // simple chequeo de Luhn que hacía MercadoPago antes acá).
-      const { error: stripeError, setupIntent } = await stripe.confirmSetup({
-        elements,
-        redirect: 'if_required',
-        confirmParams: {
-          payment_method_data: { billing_details: { name: cardholderName.trim() } },
-        },
-      });
-      if (stripeError) {
-        setError(friendlyDeclineMessage(stripeError));
-        reportStripeError(stripeError);
-        return;
-      }
-      if (!setupIntent || setupIntent.status !== 'succeeded') {
-        setError('La tarjeta no pasó la verificación de seguridad. Intenta de nuevo.');
-        return;
-      }
-      // Nunca se confía en que el frontend diga "succeeded" -- el backend
-      // vuelve a consultar el SetupIntent contra la propia API de Stripe
-      // antes de crear la licencia (ver /api/free-trial en server.js).
-      const result = await requestFreeTrial(alias.trim(), setupIntent.id);
-      // La palomita del botón (ver MorphButton) antes de pasar al resultado.
-      setVerified(true);
-      await wait(MORPH_SUCCESS_HOLD_MS);
-      onResult(result);
-    } catch (err) {
-      setError(err.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
-      <input
-        value={alias}
-        onChange={e => setAlias(e.target.value)}
-        placeholder="Elige un alias"
-        className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
-      />
-      <input
-        value={cardholderName}
-        onChange={e => setCardholderName(e.target.value)}
-        placeholder="Nombre del titular"
-        className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
-      />
-      <PaymentElement />
-      {error && <p className="theme-notice tkc-msg-enter">{error}</p>}
-      <MorphButton
-        type="submit"
-        status={verified ? 'success' : submitting ? 'loading' : error ? 'error' : 'idle'}
-        loadingLabel="Verificando la tarjeta…"
-        disabled={!submitting && !verified && (!stripe || !alias.trim() || !cardholderName.trim())}
-        className="theme-btn-secondary theme-btn-md font-black tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        Verificar y activar prueba gratis
-      </MorphButton>
-    </form>
-  );
-}
+const DECLINE_FALLBACK = 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.';
 
 // Verifica una tarjeta real para desbloquear la prueba gratis sin ver
-// anuncios — a propósito NO cobra nada: usa un SetupIntent de Stripe (no un
-// PaymentIntent), pensado exactamente para autenticar que una tarjeta es
-// real (puede pedir 3DS) sin capturar ningún monto. Reemplaza la
-// verificación vieja de MercadoPago (que solo chequeaba el dígito de Luhn
-// del token, sin autenticación real ni comparación entre pruebas) — ver
-// /api/free-trial/setup-intent y /api/free-trial en server.js.
+// anuncios — a propósito NO cobra nada: es el mismo formulario de Checkout
+// de Stripe que el cobro (ver StripePaymentForm.jsx y stripeCheckout.js),
+// pero con una sesión en modo 'setup', pensada para autenticar que una
+// tarjeta es real (puede pedir 3DS) sin capturar ningún monto. Ver
+// /api/free-trial/checkout-session y /api/free-trial en server.js.
 //
 // Al validar, llama a onResult({ key, token, license }) — el mismo shape
 // que ya maneja Membership.jsx para el camino de anuncios (trialResult),
@@ -133,26 +20,100 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
 // la compra directa, no uno propio acá adentro que obligue a escribirlo
 // dos veces).
 export default function CardVerifyForm({ alias, setAlias, onResult, onCancel }) {
-  const [clientSecret, setClientSecret] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [cardholderName, setCardholderName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
-  const requestedRef = useRef(false);
+  const containerRef = useRef(null);
+  const startedRef = useRef(false);
+  const formRef = useRef(null);
+  // El botón de verificar es el del propio formulario de Stripe: su
+  // handler se crea una sola vez y lee el alias/onResult actuales de acá.
+  const aliasRef = useRef(alias);
+  const onResultRef = useRef(onResult);
+  useEffect(() => { aliasRef.current = alias; }, [alias]);
+  useEffect(() => { onResultRef.current = onResult; }, [onResult]);
+  const hasAlias = !!alias.trim();
 
   useEffect(() => {
-    if (requestedRef.current) return;
-    requestedRef.current = true;
-    fetch(`${backendUrl()}/api/free-trial/setup-intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setClientSecret(data.clientSecret);
-        else setLoadError(data.error || 'No se pudo cargar el formulario de tarjeta.');
-      })
-      .catch(() => setLoadError('No se pudo cargar el formulario de tarjeta. Revisa tu conexión o intenta más tarde.'));
+    // Una sola vez al montar (el ref también evita una segunda sesión por
+    // el doble montaje del modo estricto de React).
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    (async () => {
+      let data;
+      try {
+        const res = await fetch(`${backendUrl()}/api/free-trial/checkout-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        data = await res.json();
+      } catch {
+        setLoadError('No se pudo cargar el formulario de tarjeta. Revisa tu conexión o intenta más tarde.');
+        return;
+      }
+      if (!data.success) {
+        setLoadError(data.error || 'No se pudo cargar el formulario de tarjeta.');
+        return;
+      }
+
+      formRef.current = await mountCheckoutForm({
+        clientSecret: data.clientSecret,
+        container: containerRef.current,
+        onReady: () => setLoading(false),
+        onLoadError: (stripeError) => {
+          setLoading(false);
+          setLoadError(LOAD_ERROR_MESSAGE);
+          reportStripeError('free-trial-verify', stripeError);
+        },
+        onConfirm: async (_event, confirm) => {
+          const cleanAlias = aliasRef.current.trim();
+          // El formulario solo se muestra con un alias escrito (ver abajo);
+          // esto cubre que lo borren con el formulario ya a la vista.
+          if (!cleanAlias) {
+            setError('Escribe un alias antes de verificar la tarjeta.');
+            return;
+          }
+          setSubmitting(true);
+          setError('');
+          try {
+            const result = await confirm();
+            if (result.type === 'error') {
+              setError(friendlyDeclineMessage(result.error, DECLINE_FALLBACK));
+              reportStripeError('free-trial-verify', result.error);
+              return;
+            }
+            // Nunca se confía en que el frontend diga "verificada" -- el
+            // backend vuelve a pedir la sesión a la propia API de Stripe
+            // antes de crear la licencia (ver /api/free-trial en server.js).
+            const trial = await requestFreeTrial(cleanAlias, data.checkoutSessionId);
+            setVerified(true);
+            await wait(MORPH_SUCCESS_HOLD_MS);
+            onResultRef.current(trial);
+          } catch (err) {
+            setError(err.message || DECLINE_FALLBACK);
+          } finally {
+            setSubmitting(false);
+          }
+        },
+      });
+    })().catch((err) => {
+      // Stripe.js puede lanzar al iniciar/montar: sin esto se quedaba en
+      // "Cargando".
+      setLoading(false);
+      setLoadError(LOAD_ERROR_MESSAGE);
+      reportStripeError('free-trial-verify', err?.stripeError || { message: err?.message || String(err) });
+    });
+  }, []);
+
+  // Aparte del efecto de arriba: el desmontaje falso del modo estricto
+  // llega antes de que exista el formulario; el real (Cancelar / prueba
+  // creada) lo quita.
+  useEffect(() => () => {
+    try { formRef.current?.destroy?.(); } catch { /* ya desmontado */ }
+    formRef.current = null;
   }, []);
 
   return (
@@ -162,23 +123,31 @@ export default function CardVerifyForm({ alias, setAlias, onResult, onCancel }) 
         No se te cobra nada — Stripe solo autentica que la tarjeta es real, como alternativa a ver anuncios.
       </p>
 
+      <input
+        value={alias}
+        onChange={e => setAlias(e.target.value)}
+        placeholder="Elige un alias"
+        disabled={submitting || verified}
+        className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
+      />
+
       {loadError ? (
         <p className="theme-notice">{loadError}</p>
-      ) : !clientSecret ? (
-        <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de Stripe...</p>
       ) : (
-        <Elements stripe={getStripePromise()} options={{ clientSecret, locale: 'es' }}>
-          <CheckoutForm
-            alias={alias} setAlias={setAlias}
-            cardholderName={cardholderName} setCardholderName={setCardholderName}
-            submitting={submitting} setSubmitting={setSubmitting}
-            error={error} setError={setError}
-            onResult={onResult}
-          />
-        </Elements>
+        <>
+          {loading && <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de Stripe...</p>}
+          {!loading && !hasAlias && <p className="text-[10px] text-gray-500 text-center">Escribe un alias para continuar.</p>}
+          {/* Se monta desde el inicio (así ya está listo) pero solo se ve con
+              un alias escrito. Fondo blanco: apariencia clara de Checkout
+              Studio también en el tema oscuro. */}
+          <div ref={containerRef} className={loading || !hasAlias ? 'hidden' : 'rounded bg-white p-3'} />
+          {submitting && !verified && <p className="text-[10px] text-gray-500 text-center">Verificando la tarjeta…</p>}
+          {verified && <p className="text-[11px] font-bold text-emerald-600 text-center tkc-msg-enter">Tarjeta verificada. Activando tu prueba gratis…</p>}
+          {error && <p className="theme-notice tkc-msg-enter">{error}</p>}
+        </>
       )}
 
-      <button type="button" onClick={onCancel} className="theme-btn-secondary theme-btn-sm w-full font-bold uppercase tracking-widest transition-all">
+      <button type="button" onClick={onCancel} disabled={submitting} className="theme-btn-secondary theme-btn-sm w-full font-bold uppercase tracking-widest transition-all disabled:opacity-40">
         Cancelar
       </button>
     </div>

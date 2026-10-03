@@ -22,7 +22,7 @@ export default function SystemStatus({ onUnauthorized }) {
       )}
       {system?.youtube && (
         <p role="status" className={`theme-notice ${system.youtube.proxy === 'none' && !system.youtube.cookies ? 'theme-notice-warning' : 'theme-notice-success'}`}>
-          YouTube en el Downloader: proxy {({ tiktok: 'el de TikTok', custom: 'propio', none: 'ninguno', invalid: 'mal configurado' })[system.youtube.proxy] || system.youtube.proxy}, cookies {system.youtube.cookies ? 'sí' : 'no'}
+          Downloader: TikTok con {system.youtube.tiktokProxyCount ?? 0} proxy(s); YouTube con {({ tiktok: `las ${system.youtube.proxyCount} de TikTok`, custom: `${system.youtube.proxyCount} propia(s)`, none: 'ninguna proxy', invalid: 'proxy mal configurada' })[system.youtube.proxy] || system.youtube.proxy}, cookies {system.youtube.cookies ? 'sí' : 'no'}
           {system.youtube.ytDlpVersion ? ` · yt-dlp ${system.youtube.ytDlpVersion}` : ''}.
           {system.youtube.proxyProblem ? ` ${system.youtube.proxyProblem}.` : ''}
           {system.youtube.proxy === 'none' && !system.youtube.cookies ? ' Sin proxy ni cookies, YouTube bloquea las descargas desde el servidor.' : ''}

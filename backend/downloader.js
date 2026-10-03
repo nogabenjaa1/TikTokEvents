@@ -31,10 +31,20 @@ const ytDlpWrap = new YTDlpWrap(YTDLP_BIN_PATH);
 // ese OTRO repo antes de que lo tocáramos; acá, en un archivo nuevo, no hay
 // ninguna razón para repetir el mismo error. Falla claro si falta, mismo
 // criterio que getMpAccessToken() en server.js.
+//
+// Varias proxies (pedido del dueño): YTDL_PROXY acepta una lista separada por
+// comas y cada intento usa una al azar, así la carga se reparte y un reintento
+// tras un 403 suele salir por otra. Cada elemento se pasa tal cual a yt-dlp
+// (como siempre): no se le exige un formato nuevo a la que ya funcionaba.
+function proxyList(raw) {
+    return String(raw || '').split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
+
 function getTikTokProxy() {
-    const proxy = process.env.YTDL_PROXY;
-    if (!proxy) throw new Error('Falta YTDL_PROXY en las variables de entorno (mismo proxy que usa YTDownloader)');
-    return proxy;
+    const proxies = proxyList(process.env.YTDL_PROXY);
+    if (proxies.length === 0) throw new Error('Falta YTDL_PROXY en las variables de entorno (mismo proxy que usa YTDownloader)');
+    return pickRandom(proxies);
 }
 
 // YouTube les pide "confirmar que no eres un bot" a las IP de centros de datos
@@ -65,30 +75,41 @@ function prepareYouTubeCookies() {
 }
 const YOUTUBE_COOKIES_PATH = prepareYouTubeCookies();
 
-// Cómo se interpreta YTDL_YOUTUBE_PROXY. Bug real: solo valía 'on' exacto
-// ("On", "true" o "on " con un espacio no activaban nada, y cualquier otro
-// texto se le pasaba a yt-dlp como si fuera la dirección de un proxy). Ahora:
-//  - on / true / 1 / sí / yes (sin importar mayúsculas) = el proxy de TikTok;
-//  - una dirección http(s):// o socks5:// = ese proxy;
-//  - cualquier otra cosa se ignora, con un aviso en el registro.
+// Cómo se interpreta YTDL_YOUTUBE_PROXY (YouTube bloquea las IP de centros
+// de datos y también algunas proxies; por eso tiene su propia variable):
+//  - una o varias proxies propias separadas por comas (se usa una al azar en
+//    cada intento), con el mismo formato que YTDL_PROXY;
+//  - on / true / 1 / sí / yes (sin importar mayúsculas) = las de TikTok;
+//  - vacía = sin proxy. Un elemento que no parece una proxy (sin ':', p. ej.
+//    "banana") se ignora con un aviso en el registro.
+// Bug real anterior: solo valía 'on' exacto y cualquier otro texto se le
+// pasaba a yt-dlp como dirección de proxy.
 const TRUTHY = new Set(['on', 'true', '1', 'si', 'sí', 'yes']);
+const looksLikeProxy = (entry) => entry.includes(':') && !/\s/.test(entry);
 function youtubeProxyMode() {
     const raw = String(process.env.YTDL_YOUTUBE_PROXY || '').trim();
-    if (!raw) return { mode: 'none' };
-    if (TRUTHY.has(raw.toLowerCase())) return process.env.YTDL_PROXY ? { mode: 'tiktok', url: process.env.YTDL_PROXY } : { mode: 'invalid', reason: 'YTDL_YOUTUBE_PROXY pide el proxy de TikTok, pero YTDL_PROXY está vacío' };
-    if (/^(https?|socks5h?):\/\/\S+$/i.test(raw)) return { mode: 'custom', url: raw };
-    return { mode: 'invalid', reason: 'YTDL_YOUTUBE_PROXY no es "on" ni una dirección de proxy (http://, https:// o socks5://)' };
+    if (!raw) return { mode: 'none', urls: [] };
+    if (TRUTHY.has(raw.toLowerCase())) {
+        const urls = proxyList(process.env.YTDL_PROXY);
+        return urls.length ? { mode: 'tiktok', urls } : { mode: 'invalid', urls: [], reason: 'YTDL_YOUTUBE_PROXY pide las proxies de TikTok, pero YTDL_PROXY está vacío' };
+    }
+    const entries = proxyList(raw);
+    const urls = entries.filter(looksLikeProxy);
+    const ignored = entries.length - urls.length;
+    if (urls.length === 0) return { mode: 'invalid', urls: [], reason: 'YTDL_YOUTUBE_PROXY no es "on" ni una lista de proxies (host:puerto o http://usuario:contraseña@host:puerto)' };
+    return { mode: 'custom', urls, ignored };
 }
 {
     const proxy = youtubeProxyMode();
     if (proxy.mode === 'invalid') console.warn(`[Downloader] ${proxy.reason}: se ignora.`);
-    console.log(`[Downloader] YouTube: proxy ${proxy.mode === 'tiktok' ? 'el de TikTok' : proxy.mode === 'custom' ? 'propio' : 'no'}, cookies ${YOUTUBE_COOKIES_PATH ? 'sí' : 'no'}.`);
+    if (proxy.ignored) console.warn(`[Downloader] YTDL_YOUTUBE_PROXY: se ignoran ${proxy.ignored} elemento(s) que no parecen una proxy.`);
+    console.log(`[Downloader] TikTok: ${proxyList(process.env.YTDL_PROXY).length} proxy(s). YouTube: ${proxy.mode === 'tiktok' ? 'las de TikTok' : proxy.mode === 'custom' ? `${proxy.urls.length} propia(s)` : 'sin proxy'}, cookies ${YOUTUBE_COOKIES_PATH ? 'sí' : 'no'}.`);
 }
 
 function youtubeArgs() {
     const args = [];
     const proxy = youtubeProxyMode();
-    if (proxy.url) args.push('--proxy', proxy.url);
+    if (proxy.urls.length) args.push('--proxy', pickRandom(proxy.urls));
     if (YOUTUBE_COOKIES_PATH) args.push('--cookies', YOUTUBE_COOKIES_PATH);
     return args;
 }
@@ -96,7 +117,11 @@ function youtubeArgs() {
 // Lo que ve el servidor (para Sistema): sin secretos, solo si cada cosa está.
 function youtubeConfigSummary() {
     const proxy = youtubeProxyMode();
-    return { proxy: proxy.mode, proxyProblem: proxy.mode === 'invalid' ? proxy.reason : null, cookies: !!YOUTUBE_COOKIES_PATH };
+    return {
+        proxy: proxy.mode, proxyCount: proxy.urls.length, tiktokProxyCount: proxyList(process.env.YTDL_PROXY).length,
+        proxyProblem: proxy.mode === 'invalid' ? proxy.reason : proxy.ignored ? `Se ignoran ${proxy.ignored} elemento(s) de YTDL_YOUTUBE_PROXY que no parecen una proxy` : null,
+        cookies: !!YOUTUBE_COOKIES_PATH,
+    };
 }
 
 let ytDlpVersion = null;
@@ -125,7 +150,8 @@ const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000;
 const INFO_MAX_BUFFER = 8 * 1024 * 1024; // el JSON de un solo video pesa unos cientos de kB
 
 // Lo que jamás debe llegar al navegador (el proxy lleva usuario y contraseña).
-const hiddenSecrets = () => [process.env.YTDL_PROXY, process.env.YTDL_YOUTUBE_PROXY];
+// Cada proxy de cada lista por separado: el error de yt-dlp trae solo la que usó.
+const hiddenSecrets = () => [...proxyList(process.env.YTDL_PROXY), ...proxyList(process.env.YTDL_YOUTUBE_PROXY), process.env.YTDL_PROXY, process.env.YTDL_YOUTUBE_PROXY].filter(Boolean);
 
 // ─────────────────────────────────────────────
 // Jobs en memoria -- Node es de un solo hilo, así que a diferencia del

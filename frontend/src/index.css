@@ -926,3 +926,175 @@ select:disabled { cursor: not-allowed; }
 .tkc-switch[data-on="true"]::after { transform: translateX(1rem); }
 .peer:focus-visible + .tkc-switch { outline: 2px solid var(--accent, #A855F7); outline-offset: 2px; }
 .peer:disabled + .tkc-switch { opacity: 0.5; cursor: not-allowed; }
+
+/* ==========================================================
+   MOVIMIENTO (ver DESIGN.md › Motion)
+   Tres duraciones y una sola curva de salida, sin rebote: el movimiento dice
+   "algo cambió y está aquí", nunca decora. Todo lo de acá vive en el panel
+   (.themed-panel), así que la regla de prefers-reduced-motion de más arriba
+   ya lo apaga para quien pidió menos movimiento.
+   ========================================================== */
+:root {
+  --motion-fast: 160ms;
+  --motion-base: 280ms;
+  --motion-slow: 420ms;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* Entrada de una vista: la app al cargar, una sección o pestaña nueva, un
+   panel que terminó de descargarse. Con "backwards" el transform solo existe
+   mientras corre la animación: al terminar no queda ningún transform que
+   cambie dónde se posicionan los modales `fixed` de adentro. */
+@keyframes tkc-view-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes tkc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.tkc-app-enter { animation: tkc-fade-in var(--motion-slow) var(--ease-out-soft) backwards; }
+.tkc-view-enter {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto; /* en mobile la página entera se desplaza: crece con su contenido */
+  min-width: 0;
+  animation: tkc-view-in var(--motion-base) var(--ease-out-soft) backwards;
+}
+@media (min-width: 768px) {
+  /* En escritorio cada panel maneja su propio scroll: tiene que quedar acotado. */
+  .tkc-view-enter { flex: 1 1 auto; min-height: 0; }
+}
+/* Tarjetas que entran una detrás de otra (login, avisos). */
+.tkc-rise { animation: tkc-view-in var(--motion-slow) var(--ease-out-soft) backwards; }
+.tkc-rise-2 { animation-delay: 70ms; }
+.tkc-rise-3 { animation-delay: 140ms; }
+
+/* Indicador de navegación que se desliza al módulo elegido (barra lateral y
+   pestañas de Eventos). Lleva las mismas clases de botón activo que antes
+   tenía el botón, así que cada material (Clásico, Cute) lo pinta igual que
+   siempre; lo único nuevo es que viaja en vez de aparecer de golpe. */
+.tkc-nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-width: 1px;
+  border-style: solid;
+  opacity: 0;
+}
+.tkc-nav-indicator[data-ready="true"] { opacity: 1; }
+.tkc-nav-indicator[data-animate="true"] {
+  transition: transform var(--motion-base) var(--ease-out-soft),
+              width var(--motion-base) var(--ease-out-soft),
+              height var(--motion-base) var(--ease-out-soft),
+              background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+.themed-app[data-theme-style="cute"] .tkc-nav-indicator { border-radius: var(--radius-cute-nav) !important; }
+.tkc-nav-item { position: relative; z-index: 1; }
+/* El botón activo ya no pinta su propio fondo: lo pone el indicador. */
+.tkc-nav-item[aria-current="page"],
+.tkc-nav-item[aria-current="page"]:hover { background: transparent; border-color: transparent; box-shadow: none; }
+
+/* ---- Botón que se transforma: cargando -> listo ----
+   El botón ancho se encoge a un círculo mientras valida (con el arco girando
+   dentro), el arco se cierra y dibuja una palomita al confirmar, y si falla
+   vuelve a su forma con un pequeño vaivén. Ver MorphButton.jsx. */
+.tkc-morph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline: auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Selector más fuerte a propósito: los materiales (Cute) redefinen la
+   transición de .theme-btn-primary y se comerían la del ancho. */
+.themed-app .tkc-morph[data-status] {
+  transition: width var(--motion-slow) var(--ease-in-out-soft),
+              border-radius var(--motion-slow) var(--ease-in-out-soft),
+              background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease,
+              transform 0.2s ease, filter var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+.tkc-morph[data-status="loading"],
+.tkc-morph[data-status="success"] { border-radius: 999px !important; cursor: default; }
+.tkc-morph-label { transition: opacity var(--motion-fast) ease, transform var(--motion-fast) ease; }
+.tkc-morph[data-status="loading"] .tkc-morph-label,
+.tkc-morph[data-status="success"] .tkc-morph-label { opacity: 0; transform: scale(0.9); }
+.tkc-morph-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+.tkc-morph[data-status="loading"] .tkc-morph-icon,
+.tkc-morph[data-status="success"] .tkc-morph-icon { opacity: 1; transition-delay: 120ms; }
+.tkc-morph-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  stroke-dasharray: 44 63;
+  transition: stroke-dasharray var(--motion-base) var(--ease-out-soft);
+}
+.tkc-morph[data-status="loading"] .tkc-morph-ring { animation: tkc-spin 0.8s linear infinite; }
+.tkc-morph[data-status="success"] .tkc-morph-ring { stroke-dasharray: 63 0; }
+.tkc-morph-check {
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+}
+.tkc-morph[data-status="success"] .tkc-morph-check {
+  transition: stroke-dashoffset var(--motion-base) var(--ease-out-soft) 160ms;
+  stroke-dashoffset: 0;
+}
+.tkc-morph[data-status="error"] { animation: tkc-nudge 0.32s var(--ease-in-out-soft); }
+@keyframes tkc-spin { to { transform: rotate(360deg); } }
+@keyframes tkc-nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* Indicador de estado que se transforma (conexión con TikTok): punto gris ->
+   arco girando mientras busca/conecta -> punto lleno con halo al confirmar. */
+.tkc-status-dot {
+  position: relative;
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: transparent;
+  transition: background var(--motion-base) var(--ease-out-soft),
+              border-color var(--motion-base) var(--ease-out-soft),
+              transform var(--motion-base) var(--ease-out-soft);
+}
+.tkc-status-dot[data-status="loading"] {
+  border-right-color: transparent;
+  animation: tkc-spin 0.8s linear infinite;
+}
+.tkc-status-dot[data-status="success"] { background: currentColor; }
+.tkc-status-dot[data-status="success"]::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid currentColor;
+  animation: tkc-halo 1.8s var(--ease-out-soft) infinite;
+}
+.tkc-status-dot[data-status="idle"] { opacity: 0.6; }
+@keyframes tkc-halo {
+  from { transform: scale(1); opacity: 0.7; }
+  to   { transform: scale(2.2); opacity: 0; }
+}
+
+/* "Cargando..." de un panel que se está descargando: aparece con un poco de
+   retraso, así en una carga rápida no llega a parpadear. */
+.tkc-delayed-fade { animation: tkc-fade-in var(--motion-base) ease 150ms backwards; }
+
+/* Mensajes que aparecen debajo de un campo (error, aviso): entran sin saltar. */
+.tkc-msg-enter { animation: tkc-view-in var(--motion-base) var(--ease-out-soft) backwards; }

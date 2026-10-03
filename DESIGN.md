@@ -319,12 +319,39 @@ Botones sin caja: subrayados, texto de 10px en negrita, área de toque de 8px ar
 
 ### Navigation (dock de íconos)
 - Columna fija de botones cuadrados de ícono + micro-label (8px, mayúsculas) debajo. El estado activo suma fondo tintado del acento (20%) y borde sólido del acento; el material Minimal reemplaza esto por una línea vertical de acento a la izquierda del ícono, sin fondo. El dock en sí (`.theme-sidebar`) hereda `var(--surface-bg)`/`var(--surface-shadow)` como cualquier superficie.
+- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): en vez de que cada botón pinte su propio fondo activo, un solo elemento con las clases del botón activo (`theme-nav-btn-active`) viaja de un módulo al otro. Lo usan la barra lateral y las barras de pestañas (Eventos, Overlays, Sistema). Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
 
 ### Franja de Premio (componente propio)
 Franja horizontal fija (imagen 50×50 + título) que comparten los tres juegos de regalos para mostrar el premio configurado. Usa siempre esmeralda fijo (`emerald-900/25` fondo, `emerald-500/40` borde), independiente del acento del tema — es la única superficie de "contenido de juego" que no seguirá el material/acento activo, porque comunica un estado de negocio (premio), no navegación de marca.
 
 ### Overlay de OBS (`.theme-die-frame`)
 La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como fuente de captura en OBS) usa `.theme-die-frame` — la misma variante de `.theme-surface` pero sin el padding forzado que algunos materiales le suman a las superficies normales, porque acá el padding lo define el layout del juego, no el material. Refleja el mismo material/acento que el panel de control, sincronizado por socket en tiempo real (ver Overview). Dentro de la tarjeta, las etiquetas y bordes que representan la marca del streamer ("STEAL SPOT WITH:", el aro del avatar activo, las cajas de metadata) siguen `var(--accent)`/`var(--surface-bg-alt)`; los colores de estado del juego (amarillo insta-win/ganador, rojo snipe/peligro, gris pausa) se mantienen fijos, igual que en el panel — la regla de "Estado" de la sección Colors aplica también acá.
+
+## Motion
+
+El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambiar de módulo o de pestaña, al validar algo. No decora ni compite con el contenido; en medio de un LIVE el streamer tiene que poder leer la cabina sin esperar a que nada termine de moverse.
+
+### Tokens (`index.css`, `:root`)
+- **`--motion-fast` 160ms**: cambios chicos dentro de un control (aparece o desaparece una etiqueta, un ícono).
+- **`--motion-base` 280ms**: el indicador de navegación, la entrada de una vista, un mensaje bajo un campo.
+- **`--motion-slow` 420ms**: cambios de forma (el botón que se encoge) y la entrada de la app o de una tarjeta.
+- **`--ease-out-soft`** `cubic-bezier(0.22, 1, 0.36, 1)`: todo lo que entra o se desplaza. Arranca rápido y se asienta suave.
+- **`--ease-in-out-soft`** `cubic-bezier(0.65, 0, 0.35, 1)`: cambios de forma que van y vuelven (el botón que se transforma).
+- Los cambios de tema siguen con su `0.35s ease` de siempre (ver Components).
+
+### Patrones
+- **Entrada de vista** (`.tkc-view-enter`, `.tkc-app-enter`, `.tkc-rise`): fundido con 8px de subida. La app entera al cargar, cada sección al elegirla en la barra lateral, el panel de cada pestaña de Eventos (la barra de pestañas no se mueve: lo que se mueve es su indicador), y las tarjetas sueltas como el login (`.tkc-rise-2`/`-3` escalonan 70ms). Usa `animation-fill-mode: backwards`: el `transform` solo existe mientras corre, así que no cambia dónde se posicionan los modales `fixed` de adentro.
+- **Indicador deslizante** (`NavIndicator`): el fondo del módulo activo viaja con `--motion-base` en posición y tamaño. Al aparecer por primera vez o al cambiar el tamaño de la ventana se coloca directo, sin viajar.
+- **Botón que se transforma** (`MorphButton`, `.tkc-morph`): para toda acción que valida datos contra el servidor (entrar con la clave, verificar la tarjeta de la prueba gratis, guardar la app de Spotify). `idle` es el botón normal a todo el ancho de su contenedor; `loading` se encoge a un círculo del alto del botón con un arco girando; `success` cierra el arco y dibuja una palomita, y se sostiene `MORPH_SUCCESS_HOLD_MS` (650ms) antes de seguir; `error` vuelve a su forma con un vaivén de 5px y el mensaje aparece aparte (`.tkc-msg-enter`). La espera mínima (`MORPH_MIN_LOADING_MS`, 450ms) vale para el éxito y para el error: si el servidor contesta al instante, el cambio de forma no se alcanzaría a ver. Mientras valida el botón no se deshabilita (se vería apagado): el componente que lo usa ignora los clics repetidos.
+- **Punto de estado** (`.tkc-status-dot`): la versión chica del mismo lenguaje para estados que no son un botón (la conexión con TikTok, un panel que se está descargando). Aro sin relleno en reposo, arco girando mientras busca o conecta, punto lleno con un halo que se expande al confirmar. Toma el color de su texto (`currentColor`), así que respeta los colores de estado.
+- Los tiempos que también necesita el código (no solo el CSS) viven en `src/motion.js`, junto con `wait()`, que no espera nada si el sistema pide menos movimiento.
+
+### Named Rules
+**La Regla del Movimiento con Motivo.** Solo se anima lo que acaba de cambiar por algo que hizo el streamer o por algo que pasó en el servidor: una vista nueva, un módulo elegido, una validación. Nada se mueve en reposo (salvo el arco de "cargando" y el halo de "conectado", que son estado, no adorno).
+
+**La Regla del Mismo Color.** El movimiento no trae colores nuevos: el indicador lleva las clases del botón activo de cada material, el botón que se transforma conserva su relleno, y el punto de estado usa el color de su texto. Nada de gradientes, brillos ni neones agregados para "acompañar" una animación.
+
+**La Regla del Menos Movimiento.** Todo lo de esta sección vive dentro de `.themed-panel`, donde `prefers-reduced-motion: reduce` deja las animaciones y transiciones en 0.01ms; `wait()` tampoco espera. Los overlays de OBS quedan fuera a propósito: sus animaciones son parte de lo que ve la audiencia.
 
 ## Do's and Don'ts
 
@@ -336,6 +363,7 @@ La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como f
 - **Do** sincronizar el overlay de OBS (`Overlay.jsx`) con el skin elegido en el panel — recibe `theme` por socket (evento `theme_updated`, ver `tenant.js`/`App.jsx`) y se pinta con `.themed-app`/`data-theme-style`/`data-accent` igual que cualquier otra pantalla. El overlay nunca decide su propio tema ni lo lee de `localStorage`.
 - **Do** mantener el fondo pastel claro en los cuatro materiales — Default y Minimal usaban antes un fondo casi negro, pero el sistema se homogenizó a una sola paleta clara; ningún material nuevo debería reintroducir un fondo oscuro sin decisión explícita del dueño del producto.
 - **Do** usar tinta oscura (`--ink-default` / `--ink-kawaii` / `--ink-minimal` / `--ink-cute`) en TODO el texto blanco/gris dentro del scope de cada material — los cuatro son fondo claro de punta a punta, así que la sobreescritura de tinta no se limita a un botón o chip puntual, y tampoco es ya una excepción de solo dos materiales.
+- **Do** usar `MorphButton` para cualquier acción nueva que valide datos contra el servidor, `tkc-view-enter` para cualquier vista que entre, y `tkc-nav-item` + `aria-current` (con su `NavIndicator`) para cualquier barra de navegación nueva, en vez de inventar una animación propia. Ver Motion.
 - **Do** definir `--page-bg`/`--surface-bg`/`--surface-bg-alt` de cualquier material (nuevo o existente) como `oklch(from var(--accent) L C h)` con `L`/`C` fijos a mano — nunca un hex fijo, nunca `color-mix()` hacia una base. Ver La Regla del Fondo Teñido y La Regla del Color Construido, No Mezclado.
 
 ### Don't:
@@ -344,4 +372,5 @@ La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como f
 - **Don't** introducir un look plano/neutro tipo "SaaS corporativo" (fondo blanco puro o gris sin teñir, sombras suaves de dashboard B2B) en ningún material, incluidos Kawaii/Cute — el pastel de estos dos SIEMPRE lleva el matiz del acento activo (`oklch(from var(--accent)...)`), nunca un gris o blanco neutro; "claro" no es lo mismo que "sin color".
 - **Don't** usar el color de acento para estados de negocio (premio, error, aviso) — esos ya tienen su propio color fijo; mezclar los dos sistemas rompe la lectura rápida en medio de un live.
 - **Don't** agregar una quinta familia tipográfica o romper la regla de "una sola fuente, jerarquía por peso/tracking" sin decisión explícita.
+- **Don't** escribir duraciones o curvas sueltas (`transition: all 0.5s`) en una animación nueva: salen de los tokens `--motion-*` / `--ease-*-soft`.
 - **Don't** usar bounce/elastic easing en transiciones nuevas (incluidos Cute y Kawaii) — la calidez del material viene de la forma, el punteado/relleno pastel y el glow, nunca de una animación con rebote.

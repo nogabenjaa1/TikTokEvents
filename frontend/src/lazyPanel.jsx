@@ -62,7 +62,8 @@ class PanelErrorBoundary extends Component {
 
 function PanelLoading() {
   return (
-    <div role="status" className="flex-1 flex items-center justify-center p-10 text-sm text-gray-500">
+    <div role="status" className="flex-1 flex items-center justify-center gap-3 p-10 text-sm text-gray-500 tkc-delayed-fade">
+      <span className="tkc-status-dot theme-accent-text" data-status="loading" style={{ width: '1.1rem', height: '1.1rem' }} aria-hidden="true" />
       Cargando...
     </div>
   );

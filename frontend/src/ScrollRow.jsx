@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import NavIndicator from './app/NavIndicator';
 
 // Fila horizontal desplazable SOLO por dentro (pestañas/íconos): la página no
 // se mueve ni se ensancha. Sin barra de desplazamiento nativa; en su lugar:
@@ -30,7 +31,10 @@ function animateScrollLeft(el, target) {
   setTimeout(() => { el.scrollLeft = end; }, ARROW_ANIM_MS + 60);
 }
 
-export default function ScrollRow({ children, label, className = '' }) {
+// `activeKey` (opcional): si la fila es una navegación, el fondo del botón
+// activo (`.tkc-nav-item[aria-current="page"]`) se desliza al elegido -- vive
+// dentro de la parte que se desplaza para moverse junto con los botones.
+export default function ScrollRow({ children, label, className = '', activeKey, indicatorClassName = '' }) {
   const scrollerRef = useRef(null);
   const drag = useRef({ active: false, moved: false, startX: 0, startLeft: 0 });
   const [canLeft, setCanLeft] = useState(false);
@@ -110,9 +114,10 @@ export default function ScrollRow({ children, label, className = '' }) {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onClickCapture={onClickCapture}
-        className={`tkc-no-scrollbar flex flex-row items-center gap-2 overflow-x-auto select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`tkc-no-scrollbar relative flex flex-row items-center gap-2 overflow-x-auto select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{ overscrollBehaviorX: 'contain' }}
       >
+        {activeKey !== undefined && <NavIndicator containerRef={scrollerRef} activeKey={activeKey} className={indicatorClassName} />}
         {children}
       </nav>
       {canRight && (

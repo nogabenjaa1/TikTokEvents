@@ -305,10 +305,37 @@ app.use((req, res, next) => {
         next(); // sin frontend buildeado acá (se sirve aparte): sigue el flujo normal
     }
 });
-app.use(express.static(path.join(__dirname, 'public')));
+// Ancho de banda: Vite pone un hash en el nombre de todo lo que va en
+// /assets/, así que ese archivo nunca cambia de contenido -- se cachea un año
+// y el navegador (incluidas las fuentes de OBS, que se recargan seguido) ni
+// siquiera pregunta. index.html y lo demás (favicons) siguen revalidándose,
+// para que un deploy nuevo se vea en la siguiente carga.
+app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders(res, filePath) {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+            res.setHeader('Cache-Control', 'no-cache');
+        }
+    },
+}));
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
+// perMessageDeflate viene apagado por defecto en socket.io: sin esto cada
+// estado (rankings, listas de participantes con la URL del avatar de cada
+// uno) viaja sin comprimir a cada pestaña y overlay abiertos. Solo se
+// comprime lo que pasa de 1 KB (un tick del reloj no gana nada) y con una
+// ventana chica: cada socket guarda su propio compresor en memoria, y con
+// muchos overlays conectados la ventana por defecto (~300 KB por socket)
+// llenaría la RAM del plan de Render.
+const io = new Server(server, {
+    cors: { origin: CORS_ORIGIN },
+    perMessageDeflate: {
+        threshold: 1024,
+        serverMaxWindowBits: 11,
+        zlibDeflateOptions: { level: 6, memLevel: 4, windowBits: 11 },
+    },
+});
 
 // ==========================================
 // MULTI-TENANCY: un Tenant (estado + conexión TikTok propios) por licencia

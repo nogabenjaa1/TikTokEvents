@@ -598,7 +598,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
         : { text: '● Al aire', cls: 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' };
 
   return (
-    <section className={`${visible ? 'flex-1' : 'hidden'} overflow-y-auto px-4 sm:px-8 pt-10 pb-10 text-white`}>
+    <section className={`${visible ? 'flex-1 tkc-rise' : 'hidden'} overflow-y-auto px-4 sm:px-8 pt-10 pb-10 text-white`}>
       <div className="max-w-4xl mx-auto">
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>

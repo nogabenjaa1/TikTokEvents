@@ -106,14 +106,6 @@ function youtubeProxyMode() {
     console.log(`[Downloader] TikTok: ${proxyList(process.env.YTDL_PROXY).length} proxy(s). YouTube: ${proxy.mode === 'tiktok' ? 'las de TikTok' : proxy.mode === 'custom' ? `${proxy.urls.length} propia(s)` : 'sin proxy'}, cookies ${YOUTUBE_COOKIES_PATH ? 'sí' : 'no'}.`);
 }
 
-function youtubeArgs() {
-    const args = [];
-    const proxy = youtubeProxyMode();
-    if (proxy.urls.length) args.push('--proxy', pickRandom(proxy.urls));
-    if (YOUTUBE_COOKIES_PATH) args.push('--cookies', YOUTUBE_COOKIES_PATH);
-    return args;
-}
-
 // Lo que ve el servidor (para Sistema): sin secretos, solo si cada cosa está.
 function youtubeConfigSummary() {
     const proxy = youtubeProxyMode();
@@ -198,21 +190,130 @@ function cleanupLoop() {
 setInterval(cleanupLoop, 5 * 60 * 1000); // cada 5 minutos, igual que el standalone
 
 // ─────────────────────────────────────────────
+// Intentos, proxies y reportes (pedido del dueño: "a veces funciona y a veces
+// no; reintenta hasta 5 veces y que llegue el error real de yt-dlp")
+// ─────────────────────────────────────────────
+const MAX_ATTEMPTS = 5;
+const STALL_MS = Number(process.env.DOWNLOADER_STALL_MS) || 75 * 1000; // sin avance en la descarga = se reintenta por otra IP
+
+// Errores que no se arreglan reintentando (el video no existe para nadie, es
+// privado, pesa demasiado...). Todo lo demás —bloqueos de YouTube, 403,
+// cortes de red, una proxy caída— se reintenta, cada vez por otra proxy.
+const PERMANENT_ERROR_RE = /Unsupported URL|Private video|has been removed|account (?:has been|was) terminated|members-only|Join this channel|File is larger than max-filesize|Requested format is not available|ffprobe and ffmpeg not found|Falta YTDL_PROXY/i;
+const isPermanentError = (message) => PERMANENT_ERROR_RE.test(String(message || ''));
+
+// ── Sesiones de una proxy rotativa (pedido del dueño) ──
+// Una proxy rotativa da otra IP en cada petición. Para fijar una IP, los
+// proveedores aceptan un identificador de sesión dentro del usuario o la
+// contraseña (el formato cambia según el proveedor), así que la proxy se
+// configura con {session} donde va ese identificador, p. ej.
+//   http://usuario-session-{session}:clave@host:puerto
+// Cada intento nuevo genera una sesión nueva = otra IP. Sin {session}, la
+// proxy se usa tal cual (rota sola en cada petición, como siempre).
+const SESSION_PLACEHOLDER_RE = /\{(session|sesion|sesión)\}/gi;
+const newSessionId = () => crypto.randomBytes(6).toString('hex');
+const withSession = (template, session) => template.replace(SESSION_PLACEHOLDER_RE, session);
+const usesSessions = (template) => /\{(session|sesion|sesión)\}/i.test(template);
+
+// Elige la proxy de un intento. `reuse` (la sesión con la que ya funcionó el
+// análisis de este enlace) manda en el primer intento de la descarga; si no,
+// una proxy al azar de la lista con una sesión nueva. Con varias proxies,
+// nunca la misma que acaba de fallar.
+function chooseProxy(list, { avoidIndex, reuse } = {}) {
+    if (!list.length) return null;
+    if (reuse && reuse.index < list.length && list[reuse.index] === reuse.template) {
+        return { url: withSession(reuse.template, reuse.session), template: reuse.template, index: reuse.index, total: list.length, session: reuse.session, reused: true };
+    }
+    let index = Math.floor(Math.random() * list.length);
+    if (list.length > 1 && index === avoidIndex) index = (index + 1) % list.length;
+    const template = list[index];
+    const session = usesSessions(template) ? newSessionId() : null;
+    return { url: session ? withSession(template, session) : template, template, index, total: list.length, session, reused: false };
+}
+function proxyForAttempt(tiktok, { avoidIndex, reuse } = {}) {
+    const list = tiktok ? proxyList(process.env.YTDL_PROXY) : youtubeProxyMode().urls;
+    if (tiktok && list.length === 0) throw new Error('Falta YTDL_PROXY en las variables de entorno (mismo proxy que usa YTDownloader)');
+    return chooseProxy(list, { avoidIndex, reuse });
+}
+// Para los reportes: qué proxy y qué sesión se usaron (nunca la dirección).
+function proxyLabel(proxy) {
+    if (!proxy) return 'sin proxy';
+    const which = proxy.total > 1 ? `proxy ${proxy.index + 1} de ${proxy.total}` : 'proxy';
+    if (!proxy.session) return `${which}, IP rotada`;
+    return `${which}, sesión ${proxy.session}${proxy.reused ? ' (la misma IP del análisis)' : ''}`;
+}
+
+// La sesión con la que funcionó el análisis de un enlace, para que la
+// descarga de ese mismo enlace salga por la misma IP. Por licencia y enlace,
+// 15 minutos, y solo si la proxy usa {session} (si no, no hay IP que fijar).
+const WORKING_SESSION_TTL_MS = 15 * 60 * 1000;
+const workingSessions = new Map(); // `${licenseId}|${url}` -> { template, index, session, at }
+function rememberWorkingSession(licenseId, url, proxy) {
+    if (!licenseId || !proxy?.session) return;
+    if (workingSessions.size > 1000) workingSessions.delete(workingSessions.keys().next().value);
+    workingSessions.set(`${licenseId}|${url}`, { template: proxy.template, index: proxy.index, session: proxy.session, at: Date.now() });
+}
+function takeWorkingSession(licenseId, url) {
+    const key = `${licenseId}|${url}`;
+    const found = workingSessions.get(key);
+    if (!found) return null;
+    if (Date.now() - found.at > WORKING_SESSION_TTL_MS) { workingSessions.delete(key); return null; }
+    return found;
+}
+
+// Proxy, huella de navegador (TikTok) y cookies (YouTube) de un intento.
+function networkArgs(tiktok, proxy) {
+    const args = [];
+    if (proxy) args.push('--proxy', proxy.url);
+    if (tiktok) args.push('--impersonate', randomBrowserTarget());
+    else if (YOUTUBE_COOKIES_PATH) args.push('--cookies', YOUTUBE_COOKIES_PATH);
+    return args;
+}
+
+// El texto real de yt-dlp, sin secretos: sus líneas ERROR (o, si no hay, el
+// final de la salida), sin colores de terminal y sin las proxies.
+function ytDlpErrorText(raw) {
+    const text = redactSecrets(String(raw || ''), hiddenSecrets());
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const errors = lines.filter((line) => /^ERROR:/i.test(line));
+    return (errors.length ? errors : lines.slice(-3)).join(' ').slice(0, 600) || 'yt-dlp terminó sin decir por qué';
+}
+
+// Sistema > Errores: el error real de yt-dlp con el detalle de cada intento.
+// También se anota cuando algo funcionó tras fallar (así se ve qué proxy
+// falla aunque al final el streamer haya podido descargar).
+let reportIssue = () => {};
+function setIssueReporter(fn) { reportIssue = typeof fn === 'function' ? fn : () => {}; }
+
+function reportAttempts({ stage, tiktok, attempts, recoveredAt, licenseId }) {
+    if (attempts.length === 0) return;
+    const site = tiktok ? 'TikTok' : 'YouTube';
+    const stageLabel = stage === 'info' ? 'Analizar enlace' : 'Descargar';
+    const first = attempts[0].error;
+    const message = recoveredAt
+        ? `Downloader (${site}): funcionó al intento ${recoveredAt} de ${MAX_ATTEMPTS} — antes: ${first}`
+        : `Downloader (${site}): falló tras ${attempts.length} intento(s) — ${attempts[attempts.length - 1].error}`;
+    const detail = attempts.map((a) => `Intento ${a.n} (${a.proxy}): ${a.error}`).join('\n');
+    try {
+        reportIssue({ kind: 'downloader', message, stack: detail, context: `${stageLabel} · ${site}${recoveredAt ? ' · recuperado' : ''}` }, { licenseId });
+    } catch { /* un reporte jamás debe afectar la descarga */ }
+}
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ─────────────────────────────────────────────
 // Info (sin descargar)
 // ─────────────────────────────────────────────
-async function getVideoInfo(rawUrl) {
+async function getVideoInfo(rawUrl, { licenseId = null } = {}) {
     const { url, tiktok } = parseDownloadUrl(rawUrl);
-    const maxRetries = 3;
+    const attempts = [];
     let lastError = null;
+    let proxy = null;
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
-            const args = ['--dump-json', '--no-warnings', '--skip-download', '--no-check-certificates', '--no-playlist', '--playlist-items', '1'];
-            if (tiktok) {
-                args.push('--proxy', getTikTokProxy(), '--impersonate', randomBrowserTarget());
-            } else {
-                args.push(...youtubeArgs());
-            }
+            proxy = proxyForAttempt(tiktok, { avoidIndex: proxy?.index });
+            const args = ['--dump-json', '--no-warnings', '--skip-download', '--no-check-certificates', '--no-playlist', '--playlist-items', '1', ...networkArgs(tiktok, proxy)];
             // Todo lo que va después de "--" es la URL, nunca una opción de yt-dlp.
             args.push('--', url);
             const controller = new AbortController();
@@ -240,6 +341,8 @@ async function getVideoInfo(rawUrl) {
             let thumb = info.thumbnail;
             if (!thumb && info.thumbnails?.length) thumb = info.thumbnails[info.thumbnails.length - 1]?.url;
 
+            reportAttempts({ stage: 'info', tiktok, attempts, recoveredAt: attempt, licenseId });
+            rememberWorkingSession(licenseId, url, proxy);
             return {
                 title: info.title || 'Sin título',
                 thumbnail: thumb || '',
@@ -250,26 +353,21 @@ async function getVideoInfo(rawUrl) {
             };
         } catch (e) {
             lastError = e.message || String(e);
-            if (isYouTubeBotCheck(lastError)) break; // reintentar no cambia nada (ver youtubeArgs)
-            if (/403|404|Forbidden/.test(lastError)) {
-                await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
-                continue;
-            }
-            break;
+            attempts.push({ n: attempt, proxy: proxyLabel(proxy), error: ytDlpErrorText(lastError) });
+            console.warn(`[Downloader] Analizar (${tiktok ? 'TikTok' : 'YouTube'}) intento ${attempt}/${MAX_ATTEMPTS} con ${proxyLabel(proxy)} falló: ${attempts[attempts.length - 1].error}`);
+            if (isPermanentError(lastError) || attempt === MAX_ATTEMPTS) break;
+            await pause(800 + Math.random() * 1200);
         }
     }
-    // El detalle completo (sin secretos) queda en el registro del servidor; al
-    // usuario solo le llega la razón que dio yt-dlp.
-    const config = youtubeConfigSummary();
-    console.error(`[Downloader] No se pudo obtener la información del video${tiktok ? '' : ` (YouTube con proxy: ${config.proxy}, cookies: ${config.cookies ? 'sí' : 'no'})`}:`, redactSecrets(lastError, hiddenSecrets()).slice(0, 600));
+    reportAttempts({ stage: 'info', tiktok, attempts, recoveredAt: null, licenseId });
     if (isYouTubeBotCheck(lastError)) throw new Error(YOUTUBE_BOT_CHECK_MESSAGE);
-    throw new Error(`No se pudo obtener la información del video. Detalle: ${friendlyDownloaderError(lastError, hiddenSecrets())}`);
+    throw new Error(`No se pudo obtener la información del video tras ${attempts.length} intento(s). Detalle: ${friendlyDownloaderError(lastError, hiddenSecrets())}`);
 }
 
 // ─────────────────────────────────────────────
 // yt-dlp args builders -- mismos formatos que el proyecto standalone.
 // ─────────────────────────────────────────────
-function buildArgs({ url, fmt, quality, outTmpl, tiktok }) {
+function buildArgs({ url, fmt, quality, outTmpl, tiktok, proxy }) {
     const args = [
         '-o', outTmpl,
         '--ffmpeg-location', ffmpegPath,
@@ -279,13 +377,9 @@ function buildArgs({ url, fmt, quality, outTmpl, tiktok }) {
         '--fragment-retries', '5',
         '--no-playlist', '--playlist-items', '1',
         '--max-filesize', MAX_FILESIZE,
+        ...networkArgs(tiktok, proxy),
     ];
-
-    if (tiktok) {
-        args.push('--proxy', getTikTokProxy(), '--impersonate', randomBrowserTarget());
-    } else {
-        args.push('--concurrent-fragments', '5', ...youtubeArgs());
-    }
+    if (!tiktok) args.push('--concurrent-fragments', '5');
 
     if (fmt === 'mp3') {
         args.push(
@@ -317,9 +411,8 @@ function buildArgs({ url, fmt, quality, outTmpl, tiktok }) {
 }
 
 // ─────────────────────────────────────────────
-// Descarga con auto-retry -- mismo criterio que download_worker en el
-// standalone: reintenta en 403/404/Forbidden, se rinde con cualquier otro
-// error.
+// Descarga con reintentos: hasta MAX_ATTEMPTS, cada intento por otra proxy,
+// salvo los errores que no se arreglan reintentando (ver isPermanentError).
 // ─────────────────────────────────────────────
 function activeJobCounts(licenseId) {
     let forLicense = 0;
@@ -350,43 +443,84 @@ function startDownload({ licenseId, url: rawUrl, fmt, quality }) {
         title: null,
         error: null,
         finishedAt: null,
+        attempts: [], // { n, proxy, error } de cada intento fallido (ver reportAttempts)
+        proxy: null,
+        // La IP con la que funcionó el análisis de este enlace: el primer
+        // intento de la descarga sale por ella; los reintentos, por otra.
+        reuse: takeWorkingSession(licenseId, url),
     });
 
-    runDownloadWithRetry(jobId, licenseDir, url, fmt, quality, tiktok, 0);
+    runDownloadAttempt(jobId, licenseDir, url, fmt, quality, tiktok, 1);
     return jobId;
 }
 
-const MAX_RETRIES = 4;
-
-function runDownloadWithRetry(jobId, licenseDir, url, fmt, quality, tiktok, attempt) {
-    const outTmpl = path.join(licenseDir, `${jobId}.%(ext)s`);
-    const args = buildArgs({ url, fmt, quality, outTmpl, tiktok });
-    const attemptStart = Date.now();
+function runDownloadAttempt(jobId, licenseDir, url, fmt, quality, tiktok, attempt) {
+    const job = jobs.get(jobId);
+    if (!job) return;
+    let args;
+    try {
+        job.proxy = proxyForAttempt(tiktok, { avoidIndex: job.proxy?.index, reuse: attempt === 1 ? job.reuse : null });
+        const outTmpl = path.join(licenseDir, `${jobId}.%(ext)s`);
+        args = buildArgs({ url, fmt, quality, outTmpl, tiktok, proxy: job.proxy });
+    } catch (err) {
+        handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attempt, err);
+        return;
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => {
-        const job = jobs.get(jobId);
-        if (job) job.timedOut = true;
+        const current = jobs.get(jobId);
+        if (current) current.timedOut = true;
         controller.abort();
     }, DOWNLOAD_TIMEOUT_MS);
+    // Una IP residencial a veces se queda colgada a mitad de la descarga: si
+    // pasa STALL_MS sin ningún avance, se corta este intento y se reintenta
+    // con otra sesión (otra IP), en vez de esperar al límite de 30 minutos.
+    job.stalled = false;
+    let lastProgressAt = Date.now();
+    const stallWatch = setInterval(() => {
+        if (Date.now() - lastProgressAt < STALL_MS) return;
+        clearInterval(stallWatch);
+        const current = jobs.get(jobId);
+        if (current) current.stalled = true;
+        controller.abort();
+    }, 5000);
+    const stopWatches = () => { clearTimeout(timeout); clearInterval(stallWatch); };
 
     ytDlpWrap.exec(args, {}, controller.signal)
         .on('progress', (p) => {
-            const job = jobs.get(jobId);
-            if (!job) return;
-            job.status = 'downloading';
-            job.percent = Math.round(p.percent || 0);
-            job.speed = p.currentSpeed || '—';
-            job.eta = p.eta || '—';
+            lastProgressAt = Date.now();
+            const current = jobs.get(jobId);
+            if (!current) return;
+            current.status = 'downloading';
+            current.percent = Math.round(p.percent || 0);
+            current.speed = p.currentSpeed || '—';
+            current.eta = p.eta || '—';
         })
-        .on('error', (err) => { clearTimeout(timeout); handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attempt, err); })
+        .on('error', (err) => {
+            stopWatches();
+            // Cortado por nosotros (sin avance o límite de tiempo): según el
+            // sistema llega como error del proceso ("Error code: 1") en vez de
+            // un cierre; se reporta el motivo real.
+            const current = jobs.get(jobId);
+            let reason = err;
+            if (current?.timedOut) reason = new Error(`Se canceló tras ${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} min sin terminar`);
+            else if (current?.stalled) reason = new Error(`La descarga se quedó ${Math.round(STALL_MS / 1000)} s sin avanzar (IP lenta o caída)`);
+            handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attempt, reason);
+        })
         .on('close', () => {
-            clearTimeout(timeout);
-            const job = jobs.get(jobId);
-            if (!job) return;
-            if (job.timedOut) {
-                job.status = 'error';
-                job.error = 'La descarga tardó demasiado y se canceló. Prueba con un video más corto o con menor calidad.';
-                job.finishedAt = Date.now();
+            stopWatches();
+            const current = jobs.get(jobId);
+            if (!current || current.status === 'error' || current.retrying) return;
+            if (current.stalled && !current.timedOut) {
+                handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attempt, new Error(`La descarga se quedó ${Math.round(STALL_MS / 1000)} s sin avanzar (IP lenta o caída)`));
+                return;
+            }
+            if (current.timedOut) {
+                current.status = 'error';
+                current.error = 'La descarga tardó demasiado y se canceló. Prueba con un video más corto o con menor calidad.';
+                current.finishedAt = Date.now();
+                current.attempts.push({ n: attempt, proxy: proxyLabel(current.proxy), error: `Se canceló tras ${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} min sin terminar` });
+                reportAttempts({ stage: 'download', tiktok, attempts: current.attempts, recoveredAt: null, licenseId: current.licenseId });
                 return;
             }
             // yt-dlp ya terminó (incluyendo el merge/extracción de audio de
@@ -398,47 +532,59 @@ function runDownloadWithRetry(jobId, licenseDir, url, fmt, quality, tiktok, atte
             let finalPath = fs.existsSync(expected) ? expected : null;
             if (!finalPath) {
                 const candidates = fs.readdirSync(licenseDir)
-                    .filter((f) => f.startsWith(`${jobId}.`))
+                    .filter((f) => f.startsWith(`${jobId}.`) && !f.endsWith('.part'))
                     .map((f) => path.join(licenseDir, f));
                 finalPath = candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null;
             }
             if (!finalPath) {
-                job.status = 'error';
-                job.error = 'La descarga terminó sin generar el archivo: el video puede ser demasiado grande o no estar disponible.';
-                job.finishedAt = Date.now();
+                current.status = 'error';
+                current.error = 'La descarga terminó sin generar el archivo: el video puede ser demasiado grande o no estar disponible.';
+                current.finishedAt = Date.now();
+                current.attempts.push({ n: attempt, proxy: proxyLabel(current.proxy), error: 'yt-dlp terminó sin error pero no dejó archivo' });
+                reportAttempts({ stage: 'download', tiktok, attempts: current.attempts, recoveredAt: null, licenseId: current.licenseId });
                 return;
             }
-            job.status = 'done';
-            job.percent = 100;
-            job.filename = path.basename(finalPath);
-            job.filePath = finalPath;
-            job.finishedAt = Date.now();
+            current.status = 'done';
+            current.percent = 100;
+            current.filename = path.basename(finalPath);
+            current.filePath = finalPath;
+            current.finishedAt = Date.now();
+            reportAttempts({ stage: 'download', tiktok, attempts: current.attempts, recoveredAt: attempt, licenseId: current.licenseId });
         });
-
-    void attemptStart; // reservado por si se necesita en el futuro para desambiguar candidatos
 }
 
 function handleAttemptError(jobId, licenseDir, url, fmt, quality, tiktok, attempt, err) {
     const job = jobs.get(jobId);
     if (!job) return;
     const message = (err?.message || String(err) || '').trim();
+    job.attempts.push({ n: attempt, proxy: proxyLabel(job.proxy), error: ytDlpErrorText(message) });
+    console.warn(`[Downloader] Descargar (${tiktok ? 'TikTok' : 'YouTube'}) intento ${attempt}/${MAX_ATTEMPTS} con ${proxyLabel(job.proxy)} falló: ${job.attempts[job.attempts.length - 1].error}`);
 
-    if (attempt + 1 < MAX_RETRIES && /403|404|Forbidden/.test(message)) {
+    if (attempt < MAX_ATTEMPTS && !isPermanentError(message) && !job.timedOut) {
         job.status = 'downloading';
-        job.speed = `Reintentando... (${attempt + 2}/${MAX_RETRIES})`;
-        setTimeout(() => runDownloadWithRetry(jobId, licenseDir, url, fmt, quality, tiktok, attempt + 1), 1500 + Math.random() * 2000);
+        job.retrying = true;
+        job.percent = 0;
+        job.speed = `Reintentando... (${attempt + 1}/${MAX_ATTEMPTS})`;
+        setTimeout(() => {
+            const current = jobs.get(jobId);
+            if (!current) return;
+            current.retrying = false;
+            runDownloadAttempt(jobId, licenseDir, url, fmt, quality, tiktok, attempt + 1);
+        }, 1200 + Math.random() * 1800);
         return;
     }
 
-    console.error(`[Downloader] Job ${jobId} falló:`, redactSecrets(message, hiddenSecrets()).slice(0, 600));
     job.status = 'error';
-    if (isYouTubeBotCheck(message)) { job.error = YOUTUBE_BOT_CHECK_MESSAGE; job.finishedAt = Date.now(); return; }
-    job.error = `Bloqueado tras ${attempt + 1} intento(s). Detalle: ${friendlyDownloaderError(message, hiddenSecrets())}`;
+    job.speed = '—';
+    job.eta = '—';
     job.finishedAt = Date.now();
+    reportAttempts({ stage: 'download', tiktok, attempts: job.attempts, recoveredAt: null, licenseId: job.licenseId });
+    if (isYouTubeBotCheck(message)) { job.error = YOUTUBE_BOT_CHECK_MESSAGE; return; }
+    job.error = `No se pudo descargar tras ${attempt} intento(s). Detalle: ${friendlyDownloaderError(message, hiddenSecrets())}`;
 }
 
 function getJob(jobId) {
     return jobs.get(jobId) || null;
 }
 
-module.exports = { getVideoInfo, startDownload, getJob, youtubeConfigSummary, getYtDlpVersion };
+module.exports = { getVideoInfo, startDownload, getJob, youtubeConfigSummary, getYtDlpVersion, setIssueReporter };

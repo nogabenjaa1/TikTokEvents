@@ -142,3 +142,35 @@ test('proxies: varias por coma, una al azar; YouTube con su propia lista o con l
     assert.equal(run({ YTDL_YOUTUBE_PROXY: 'banana' }, 'youtubeProxyMode()').mode, 'invalid');
     assert.equal(run({ YTDL_YOUTUBE_PROXY: 'on', YTDL_PROXY: '' }, 'youtubeProxyMode()').mode, 'invalid');
 });
+
+test('sesión fija: cada intento nuevo es otra sesión (otra IP); la descarga reusa la del análisis', () => {
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const src = fs.readFileSync(require.resolve('./downloader'), 'utf8');
+    const code = src.slice(src.indexOf('const PERMANENT_ERROR_RE'), src.indexOf('function proxyForAttempt'));
+    const ctx = { Math, crypto: require('node:crypto') };
+    vm.runInNewContext(`${code}\nthis.chooseProxy = chooseProxy; this.isPermanentError = isPermanentError;`, ctx);
+    // Proxy rotativa con {session}: cada intento, una sesión distinta.
+    const rotating = ['http://user-session-{session}:clave@gate.example:7000'];
+    const sessions = new Set(Array.from({ length: 50 }, () => ctx.chooseProxy(rotating).session));
+    assert.equal(sessions.size, 50);
+    const first = ctx.chooseProxy(rotating);
+    assert.match(first.url, /^http:\/\/user-session-[0-9a-f]{12}:clave@gate\.example:7000$/);
+    // La descarga reusa exactamente la sesión (la IP) que funcionó al analizar.
+    const reused = ctx.chooseProxy(rotating, { reuse: { template: rotating[0], index: 0, session: first.session } });
+    assert.equal(reused.url, first.url); assert.equal(reused.reused, true);
+    // Si la proxy configurada cambió desde el análisis, no se reusa nada.
+    assert.equal(ctx.chooseProxy(['http://otra-{session}:c@h:1'], { reuse: { template: rotating[0], index: 0, session: first.session } }).reused, false);
+    // Sin {session}, la dirección se usa tal cual (rota sola en cada petición).
+    const noSession = ctx.chooseProxy(['http://u:c@gate.example:7000']);
+    assert.equal(noSession.url, 'http://u:c@gate.example:7000'); assert.equal(noSession.session, null);
+    // Errores que no se arreglan reintentando vs. los que sí.
+    for (const msg of ['ERROR: [youtube] x: Private video', 'ERROR: Unsupported URL: https://x', 'ERROR: File is larger than max-filesize']) assert.ok(ctx.isPermanentError(msg), msg);
+    for (const msg of ["ERROR: [youtube] x: Sign in to confirm you're not a bot", 'ERROR: HTTP Error 403: Forbidden', 'ERROR: Unable to connect to proxy', 'ERROR: Video unavailable']) assert.ok(!ctx.isPermanentError(msg), msg);
+});
+
+test('la dirección de una proxy nunca aparece en un error, aunque yt-dlp la nombre por partes', () => {
+    assert.equal(redactSecrets('Failed to connect to www.tiktok.com:443 over proxy 10.1.2.3 after 2048 ms'), 'Failed to connect to www.tiktok.com:443 over proxy [oculto] after 2048 ms');
+    assert.equal(redactSecrets("HTTPSConnection(host='10.1.2.3', port=9000): Failed"), "HTTPSConnection(host='[oculto]', port=[oculto]): Failed");
+    assert.equal(redactSecrets('via proxy http://u:p@10.0.0.1:80'), 'via proxy [oculto]');
+});

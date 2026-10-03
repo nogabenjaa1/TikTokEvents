@@ -219,6 +219,9 @@ const errorReporter = createErrorReporter({ db });
 reportBackendError = (kind, err, context) => {
     errorReporter.record({ kind, message: (err && err.message) || String(err), stack: err && err.stack, context }, { source: 'backend' });
 };
+// El Downloader manda aquí el error real de yt-dlp con el detalle de cada
+// intento (y cuándo funcionó tras fallar), para verlo en Sistema > Errores.
+downloader.setIssueReporter((report, { licenseId } = {}) => errorReporter.record(report, { source: 'backend', licenseId }));
 
 // Historial de lo que hace el admin (ver Sistema > Historial). No espera ni falla:
 // un error al anotar jamás debe impedir la acción en sí. Nunca recibe claves, solo
@@ -2418,7 +2421,7 @@ app.post('/api/downloader/info', auth.requireAuth, downloaderActionLimiter, asyn
     const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
     if (!url) return res.status(400).json({ success: false, error: 'URL requerida' });
     try {
-        const info = await downloader.getVideoInfo(url);
+        const info = await downloader.getVideoInfo(url, { licenseId: req.license.id });
         res.json({ success: true, ...info });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });

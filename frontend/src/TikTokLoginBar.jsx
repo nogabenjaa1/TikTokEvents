@@ -33,9 +33,16 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
         readOnly={disabled}
       />
       <div className="flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${live ? 'bg-green-400 animate-pulse' : verifying ? 'bg-yellow-400 animate-pulse' : 'bg-gray-600'}`} />
-        <span className={`text-[10px] font-bold uppercase tracking-widest flex-1 ${live ? 'text-green-400' : verifying ? 'text-yellow-400' : 'text-gray-500'}`}>
-          {live ? 'Conectado en vivo' : verifying ? 'Conectando en vivo...' : connectionStatus === 'error' ? 'Error de conexión' : 'Sin conexión en vivo'}
+        {/* El mismo punto se transforma según el estado (ver .tkc-status-dot):
+            aro gris sin conexión, arco girando mientras busca o conecta y
+            punto lleno con halo al confirmar el LIVE. */}
+        <span
+          className={`tkc-status-dot ${live ? 'text-green-400' : (verifying || connectionStatus === 'checking') ? 'text-yellow-400' : connectionStatus === 'error' ? 'text-red-400' : 'text-gray-500'}`}
+          data-status={live ? 'success' : (verifying || connectionStatus === 'checking') ? 'loading' : 'idle'}
+          aria-hidden="true"
+        />
+        <span key={connectionStatus} className={`tkc-msg-enter text-[10px] font-bold uppercase tracking-widest flex-1 ${live ? 'text-green-400' : verifying ? 'text-yellow-400' : 'text-gray-500'}`}>
+          {live ? 'Conectado en vivo' : verifying ? 'Conectando en vivo...' : connectionStatus === 'checking' ? 'Buscando la cuenta...' : connectionStatus === 'error' ? 'Error de conexión' : 'Sin conexión en vivo'}
         </span>
       </div>
       {/* Desconexión explícita, a mano -- la conexión persiste sola entre
@@ -49,7 +56,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
         </button>
       )}
       {connectionStatus === 'error' && connectionError && (
-        <p className="text-[10px] leading-snug text-red-300" role="alert">{connectionError}</p>
+        <p className="text-[10px] leading-snug text-red-300 tkc-msg-enter" role="alert">{connectionError}</p>
       )}
     </div>
   );

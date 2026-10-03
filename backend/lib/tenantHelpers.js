@@ -219,7 +219,15 @@ function pickEliminationBatch(pool, maxCount) {
 // Qué pedidos de !play siguen pendientes según la cola real de Spotify (ver lib/spotifyQueueSync.js).
 const { createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests } = require('./spotifyQueueSync');
 
+// Lo mínimo que necesita una pantalla para mover el segundero de un juego
+// cuyo estado completo es pesado (Eliminación, Ruleta): ver elim_tick /
+// roulette_tick. El cliente lo mezcla sobre el último estado completo.
+function timerTick(state) {
+    return { isActive: state.isActive, mode: state.mode, paused: state.paused, timeLeft: state.timeLeft };
+}
+
 module.exports = {
+    timerTick,
     REVEAL_SELECT_MS,
     REVEAL_RESULT_MS,
     REVEAL_SELECT_MS_FAST,

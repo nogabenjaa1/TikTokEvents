@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loginWithKey, saveSession } from './auth';
 import logoMark from './assets/logo-mark.png';
+import MorphButton from './MorphButton';
+import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 
 // Pantalla de login: pide la license key (no hay username/password
 // separado, la key ES la credencial). `notice` es un aviso no-error (ej.
@@ -18,39 +20,55 @@ import logoMark from './assets/logo-mark.png';
 export default function Login({ onLoggedIn, notice = '', embedded = false, onWantsMembership }) {
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  // idle | loading | success | error -- lo que cuenta el botón con su forma
+  // (ver MorphButton): se encoge mientras valida, muestra la palomita al
+  // entrar y vuelve con un vaivén si la clave no sirve.
+  const [status, setStatus] = useState('idle');
+  const loading = status === 'loading' || status === 'success';
   // La clave es la credencial: se muestra oculta por defecto (por si el
   // streamer comparte pantalla) y se puede revelar para revisar que quedó
   // bien pegada.
   const [showKey, setShowKey] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!key.trim() || loading) return;
-    setLoading(true);
+    setStatus('loading');
     setError('');
+    // Un mínimo de espera para que el botón alcance a encogerse: si el
+    // servidor responde al instante (bien o mal), la respuesta saldría sin
+    // transición.
+    const minLoading = wait(MORPH_MIN_LOADING_MS);
     try {
       const trimmedKey = key.trim();
       const { token, license } = await loginWithKey(trimmedKey);
+      await minLoading;
       // Se guarda además del token para poder armar la URL del overlay
       // (?overlay=true&key=...) sin pedírsela de nuevo — ver auth.buildOverlayUrl.
       saveSession({ token, licenseKey: trimmedKey, ...license });
+      if (!mounted.current) return;
+      setStatus('success');
+      await wait(MORPH_SUCCESS_HOLD_MS);
       onLoggedIn();
     } catch (err) {
+      await minLoading;
+      if (!mounted.current) return;
       setError(err.message || 'No pudimos validar la clave. Revisa que esté completa y sin espacios de más, e inténtalo de nuevo.');
-    } finally {
-      setLoading(false);
+      setStatus('error');
     }
   };
 
   return (
     <div className={embedded ? 'w-full flex items-center justify-center p-6 font-sans' : 'min-h-screen text-white flex items-center justify-center p-6 font-sans'}>
       <div className="w-full max-w-sm flex flex-col gap-4">
-        <form onSubmit={submit} className="theme-surface p-8">
-          <div className="flex items-center gap-3 mb-8">
+        <form onSubmit={submit} className="theme-surface p-8 tkc-rise" aria-busy={status === 'loading'}>
+          <div className="flex items-center gap-3 mb-2">
             <img src={logoMark} alt="" className="h-9 w-auto flex-shrink-0" />
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>
           </div>
+          <p className="text-xs text-gray-500 mb-7">Entra con tu clave de licencia para abrir tu panel.</p>
 
           {notice && <p role="status" className="theme-notice mb-4">{notice}</p>}
 
@@ -63,7 +81,10 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
               autoComplete="off"
               spellCheck={false}
               value={key}
-              onChange={e => setKey(e.target.value)}
+              onChange={e => { setKey(e.target.value); if (status === 'error') setStatus('idle'); }}
+              readOnly={loading}
+              aria-invalid={status === 'error' || undefined}
+              aria-describedby={error ? 'license-key-error' : undefined}
               placeholder="Pega tu clave aquí"
               className="theme-input flex-1 min-w-0 p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
             />
@@ -72,15 +93,17 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             </button>
           </div>
 
-          {error && <p role="alert" className="theme-notice mb-4">{error}</p>}
+          {error && <p id="license-key-error" role="alert" className="theme-notice mb-4 tkc-msg-enter">{error}</p>}
 
-          <button
+          <MorphButton
             type="submit"
-            disabled={loading || !key.trim()}
-            className="theme-btn-primary theme-btn-lg w-full font-black tracking-widest uppercase transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            status={status}
+            loadingLabel="Verificando tu clave…"
+            disabled={!loading && !key.trim()}
+            className="theme-btn-primary theme-btn-lg font-black tracking-widest uppercase shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {loading ? 'VERIFICANDO...' : 'ENTRAR'}
-          </button>
+            {status === 'success' ? 'LISTO' : 'ENTRAR'}
+          </MorphButton>
 
           <p className="text-[11px] text-gray-500 mt-4 text-center">¿Aún no tienes clave? Puedes probar gratis o comprar un plan.</p>
         </form>
@@ -89,7 +112,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
           <button
             type="button"
             onClick={onWantsMembership}
-            className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
+            className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all tkc-rise tkc-rise-2"
           >
             ¿No tienes licencia? Ver planes y prueba gratis
           </button>

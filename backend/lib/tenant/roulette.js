@@ -9,6 +9,7 @@ const {
     REVEAL_RESULT_MS_FAST,
     pickDefaultManualAvatar,
     shuffleArray,
+    timerTick,
 } = require('../../lib/tenantHelpers');
 
 module.exports = {
@@ -62,7 +63,9 @@ module.exports = {
                 this.beginRouletteSpin();
                 return;
             }
-            this.broadcast.emit('roulette_timer_updated', this.getRoulettePublicState());
+            // Solo el reloj (ver elim_tick): la lista de entradas viaja con
+            // roulette_state_update cada vez que cambia, no cada segundo.
+            this.broadcast.emit('roulette_tick', timerTick(this.rouletteState));
         }, 1000);
     },
 

@@ -31,7 +31,7 @@ export default function EventsSection({
       {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
           entre igual de bien en mobile que el rail principal. */}
       <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-      <ScrollRow label="Eventos de TikTok">
+      <ScrollRow label="Eventos de TikTok" activeKey={eventsTab} indicatorClassName="rounded-full">
         {EVENT_TABS.map((t) => (
           <Fragment key={t.id}>
           {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
@@ -41,8 +41,8 @@ export default function EventsSection({
             data-events-tab-active={eventsTab === t.id ? 'true' : undefined}
             onClick={() => onSelectTab(t.id)}
             className={[
-              'theme-nav-btn h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
-              eventsTab === t.id ? 'theme-nav-btn-active' : 'bg-transparent border-transparent',
+              'theme-nav-btn tkc-nav-item h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
+              'bg-transparent border-transparent',
             ].join(' ')}
           >
             <span className="text-base leading-none" aria-hidden="true">{t.icon}</span>
@@ -55,6 +55,12 @@ export default function EventsSection({
       </ScrollRow>
         <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />
       </div>
+
+      {/* El panel de la pestaña entra con un fade corto (la barra de arriba no
+          se mueve: su indicador ya se desliza). TTS con sesión no va acá: su
+          panel vive siempre montado en App.jsx y anima por su cuenta. */}
+      {(eventsTab !== 'tts' || needsAccess('tts')) && (
+      <div key={eventsTab} className="tkc-view-enter">
 
       {eventsTab === 'king' && (
         needsAccess('king') ? (
@@ -176,6 +182,8 @@ export default function EventsSection({
           cambiar de pestaña). */}
       {eventsTab === 'tts' && needsAccess('tts') && (
         <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={onGoMembership} notice="Necesitas una licencia o una prueba gratis para usar TTS." />
+      )}
+      </div>
       )}
     </>
   );

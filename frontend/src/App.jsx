@@ -329,11 +329,15 @@ export default function App() {
 
     socket.on('elim_state_update',    setElimState);
     socket.on('elim_timer_updated',   setElimState);
+    // Segundero liviano (solo el reloj): se mezcla sobre el último estado
+    // completo en vez de reemplazarlo -- ver timerTick en el backend.
+    socket.on('elim_tick', (tick) => setElimState((prev) => ({ ...prev, ...tick })));
     socket.on('elim_eliminated',      setElimState);
     socket.on('elim_winner_declared', setElimState);
 
     socket.on('roulette_state_update',    setRouletteState);
     socket.on('roulette_timer_updated',   setRouletteState);
+    socket.on('roulette_tick', (tick) => setRouletteState((prev) => ({ ...prev, ...tick })));
     socket.on('roulette_spin_started',    setRouletteState);
     // Bug real (encontrado ahora, pedido explícito de que la ruleta gire
     // antes de cada eliminado): faltaba escuchar este evento — el backend
@@ -515,6 +519,22 @@ export default function App() {
   // arranque del backend tiene un id distinto; si un panel que seguía abierto
   // recibe un id nuevo, el servidor se reinició y todo lo que vivía en
   // memoria (partidas, rankings, conexión con TikTok) se perdió.
+  // Overlays: si el servidor se reinició (casi siempre un deploy), la fuente
+  // de OBS se recarga sola para tomar el código nuevo -- si no, seguiría
+  // horas con el paquete viejo y sin entender los eventos nuevos. Recargar
+  // cuesta solo el index.html: los /assets/ quedan en caché.
+  useEffect(() => {
+    if (!overlayMode || !socket) return;
+    let firstBootId = null;
+    const onBoot = ({ bootId } = {}) => {
+      if (!bootId) return;
+      if (firstBootId && firstBootId !== bootId) window.location.reload();
+      firstBootId = bootId;
+    };
+    socket.on('server_boot', onBoot);
+    return () => socket.off('server_boot', onBoot);
+  }, [socket, overlayMode]);
+
   useEffect(() => {
     if (overlayMode || !socket) return;
     const onConnect = () => setSocketConnected(true);
@@ -702,7 +722,7 @@ export default function App() {
   };
 
   return (
-    <ThemedShell className="flex flex-col">
+    <ThemedShell className="flex flex-col tkc-app-enter">
       <a href="#contenido-principal" className="tkc-skip-link">Saltar al contenido</a>
       {kickedOutMessage && (
         <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
@@ -727,6 +747,13 @@ export default function App() {
       />
 
       <main id="contenido-principal" tabIndex={-1} className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden focus:outline-none">
+        {/* Cada sección (menos Eventos, que anima solo su panel para que su
+            barra de pestañas no se mueva) entra con un fade corto al
+            elegirla -- ver .tkc-view-enter. Va con `key` para que la
+            animación se repita en cada cambio; las secciones ya se montaban
+            de cero al elegirlas, así que esto no cambia nada de su estado. */}
+        {sidebarMode !== 'events' && (
+        <div key={sidebarMode} className="tkc-view-enter">
         {/* Pedido explicito: página principal con accesos directos. Sin
             sesión igual se ve (versión reducida, ver Dashboard.jsx) -- no
             hace falta needsAccess acá porque cada shortcut ya lleva a una
@@ -754,37 +781,6 @@ export default function App() {
             overlayCustomization={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
           />
         )}
-
-        {sidebarMode === 'events' && (
-          <EventsSection
-            eventsTab={eventsTab} onSelectTab={selectEventsTab} socketConnected={socketConnected} connectionStatus={connectionStatus}
-            ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
-            socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
-            overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
-            state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} extensibleState={extensibleState} versusState={versusState} goalState={goalState}
-            spotifyQueueState={spotifyQueueState} spotifySettingsState={spotifySettingsState}
-            spotifyOAuthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
-            panelOverlayDraft={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
-            soundEnabled={soundEnabled} onSoundEnabledChange={setSoundEnabled} alertsOverlayConnected={alertsOverlayConnected}
-            monitorSink={monitorSink} onMonitorSinkChange={setMonitorSink}
-          />
-        )}
-        {/* Permanece montado siempre (no solo dentro de "events") para que la
-            lectura activa no se interrumpa si el streamer se va a otra
-            sección mientras TTS sigue leyendo el chat en voz alta. */}
-        <TtsChat ref={ttsRef} socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} onEnabledChange={setTtsEnabled} onEngineStatusChange={setTtsEngine} />
-
-        {/* Pedido explicito: el streamer no escuchaba sus propias alertas de
-            sonido (solo llegaban a los espectadores por OBS) -- esto suena
-            en SU navegador sin importar en qué pestaña del panel esté, no
-            solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
-            tiene pegada esa URL aparte). SIEMPRE montado (antes era
-            `{soundEnabled && (...)}`): desmontarlo tira la cola entera (ver
-            el comentario en AlertSoundListener) y perdía alertas ya
-            encoladas cada vez que se apagaba el sonido un momento -- ahora
-            solo se le pasa `muted` y la cola sigue viva. */}
-        <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} muted={!soundEnabled} />
-
         {/* Color Says es de acceso libre: no necesita sesión ni socket para
             jugar (la lógica es 100% local), y con sesión sincroniza el
             estado con el overlay especial de Colores. `tier` (regular/pro/
@@ -817,6 +813,39 @@ export default function App() {
         )}
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager onSessionInvalid={handleSessionInvalid} />}
         {sidebarMode === 'system' && session?.isAdmin && <AdminSystem onSessionInvalid={handleSessionInvalid} />}
+        </div>
+        )}
+
+        {sidebarMode === 'events' && (
+          <EventsSection
+            eventsTab={eventsTab} onSelectTab={selectEventsTab} socketConnected={socketConnected} connectionStatus={connectionStatus}
+            ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
+            socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
+            overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
+            state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} extensibleState={extensibleState} versusState={versusState} goalState={goalState}
+            spotifyQueueState={spotifyQueueState} spotifySettingsState={spotifySettingsState}
+            spotifyOAuthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
+            panelOverlayDraft={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
+            soundEnabled={soundEnabled} onSoundEnabledChange={setSoundEnabled} alertsOverlayConnected={alertsOverlayConnected}
+            monitorSink={monitorSink} onMonitorSinkChange={setMonitorSink}
+          />
+        )}
+        {/* Permanece montado siempre (no solo dentro de "events") para que la
+            lectura activa no se interrumpa si el streamer se va a otra
+            sección mientras TTS sigue leyendo el chat en voz alta. */}
+        <TtsChat ref={ttsRef} socket={socket} connectionStatus={connectionStatus} visible={sidebarMode === 'events' && eventsTab === 'tts' && !needsAccess('tts')} onEnabledChange={setTtsEnabled} onEngineStatusChange={setTtsEngine} />
+
+        {/* Pedido explicito: el streamer no escuchaba sus propias alertas de
+            sonido (solo llegaban a los espectadores por OBS) -- esto suena
+            en SU navegador sin importar en qué pestaña del panel esté, no
+            solo en la de Alertas. El visual lo sigue viendo en OBS (ahí
+            tiene pegada esa URL aparte). SIEMPRE montado (antes era
+            `{soundEnabled && (...)}`): desmontarlo tira la cola entera (ver
+            el comentario en AlertSoundListener) y perdía alertas ya
+            encoladas cada vez que se apagaba el sonido un momento -- ahora
+            solo se le pasa `muted` y la cola sigue viva. */}
+        <AlertSoundListener socket={socket} customize={overlayCustomization.alerts} sinkId={monitorSink.id} muted={!soundEnabled} />
+
       </main>
     </div>
 

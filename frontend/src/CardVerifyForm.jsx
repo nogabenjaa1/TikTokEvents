@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { backendUrl, requestFreeTrial } from './auth';
+import MorphButton from './MorphButton';
+import { MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 
 // Mismo motivo que en StripePaymentForm.jsx: un solo script de Stripe.js
 // por carga de página, no uno por cada vez que se abre este formulario.
@@ -43,6 +45,7 @@ function reportStripeError(error) {
 function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, submitting, setSubmitting, error, setError, onResult }) {
   const stripe = useStripe();
   const elements = useElements();
+  const [verified, setVerified] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -74,6 +77,9 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
       // vuelve a consultar el SetupIntent contra la propia API de Stripe
       // antes de crear la licencia (ver /api/free-trial en server.js).
       const result = await requestFreeTrial(alias.trim(), setupIntent.id);
+      // La palomita del botón (ver MorphButton) antes de pasar al resultado.
+      setVerified(true);
+      await wait(MORPH_SUCCESS_HOLD_MS);
       onResult(result);
     } catch (err) {
       setError(err.message || 'No se pudo verificar la tarjeta. Revisa los datos e intenta de nuevo.');
@@ -97,14 +103,16 @@ function CheckoutForm({ alias, setAlias, cardholderName, setCardholderName, subm
         className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
       />
       <PaymentElement />
-      {error && <p className="theme-notice">{error}</p>}
-      <button
+      {error && <p className="theme-notice tkc-msg-enter">{error}</p>}
+      <MorphButton
         type="submit"
-        disabled={submitting || !stripe || !alias.trim() || !cardholderName.trim()}
-        className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        status={verified ? 'success' : submitting ? 'loading' : error ? 'error' : 'idle'}
+        loadingLabel="Verificando la tarjeta…"
+        disabled={!submitting && !verified && (!stripe || !alias.trim() || !cardholderName.trim())}
+        className="theme-btn-secondary theme-btn-md font-black tracking-widest uppercase disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {submitting ? 'VERIFICANDO...' : 'Verificar y activar prueba gratis'}
-      </button>
+        Verificar y activar prueba gratis
+      </MorphButton>
     </form>
   );
 }

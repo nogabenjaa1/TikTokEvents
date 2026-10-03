@@ -9,6 +9,7 @@ const {
     REVEAL_RESULT_MS_FAST,
     pickDefaultManualAvatar,
     pickEliminationBatch,
+    timerTick,
 } = require('../../lib/tenantHelpers');
 
 module.exports = {
@@ -115,6 +116,7 @@ module.exports = {
         this.elimTimerInterval = setInterval(() => {
             if (!this.elimState.isActive || this.elimState.mode === 'revealing' || this.elimState.mode === 'result' || this.elimState.paused) return;
             this.elimState.timeLeft--;
+            const modeBefore = this.elimState.mode;
 
             if (this.elimState.timeLeft <= 0) {
                 if (this.elimState.mode === 'joining') {
@@ -124,7 +126,16 @@ module.exports = {
                     this.beginEliminationReveal();
                 }
             }
-            this.broadcast.emit('elim_timer_updated', this.getElimPublicState());
+            // Ancho de banda: el estado completo lleva la lista de participantes
+            // (con la URL del avatar de cada slot) y antes salía entera cada
+            // segundo a cada pantalla abierta. Cualquier cambio de la lista ya
+            // manda su propio elim_state_update, así que el segundero solo
+            // necesita el reloj -- salvo en el tick que cambia de fase.
+            if (this.elimState.mode !== modeBefore) {
+                this.broadcast.emit('elim_timer_updated', this.getElimPublicState());
+            } else {
+                this.broadcast.emit('elim_tick', timerTick(this.elimState));
+            }
         }, 1000);
     },
 

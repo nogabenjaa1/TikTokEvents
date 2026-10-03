@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import MorphButton from './MorphButton';
+import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 
 // Guía paso a paso para crear una app propia en el dashboard de Spotify y
 // guardar sus credenciales (ver backend/spotify.js, "Quién puede usarlo"): la
@@ -34,6 +36,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
   const [clientSecret, setClientSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false); // palomita del botón antes de seguir (ver MorphButton)
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -50,6 +53,7 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
     if (saving) return;
     setSaving(true);
     setError('');
+    const minLoading = wait(MORPH_MIN_LOADING_MS); // que el botón alcance a encogerse (ver MorphButton)
     try {
       const res = await fetch(`${backendUrl()}/api/spotify/app`, {
         method: 'POST',
@@ -57,10 +61,15 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
         body: JSON.stringify({ clientId, clientSecret }),
       });
       const data = await res.json();
+      await minLoading;
       if (!data.success) throw new Error(data.error || 'No se pudo guardar la app.');
+      setSaved(true);
+      await wait(MORPH_SUCCESS_HOLD_MS);
+      setSaved(false);
       setClientSecret('');
       onSaved?.();
     } catch (err) {
+      await minLoading;
       setError(err.message || 'No se pudo guardar la app.');
     } finally {
       setSaving(false);
@@ -158,15 +167,19 @@ export default function SpotifyAppGuide({ redirectUri, intro, existingClientId =
         <p className="text-[10px] text-gray-500 leading-snug">
           El Client secret funciona como una contraseña de tu app: solo se usa para conectar tu Spotify, se guarda cifrado y nunca se vuelve a mostrar.
         </p>
-        {error && <p role="alert" className="theme-notice">{error}</p>}
+        {error && <p role="alert" className="theme-notice tkc-msg-enter">{error}</p>}
         <div className="flex gap-2">
-          <button
-            type="submit"
-            disabled={saving || !clientId.trim() || !clientSecret.trim()}
-            className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Verificando con Spotify...' : 'Verificar y guardar'}
-          </button>
+          <div className="flex-1 min-w-0 flex">
+            <MorphButton
+              type="submit"
+              status={saved ? 'success' : saving ? 'loading' : error ? 'error' : 'idle'}
+              loadingLabel="Verificando con Spotify…"
+              disabled={!saving && (!clientId.trim() || !clientSecret.trim())}
+              className="theme-btn-primary theme-btn-lg font-bold tracking-wide shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Verificar y guardar
+            </MorphButton>
+          </div>
           {onCancel && (
             <button type="button" onClick={onCancel} disabled={saving} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40">
               Cancelar

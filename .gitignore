@@ -30,6 +30,7 @@ backend/downloads/
 .codex/
 .gemini/
 agent/
+AGENTS.md
 .impeccable/
 skills-lock.json
 

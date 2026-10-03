@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import MorphButton from './MorphButton';
+import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
@@ -247,23 +249,30 @@ export default function Membership({ session, onSessionUpdate }) {
   // aparece dentro de Rey del Trono/Zubastinis/etc. cuando no hay sesión.
   const [loginKey, setLoginKey] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
+  // idle | loading | success | error: lo cuenta el botón con su forma (ver MorphButton).
+  const [loginStatus, setLoginStatus] = useState('idle');
+  const loginLoading = loginStatus === 'loading' || loginStatus === 'success';
 
   const submitLogin = async (e) => {
     e.preventDefault();
     if (!loginKey.trim() || loginLoading) return;
-    setLoginLoading(true);
+    setLoginStatus('loading');
     setLoginError('');
+    const minLoading = wait(MORPH_MIN_LOADING_MS); // ver Login.jsx
     try {
       const trimmedKey = loginKey.trim();
       const { token, license } = await loginWithKey(trimmedKey);
+      await minLoading;
       saveSession({ token, licenseKey: trimmedKey, ...license });
+      setLoginStatus('success');
+      await wait(MORPH_SUCCESS_HOLD_MS);
       onSessionUpdate?.({ token, licenseKey: trimmedKey, ...license });
       setLoginKey('');
+      setLoginStatus('idle');
     } catch (err) {
+      await minLoading;
       setLoginError(err.message || 'Licencia inválida, revocada o expirada');
-    } finally {
-      setLoginLoading(false);
+      setLoginStatus('error');
     }
   };
 
@@ -433,14 +442,16 @@ export default function Membership({ session, onSessionUpdate }) {
         <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
           <div className="flex-1">
             <label className="theme-label block text-[10px] mb-2">¿Ya tienes una clave? Ingrésala aquí</label>
-            <input value={loginKey} onChange={e => setLoginKey(e.target.value)} placeholder="Pega tu clave de licencia"
+            <input value={loginKey} onChange={e => { setLoginKey(e.target.value); if (loginStatus === 'error') setLoginStatus('idle'); }} readOnly={loginLoading} placeholder="Pega tu clave de licencia"
               className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
           </div>
-          <button type="submit" disabled={loginLoading || !loginKey.trim()}
-            className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
-            {loginLoading ? 'Verificando...' : 'Entrar'}
-          </button>
-          {loginError && <p role="alert" className="text-[10px] font-bold text-red-500 sm:basis-full">{loginError}</p>}
+          <div className="sm:w-32 flex-shrink-0">
+            <MorphButton type="submit" status={loginStatus} loadingLabel="Verificando tu clave…" disabled={!loginLoading && !loginKey.trim()}
+              className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+              Entrar
+            </MorphButton>
+          </div>
+          {loginError && <p role="alert" className="text-[10px] font-bold text-red-500 sm:basis-full tkc-msg-enter">{loginError}</p>}
         </form>
       )}
 

@@ -82,7 +82,13 @@ function redactSecrets(raw, secrets = []) {
     for (const secret of secrets) {
         if (secret && String(secret).length >= 4) text = text.split(String(secret)).join('[oculto]');
     }
-    return text.replace(URL_CREDENTIALS_RE, '//[oculto]@');
+    // yt-dlp también nombra la proxy por partes al fallar ("over proxy
+    // 1.2.3.4", "host='1.2.3.4', port=8000"): eso tampoco debe verse. Los
+    // reportes identifican la proxy por su número en la lista.
+    return text
+        .replace(URL_CREDENTIALS_RE, '//[oculto]@')
+        .replace(/\b(over proxy|via proxy|proxy) (?!\[oculto\])[^\s'",)]+/gi, '$1 [oculto]')
+        .replace(/host='[^']*', port=\d+/g, "host='[oculto]', port=[oculto]");
 }
 
 function friendlyDownloaderError(raw, secrets = [], fallback = 'No se pudo procesar el enlace.') {

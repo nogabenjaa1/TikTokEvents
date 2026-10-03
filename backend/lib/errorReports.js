@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX = { message: 300, stack: 2000, context: 160, userAgent: 160 };
 const SOURCES = new Set(['frontend', 'backend', 'csp']);
-const KINDS = new Set(['render', 'error', 'promise', 'csp', 'exception', 'rejection', 'http']);
+const KINDS = new Set(['render', 'error', 'promise', 'csp', 'exception', 'rejection', 'http', 'downloader']);
 
 // Lo que jamás debe quedar guardado, aunque un mensaje de error lo arrastre por
 // accidente: el token de un overlay, un JWT, una clave de licencia, una cabecera

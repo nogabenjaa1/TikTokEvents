@@ -51,7 +51,7 @@ export const sourceLabel = (source) => SOURCE_LABELS[source] || source;
 
 const KIND_LABELS = {
   render: 'Fallo al dibujar', error: 'Error', promise: 'Promesa rechazada', csp: 'Política de seguridad',
-  exception: 'Excepción', rejection: 'Promesa rechazada', http: 'Petición HTTP',
+  exception: 'Excepción', rejection: 'Promesa rechazada', http: 'Petición HTTP', downloader: 'Downloader (yt-dlp)',
 };
 export const kindLabel = (kind) => KIND_LABELS[kind] || kind;
 

@@ -157,6 +157,15 @@ function getStripeClient() {
     return new Stripe(secretKey);
 }
 
+// El formulario de Checkout (ui_mode 'form') es una vista previa de Stripe
+// que exige esta versión de la API con su bandera beta. Se pasa SOLO en las
+// llamadas de Checkout Sessions (opción por petición), no al crear el
+// cliente: el resto del backend (conciliación de pagos) sigue en la versión
+// estable del SDK. Lo usan el cobro (/api/payments/stripe/checkout-session)
+// y la verificación de tarjeta de la prueba gratis.
+const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-03-25.dahlia; custom_checkout_payment_form_preview=v1';
+const STRIPE_CHECKOUT_INTEGRATION_ID = 'custom_embedded_web_0001';
+
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
 // Nivel de Color Says — independiente de is_admin (ver comentario en
 // db.js): 'admin' acá es un nivel más que se le puede vender a cualquier
@@ -491,25 +500,40 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     res.json({ success: true, token, license: sessionLicense(row) });
 });
 
-// Crea el SetupIntent que CardVerifyForm.jsx confirma con el Payment
-// Element de Stripe -- pre-login a propósito (todavía no existe ninguna
-// licencia/sesión en este punto, es lo que este mismo flujo está por
-// crear). Sin auth.requireAuth, pero sí con freeTrialLimiter (mismo
-// presupuesto que /api/free-trial, ver el comentario ahí abajo: las dos
-// rutas son dos pasos de un mismo flujo). "Setup" (no "Payment") porque
-// nunca se cobra nada -- el objetivo es solo que Stripe autentique que la
-// tarjeta es real (puede pedir 3DS), no capturar un monto.
-app.post('/api/free-trial/setup-intent', freeTrialLimiter, async (req, res) => {
+// Crea la Checkout Session (modo 'setup', mismo formulario de Checkout que
+// el cobro) con la que CardVerifyForm.jsx verifica una tarjeta -- pre-login
+// a propósito (todavía no existe ninguna licencia/sesión en este punto, es
+// lo que este mismo flujo está por crear). Sin auth.requireAuth, pero sí
+// con freeTrialLimiter (mismo presupuesto que /api/free-trial, ver el
+// comentario ahí abajo: las dos rutas son dos pasos de un mismo flujo).
+// "Setup" (no "payment") porque nunca se cobra nada -- el objetivo es solo
+// que Stripe autentique que la tarjeta es real (puede pedir 3DS).
+//
+// Pedido explícito del dueño: que la verificación use la misma
+// implementación que el cobro, aceptando que el modo setup de Checkout
+// muestra su texto de autorización de cobros futuros (el SetupIntent
+// suelto de antes lo evitaba con usage 'on_session'; Checkout no permite
+// quitarlo). La tarjeta igual nunca se cobra ni se guarda en un cliente.
+app.post('/api/free-trial/checkout-session', freeTrialLimiter, async (req, res) => {
     try {
         const stripe = getStripeClient();
-        // usage: 'on_session' (no el default 'off_session') -- 'off_session'
-        // le hace mostrar al streamer un texto de consentimiento tipo
-        // "permites que BenjaApis cargue tu tarjeta en el futuro", que acá
-        // sería engañoso: esta tarjeta NUNCA se cobra, ni ahora ni después.
-        const intent = await stripe.setupIntents.create({ payment_method_types: ['card'], usage: 'on_session' });
-        res.json({ success: true, clientSecret: intent.client_secret });
+        const session = await stripe.checkout.sessions.create({
+            ui_mode: 'form',
+            mode: 'setup',
+            currency: 'mxn',
+            payment_method_types: ['card'],
+            billing_address_collection: 'auto',
+            phone_number_collection: { enabled: false },
+            integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
+            // Solo si el banco exige salir del sitio (raro: el 3DS va en un
+            // modal). La prueba se vuelve a pedir desde Membresía; la
+            // tarjeta no quedó usada porque la licencia no llegó a crearse.
+            return_url: `${FRONTEND_URL}/?trial_checkout={CHECKOUT_SESSION_ID}`,
+            setup_intent_data: { description: 'BenjaApis - verificación de tarjeta para la prueba gratis (sin cobro)' },
+        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id });
     } catch (err) {
-        console.error('[Stripe] Error creando SetupIntent para prueba gratis:', err.message);
+        console.error('[Stripe] Error creando Checkout Session para prueba gratis:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo iniciar la verificación de tarjeta. Intenta de nuevo en un momento.' });
     }
 });
@@ -525,7 +549,7 @@ app.post('/api/free-trial/setup-intent', freeTrialLimiter, async (req, res) => {
 // ==========================================
 app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
     if (isBotSubmission(req.body)) return res.status(400).json({ success: false, error: 'No se pudo crear la prueba gratis' });
-    const { alias, setupIntentId } = req.body || {};
+    const { alias, checkoutSessionId } = req.body || {};
     if (!alias || typeof alias !== 'string' || !alias.trim()) {
         return res.status(400).json({ success: false, error: 'Falta un alias' });
     }
@@ -535,28 +559,30 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
     }
 
     // Vía alternativa al anuncio: en vez de mirar un video, verificar una
-    // tarjeta real con Stripe. A propósito NO se cobra nada -- el
-    // SetupIntent autentica la tarjeta (puede pedir 3DS, mucho más fuerte
+    // tarjeta real con Stripe. A propósito NO se cobra nada -- la sesión en
+    // modo setup autentica la tarjeta (puede pedir 3DS, mucho más fuerte
     // que un simple chequeo de Luhn) sin capturar ningún monto. Pedido
-    // explícito: a diferencia de la verificación vieja de MercadoPago (que
-    // no comparaba nada entre pruebas), acá SÍ se guarda el fingerprint
-    // estable de la tarjeta (trial_card_fingerprint, UNIQUE parcial en
-    // licenses, ver db.js) para que la misma tarjeta física no pueda
-    // reclamar una segunda prueba gratis con otro alias.
+    // explícito: se guarda el fingerprint estable de la tarjeta
+    // (trial_card_fingerprint, UNIQUE parcial en licenses, ver db.js) para
+    // que la misma tarjeta física no pueda reclamar una segunda prueba
+    // gratis con otro alias.
     let trialCardFingerprint = null;
-    if (setupIntentId !== undefined) {
-        if (typeof setupIntentId !== 'string' || !setupIntentId.trim()) {
+    if (checkoutSessionId !== undefined) {
+        if (typeof checkoutSessionId !== 'string' || !checkoutSessionId.trim()) {
             return res.status(400).json({ success: false, error: 'Verificación de tarjeta inválida' });
         }
         try {
             const stripe = getStripeClient();
-            const intent = await stripe.setupIntents.retrieve(setupIntentId.trim(), { expand: ['payment_method'] });
-            if (intent.status !== 'succeeded') {
+            // Nunca se cree lo que diga el frontend: se pide la sesión a
+            // Stripe y se exige que sea de verificación y esté completa.
+            const session = await stripe.checkout.sessions.retrieve(checkoutSessionId.trim(), { expand: ['setup_intent.payment_method'] }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+            const intent = session.setup_intent;
+            if (session.mode !== 'setup' || session.status !== 'complete' || intent?.status !== 'succeeded') {
                 return res.status(400).json({ success: false, error: 'La tarjeta no pasó la verificación de seguridad. Verifica los datos e intenta de nuevo.' });
             }
             trialCardFingerprint = intent.payment_method?.card?.fingerprint || null;
         } catch (err) {
-            console.error('[Stripe] Error verificando SetupIntent para prueba gratis:', err.message);
+            console.error('[Stripe] Error verificando la sesión de la prueba gratis:', err.message);
             return res.status(400).json({ success: false, error: 'No se pudo verificar la tarjeta. Intenta de nuevo.' });
         }
     }
@@ -2207,12 +2233,6 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
 // PaymentIntent, no el de la sesión.
 // ==========================================
 
-// El formulario de Checkout (ui_mode 'form') es una vista previa de Stripe
-// que exige esta versión de la API con su bandera beta. Se pasa SOLO en las
-// llamadas de Checkout Sessions (opción por petición), no al crear el
-// cliente: los PaymentIntents/SetupIntents del resto del backend (prueba
-// gratis, conciliación) siguen en la versión estable del SDK.
-const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-03-25.dahlia; custom_checkout_payment_form_preview=v1';
 const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
 
 // Un cliente de Stripe por licencia (buscado por su metadata, sin columna
@@ -2292,7 +2312,7 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             automatic_tax: { enabled: false },
             submit_type: 'auto',
             saved_payment_method_options: { payment_method_save: 'enabled' },
-            integration_identifier: 'custom_embedded_web_0001',
+            integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
             // Pago único: los planes se compran una vez (también el Mensual),
             // no son suscripciones -- por eso no va payment_method_collection,
             // que solo aplica a mode 'subscription'.

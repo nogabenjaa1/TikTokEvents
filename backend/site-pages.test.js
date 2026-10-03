@@ -84,7 +84,7 @@ test('http:// se redirige a https:// (301); sin el encabezado del proxy no se to
 
 test('campo trampa: un envío con "website" lleno se rechaza sin tocar la base', async () => {
   const routes = {};
-  vm.runInNewContext(slice('const isBotSubmission', "app.post('/api/free-trial/setup-intent'"), {
+  vm.runInNewContext(slice('const isBotSubmission', "app.post('/api/free-trial/checkout-session'"), {
     app: { post: (p, ...h) => { routes[p] = h.at(-1); } }, loginLimiter: null,
     auth: { resolveFromRawKey: async () => { throw new Error('no debe consultar la base'); } },
   });

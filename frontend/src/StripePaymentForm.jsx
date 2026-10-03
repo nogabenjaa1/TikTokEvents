@@ -1,70 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
 import { backendUrl, authHeaders } from './auth';
+import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError } from './stripeCheckout';
 
-// Se crea una sola vez por carga de página (no cada vez que se monta el
-// formulario) -- mismo motivo que loadMercadoPagoSdk en CardPaymentForm.jsx:
-// no tiene sentido recargar el script de Stripe.js en cada intento de pago.
-// loadStripe inserta Stripe.js directo desde js.stripe.com (la versión
-// 'dahlia' que trae @stripe/stripe-js 9, la que tiene initCheckoutFormSdk)
-// y solo cuando se abre este formulario, no en cada página (overlays
-// incluidos). La bandera beta es la que exige el formulario de Checkout.
-let stripePromise = null;
-function getStripePromise() {
-  if (!stripePromise) {
-    const publicKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-    stripePromise = publicKey
-      ? loadStripe(publicKey, { betas: ['custom_checkout_payment_form_1'], locale: 'es' })
-      : Promise.resolve(null);
-  }
-  return stripePromise;
-}
-
-// Apariencia configurada en Checkout Studio de Stripe.
-const APPEARANCE = {
-  theme: 'flat',
-  labels: 'auto',
-  inputs: 'condensed',
-  variables: {
-    borderRadius: '4px',
-    colorBackground: '#ffffff',
-    colorDanger: '#df1b41',
-    colorPrimary: '#0570de',
-    colorSuccess: '#00c853',
-    colorText: '#30313d',
-    fontFamily: 'default',
-    fontSizeBase: '16px',
-    spacingUnit: '4px',
-  },
-};
-
-// Stripe.js ya trae sus propios mensajes en español (locale 'es', arriba)
-// -- este fallback solo cubre casos sin `message`. Pedido explícito:
-// mostrar también el `decline_code` (ej. "do_not_honor") pegado al mensaje
-// -- es justo el dato que ayuda a saber POR QUÉ se rechazó (fondos,
-// tarjeta perdida, error genérico del banco, etc.) sin tener que ir a
-// buscarlo al dashboard.
-function friendlyDeclineMessage(error) {
-  const message = error?.message || 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
-  const declineCode = error?.decline_code || error?.paymentFailed?.declineCode;
-  if (declineCode) {
-    return `${message.replace(/\.?\s*$/, '')}: ${declineCode}`;
-  }
-  return message;
-}
-
-// Pedido explícito: Stripe.js confirma el pago DIRECTO en el navegador, así
-// que un rechazo nunca toca este backend por su cuenta -- sin esto no
-// quedaba ningún rastro en los logs del servidor para poder diagnosticarlo
-// después. Best-effort: si falla el propio reporte, no afecta el flujo.
-function reportStripeError(error) {
-  fetch(`${backendUrl()}/api/stripe/client-error`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context: 'checkout', error }),
-  }).catch(() => {});
-}
-
+const DECLINE_FALLBACK = 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
+const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.';
 const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos en cuanto se confirme.';
 
 // Cobro con el formulario de Checkout de Stripe (Checkout Session con
@@ -131,58 +70,44 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
         return;
       }
 
-      const stripe = await getStripePromise();
-      if (!stripe || typeof stripe.initCheckoutFormSdk !== 'function' || !containerRef.current) {
-        setLoadError('No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.');
-        return;
-      }
-      const checkout = stripe.initCheckoutFormSdk({ clientSecret: data.clientSecret, appearance: APPEARANCE, defaultValues: { email } });
-      const form = checkout.createForm({ layout: 'expanded' });
-      formRef.current = form;
-      form.on('ready', () => setLoading(false));
-      form.on('loaderror', (event) => {
-        setLoading(false);
-        setLoadError('No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.');
-        reportStripeError(event?.error || { message: 'loaderror' });
-      });
-      form.mount(containerRef.current);
-
-      const loadActionsResult = await checkout.loadActions();
-      if (loadActionsResult.type !== 'success') {
-        setLoading(false);
-        setLoadError('No se pudo preparar el pago. Intenta de nuevo en un momento.');
-        reportStripeError(loadActionsResult.error);
-        return;
-      }
-      form.on('confirm', async (event) => {
-        setSubmitError('');
-        setPending(true);
-        try {
-          // redirect 'if_required' evita sacar al comprador de este sitio
-          // -- el 3DS de la tarjeta se muestra en un modal de Stripe.
-          const result = await loadActionsResult.actions.confirm({ formConfirmEvent: event, redirect: 'if_required' });
-          if (result.type === 'error') {
-            setSubmitError(friendlyDeclineMessage(result.error));
-            reportStripeError(result.error);
-            return;
+      formRef.current = await mountCheckoutForm({
+        clientSecret: data.clientSecret,
+        container: containerRef.current,
+        defaultValues: { email },
+        onReady: () => setLoading(false),
+        onLoadError: (error) => {
+          setLoading(false);
+          setLoadError(LOAD_ERROR);
+          reportStripeError('checkout', error);
+        },
+        onConfirm: async (_event, confirm) => {
+          setSubmitError('');
+          setPending(true);
+          try {
+            const result = await confirm();
+            if (result.type === 'error') {
+              setSubmitError(friendlyDeclineMessage(result.error, DECLINE_FALLBACK));
+              reportStripeError('checkout', result.error);
+              return;
+            }
+            // Nunca se confía en que el frontend diga "pagado" -- el backend
+            // vuelve a consultar la sesión contra la propia API de Stripe
+            // antes de aplicar la compra (ver /api/payments/stripe/confirm).
+            await confirmWithBackend(data.checkoutSessionId);
+          } catch (error) {
+            setSubmitError(friendlyDeclineMessage(error, DECLINE_FALLBACK));
+            reportStripeError('checkout', { message: error?.message || String(error) });
+          } finally {
+            setPending(false);
           }
-          // Nunca se confía en que el frontend diga "pagado" -- el backend
-          // vuelve a consultar la sesión contra la propia API de Stripe
-          // antes de aplicar la compra (ver /api/payments/stripe/confirm).
-          await confirmWithBackend(data.checkoutSessionId);
-        } catch (error) {
-          setSubmitError(friendlyDeclineMessage(error));
-          reportStripeError({ message: error?.message || String(error) });
-        } finally {
-          setPending(false);
-        }
+        },
       });
     })().catch((error) => {
       // Stripe.js puede lanzar al iniciar/montar (llave inválida, cuenta sin
       // la beta del formulario...): sin esto se quedaba en "Cargando".
       setLoading(false);
-      setLoadError('No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.');
-      reportStripeError({ message: error?.message || String(error) });
+      setLoadError(LOAD_ERROR);
+      reportStripeError('checkout', error?.stripeError || { message: error?.message || String(error) });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

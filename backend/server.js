@@ -2187,21 +2187,53 @@ app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusL
 });
 
 // ==========================================
-// PAGOS: Stripe (Payment Element embebido) -- segunda forma de pago,
+// PAGOS: Stripe (formulario de Checkout embebido) -- segunda forma de pago,
 // seleccionable junto a MercadoPago desde Membership.jsx. Mismo principio
 // que el cobro de MP: el monto SIEMPRE se calcula acá desde pricing.js,
-// nunca se confía en nada que mande el cliente. A diferencia de MP (que
-// tokeniza la tarjeta y cobra en un solo POST), Stripe separa la compra en
-// dos pasos -- 1) crear un PaymentIntent server-side (acá abajo,
-// /intent), 2) el frontend lo confirma con stripe.confirmPayment() usando
-// el Payment Element (tarjeta nunca toca nuestro backend) -- y recién
-// entonces /confirm valida contra la API de Stripe (nunca contra lo que
-// diga el frontend) y aplica la compra. El webhook es la confirmación de
-// respaldo por si el navegador se cierra entre el paso 2 y la llamada a
-// /confirm.
+// nunca se confía en nada que mande el cliente. Tres pasos -- 1) se crea
+// una Checkout Session (ui_mode 'form') server-side (acá abajo,
+// /checkout-session), 2) el frontend monta el formulario de Stripe con su
+// client_secret y lo confirma (la tarjeta nunca toca nuestro backend), y
+// 3) /confirm vuelve a pedir la sesión a la API de Stripe (nunca se cree
+// lo que diga el frontend) y aplica la compra. El webhook es la
+// confirmación de respaldo por si el navegador se cierra entre el paso 2 y
+// la llamada a /confirm.
+//
+// La sesión copia licenseId/planType/diceTier/spotifyAddon a la metadata
+// de SU PaymentIntent (payment_intent_data.metadata), así el webhook
+// payment_intent.succeeded, la conciliación de Sistema (paymentsReconcile)
+// y el UNIQUE de payments.stripe_payment_id siguen funcionando igual que
+// con el Payment Element anterior: lo que se guarda como pago es el id del
+// PaymentIntent, no el de la sesión.
 // ==========================================
 
-app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async (req, res) => {
+// El formulario de Checkout (ui_mode 'form') es una vista previa de Stripe
+// que exige esta versión de la API con su bandera beta. Se pasa SOLO en las
+// llamadas de Checkout Sessions (opción por petición), no al crear el
+// cliente: los PaymentIntents/SetupIntents del resto del backend (prueba
+// gratis, conciliación) siguen en la versión estable del SDK.
+const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-03-25.dahlia; custom_checkout_payment_form_preview=v1';
+const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
+
+// Un cliente de Stripe por licencia (buscado por su metadata, sin columna
+// nueva en la DB) para que "guardar tarjeta" sirva en la siguiente compra
+// de ESA licencia. A propósito no se busca por correo: el correo lo escribe
+// el comprador sin verificar, y con eso cualquiera podría ver/usar la
+// tarjeta guardada de otra persona.
+async function stripeCustomerForLicense(stripe, licenseId, { email, name }) {
+    try {
+        const found = await stripe.customers.search({ query: `metadata['licenseId']:'${licenseId.replace(/'/g, '')}'`, limit: 1 });
+        if (found.data[0]) return found.data[0].id;
+    } catch (err) {
+        // La búsqueda no está en todas las cuentas/regiones: sin ella se
+        // crea uno nuevo (solo se pierde mostrar la tarjeta guardada).
+        console.error('[Stripe] No se pudo buscar el cliente de la licencia:', err.message);
+    }
+    const customer = await stripe.customers.create({ email, name, metadata: { licenseId } });
+    return customer.id;
+}
+
+app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
     const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
     const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
     if (itemsError) {
@@ -2218,81 +2250,110 @@ app.post('/api/payments/stripe/intent', auth.requireAuth, paymentLimiter, async 
     }
     // Pedido explicito: evidencia real (con fecha) de que el comprador
     // aceptó la política de reembolsos ANTES de pagar -- se manda como
-    // metadata del PaymentIntent, visible en el propio dashboard de
-    // Stripe si alguien abre una disputa. Se exige server-side (no solo
-    // ocultar el botón en el frontend) para que el registro exista
-    // siempre, sin depender de que nadie evite el check del lado del
-    // cliente.
+    // metadata del pago, visible en el propio dashboard de Stripe si
+    // alguien abre una disputa. Se exige server-side (no solo ocultar el
+    // botón en el frontend) para que el registro exista siempre, sin
+    // depender de que nadie evite el check del lado del cliente.
     if (typeof policyAcceptedAt !== 'string' || Number.isNaN(Date.parse(policyAcceptedAt))) {
         return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
 
-    const amountCents = pricing.computeAmountCents({ planType, diceTier, spotifyAddon });
+    // Un renglón por cosa comprada, con el precio vigente de pricing.js
+    // (override del admin incluido): el formulario muestra el desglose y la
+    // suma da exactamente computeAmountCents, lo mismo que se guarda como
+    // monto del pago.
+    const lineItem = (name, cents) => ({ quantity: 1, price_data: { currency: 'mxn', unit_amount: cents, product_data: { name } } });
+    const lineItems = [];
+    if (planType) lineItems.push(lineItem(`Plan ${PLAN_LABELS[planType]}`, pricing.getPlanPriceCents(planType)));
+    if (diceTier) lineItems.push(lineItem(`Dados ${diceTier.toUpperCase()}`, pricing.DICE_TIER_PRICES_CENTS[diceTier]));
+    if (spotifyAddon) lineItems.push(lineItem('Complemento Spotify', pricing.getSpotifyAddonPriceCents()));
     const titleParts = [];
-    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
+    if (planType) titleParts.push(PLAN_LABELS[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
     if (spotifyAddon) titleParts.push('Complemento Spotify');
+    const metadata = {
+        licenseId: req.license.id,
+        planType: planType || '',
+        diceTier: diceTier || '',
+        // Los metadata de Stripe son texto: 'true' enciende el
+        // complemento al confirmar/recibir el webhook, vacío no.
+        spotifyAddon: spotifyAddon ? 'true' : '',
+        policyAcceptedAt,
+    };
 
     try {
         const stripe = getStripeClient();
-        const intent = await stripe.paymentIntents.create({
-            amount: amountCents,
-            currency: 'mxn',
+        const customer = await stripeCustomerForLicense(stripe, req.license.id, { email: cleanEmail, name: `${firstName} ${lastName}` });
+        const session = await stripe.checkout.sessions.create({
+            // Valores configurados en Checkout Studio de Stripe.
+            ui_mode: 'form',
+            billing_address_collection: 'auto',
+            phone_number_collection: { enabled: false },
+            automatic_tax: { enabled: false },
+            submit_type: 'auto',
+            saved_payment_method_options: { payment_method_save: 'enabled' },
+            integration_identifier: 'custom_embedded_web_0001',
+            // Pago único: los planes se compran una vez (también el Mensual),
+            // no son suscripciones -- por eso no va payment_method_collection,
+            // que solo aplica a mode 'subscription'.
+            mode: 'payment',
+            line_items: lineItems,
+            customer,
             // Solo tarjeta a propósito -- mismo alcance que la opción de MP
-            // ("Credit/Debit Card"), sin habilitar métodos async (OXXO,
-            // SPEI) que complicarían este flujo de confirmación inmediata.
+            // ("Credit/Debit Card"), sin métodos async (OXXO, SPEI) que
+            // dejarían el pago pendiente días.
             payment_method_types: ['card'],
-            description: `BenjaApis - ${titleParts.join(' + ')}`,
-            // Recibo automático de Stripe al correo del comprador -- pedido
-            // explícito, sin necesidad de configurar Stripe Invoicing aparte.
-            receipt_email: cleanEmail,
-            metadata: {
-                licenseId: req.license.id,
-                planType: planType || '',
-                diceTier: diceTier || '',
-                // Los metadata de Stripe son texto: 'true' enciende el
-                // complemento al confirmar/recibir el webhook, vacío no.
-                spotifyAddon: spotifyAddon ? 'true' : '',
-                policyAcceptedAt,
+            // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
+            // muestra en un modal), vuelve a Membresía con el aviso de pago
+            // pendiente; el webhook aplica la compra igual y el panel se
+            // entera por license_updated.
+            return_url: `${FRONTEND_URL}/?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
+            metadata,
+            payment_intent_data: {
+                description: `BenjaApis - ${titleParts.join(' + ')}`,
+                // Recibo automático de Stripe al correo del comprador.
+                receipt_email: cleanEmail,
+                metadata,
             },
-        });
-        res.json({ success: true, clientSecret: intent.client_secret, paymentIntentId: intent.id });
+        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id });
     } catch (err) {
-        console.error('[Stripe] Error creando PaymentIntent:', err.message);
+        console.error('[Stripe] Error creando Checkout Session:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
     }
 });
 
-// El frontend llama esto apenas stripe.confirmPayment() resuelve con
-// succeeded (ver StripePaymentForm.jsx) -- nunca se aplica la compra por
-// lo que diga el frontend: se vuelve a pedir el PaymentIntent a la propia
-// API de Stripe y se verifica que su metadata.licenseId sea el de ESTA
-// sesión antes de aplicar nada (mismo criterio que el polling de status
-// de MP). El webhook de más abajo es la red de respaldo si el navegador
-// se cierra justo acá.
+// El frontend llama esto apenas el formulario confirma el pago (ver
+// StripePaymentForm.jsx) -- nunca se aplica la compra por lo que diga el
+// frontend: se vuelve a pedir la sesión a la propia API de Stripe y se
+// verifica que su metadata.licenseId sea el de ESTA sesión de la app antes
+// de aplicar nada (mismo criterio que el polling de status de MP). El
+// webhook de más abajo es la red de respaldo si el navegador se cierra
+// justo acá.
 app.post('/api/payments/stripe/confirm', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
-    const { paymentIntentId } = req.body || {};
-    if (!paymentIntentId || typeof paymentIntentId !== 'string') {
+    const { checkoutSessionId } = req.body || {};
+    if (!checkoutSessionId || typeof checkoutSessionId !== 'string') {
         return res.status(400).json({ success: false, error: 'Falta el id del pago' });
     }
     try {
         const stripe = getStripeClient();
-        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        if (intent.metadata?.licenseId !== req.license.id) {
+        const session = await stripe.checkout.sessions.retrieve(checkoutSessionId, {}, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        if (session.metadata?.licenseId !== req.license.id) {
             return res.status(404).json({ success: false, error: 'Pago no encontrado' });
         }
-        const planType = intent.metadata?.planType || undefined;
-        const diceTier = intent.metadata?.diceTier || undefined;
-        const spotifyAddon = intent.metadata?.spotifyAddon === 'true';
-        if (intent.status === 'succeeded') {
-            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, spotifyAddon, stripePaymentId: intent.id });
+        const planType = session.metadata?.planType || undefined;
+        const diceTier = session.metadata?.diceTier || undefined;
+        const spotifyAddon = session.metadata?.spotifyAddon === 'true';
+        const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+        const paid = session.payment_status === 'paid' && !!paymentIntentId;
+        if (paid) {
+            // El id del PaymentIntent, igual que el webhook: así /confirm y
+            // payment_intent.succeeded se deduplican por el mismo UNIQUE.
+            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, spotifyAddon, stripePaymentId: paymentIntentId });
         }
-        res.json({
-            success: true,
-            status: intent.status === 'succeeded' ? 'approved' : (intent.status === 'processing' ? 'pending' : intent.status),
-        });
+        res.json({ success: true, status: paid ? 'approved' : 'pending' });
     } catch (err) {
-        console.error('[Stripe] Error confirmando PaymentIntent:', err.message);
+        console.error('[Stripe] Error confirmando Checkout Session:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo confirmar el pago. Intenta de nuevo en un momento.' });
     }
 });

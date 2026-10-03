@@ -114,21 +114,31 @@ test('el bloqueo de YouTube por "no eres un bot" se reconoce para mostrar un men
     assert.match(YOUTUBE_BOT_CHECK_MESSAGE, /YouTube/);
 });
 
-test('YTDL_YOUTUBE_PROXY acepta on/true/1/sí sin importar mayúsculas, una dirección de proxy, y nada más', () => {
+test('proxies: varias por coma, una al azar; YouTube con su propia lista o con las de TikTok', () => {
     const fs = require('node:fs');
     const vm = require('node:vm');
     const src = fs.readFileSync(require.resolve('./downloader'), 'utf8');
-    const start = src.indexOf('const TRUTHY');
-    const end = src.indexOf('\n{\n', start);
-    const mode = (value, tiktokProxy = 'http://u:p@proxy:8080') => {
-        const ctx = { process: { env: { YTDL_YOUTUBE_PROXY: value, YTDL_PROXY: tiktokProxy } } };
-        vm.runInNewContext(src.slice(start, end) + '\nresult = youtubeProxyMode();', ctx);
-        return ctx.result;
+    const code = src.slice(src.indexOf('function proxyList'), src.indexOf('// YouTube les pide'))
+        + src.slice(src.indexOf('const TRUTHY'), src.indexOf('\n{\n', src.indexOf('const TRUTHY')));
+    const run = (env, expr) => {
+        const ctx = { process: { env }, Math };
+        vm.runInNewContext(`${code}\nresult = ${expr};`, ctx);
+        return JSON.parse(JSON.stringify(ctx.result));
     };
-    for (const v of ['on', 'On', ' ON ', 'true', 'True', '1', 'sí', 'si', 'yes']) assert.equal(mode(v).mode, 'tiktok', v);
-    assert.equal(mode('socks5://x:1080').mode, 'custom');
-    assert.equal(mode('').mode, 'none');
-    assert.equal(mode(undefined).mode, 'none');
-    assert.equal(mode('banana').mode, 'invalid');
-    assert.equal(mode('on', '').mode, 'invalid');
+    // TikTok: lista por comas (con espacios), cada intento una de ellas; el formato de siempre sigue valiendo.
+    const tiktok = 'http://a:1@p1:8000, p2.example:9000 ,http://b:2@p3:8000';
+    const picks = new Set(Array.from({ length: 200 }, () => run({ YTDL_PROXY: tiktok }, 'getTikTokProxy()')));
+    assert.deepEqual([...picks].sort(), ['http://a:1@p1:8000', 'http://b:2@p3:8000', 'p2.example:9000']);
+    assert.throws(() => run({ YTDL_PROXY: ' , ' }, 'getTikTokProxy()'));
+    // YouTube con la palabra mágica = las de TikTok, sin importar mayúsculas.
+    for (const v of ['on', 'On', ' ON ', 'true', 'True', '1', 'sí', 'si', 'yes']) {
+        const m = run({ YTDL_YOUTUBE_PROXY: v, YTDL_PROXY: tiktok }, 'youtubeProxyMode()');
+        assert.equal(m.mode, 'tiktok', v); assert.equal(m.urls.length, 3);
+    }
+    // YouTube con su propia lista; lo que no parece proxy se ignora.
+    const own = run({ YTDL_YOUTUBE_PROXY: 'http://u:p@res1:7000,banana, socks5://res2:1080', YTDL_PROXY: tiktok }, 'youtubeProxyMode()');
+    assert.deepEqual(own, { mode: 'custom', urls: ['http://u:p@res1:7000', 'socks5://res2:1080'], ignored: 1 });
+    assert.equal(run({ YTDL_YOUTUBE_PROXY: '' }, 'youtubeProxyMode()').mode, 'none');
+    assert.equal(run({ YTDL_YOUTUBE_PROXY: 'banana' }, 'youtubeProxyMode()').mode, 'invalid');
+    assert.equal(run({ YTDL_YOUTUBE_PROXY: 'on', YTDL_PROXY: '' }, 'youtubeProxyMode()').mode, 'invalid');
 });

@@ -113,3 +113,22 @@ test('el bloqueo de YouTube por "no eres un bot" se reconoce para mostrar un men
     assert.equal(isYouTubeBotCheck(undefined), false);
     assert.match(YOUTUBE_BOT_CHECK_MESSAGE, /YouTube/);
 });
+
+test('YTDL_YOUTUBE_PROXY acepta on/true/1/sí sin importar mayúsculas, una dirección de proxy, y nada más', () => {
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const src = fs.readFileSync(require.resolve('./downloader'), 'utf8');
+    const start = src.indexOf('const TRUTHY');
+    const end = src.indexOf('\n{\n', start);
+    const mode = (value, tiktokProxy = 'http://u:p@proxy:8080') => {
+        const ctx = { process: { env: { YTDL_YOUTUBE_PROXY: value, YTDL_PROXY: tiktokProxy } } };
+        vm.runInNewContext(src.slice(start, end) + '\nresult = youtubeProxyMode();', ctx);
+        return ctx.result;
+    };
+    for (const v of ['on', 'On', ' ON ', 'true', 'True', '1', 'sí', 'si', 'yes']) assert.equal(mode(v).mode, 'tiktok', v);
+    assert.equal(mode('socks5://x:1080').mode, 'custom');
+    assert.equal(mode('').mode, 'none');
+    assert.equal(mode(undefined).mode, 'none');
+    assert.equal(mode('banana').mode, 'invalid');
+    assert.equal(mode('on', '').mode, 'invalid');
+});

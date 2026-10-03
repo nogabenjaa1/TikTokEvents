@@ -155,6 +155,9 @@ function registerSystemRoutes(app, deps) {
                 // Datos del responsable que publican el Aviso Legal y el de
                 // Privacidad (ver /api/legal-info): si faltan, se avisa aquí.
                 legalConfigured: !!(process.env.LEGAL_NAME && process.env.LEGAL_EMAIL),
+                // Cómo ve el servidor la configuración de YouTube del Downloader
+                // (sin secretos): si la variable no llegó, aquí se nota.
+                youtube: deps.downloader ? { ...deps.downloader.youtubeConfigSummary(), ytDlpVersion: await deps.downloader.getYtDlpVersion() } : null,
                 errors24h,
                 reporter: errorReporter.stats(),
             },

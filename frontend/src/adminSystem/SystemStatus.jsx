@@ -20,6 +20,14 @@ export default function SystemStatus({ onUnauthorized }) {
           Faltan tus datos en el Aviso Legal y el Aviso de Privacidad: configura LEGAL_NAME y LEGAL_EMAIL (y si quieres LEGAL_LOCATION) en las variables de entorno de Render.
         </p>
       )}
+      {system?.youtube && (
+        <p role="status" className={`theme-notice ${system.youtube.proxy === 'none' && !system.youtube.cookies ? 'theme-notice-warning' : 'theme-notice-success'}`}>
+          YouTube en el Downloader: proxy {({ tiktok: 'el de TikTok', custom: 'propio', none: 'ninguno', invalid: 'mal configurado' })[system.youtube.proxy] || system.youtube.proxy}, cookies {system.youtube.cookies ? 'sí' : 'no'}
+          {system.youtube.ytDlpVersion ? ` · yt-dlp ${system.youtube.ytDlpVersion}` : ''}.
+          {system.youtube.proxyProblem ? ` ${system.youtube.proxyProblem}.` : ''}
+          {system.youtube.proxy === 'none' && !system.youtube.cookies ? ' Sin proxy ni cookies, YouTube bloquea las descargas desde el servidor.' : ''}
+        </p>
+      )}
       {system && (
         <div className="tkc-reveal contents">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

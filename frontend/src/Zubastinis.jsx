@@ -124,7 +124,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {top3.map((g, i) => (
               <div key={g.username} className="theme-input flex items-center gap-3 px-3 py-2">
                 <span className="theme-accent-text text-sm font-black w-6 text-center">{i + 1}</span>
-                <img src={g.avatar} className="w-8 h-8 rounded-full border-2 border-purple-500 object-cover" />
+                <img alt="" src={g.avatar} className="w-8 h-8 rounded-full border-2 border-purple-500 object-cover" />
                 <span className="flex-1 font-bold text-gray-100 text-sm truncate">@{g.username}</span>
                 <span className="text-yellow-400 text-xs font-black">{g.coins} monedas</span>
               </div>

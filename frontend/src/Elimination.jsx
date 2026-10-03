@@ -31,7 +31,7 @@ function ParticipantBlock({ p, size }) {
   // repetido por el mismo usuario) inserta su propio slot/bloque.
   return (
     <div className="flex flex-col items-center gap-0.5" title={p.username}>
-      <img src={p.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
+      <img alt="" src={p.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
       <span className={`${size.text} text-gray-300 max-w-[56px] truncate`}>@{p.username}</span>
     </div>
   );
@@ -183,7 +183,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
           <div className="flex flex-col gap-1.5 mb-3 relative z-10">
             {state.lastEliminatedList.map((e, i) => (
               <div key={e.username + i} className="flex items-center gap-2 theme-notice">
-                <img src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
+                <img alt="" src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
                 <span className="text-xs font-bold text-red-300">
                   @{e.username} {e.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
                 </span>

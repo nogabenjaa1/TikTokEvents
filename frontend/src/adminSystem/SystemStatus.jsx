@@ -15,6 +15,11 @@ export default function SystemStatus({ onUnauthorized }) {
       {error && <p role="alert" className="theme-notice">{error}</p>}
       {!system && !error && <SkeletonKpis count={8} label="Cargando el estado del servidor…" />}
 
+      {system && system.legalConfigured === false && (
+        <p role="status" className="theme-notice theme-notice-warning">
+          Faltan tus datos en el Aviso Legal y el Aviso de Privacidad: configura LEGAL_NAME y LEGAL_EMAIL (y si quieres LEGAL_LOCATION) en las variables de entorno de Render.
+        </p>
+      )}
       {system && (
         <div className="tkc-reveal contents">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

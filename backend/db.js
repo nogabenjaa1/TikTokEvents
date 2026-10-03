@@ -465,7 +465,33 @@ const ready = pool.query(`
   `))
   // Cada vez que el streamer renueva sus enlaces de overlay se suma uno: el token
   // del overlay lo incluye y los anteriores dejan de servir (ver auth.overlayTokenFor).
-  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_epoch INTEGER NOT NULL DEFAULT 0`));
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_epoch INTEGER NOT NULL DEFAULT 0`))
+  // Analítica propia, sin cookies (ver lib/analytics.js): visitas por día y
+  // página, de dónde llegan, y una huella diaria anónima por visitante (un
+  // hash que cambia cada día; nunca la IP) solo para contar visitantes únicos.
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS analytics_pageviews (
+      day TEXT NOT NULL,
+      path TEXT NOT NULL,
+      views INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, path)
+    )
+  `))
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS analytics_referrers (
+      day TEXT NOT NULL,
+      source TEXT NOT NULL,
+      views INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, source)
+    )
+  `))
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS analytics_visitors (
+      day TEXT NOT NULL,
+      visitor TEXT NOT NULL,
+      PRIMARY KEY (day, visitor)
+    )
+  `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
 async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null, spotifyAddon = false }) {
@@ -875,6 +901,41 @@ async function upsertAlertConfig({
         giftIcon,
     ]);
     return getAlertConfig(id);
+}
+
+// ── Analítica propia (ver lib/analytics.js) ──
+async function recordPageview({ day, path, source, visitor }) {
+    await ready;
+    await pool.query(`INSERT INTO analytics_pageviews (day, path, views) VALUES ($1, $2, 1)
+        ON CONFLICT (day, path) DO UPDATE SET views = analytics_pageviews.views + 1`, [day, path]);
+    if (source) {
+        await pool.query(`INSERT INTO analytics_referrers (day, source, views) VALUES ($1, $2, 1)
+            ON CONFLICT (day, source) DO UPDATE SET views = analytics_referrers.views + 1`, [day, source]);
+    }
+    if (visitor) {
+        await pool.query('INSERT INTO analytics_visitors (day, visitor) VALUES ($1, $2) ON CONFLICT (day, visitor) DO NOTHING', [day, visitor]);
+    }
+}
+
+// Resumen de los últimos días para Sistema > Visitas. `since` es un día
+// 'AAAA-MM-DD' (incluido).
+async function analyticsSummary(since) {
+    await ready;
+    const [daily, visitors, paths, sources] = await Promise.all([
+        pool.query('SELECT day, SUM(views)::int AS views FROM analytics_pageviews WHERE day >= $1 GROUP BY day ORDER BY day', [since]),
+        pool.query('SELECT day, COUNT(*)::int AS visitors FROM analytics_visitors WHERE day >= $1 GROUP BY day ORDER BY day', [since]),
+        pool.query('SELECT path, SUM(views)::int AS views FROM analytics_pageviews WHERE day >= $1 GROUP BY path ORDER BY views DESC LIMIT 12', [since]),
+        pool.query('SELECT source, SUM(views)::int AS views FROM analytics_referrers WHERE day >= $1 GROUP BY source ORDER BY views DESC LIMIT 10', [since]),
+    ]);
+    return { daily: daily.rows, visitors: visitors.rows, paths: paths.rows, sources: sources.rows };
+}
+
+// Borra lo que ya no se muestra en ningún resumen.
+async function pruneAnalytics(before) {
+    await ready;
+    await pool.query('DELETE FROM analytics_visitors WHERE day < $1', [before]);
+    await pool.query('DELETE FROM analytics_pageviews WHERE day < $1', [before]);
+    await pool.query('DELETE FROM analytics_referrers WHERE day < $1', [before]);
 }
 
 // Completa la imagen del regalo de una alerta vieja (ver gift_icon arriba).
@@ -1306,7 +1367,7 @@ module.exports = {
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,
-    listAlertConfigs, getAlertConfig, upsertAlertConfig, setAlertGiftIcon, deleteAlertConfig,
+    listAlertConfigs, getAlertConfig, upsertAlertConfig, setAlertGiftIcon, recordPageview, analyticsSummary, pruneAnalytics, deleteAlertConfig,
     listVersusConfigs, insertVersusConfig, deleteVersusConfig, setVersusSettings,
     getPricingOverrides, setPricingOverride, getPricingHistory,
     ping, upsertErrorReport, listErrorReports, clearErrorReports, pruneErrorReports, countErrorReportsSince,

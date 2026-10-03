@@ -59,6 +59,11 @@ export const SECTION_PATHS = {
   membership: 'membership',
   licenses: 'licenses',
   system: 'system',
+  // Páginas legales (enlazadas desde el pie del Dashboard, Membresía y el
+  // aviso de cookies; no van en la barra lateral). Ver LegalPages.jsx.
+  legal: 'aviso-legal',
+  privacy: 'privacidad',
+  cookies: 'cookies',
 };
 export const PATH_TO_SECTION = Object.fromEntries(Object.entries(SECTION_PATHS).map(([id, path]) => [path, id]));
 
@@ -87,9 +92,14 @@ export function sectionFromPath(pathname) {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return { section: 'dashboard', tab: null };
   const section = PATH_TO_SECTION[segments[0]];
-  if (!section) return { section: 'dashboard', tab: null };
-  const tab = section === 'events' ? (PATH_TO_EVENT_TAB[segments[1]] || 'king') : null;
-  return { section, tab };
+  // Una ruta que no existe muestra la página 404 (antes caía en el Dashboard
+  // sin avisar). Mismo criterio que lib/sitePages.js del backend, que además
+  // responde con el código 404.
+  if (!section || segments.length > 2 || (segments.length === 2 && section !== 'events')) return { section: 'notfound', tab: null };
+  if (section !== 'events') return { section, tab: null };
+  if (segments[1] === undefined) return { section, tab: 'king' };
+  const tab = PATH_TO_EVENT_TAB[segments[1]];
+  return tab ? { section, tab } : { section: 'notfound', tab: null };
 }
 
 // Título de pestaña dinámico (pedido explícito: "que sea visible siempre"
@@ -97,7 +107,25 @@ export function sectionFromPath(pathname) {
 // marca del sitio es BenjaApis; "TikTokEvents" se conserva solo como
 // prefijo dentro de esa sección puntual (el nombre de la funcionalidad en
 // sí, no el nombre del producto -- pedido explícito de mantenerlo así).
-const ADMIN_SECTION_LABELS = { licenses: 'Licencias', system: 'Sistema' };
+const ADMIN_SECTION_LABELS = { licenses: 'Licencias', system: 'Sistema', legal: 'Aviso legal', privacy: 'Aviso de privacidad', cookies: 'Cookies', notfound: 'Página no encontrada' };
+
+// Descripción de cada página para buscadores y para cuando se comparte un
+// enlace (ver useSectionRouting, que la aplica a <meta name="description">).
+const SECTION_DESCRIPTIONS = {
+  dashboard: 'Panel para streamers de TikTok LIVE: juegos con regalos, alertas, TTS del chat, Spotify y overlays para OBS en un solo lugar.',
+  overlay: 'Overlays para OBS y TikTok LIVE Studio: juegos, alertas, rankings, chat, metas y más, personalizables y en tiempo real.',
+  events: 'Juegos y eventos para tu TikTok LIVE: Rey del Trono, Zubastinis, Eliminación, Ruleta, Versus, Extensible, Objetivo, alertas y TTS.',
+  color: 'ColorDice: dados de colores para dinámicas en vivo, gratis y con overlay para OBS.',
+  downloader: 'Descarga videos de TikTok sin marca de agua y de otros sitios, desde tu panel de BenjaApis.',
+  theme: 'Elige el estilo y los colores de tu panel de BenjaApis.',
+  membership: 'Planes de BenjaApis para streamers de TikTok LIVE: prueba gratis, mensual, anual y de por vida.',
+  legal: 'Aviso legal de BenjaApis: quién ofrece el servicio y en qué condiciones.',
+  privacy: 'Aviso de privacidad de BenjaApis: qué datos tratamos, para qué y cómo ejercer tus derechos ARCO.',
+  cookies: 'Cómo usa BenjaApis el almacenamiento del navegador y las cookies de anuncios, y cómo elegir.',
+};
+export function sectionDescription(sidebarMode) {
+  return SECTION_DESCRIPTIONS[sidebarMode] || SECTION_DESCRIPTIONS.dashboard;
+}
 
 export function sectionTitle(sidebarMode, eventsTab) {
   if (sidebarMode === 'events') {
@@ -114,7 +142,7 @@ export function sectionTitle(sidebarMode, eventsTab) {
 // Únicas secciones de acceso libre, sin licencia (Color Says, y "Tema" que es
 // puramente cosmético/local). Todo lo demás requiere sesión — sin ella se
 // muestra el login embebido con la opción de prueba gratis en su lugar.
-export const FREE_MODES = ['overlay', 'color', 'theme'];
+export const FREE_MODES = ['overlay', 'color', 'theme', 'legal', 'privacy', 'cookies', 'notfound'];
 
 // Pestañas de TikTokEvents que tienen representación en el overlay de OBS
 // (TTS no la tiene: lee el chat en el navegador del streamer, sin overlay).

@@ -87,6 +87,8 @@ const { createHealthChecker } = require('./lib/healthCheck');
 const { registerSystemRoutes } = require('./routes/system');
 const { computeAdminStats } = require('./lib/adminStats');
 const { mergeGiftCatalogs } = require('./lib/giftCatalog');
+const { isKnownPage } = require('./lib/sitePages');
+const analytics = require('./lib/analytics');
 const { stickerAlertKey, stickerIdFromKey, cleanStickerId } = require('./lib/stickerCatalog');
 const giftDirectory = require('./lib/giftDirectory');
 const { sniffMedia } = require('./lib/mediaSniff');
@@ -244,6 +246,17 @@ const app = express();
 // en ese header y tira ERR_ERL_UNEXPECTED_X_FORWARDED_FOR en cada request
 // a una ruta con rate limit (login, free-trial, admin, pagos, etc.).
 app.set('trust proxy', 1);
+// Forzar HTTPS: Render (y cualquier proxy delante) recibe la conexión cifrada
+// y la reenvía con X-Forwarded-Proto. Si alguien entra por http://, se le
+// manda a la misma dirección con https:// (301, permanente). Solo cuando el
+// proxy dice explícitamente "http": las comprobaciones internas de salud de
+// Render no traen ese encabezado y no deben recibir una redirección. El
+// navegador además recuerda usar HTTPS por la cabecera
+// Strict-Transport-Security que pone Helmet más abajo.
+app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'http' || process.env.FORCE_HTTPS === 'off') return next();
+    res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+});
 // Cabeceras de seguridad estandar (X-Frame-Options, X-Content-Type-
 // Options, Strict-Transport-Security, Referrer-Policy, quita X-Powered-
 // By, etc.) -- pedido explicito de una revision de seguridad del sitio.
@@ -446,7 +459,13 @@ async function pushLicenseState(licenseId) {
     }
 }
 
+// Campo trampa contra bots (ver HoneypotField en el frontend): una persona no
+// lo ve ni lo llena; un script que rellena todos los campos sí. Se responde
+// con el mismo error genérico que una clave inválida, sin dar pistas.
+const isBotSubmission = (body) => typeof body?.website === 'string' && body.website.trim() !== '';
+
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
+    if (isBotSubmission(req.body)) return res.status(401).json({ success: false, error: 'Licencia inválida, revocada o expirada' });
     const { key } = req.body || {};
     if (!key || typeof key !== 'string') {
         return res.status(400).json({ success: false, error: 'Falta la clave de licencia' });
@@ -502,6 +521,7 @@ app.post('/api/free-trial/setup-intent', freeTrialLimiter, async (req, res) => {
 // tener que copiar/pegar la key generada.
 // ==========================================
 app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
+    if (isBotSubmission(req.body)) return res.status(400).json({ success: false, error: 'No se pudo crear la prueba gratis' });
     const { alias, setupIntentId } = req.body || {};
     if (!alias || typeof alias !== 'string' || !alias.trim()) {
         return res.status(400).json({ success: false, error: 'Falta un alias' });
@@ -2440,6 +2460,59 @@ app.get('/api/downloader/file/:jobId', auth.requireAuth, generalLimiter, (req, r
 });
 
 // ==========================================
+// DATOS LEGALES Y ANALÍTICA
+// ==========================================
+// Responsable que publican el Aviso Legal y el Aviso de Privacidad. Viven en
+// variables de entorno (no en el código) para cambiarlos sin un deploy y para
+// no publicar nada inventado: lo que falte, el frontend simplemente no lo
+// muestra (y Sistema avisa que falta).
+app.get('/api/legal-info', (req, res) => {
+    res.set('Cache-Control', 'public, max-age=3600');
+    const clean = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+    res.json({
+        success: true,
+        name: clean(process.env.LEGAL_NAME, 120),
+        email: clean(process.env.LEGAL_EMAIL, 120),
+        location: clean(process.env.LEGAL_LOCATION, 160),
+        updatedAt: clean(process.env.LEGAL_UPDATED_AT, 40) || '2026-10-03',
+    });
+});
+
+// Una visita a una página del panel (ver lib/analytics.js). Siempre responde
+// 204: el panel no espera nada de esto y un error no debe verse en ningún lado.
+const analyticsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+app.post('/api/analytics/pageview', analyticsLimiter, (req, res) => {
+    res.sendStatus(204);
+    if (analytics.optedOut(req.headers)) return;
+    const pagePath = analytics.cleanPath(req.body?.path);
+    if (!pagePath) return;
+    const day = analytics.dayKey();
+    db.recordPageview({
+        day,
+        path: pagePath,
+        source: analytics.referrerSource(req.body?.referrer, req.headers.host),
+        visitor: analytics.visitorHash({ ip: req.ip, userAgent: req.headers['user-agent'], day, secret: process.env.KEY_HASH_SECRET }),
+    }).catch((err) => console.error('[Analítica] No se pudo guardar la visita:', err.message));
+});
+
+// Resumen para Sistema > Visitas: los últimos `days` días (máximo 90).
+app.get('/api/admin/analytics', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    try {
+        const days = Math.max(1, Math.min(90, Number(req.query.days) || 30));
+        const since = analytics.dayKey(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
+        res.set('Cache-Control', 'no-store');
+        res.json({ success: true, since, days, ...(await db.analyticsSummary(since)) });
+    } catch (err) {
+        console.error('[Analítica] No se pudo armar el resumen:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudo cargar la analítica' });
+    }
+});
+// Se guarda lo de los últimos 90 días; lo anterior se borra una vez al día.
+setInterval(() => {
+    db.pruneAnalytics(analytics.dayKey(Date.now() - 91 * 24 * 60 * 60 * 1000)).catch(() => {});
+}, 24 * 60 * 60 * 1000).unref();
+
+// ==========================================
 // SISTEMA: salud, reportes de errores, historial del admin, almacenamiento y
 // conciliación de pagos (ver routes/system.js)
 // ==========================================
@@ -2504,7 +2577,21 @@ io.on('connection', (socket) => {
 // sendFile que rompe con ENOENT.
 const FRONTEND_INDEX = path.join(__dirname, 'public', 'index.html');
 app.use((req, res) => {
-    if (fs.existsSync(FRONTEND_INDEX)) return res.sendFile(FRONTEND_INDEX);
+    // Una ruta de la API que no existe es un 404 en JSON, nunca la página.
+    if (req.path.startsWith('/api/') || req.path.startsWith('/socket.io/')) {
+        return res.status(404).json({ success: false, error: 'No encontrado' });
+    }
+    if (fs.existsSync(FRONTEND_INDEX)) {
+        // Página personalizada de 404 (la arma el frontend) CON el código 404
+        // de verdad: así los buscadores no indexan rutas inventadas como si
+        // fueran páginas del sitio. Los overlays (?overlay=true) van por la
+        // raíz y no pasan por aquí.
+        if (!isKnownPage(req.path)) res.status(404);
+        // `dotfiles: 'allow'`: la ruta es fija (no viene del usuario); sin esto
+        // send() se niega a servirla si el proyecto vive dentro de una carpeta
+        // que empieza con punto (p. ej. una copia de trabajo en .claude/).
+        return res.sendFile(FRONTEND_INDEX, { dotfiles: 'allow' });
+    }
     res.status(404).json({ success: false, error: 'No encontrado. Este backend solo expone la API; el frontend se sirve por separado.' });
 });
 

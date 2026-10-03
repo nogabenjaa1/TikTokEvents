@@ -16,6 +16,12 @@ import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, saveSession, clearSession, buildAuthenticatedSocket, logoutSession, checkSession } from './auth';
 import AppSidebar from './app/AppSidebar';
 import ViewEnter from './app/ViewEnter';
+// Las páginas legales y la 404 se descargan solo al abrirlas (ver lazyPanel).
+const LegalNotice = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.LegalNotice })));
+const PrivacyNotice = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.PrivacyNotice })));
+const CookiesNotice = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.CookiesNotice })));
+const NotFoundPage = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.NotFoundPage })));
+import CookieBanner from './CookieBanner';
 import NavIcon from './app/NavIcon';
 import EventsSection from './app/EventsSection';
 import OverlayModeView from './app/OverlayModeView';
@@ -854,8 +860,12 @@ export default function App() {
             al momento de pagar (ver Membership.jsx/ensureSession) — así
             alguien sin cuenta también puede llegar a comprar directo. */}
         {sidebarMode === 'membership' && (
-          <Membership session={session} onSessionUpdate={setSession} />
+          <Membership session={session} onSessionUpdate={setSession} onNavigate={setSidebarMode} />
         )}
+        {sidebarMode === 'legal' && <LegalNotice onNavigate={setSidebarMode} />}
+        {sidebarMode === 'privacy' && <PrivacyNotice onNavigate={setSidebarMode} />}
+        {sidebarMode === 'cookies' && <CookiesNotice onNavigate={setSidebarMode} />}
+        {sidebarMode === 'notfound' && <NotFoundPage onNavigate={setSidebarMode} />}
         {sidebarMode === 'licenses' && session?.isAdmin && <LicenseManager onSessionInvalid={handleSessionInvalid} />}
         {sidebarMode === 'system' && session?.isAdmin && <AdminSystem onSessionInvalid={handleSessionInvalid} />}
         </ViewEnter>
@@ -906,7 +916,7 @@ export default function App() {
         flotando sobre la pantalla. Este div envoltorio absorbe esa regla;
         el `fixed` de adentro sí queda intacto (un padre `position:
         relative` no crea un containing block para un hijo `fixed`). */}
-    {sidebarMode !== 'events' && (
+    {sidebarMode !== 'events' && session && (
       <div>
         <button
           onClick={() => setSidebarMode('events')}
@@ -918,6 +928,10 @@ export default function App() {
       </div>
     )}
 
+    {/* Envuelto por lo mismo que el botón flotante: .themed-app fuerza
+        position: relative en sus hijos directos y anularía el fixed del aviso
+        (quedaba en el flujo y movía la página: lo detectó la auditoría de CLS). */}
+    <div><CookieBanner onNavigate={setSidebarMode} /></div>
     <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
     </ThemedShell>
   );

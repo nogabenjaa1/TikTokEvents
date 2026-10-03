@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import MorphButton from './MorphButton';
+import LegalLinks from './LegalLinks';
+import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import CardPaymentForm from './CardPaymentForm';
 import StripePaymentForm from './StripePaymentForm';
@@ -83,7 +85,7 @@ function saveBillingInfo(info) {
   }
 }
 
-export default function Membership({ session, onSessionUpdate }) {
+export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [alias, setAlias] = useState('');
   // Pedido explicito de MercadoPago (mitiga el rechazo "por motivos de
   // seguridad" del motor antifraude): mandar SIEMPRE un email de pagador en
@@ -439,7 +441,8 @@ export default function Membership({ session, onSessionUpdate }) {
       )}
 
       {!session && (
-        <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+        <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3 relative">
+          <HoneypotField />
           <div className="flex-1">
             <label className="theme-label block text-[10px] mb-2">¿Ya tienes una clave? Ingrésala aquí</label>
             <input value={loginKey} onChange={e => { setLoginKey(e.target.value); if (loginStatus === 'error') setLoginStatus('idle'); }} readOnly={loginLoading} placeholder="Pega tu clave de licencia"
@@ -487,7 +490,8 @@ export default function Membership({ session, onSessionUpdate }) {
             </div>
           ) : (
             <>
-              <div>
+              <div className="relative">
+                <HoneypotField />
                 <label className="theme-label block text-[10px] mb-2">Elige un alias para tu licencia</label>
                 <input
                   ref={aliasInputRef}
@@ -841,6 +845,9 @@ export default function Membership({ session, onSessionUpdate }) {
       />
 
       {showPolicyModal && <RefundPolicyModal onClose={() => setShowPolicyModal(false)} />}
+
+      {/* Donde se paga, a la vista: aviso legal, privacidad y cookies. */}
+      <LegalLinks onNavigate={onNavigate} className="w-full max-w-2xl" />
     </div>
   );
 }

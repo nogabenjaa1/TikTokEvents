@@ -101,11 +101,18 @@ export function buildAuthenticatedSocket() {
   return io(backendUrl(), { auth: { token: session.token } });
 }
 
+// Lo que un bot haya escrito en algún campo trampa visible en la página (ver
+// HoneypotField.jsx); vacío para una persona.
+function botTrapValue() {
+  if (typeof document === 'undefined') return '';
+  return [...document.querySelectorAll('input[name="website"]')].map((input) => input.value).join('').trim();
+}
+
 export async function loginWithKey(key) {
   const res = await fetch(`${backendUrl()}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key }),
+    body: JSON.stringify({ key, website: botTrapValue() }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Login fallido');
@@ -122,7 +129,7 @@ export async function requestFreeTrial(alias, setupIntentId) {
   const res = await fetch(`${backendUrl()}/api/free-trial`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias, setupIntentId }),
+    body: JSON.stringify({ alias, setupIntentId, website: botTrapValue() }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'No se pudo crear la prueba gratis');

@@ -24,7 +24,7 @@ export function PrizeStrip({ prize, customize }) {
   return (
     <div className="tkc-ovl-fill mt-3 flex items-center gap-3 bg-emerald-900/25 border border-emerald-500/40 px-4 py-2 rounded-xl w-full">
       {prize.image && (
-        <img src={prize.image} className="w-[50px] h-[50px] rounded-lg object-cover flex-shrink-0 border border-emerald-400/40" />
+        <img alt="" src={prize.image} className="w-[50px] h-[50px] rounded-lg object-cover flex-shrink-0 border border-emerald-400/40" />
       )}
       <div className="text-left leading-tight min-w-0">
         <span {...labelProps(customize, 'block text-[8px] uppercase tracking-widest text-emerald-400 font-bold')}>🎁 PREMIO:</span>
@@ -98,7 +98,7 @@ export function EliminationResultVisual({ list, customize }) {
       <div className="relative">
         <div className="absolute -top-10 -right-6 text-[56px] drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] z-30">💀</div>
         <div className="absolute inset-0 rounded-full blur-xl opacity-60 bg-red-600" />
-        <img src={first.avatar} className="w-24 h-24 rounded-full border-4 relative z-10 object-cover shadow-2xl border-red-500 grayscale" />
+        <img alt="" src={first.avatar} className="w-24 h-24 rounded-full border-4 relative z-10 object-cover shadow-2xl border-red-500 grayscale" />
       </div>
       <div className="text-[28px] leading-none font-black tracking-widest text-red-500 animate-pulse" style={labelScaleStyle(customize)}>ELIMINATED</div>
       <p className="text-sm font-black text-red-300">@{first.username}</p>
@@ -106,7 +106,7 @@ export function EliminationResultVisual({ list, customize }) {
         <div className="flex items-center gap-2 flex-wrap justify-center max-w-full px-2">
           {bubbles.map((e, i) => (
             <div key={e.username + i} className="flex flex-col items-center gap-0.5">
-              <img src={e.avatar} className="w-10 h-10 rounded-full border-2 border-red-500 object-cover grayscale" />
+              <img alt="" src={e.avatar} className="w-10 h-10 rounded-full border-2 border-red-500 object-cover grayscale" />
               <span className="text-[8px] text-red-300 max-w-[44px] truncate">@{e.username}</span>
             </div>
           ))}

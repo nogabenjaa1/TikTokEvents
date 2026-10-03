@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import iconFollow from './assets/alert-follow.png';
-import iconSticker from './assets/alert-sticker.png';
+import iconFollow from './assets/alert-follow.webp';
+import iconSticker from './assets/alert-sticker.webp';
 import {
   FEED_FILTERS, BIG_GIFT_COINS, feedCounts, filterFeed, feedCoins, relativeTime, feedDescription,
 } from './feedLogic';

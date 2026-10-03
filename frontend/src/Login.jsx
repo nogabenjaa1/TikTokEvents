@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { loginWithKey, saveSession } from './auth';
-import logoMark from './assets/logo-mark.png';
+import logoMark from './assets/logo-mark.webp';
 import MorphButton from './MorphButton';
+import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 
 // Pantalla de login: pide la license key (no hay username/password
@@ -63,7 +64,8 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
   return (
     <div className={embedded ? 'w-full flex items-center justify-center p-6 font-sans' : 'min-h-screen text-white flex items-center justify-center p-6 font-sans'}>
       <div className="w-full max-w-sm flex flex-col gap-4">
-        <form onSubmit={submit} className="theme-surface p-8 tkc-rise" aria-busy={status === 'loading'}>
+        <form onSubmit={submit} className="theme-surface p-8 tkc-rise relative" aria-busy={status === 'loading'}>
+          <HoneypotField />
           <div className="flex items-center gap-3 mb-2">
             <img src={logoMark} alt="" className="h-9 w-auto flex-shrink-0" />
             <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>

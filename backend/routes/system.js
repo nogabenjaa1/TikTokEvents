@@ -152,6 +152,9 @@ function registerSystemRoutes(app, deps) {
                 sockets: io.engine?.clientsCount ?? null,
                 memoryMb: { rss: Math.round(memory.rss / 1048576), heapUsed: Math.round(memory.heapUsed / 1048576) },
                 storageConfigured: storage.isConfigured(),
+                // Datos del responsable que publican el Aviso Legal y el de
+                // Privacidad (ver /api/legal-info): si faltan, se avisa aquí.
+                legalConfigured: !!(process.env.LEGAL_NAME && process.env.LEGAL_EMAIL),
                 errors24h,
                 reporter: errorReporter.stats(),
             },

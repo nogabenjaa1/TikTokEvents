@@ -1,5 +1,5 @@
 import { getUsernameOverride, resolveBackgroundStyle, rowBorder, FONT_SCALES, overlayRootProps, labelProps, labelScaleStyle, titleProps } from '../overlayCustomization';
-import vsImage from '../assets/versus-vs.png';
+import vsImage from '../assets/versus-vs.webp';
 
 // Overlay del modo Versus (rediseño, pedido explícito: "demasiado grande,
 // letras muy chicas y separadas, mucho espacio desperdiciado"). Ahora:

@@ -50,7 +50,7 @@ function adminRoutes({ existing = {} } = {}) {
         events.inserted.push(row);
         return { id: row.id, username: row.username, license_type: row.licenseType, created_at: row.createdAt, expires_at: row.expiresAt, spotify_addon: row.spotifyAddon };
       },
-      findById: async (id) => existing[id],
+      findById: async (id) => existing[id], findCoreById: async (id) => existing[id],
       // Objects built inside the vm carry that realm's Object.prototype: clone them so deepEqual compares plain data.
       setLicenseKey: async (id, keys) => { events.keySets.push([id, { ...keys }]); },
       revoke: async (id) => { events.revoked.push(id); },

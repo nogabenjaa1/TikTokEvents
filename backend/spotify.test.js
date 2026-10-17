@@ -107,7 +107,7 @@ test('!play reports a failed search to the panel instead of failing silently', a
   const emitted = [];
   const account = { license_id: 'l1', access_token: 't', refresh_token: 'r', expires_at: Date.now() + 3600000 };
   const tenant = Object.create(tenantSpotify({
-    db: { findById: async () => LIFETIME, getSpotifyAccount: async () => account, getSharedSpotifySlotHolders: async () => ['l1'] },
+    db: { findById: async () => LIFETIME, findCoreById: async () => LIFETIME, getSpotifyAccount: async () => account, getSharedSpotifySlotHolders: async () => ['l1'] },
     spotifyApi: { ...spotify, searchTrack: async () => { throw new spotify.SpotifyUserNotRegisteredError(`Spotify search falló (403): ${NOT_REGISTERED_BODY}`); } },
   }));
   tenant.licenseId = 'l1';

@@ -110,7 +110,9 @@ module.exports = {
     // ve una compra o cambio de plan posterior. Se mira antes que la cuenta
     // para no descifrar tokens que no se van a usar.
     async getAllowedSpotifyAccount() {
-        const license = await db.findById(this.licenseId);
+        // Sin las columnas JSON: esto corre cada 4 segundos mientras haya una
+        // cuenta conectada (ver LICENSE_CORE_COLUMNS en db.js).
+        const license = await db.findCoreById(this.licenseId);
         if (!spotify.isLicenseAllowed(license)) return null;
         const account = await db.getSpotifyAccount(this.licenseId);
         if (!account) return null;

@@ -325,7 +325,7 @@ test('the tenant hands out a Spotify account only while the license keeps its ri
   const check = async (license, acc, holders = []) => {
     const reads = { account: 0, slots: 0 };
     const tenant = Object.create(tenantSpotify({ db: {
-      findById: async () => license,
+      findById: async () => license, findCoreById: async () => license,
       getSpotifyAccount: async () => { reads.account++; return acc; },
       getSharedSpotifySlotHolders: async () => { reads.slots++; return holders; },
     } }));
@@ -401,6 +401,7 @@ function purchaseContext() {
       insertPaymentIfNew: async (row) => { events.payments.push(row); return events.fresh; },
       insertStripePaymentIfNew: async (row) => { events.stripePayments.push(row); return events.fresh; },
       findById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
+      findCoreById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
       applyPurchase: async (...args) => { events.applied.push(args); },
       // The pending-payment notes for the admin (Sistema > Pagos); plain copies so deepEqual works across the vm.
       upsertPaymentFailure: async (row) => { events.failures.push({ ...row }); },
@@ -699,7 +700,7 @@ function tokenFailureTenant(error) {
   const track = (name) => async () => { events.api.push(name); return null; };
   const tenant = Object.create(tenantSpotify({
     db: {
-      findById: async () => LIFETIME,
+      findById: async () => LIFETIME, findCoreById: async () => LIFETIME,
       getSpotifyAccount: async () => account,
       getSharedSpotifySlotHolders: async () => ['l1'],
       deleteSpotifyAccount: async (id) => { events.deleted.push(id); },

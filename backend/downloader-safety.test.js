@@ -117,7 +117,9 @@ test('el bloqueo de YouTube por "no eres un bot" se reconoce para mostrar un men
 test('proxies: varias por coma, una al azar; YouTube con su propia lista o con las de TikTok', () => {
     const fs = require('node:fs');
     const vm = require('node:vm');
-    const src = fs.readFileSync(require.resolve('./downloader'), 'utf8');
+    // Saltos de línea de Windows (git con core.autocrlf) pasados a \n: el
+    // recorte de abajo busca '\n{\n' y con '\r\n' no lo encontraba.
+    const src = fs.readFileSync(require.resolve('./downloader'), 'utf8').replace(/\r\n/g, '\n');
     const code = src.slice(src.indexOf('function proxyList'), src.indexOf('// YouTube les pide'))
         + src.slice(src.indexOf('const TRUTHY'), src.indexOf('\n{\n', src.indexOf('const TRUTHY')));
     const run = (env, expr) => {

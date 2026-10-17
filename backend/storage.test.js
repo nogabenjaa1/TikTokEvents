@@ -64,8 +64,8 @@ test('every file of every folder is listed with its size and date, and pages of 
   const { files, truncated } = await storage.listAllFiles();
   assert.equal(truncated, false);
   assert.equal(files.length, 1 + 103 + 1);
-  assert.deepEqual(files.find((f) => f.path === 'loose.png'), { path: 'loose.png', size: 7, createdAt: Date.parse('2026-01-01T00:00:00.000Z') });
-  assert.deepEqual(files.find((f) => f.path === 'lic1/f102.png'), { path: 'lic1/f102.png', size: 103, createdAt: Date.parse('2026-03-04T05:06:07.000Z') });
+  assert.deepEqual(files.find((f) => f.path === 'loose.png'), { path: 'loose.png', size: 7, createdAt: Date.parse('2026-01-01T00:00:00.000Z'), cacheControl: null, mimetype: 'image/png' });
+  assert.deepEqual(files.find((f) => f.path === 'lic1/f102.png'), { path: 'lic1/f102.png', size: 103, createdAt: Date.parse('2026-03-04T05:06:07.000Z'), cacheControl: null, mimetype: 'image/png' });
   assert.ok(files.some((f) => f.path === 'lic2/only.mp3'));
   const asked = calls.map((c) => `${c.body.prefix}@${c.body.offset}`);
   assert.deepEqual(asked.filter((a) => a.startsWith('lic1')), ['lic1@0', 'lic1@100'], 'the second page of 3 ends the folder');
@@ -77,7 +77,7 @@ test('missing size or date does not break listing: the size is 0 and the date un
   const storage = loadStorage();
   fakeBucket({ root: [{ name: 'odd.png', id: 'x', created_at: null, metadata: null }] });
   const { files } = await storage.listAllFiles();
-  assert.deepEqual(files, [{ path: 'odd.png', size: 0, createdAt: null }]);
+  assert.deepEqual(files, [{ path: 'odd.png', size: 0, createdAt: null, cacheControl: null, mimetype: null }]);
 });
 
 test('when the time budget runs out it returns what it has and says the list is incomplete', async () => {
@@ -137,4 +137,46 @@ test('the old best-effort delete still never throws', async () => {
   const quiet = console.error;
   console.error = () => {};
   try { await storage.deleteFile('a/b.png'); } finally { console.error = quiet; }
+});
+
+test('an upload asks for a year of cache, so each browser downloads an alert file once instead of on every trigger', async () => {
+  const storage = loadStorage();
+  const calls = [];
+  global.fetch = async (url, init = {}) => { calls.push({ url, init }); return ok({}); };
+  const quiet = console.log;
+  console.log = () => {};
+  let url;
+  try { url = await storage.uploadFile('lic-1/abc.mp4', Buffer.from('x'), 'video/mp4'); } finally { console.log = quiet; }
+  assert.equal(url, `${BASE}/storage/v1/object/public/alert-media/lic-1/abc.mp4`);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers['cache-control'], 'max-age=31536000');
+  assert.equal(calls[0].init.headers['Content-Type'], 'video/mp4');
+});
+
+test('an old file is re-uploaded in place with the year of cache, keeping its type and its public address', async () => {
+  const storage = loadStorage();
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (!init.method) return { ok: true, status: 200, headers: { get: () => 'video/mp4' }, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+    return ok({});
+  };
+  assert.equal(await storage.refreshCacheControl('lic-1/old.mp4', 'video/mp4'), 3);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, `${BASE}/storage/v1/object/alert-media/lic-1/old.mp4`);
+  assert.equal(calls[0].init.headers.apikey, 'service-key');
+  assert.equal(calls[1].url, `${BASE}/storage/v1/object/alert-media/lic-1/old.mp4`, 'same path: the public URL does not change');
+  assert.equal(calls[1].init.method, 'PUT');
+  assert.equal(calls[1].init.headers['cache-control'], storage.UPLOAD_CACHE_CONTROL);
+  assert.equal(calls[1].init.headers['Content-Type'], 'video/mp4');
+  assert.equal(calls[1].init.body.length, 3);
+});
+
+test('a re-upload that cannot download the file fails loudly instead of overwriting it with nothing', async () => {
+  const storage = loadStorage();
+  const calls = [];
+  global.fetch = async (url, init = {}) => { calls.push(init.method || 'GET'); return fail(404); };
+  await assert.rejects(() => storage.refreshCacheControl('lic-1/gone.mp4', 'video/mp4'), /download falló \(404\)/);
+  assert.deepEqual(calls, ['GET'], 'nothing is uploaded');
 });

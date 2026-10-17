@@ -528,6 +528,24 @@ function lifetimeAtSql(typeParam, nowParam) {
     END`;
 }
 
+// Todas las columnas de la licencia MENOS las JSON grandes (tema,
+// personalización de overlays, Spotify, TTS, objetivo, versus y sobre todo
+// runtime_state, el estado de los juegos). Es lo que usan los caminos que se
+// repiten todo el tiempo: validar la sesión en cada petición y en cada
+// conexión de socket, y el permiso de Spotify que se revisa cada 4 segundos.
+// Antes todos hacían SELECT * y traían esos JSON en cada vuelta: era casi
+// todo el "Shared Pooler Egress" de Supabase (8.68 GB en el plan Free).
+// Si se agrega una columna simple a licenses que esos caminos necesiten,
+// sumarla aquí; las JSON se leen con findById (fila completa).
+const LICENSE_CORE_COLUMNS = [
+    'id', 'key_hash', 'key_prefix', 'username', 'license_type', 'is_admin', 'revoked',
+    'created_at', 'expires_at', 'last_login_at', 'mp_payment_id',
+    'king_starts', 'zub_starts', 'elim_starts', 'roulette_starts',
+    'last_active_at', 'session_id', 'multi_device',
+    'trial_alias', 'trial_connected_username', 'dice_tier', 'pending_key_reveal',
+    'dice_win_bonus_unlocked', 'trial_card_fingerprint', 'lifetime_at', 'spotify_addon', 'overlay_epoch',
+].join(', ');
+
 async function findByKeyHash(keyHash) {
     await ready;
     const { rows } = await pool.query('SELECT * FROM licenses WHERE key_hash = $1', [keyHash]);
@@ -540,9 +558,25 @@ async function findById(id) {
     return rows[0];
 }
 
+// Igual que findById / findByKeyHash pero sin las columnas JSON (ver
+// LICENSE_CORE_COLUMNS).
+async function findCoreById(id) {
+    await ready;
+    const { rows } = await pool.query(`SELECT ${LICENSE_CORE_COLUMNS} FROM licenses WHERE id = $1`, [id]);
+    return rows[0];
+}
+
+async function findCoreByKeyHash(keyHash) {
+    await ready;
+    const { rows } = await pool.query(`SELECT ${LICENSE_CORE_COLUMNS} FROM licenses WHERE key_hash = $1`, [keyHash]);
+    return rows[0];
+}
+
+// Sin las columnas JSON: el panel de Licencias, las estadísticas y Sistema
+// solo usan las simples, y antes esto traía los JSON de TODAS las licencias.
 async function listAll() {
     await ready;
-    const { rows } = await pool.query('SELECT * FROM licenses ORDER BY created_at DESC');
+    const { rows } = await pool.query(`SELECT ${LICENSE_CORE_COLUMNS} FROM licenses ORDER BY created_at DESC`);
     return rows;
 }
 
@@ -1361,7 +1395,7 @@ async function listReferencedMediaPaths() {
 }
 
 module.exports = {
-    insertLicense, findByKeyHash, findById, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
+    insertLicense, findByKeyHash, findById, findCoreById, findCoreByKeyHash, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,

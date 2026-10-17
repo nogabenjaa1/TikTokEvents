@@ -15,6 +15,9 @@ const dbCalls = { findById: 0, findByKeyHash: 0 };
 const dbStub = {
     findById: async (id) => { dbCalls.findById++; return rows.get(id); },
     findByKeyHash: async (hash) => { dbCalls.findByKeyHash++; return [...rows.values()].find((r) => r.key_hash === hash); },
+    // Las versiones sin columnas JSON (ver LICENSE_CORE_COLUMNS) cuentan igual: son la misma consulta a la base.
+    findCoreById: async (id) => { dbCalls.findById++; return rows.get(id); },
+    findCoreByKeyHash: async (hash) => { dbCalls.findByKeyHash++; return [...rows.values()].find((r) => r.key_hash === hash); },
 };
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: dbStub };
 const auth = require('./auth');

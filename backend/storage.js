@@ -69,11 +69,20 @@ async function ensureBucket() {
 // pública directa — el bucket es público (`public: true` arriba) porque
 // estos archivos los tiene que poder cargar el overlay de OBS sin ningún
 // tipo de auth de por medio.
+//
+// Caché de un año: sin esto Supabase guarda el archivo sin caché larga y
+// cada navegador (panel y OBS de cada streamer) lo volvía a descargar en
+// CADA disparo de la alerta -- videos de varios MB por regalo, contados
+// como egress de Supabase (se llegó a 8.68 GB). Es seguro porque cada
+// archivo se sube con un nombre aleatorio nuevo (ver server.js): nunca se
+// sobrescribe un archivo existente, así que no hay contenido viejo que
+// pueda quedar en caché.
+const UPLOAD_CACHE_CONTROL = 'max-age=31536000';
 async function uploadFile(path, buffer, contentType) {
     assertConfigured();
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
         method: 'POST',
-        headers: authHeaders({ 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'true' }),
+        headers: authHeaders({ 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'true', 'cache-control': UPLOAD_CACHE_CONTROL }),
         body: buffer,
     });
     if (!res.ok) {
@@ -130,7 +139,35 @@ async function listFolder(prefix) {
 }
 
 function toFile(entry, path) {
-    return { path, size: Number(entry.metadata?.size) || 0, createdAt: Date.parse(entry.created_at) || null };
+    return {
+        path,
+        size: Number(entry.metadata?.size) || 0,
+        createdAt: Date.parse(entry.created_at) || null,
+        cacheControl: entry.metadata?.cacheControl || null,
+        mimetype: entry.metadata?.mimetype || null,
+    };
+}
+
+// Vuelve a subir un archivo que ya existe con la caché de un año (ver
+// UPLOAD_CACHE_CONTROL): Supabase no deja cambiar solo la caché de un
+// archivo, hay que mandarlo de nuevo. La descarga cuenta como egress una
+// sola vez por archivo -- a cambio, deja de descargarse en cada alerta. La
+// URL pública no cambia. Lo usa scripts/refresh-storage-cache.js.
+async function refreshCacheControl(path, mimetype) {
+    assertConfigured();
+    const download = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, { headers: authHeaders() });
+    if (!download.ok) throw new Error(`Supabase Storage download falló (${download.status})`);
+    const buffer = Buffer.from(await download.arrayBuffer());
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
+        method: 'PUT',
+        headers: authHeaders({
+            'Content-Type': mimetype || download.headers.get('content-type') || 'application/octet-stream',
+            'cache-control': UPLOAD_CACHE_CONTROL,
+        }),
+        body: buffer,
+    });
+    if (!res.ok) throw new Error(`Supabase Storage update falló (${res.status}): ${await res.text()}`);
+    return buffer.length;
 }
 
 // Todos los archivos del bucket: [{ path, size, createdAt }]. Recorre las carpetas
@@ -186,4 +223,4 @@ async function deletePrefix(prefix) {
     return deleteFiles(files);
 }
 
-module.exports = { ensureBucket, uploadFile, deleteFile, isConfigured, listAllFiles, deleteFiles, deletePrefix };
+module.exports = { ensureBucket, uploadFile, deleteFile, isConfigured, listAllFiles, deleteFiles, deletePrefix, refreshCacheControl, UPLOAD_CACHE_CONTROL };

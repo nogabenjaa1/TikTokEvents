@@ -110,7 +110,9 @@ function verifySpotifyState(state) {
 // (token roto/vencido) tal como antes — los callers ya las atrapan.
 async function checkTokenStatus(token) {
     const decoded = verifySession(token);
-    const row = await db.findById(decoded.sub);
+    // Sin las columnas JSON: esto corre en cada petición y cada conexión (ver
+    // LICENSE_CORE_COLUMNS en db.js).
+    const row = await db.findCoreById(decoded.sub);
     if (!isLicenseValid(row)) return { row: null, sessionId: null, reason: 'invalid' };
     // Comparación directa (no un "if row.session_id existe"): así un logout
     // explícito (que deja session_id en null) también mata cualquier token
@@ -127,7 +129,7 @@ async function resolveFromToken(token) {
 }
 
 async function resolveFromRawKey(key) {
-    const row = await db.findByKeyHash(hashKey(key));
+    const row = await db.findCoreByKeyHash(hashKey(key));
     if (!isLicenseValid(row)) return null;
     return row;
 }
@@ -157,7 +159,7 @@ function overlayTokenFor(row) {
 async function resolveFromOverlayToken(token) {
     const match = OVERLAY_TOKEN_RE.exec(String(token || ''));
     if (!match) return null;
-    const row = await db.findById(match[1]);
+    const row = await db.findCoreById(match[1]);
     if (!isLicenseValid(row)) return null;
     const expected = Buffer.from(overlayTokenFor(row));
     const given = Buffer.from(token);

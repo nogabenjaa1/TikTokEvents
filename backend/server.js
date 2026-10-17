@@ -2665,7 +2665,7 @@ io.on('connection', (socket) => {
     // Un panel que se conecta (o reconecta) recibe su licencia al día: cubre
     // un cambio hecho mientras estaba cerrado o desconectado.
     if (socket.authMethod === 'jwt') {
-        db.findById(socket.licenseId)
+        db.findCoreById(socket.licenseId)
             .then((row) => { if (row) socket.emit('license_updated', sessionLicense(row)); })
             .catch(() => { /* sin la base, el panel sigue con lo que tenía */ });
     }

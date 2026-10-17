@@ -166,10 +166,11 @@ const SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT = 8;
 const SPOTIFY_QUEUE_INTERNAL_CAP = 50;
 // Spotify no tiene forma de avisar "esta canción terminó/la saltearon" — no
 // hay push ni webhook para reproducción de terceros. Este es el único modo
-// real de mantener el overlay al día: preguntarle a la API cada tanto qué
-// está sonando y qué sigue (GET /me/player/queue) y comparar contra lo que
-// nosotros mismos agregamos. 4s es un balance entre "se siente en vivo" y
-// no perseguir a la API de Spotify sin necesidad.
+// real de mantener el overlay al día: preguntarle a la API qué está sonando y
+// qué sigue (GET /me/player/queue) y comparar contra lo que nosotros mismos
+// agregamos. Ya no es cada 4 s fijo: cuándo se vuelve a preguntar lo decide
+// nextSpotifyPollDelay (lib/spotifyQueueSync.js), y solo mientras el
+// streamer está en vivo. Esto queda como la espera tras un !play o un !skip.
 const SPOTIFY_POLL_INTERVAL_MS = 4000;
 
 // MODO EXTENSIBLE: cuenta regresiva que arranca en `baseTime` y SUMA
@@ -217,7 +218,7 @@ function pickEliminationBatch(pool, maxCount) {
 }
 
 // Qué pedidos de !play siguen pendientes según la cola real de Spotify (ver lib/spotifyQueueSync.js).
-const { createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests } = require('./spotifyQueueSync');
+const { createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests, nextSpotifyPollDelay } = require('./spotifyQueueSync');
 
 // Lo mínimo que necesita una pantalla para mover el segundero de un juego
 // cuyo estado completo es pesado (Eliminación, Ruleta): ver elim_tick /
@@ -255,6 +256,7 @@ module.exports = {
     createSpotifyRequest,
     publicSpotifyRequest,
     reconcileSpotifyRequests,
+    nextSpotifyPollDelay,
     EXTENSIBLE_TICK_MS,
     shuffleArray,
     pickEliminationBatch,

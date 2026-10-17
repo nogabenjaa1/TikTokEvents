@@ -117,7 +117,37 @@ function reconcileSpotifyRequests(requests, live, { now = Date.now(), emptyReads
     return { requests: kept, emptyReads: nextEmptyReads, dropped, currentRequest };
 }
 
+// Cuándo volver a leer Spotify. Spotify no avisa cuando cambia la canción, así
+// que en vez de preguntar cada 4 s todo el día (cada lectura también consulta
+// la base: era casi todo el egress de Supabase) se pregunta solo cuando algo
+// puede haber cambiado:
+// - un !play recién aceptado que Spotify todavía no muestra: seguido (4 s),
+//   pero solo su primer minuto -- uno que nunca aparece (p. ej. más abajo de
+//   lo que trae la lectura) no deja la lectura rápida encendida para siempre;
+// - una canción sonando: justo cuando debería terminar (duración menos
+//   avance, con un margen), para mostrar la siguiente en el overlay;
+// - en cualquier caso, como mucho cada 30 s, por si el streamer cambia o
+//   pausa la canción a mano en su app de Spotify (eso no se puede saber de
+//   otra forma).
+// Fuera de vivo no se llama: el tenant deja de programar lecturas.
+const POLL_FAST_MS = 4000;
+const POLL_FAST_WINDOW_MS = 60 * 1000;
+const POLL_MAX_MS = 30 * 1000;
+const POLL_MIN_MS = 2000;
+const TRACK_END_MARGIN_MS = 1500;
+
+function nextSpotifyPollDelay({ requests = [], playback = null, now = Date.now() } = {}) {
+    if (requests.some((request) => !request.seen && now - (request.addedAt || 0) < POLL_FAST_WINDOW_MS)) return POLL_FAST_MS;
+    if (playback?.isPlaying && playback.durationMs > 0) {
+        const elapsed = Math.max(0, now - (playback.readAt || now));
+        const remaining = playback.durationMs - (playback.progressMs || 0) - elapsed + TRACK_END_MARGIN_MS;
+        return Math.min(POLL_MAX_MS, Math.max(POLL_MIN_MS, Math.round(remaining)));
+    }
+    return POLL_MAX_MS;
+}
+
 module.exports = {
-    createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests,
+    createSpotifyRequest, publicSpotifyRequest, reconcileSpotifyRequests, nextSpotifyPollDelay,
     QUEUE_READ_LIMIT, MISSES_BEFORE_DROP, UNSEEN_TTL_MS, EMPTY_READS_BEFORE_CLEAR,
+    POLL_FAST_MS, POLL_MAX_MS, POLL_MIN_MS, TRACK_END_MARGIN_MS,
 };

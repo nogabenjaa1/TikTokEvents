@@ -7,7 +7,9 @@ const vm = require('node:vm');
 // el panel del streamer hasta que se regeneró la clave. pushLicenseState avisa
 // el cambio a los paneles abiertos y corrige el tipo de licencia del Tenant.
 function load(row) {
-  const source = fs.readFileSync(require.resolve('./server'), 'utf8');
+  // Saltos de línea de Windows (git con core.autocrlf) pasados a \n: el
+  // recorte de abajo busca '\n}\n' y con '\r\n' no lo encontraba.
+  const source = fs.readFileSync(require.resolve('./server'), 'utf8').replace(/\r\n/g, '\n');
   const start = source.indexOf('async function pushLicenseState');
   const end = source.indexOf('\n}\n', start) + 3;
   const sent = [];

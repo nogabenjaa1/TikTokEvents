@@ -305,6 +305,26 @@ async function getQueue(accessToken) {
     return res.json();
 }
 
+// GET /me/player — qué suena, si está en pausa y por dónde va (duración y
+// avance). Con esto se calcula cuándo termina la canción para volver a leer
+// la cola justo ahí, en vez de preguntar cada pocos segundos. 204 = no hay
+// nada reproduciéndose en ningún dispositivo. Mismo permiso que getQueue
+// (user-read-playback-state).
+async function getPlaybackState(accessToken) {
+    const res = await fetch('https://api.spotify.com/v1/me/player', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 204) return null;
+    if (!res.ok) throw await apiError(res, 'Spotify player-read');
+    const body = await res.json();
+    return {
+        isPlaying: !!body?.is_playing,
+        progressMs: Number(body?.progress_ms) || 0,
+        durationMs: Number(body?.item?.duration_ms) || 0,
+        uri: body?.item?.uri || null,
+    };
+}
+
 class SpotifyPlaybackError extends Error {
     constructor(code, message) {
         super(message);
@@ -365,7 +385,7 @@ async function setVolume(accessToken, volumePercent) {
 
 module.exports = {
     REDIRECT_URI, SHARED_SLOTS_TOTAL,
-    getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, getQueue, skipToNext, setVolume,
+    getAuthUrl, exchangeCodeForTokens, getMe, getValidAccessToken, searchTrack, addToQueue, getQueue, getPlaybackState, skipToNext, setVolume,
     isLicenseAllowed, evaluateAccess, addonPurchaseError, parseAppCredentials, verifyAppCredentials,
     SpotifyPlaybackError, SpotifyUserNotRegisteredError, SpotifyInvalidCredentialsError, SpotifyRefreshTokenExpiredError,
 };

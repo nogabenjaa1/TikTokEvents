@@ -314,7 +314,7 @@ function tenantSpotify({ db, spotifyApi = spotify }) {
   const context = {
     module: { exports: {} },
     require: (name) => (name.endsWith('/spotify') ? spotifyApi : name.endsWith('/db') ? db : name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : {}),
-    console: { log() {}, warn() {}, error() {} }, Date, setInterval, clearInterval,
+    console: { log() {}, warn() {}, error() {} }, Date, setInterval, clearInterval, setTimeout, clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/spotify'), 'utf8'), context);
   return context.module.exports;

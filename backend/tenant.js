@@ -221,11 +221,9 @@ class Tenant {
         // mano) — se arma en cada poll a partir de `currently_playing`, ver
         // pollSpotifyQueue. `queueCounter` arma ids únicos para el key de
         // React del overlay, igual que rouletteSlotCounter. `pollInterval`
-        // es el timer del polling: antes arrancaba solo con el primer
-        // !play y se apagaba con la cola vacía; ahora también arranca solo
-        // con tener una cuenta de Spotify conectada (ver
-        // maybeStartSpotifyPolling), para poder mostrar "now playing"
-        // aunque nadie haya pedido nada todavía.
+        // es la próxima lectura programada de Spotify (un setTimeout): solo
+        // en vivo, y cada lectura decide cuándo hacer la siguiente (ver
+        // runScheduledSpotifyPoll / nextSpotifyPollDelay).
         this.spotifyQueueState = { queue: [], nowPlaying: null };
         this.spotifyQueueCounter = 0;
         this.spotifyPollInterval = null;

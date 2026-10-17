@@ -10,6 +10,7 @@ const {
     createSpotifyRequest,
     publicSpotifyRequest,
     reconcileSpotifyRequests,
+    nextSpotifyPollDelay,
 } = require('../../lib/tenantHelpers');
 
 module.exports = {
@@ -179,6 +180,9 @@ module.exports = {
         try {
             await spotify.skipToNext(accessToken);
             console.log(`[${this.logId}] [SPOTIFY] !skip OK.`);
+            // Cambió la canción: se lee enseguida para que el overlay muestre
+            // la nueva (Spotify tarda un instante en reflejar el salto).
+            this.requestSpotifyPollSoon(1500);
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] !skip falló — code: ${err.code || 'N/A'}, mensaje: ${err.message}`);
             this.broadcast.emit('spotify_error', { message: this.describeSpotifyError(err, account) });
@@ -278,42 +282,81 @@ module.exports = {
         this.spotifyQueueState.queue.push(createSpotifyRequest({ id: ++this.spotifyQueueCounter, track, username }));
         if (this.spotifyQueueState.queue.length > SPOTIFY_QUEUE_INTERNAL_CAP) this.spotifyQueueState.queue.shift();
         this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
-        this.startSpotifyQueuePolling();
+        // Se lee pronto para confirmarla en la cola real (ver nextSpotifyPollDelay).
+        this.requestSpotifyPollSoon(SPOTIFY_POLL_INTERVAL_MS);
     },
 
-    // Arranca el polling contra la cola REAL de Spotify (ver comentario de
-    // SPOTIFY_POLL_INTERVAL_MS) — idempotente, no pisa un timer ya
-    // corriendo. Antes se apagaba solo en pollSpotifyQueue en cuanto la
-    // cola de pedidos quedaba vacía; ahora sigue corriendo mientras haya
-    // una cuenta de Spotify conectada, porque el overlay necesita saber
-    // qué está sonando AHORA aunque nadie haya pedido nada (ver
-    // maybeStartSpotifyPolling/nowPlaying).
+    // Lecturas de la cola REAL de Spotify bajo demanda, no cada 4 s fijos:
+    // cada lectura programa la siguiente según lo que vio (ver
+    // nextSpotifyPollDelay en lib/spotifyQueueSync.js: pedidos recién
+    // aceptados, fin de la canción actual y un respaldo de 30 s), y solo
+    // mientras el streamer está en vivo (`liveConnected`). Antes era un
+    // setInterval de 4 s que corría todo el día con un panel u overlay
+    // abierto, y cada vuelta consultaba también la base: casi todo el
+    // egress de Supabase. `spotifyPollInterval` guarda el timer pendiente
+    // (un setTimeout); `spotifyPollGen` invalida una lectura en curso cuando
+    // se reprograma o se detiene mientras tanto.
+    scheduleSpotifyPoll(delayMs) {
+        if (this.spotifyPollInterval) clearTimeout(this.spotifyPollInterval);
+        this.spotifyPollGen = (this.spotifyPollGen || 0) + 1;
+        this.spotifyPollInterval = setTimeout(() => this.runScheduledSpotifyPoll(), delayMs);
+        if (this.spotifyPollInterval.unref) this.spotifyPollInterval.unref();
+    },
+
+    async runScheduledSpotifyPoll() {
+        this.spotifyPollInterval = null;
+        const gen = this.spotifyPollGen;
+        let outcome;
+        try {
+            outcome = await this.pollSpotifyQueue();
+        } catch (err) {
+            console.error(`[${this.logId}] [SPOTIFY] Lectura de la cola falló:`, err.message);
+        }
+        // Se reprogramó (p. ej. un !play mientras tanto) o se detuvo: esa
+        // otra llamada ya decidió la próxima lectura.
+        if (gen !== this.spotifyPollGen || this.spotifyPollInterval) return;
+        if (outcome === 'stopped') return;
+        // Fuera de vivo no se sigue leyendo: el overlay conserva lo último y
+        // se retoma al volver a conectarse al LIVE (ver connection.js).
+        if (!this.liveConnected) return;
+        this.scheduleSpotifyPoll(nextSpotifyPollDelay({ requests: this.spotifyQueueState.queue, playback: this.spotifyPlayback }));
+    },
+
+    // Arranca las lecturas si no hay una programada (no pisa una ya en
+    // camino). Lo llaman !play y la conexión al LIVE.
     startSpotifyQueuePolling() {
         if (this.spotifyPollInterval) return;
-        this.spotifyPollInterval = setInterval(() => this.pollSpotifyQueue(), SPOTIFY_POLL_INTERVAL_MS);
+        this.scheduleSpotifyPoll(SPOTIFY_POLL_INTERVAL_MS);
+    },
+
+    // Lee pronto aunque ya hubiera una lectura programada más tarde: tras un
+    // !skip o un !play algo cambió y el overlay tiene que mostrarlo ya.
+    requestSpotifyPollSoon(delayMs = SPOTIFY_POLL_INTERVAL_MS) {
+        this.scheduleSpotifyPoll(delayMs);
     },
 
     stopSpotifyQueuePolling() {
+        this.spotifyPollGen = (this.spotifyPollGen || 0) + 1;
         if (this.spotifyPollInterval) {
-            clearInterval(this.spotifyPollInterval);
+            clearTimeout(this.spotifyPollInterval);
             this.spotifyPollInterval = null;
         }
     },
 
     // Pedido explícito ("el overlay de Playlist nunca debe estar vacío"):
-    // arranca el polling de "now playing" en cuanto hay una cuenta de
-    // Spotify conectada, sin depender de que alguien haya pedido una
-    // canción por chat primero. Se llama desde attachSocket (cada vez que
-    // se conecta un cliente — panel u overlay) y es seguro llamarla más de
-    // una vez: startSpotifyQueuePolling es idempotente, y si ya está
-    // corriendo esto ni siquiera llega a golpear la DB de nuevo.
+    // cuando se conecta un panel u overlay, o el streamer entra en vivo, se
+    // lee lo que suena para mostrarlo aunque nadie haya pedido nada. En vivo
+    // eso arranca las lecturas programadas; fuera de vivo es UNA lectura
+    // suelta (el overlay muestra lo que suena al abrirlo y nada más). Si ya
+    // hay una lectura programada no hace nada, ni siquiera consulta la base.
     async maybeStartSpotifyPolling() {
         if (this.spotifyPollInterval) return;
         const account = await this.getAllowedSpotifyAccount();
         if (!account) return;
-        this.startSpotifyQueuePolling();
-        // Sin esto, el overlay tendría que esperar hasta SPOTIFY_POLL_INTERVAL_MS
-        // (4s) para mostrar algo la primera vez que alguien lo abre.
+        if (this.liveConnected) {
+            this.scheduleSpotifyPoll(0);
+            return;
+        }
         this.pollSpotifyQueue().catch(() => {});
     },
 
@@ -336,13 +379,13 @@ module.exports = {
                 this.spotifyQueueState.nowPlaying = null;
                 this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             }
-            return;
+            return 'stopped';
         }
 
         let accessToken;
         try {
             accessToken = await this.getSpotifyAccessTokenOrDrop(account);
-            if (!accessToken) return; // la conexión caducó: ya se borró, se avisó y el polling se apagó
+            if (!accessToken) return 'stopped'; // la conexión caducó: ya se borró, se avisó y el polling se apagó
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] Polling: no se pudo renovar el token, reintenta en el próximo tick:`, err.message);
             return;
@@ -354,6 +397,17 @@ module.exports = {
         } catch (err) {
             console.error(`[${this.logId}] [SPOTIFY] Polling: no se pudo leer la cola real, reintenta en el próximo tick:`, err.message);
             return;
+        }
+
+        // Duración y avance de lo que suena, para leer de nuevo justo cuando
+        // termine (ver nextSpotifyPollDelay). Si falla, la próxima lectura
+        // usa el respaldo de 30 s: no vale perder la lectura de la cola.
+        try {
+            const playback = await spotify.getPlaybackState(accessToken);
+            this.spotifyPlayback = playback ? { ...playback, readAt: Date.now() } : null;
+        } catch (err) {
+            this.spotifyPlayback = null;
+            console.error(`[${this.logId}] [SPOTIFY] No se pudo leer el avance de la canción:`, err.message);
         }
 
         const currentUri = live.currently_playing?.uri || null;
@@ -386,10 +440,9 @@ module.exports = {
         if (before !== after) {
             this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
         }
-        // A propósito YA NO se apaga el polling con la cola de pedidos
-        // vacía — sigue corriendo mientras haya cuenta conectada, para
-        // seguir mostrando "now playing" (ver comentario de
-        // startSpotifyQueuePolling).
+        // A propósito NO se apaga con la cola de pedidos vacía: en vivo se
+        // sigue leyendo para mostrar "now playing" (ver
+        // runScheduledSpotifyPoll, que programa la próxima lectura).
     },
 
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).

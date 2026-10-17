@@ -168,7 +168,7 @@ function tenantWith(spotifyApi) {
   const context = {
     module: { exports: {} },
     require: (name) => (name.endsWith('/spotify') ? spotifyApi : name.endsWith('/db') ? {} : name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : {}),
-    console: { log: (...args) => logs.push(args.join(' ')), warn() {}, error() {} }, Date, setInterval, clearInterval,
+    console: { log: (...args) => logs.push(args.join(' ')), warn() {}, error() {} }, Date, setInterval, clearInterval, setTimeout, clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/spotify'), 'utf8'), context);
   const tenant = Object.create(context.module.exports);
@@ -180,6 +180,7 @@ function tenantWith(spotifyApi) {
   tenant.getAllowedSpotifyAccount = async () => ({ license_id: 'l1' });
   tenant.getSpotifyAccessTokenOrDrop = async () => 'token';
   tenant.startSpotifyQueuePolling = () => {};
+  tenant.requestSpotifyPollSoon = () => {};
   return { tenant, logs, emitted, lastQueue: () => emitted.filter((e) => e.name === 'spotify_queue_update').at(-1)?.payload };
 }
 

@@ -384,6 +384,11 @@ module.exports = {
             if (this.watchdogInterval) clearInterval(this.watchdogInterval);
             this.watchdogInterval = setInterval(() => this.checkTikTokWatchdog(username), WATCHDOG_CHECK_INTERVAL_MS);
             this.broadcast.emit('live_connected', username);
+            // Las lecturas de Spotify solo corren en vivo (ver
+            // runScheduledSpotifyPoll): al entrar al LIVE se retoman. Al
+            // salir no hace falta apagarlas aquí: la siguiente ve que ya no
+            // hay LIVE y no programa otra.
+            if (typeof this.maybeStartSpotifyPolling === 'function') this.maybeStartSpotifyPolling().catch(() => {});
         }).catch(err => {
             const offline = this.isUserOfflineError(err);
             this.reconnectAttempts += 1;

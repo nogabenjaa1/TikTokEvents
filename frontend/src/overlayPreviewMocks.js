@@ -14,6 +14,22 @@ const MOCK_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent(
 // ejercitan las partes de la UI donde más importa ver el color/fondo
 // (un nombre de usuario visible, al menos una fila con "primer lugar",
 // etc.), nunca datos que dependan de qué esté pasando en un LIVE real.
+// Filas de prueba del overlay de chat (Overlays > Personalizar y la vista
+// previa de Eventos > Chat sin LIVE). Mismo formato que el servidor.
+export function chatPreviewItems(now = Date.now()) {
+  const user = (n, badges = {}) => ({
+    uniqueId: `test${n}`, nickname: `Test${n}`, avatar: MOCK_AVATAR,
+    badges: { images: [], moderator: false, subscriber: false, topGifterRank: null, fanLevel: 0, gifterLevel: 0, ...badges },
+  });
+  return [
+    { id: 'p1', at: now - 8000, kind: 'chat', user: user(1, { fanLevel: 12 }), text: 'jajaja qué bueno el directo', emotes: [] },
+    { id: 'p2', at: now - 6000, kind: 'follow', user: user(2) },
+    { id: 'p3', at: now - 4000, kind: 'gift', user: user(3, { topGifterRank: 1 }), gift: { name: 'Rosa', icon: '', count: 7, coins: 7 } },
+    { id: 'p4', at: now - 2000, kind: 'chat', user: user(4, { moderator: true }), text: '!play despacito', emotes: [] },
+    { id: 'p5', at: now - 1000, kind: 'share', user: user(5) },
+  ];
+}
+
 export function buildPreviewMock(overlayId) {
   switch (overlayId) {
     case 'games':
@@ -53,11 +69,9 @@ export function buildPreviewMock(overlayId) {
     case 'chat':
       return {
         viewerCount: 128,
-        messages: [
-          { id: 'm1', username: 'Test1', uniqueId: 'test1', avatar: MOCK_AVATAR, comment: 'jajaja qué bueno', isModerator: false, isSuperFan: true },
-          { id: 'm2', username: 'Test2', uniqueId: 'test2', avatar: MOCK_AVATAR, comment: 'saludos desde México 🇲🇽', isModerator: true, isSuperFan: false },
-          { id: 'm3', username: 'Test3', uniqueId: 'test3', avatar: MOCK_AVATAR, comment: 'primera vez en el directo', isModerator: false, isSuperFan: false },
-        ],
+        // Mismo formato que manda el servidor (ver backend/lib/chatOverlay.js):
+        // un mensaje, un seguidor, un regalo y un compartido, para ver cada estilo.
+        messages: chatPreviewItems(),
       };
     case 'versus':
       return {

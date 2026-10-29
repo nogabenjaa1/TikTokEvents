@@ -65,7 +65,7 @@ test('a panel that connects (or reloads) receives what is recent in one message'
 function eventsTenant() {
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? { record() {} } : name.includes('stickerCatalog') ? require('./lib/stickerCatalog') : {}),
+    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? { record() {} } : name.includes('stickerCatalog') ? require('./lib/stickerCatalog') : name.includes('chatOverlay') ? require('./lib/chatOverlay') : {}),
     setTimeout, clearTimeout, Date, console, Math, Number, String, Map, Set, Object, Array,
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/events'), 'utf8'), context);
@@ -74,6 +74,9 @@ function eventsTenant() {
   const alerts = [];
   const stickerUses = [];
   tenant.pushFeed = (item) => feed.push({ ...item });
+  const chatItems = [];
+  tenant.pushChatItem = (item) => { if (item) chatItems.push(item); };
+  tenant.chatItems = chatItems;
   tenant.processAlertTrigger = (payload) => alerts.push(payload);
   tenant.processFollowExtensible = () => {};
   tenant.processFollowGoal = () => {};
@@ -90,6 +93,11 @@ test('a follow goes to the feed (and still fires its alert); a share does not', 
   assert.equal(alerts.length, 1);
   tenant.handleSocialEvent({ uniqueId: 'bob', action: '3' });
   assert.equal(feed.length, 1, 'not a follow: nothing new');
+  // In the chat overlay: the follow, and the share only when it carries share data.
+  assert.deepEqual(tenant.chatItems.map((i) => [i.kind, i.user.uniqueId]), [['follow', 'ana']]);
+  tenant.handleSocialEvent({ uniqueId: 'carla', action: '3', shareType: '1', shareTarget: 'x' });
+  assert.equal(feed.length, 1, 'a share is not a follow in the feed');
+  assert.deepEqual(tenant.chatItems.map((i) => [i.kind, i.user.uniqueId]), [['follow', 'ana'], ['share', 'carla']]);
 });
 
 test('a fan club sticker is handed to the sticker logic, an ordinary emote is not', () => {

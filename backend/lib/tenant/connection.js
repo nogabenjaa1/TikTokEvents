@@ -186,6 +186,9 @@ module.exports = {
 
         this.spotifyQueueState.queue = [];
         this.broadcast.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
+
+        // El overlay de chat también empieza vacío y sin mensaje anclado.
+        if (typeof this.resetChatOverlay === 'function') this.resetChatOverlay();
     },
 
     scheduleReconnect(username) {
@@ -291,6 +294,8 @@ module.exports = {
             this.tiktokConnection.on('chat', (data) => this.handleChatEvent(data));
             this.tiktokConnection.on('like', (data) => this.handleLikeEvent(data));
             this.tiktokConnection.on('social', (data) => this.handleSocialEvent(data));
+            // Mensaje anclado por el streamer o un moderador (overlay de chat).
+            this.tiktokConnection.on('roomPin', (data) => this.handleRoomPinEvent(data));
             this.tiktokConnection.on('emote', (data) => this.handleEmoteEvent(data));
             // 'roomUser' (estadísticas de espectadores, para el overlay de
             // chat) -- ver handleRoomUserEvent y el comentario grande en

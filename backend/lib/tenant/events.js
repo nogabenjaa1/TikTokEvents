@@ -10,6 +10,7 @@ const {
 const { giftNameKey } = require('../../lib/giftCatalog');
 const giftDirectory = require('../../lib/giftDirectory');
 const { extractStickers, readableCommentText } = require('../../lib/stickerCatalog');
+const { chatMessageItem, followItem, shareItem, giftItem, isShareSocial } = require('../../lib/chatOverlay');
 
 module.exports = {
     // ==========================================
@@ -84,6 +85,12 @@ module.exports = {
             giftName: event.giftName, giftId: event.giftId, icon: data.giftPictureUrl,
             count: event.repeatCount, coins: event.totalCoins,
         });
+        // Al overlay de chat, con las insignias de quien lo manda.
+        this.pushChatItem(giftItem({
+            username: event.username, nickname: event.nickname, avatar: event.avatar,
+            giftName: event.giftName, icon: data.giftPictureUrl, count: event.repeatCount, coins: event.totalCoins,
+            badgesSource: data,
+        }));
 
         this.processGiftKing(event);
         this.processGiftZub(event);
@@ -157,8 +164,20 @@ module.exports = {
     // 'social' directo en vez de confiar en el 'follow' derivado.
     handleSocialEvent(data) {
         if (!data?.uniqueId) return;
-        if (String(data.action) !== '1') return; // no es un follow (ej. share -- no soportado, ver el comentario de arriba)
+        if (String(data.action) !== '1') {
+            // Compartidos: solo para el overlay de chat. Nunca se vio uno en un
+            // LIVE real -- esta línea muestra en Render qué trae de verdad para
+            // confirmar la regla de isShareSocial (lib/chatOverlay.js).
+            // Solo los primeros de cada tenant, para no llenar el registro en un LIVE grande.
+            this.socialSamplesLogged = (this.socialSamplesLogged || 0) + 1;
+            if (this.socialSamplesLogged <= 5) {
+                console.log(`[${this.logId}] [CHAT] Evento social no-follow — action=${data.action} shareType=${data.shareType} shareTarget=${data.shareTarget ? 'sí' : 'no'} → ${isShareSocial(data) ? 'compartido' : 'ignorado'}`);
+            }
+            if (isShareSocial(data)) this.pushChatItem(shareItem(data));
+            return;
+        }
         this.pushFeed({ type: 'follow', username: data.uniqueId, nickname: data.nickname, avatar: data.profilePictureUrl });
+        this.pushChatItem(followItem(data));
         this.processFollowExtensible();
         this.processFollowGoal();
         this.processAlertTrigger({
@@ -224,6 +243,11 @@ module.exports = {
             username: data.uniqueId, nickname: data.nickname || data.uniqueId, avatar: data.profilePictureUrl,
             userKey: data.userId || data.uniqueId, stickers, messageId, holdForTts: readable,
         });
+
+        // Overlay de chat: TODO el mensaje, incluidos comandos y @menciones
+        // (pedido explícito), con sus insignias y stickers. Va a su propia
+        // sala (ver lib/tenant/chatOverlay.js), no a todo el room.
+        this.pushChatItem(chatMessageItem(data, { comment: rawComment && stickers.length > 0 ? readableCommentText(rawComment) : rawComment, stickers }));
 
         if (readable) {
             // Pedido explícito (overlay de chat en vivo): mismo broadcast

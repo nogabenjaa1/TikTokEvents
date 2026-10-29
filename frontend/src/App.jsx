@@ -898,7 +898,7 @@ export default function App() {
             spotifyOAuthResult={spotifyOAuthResult} onOAuthResultConsumed={consumeSpotifyOAuthResult}
             panelOverlayDraft={panelOverlayDraft} onCustomizeChange={updateOverlayCustomization} onApplyToAll={applyOverlayCustomizationToAll}
             soundEnabled={soundEnabled} onSoundEnabledChange={setSoundEnabled} alertsOverlayConnected={alertsOverlayConnected}
-            monitorSink={monitorSink} onMonitorSinkChange={setMonitorSink}
+            monitorSink={monitorSink} onMonitorSinkChange={setMonitorSink} viewerCount={viewerCount}
           />
         )}
         {/* Permanece montado siempre (no solo dentro de "events") para que la

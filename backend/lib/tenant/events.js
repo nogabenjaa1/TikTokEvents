@@ -193,6 +193,9 @@ module.exports = {
     handleEmoteEvent(data) {
         if (!data?.uniqueId) return;
         this.noteEmoteSample('emote', data.emoteList);
+        // Overlay de chat (pedido explícito): un sticker mandado solo es un
+        // comentario más, como en el chat de TikTok.
+        this.pushChatItem(chatMessageItem(data, { rawComment: '', emotes: data.emoteList || data.emotes }));
         const stickers = extractStickers(data.emoteList);
         if (stickers.length === 0) return;
         this.processStickerUse({
@@ -217,6 +220,12 @@ module.exports = {
         // sin él `data.emotes` no trae ni el tipo ni la imagen del emote. Un comentario que
         // es solo stickers puede llegar sin texto.
         this.noteEmoteSample('chat', data.emotes);
+        // Overlay de chat: TODO el mensaje, incluidos comandos y @menciones
+        // (pedido explícito), con sus insignias y TODOS sus emotes en su lugar
+        // (también los que no cuentan como sticker para las alertas). Va
+        // antes del corte de abajo para no perder un mensaje de solo emotes.
+        // Va a su propia sala (ver lib/tenant/chatOverlay.js), no a todo el room.
+        this.pushChatItem(chatMessageItem(data, { rawComment, emotes: data.emotes }));
         const stickers = extractStickers(data.emotes);
         if (!rawComment && stickers.length === 0) return;
 
@@ -243,11 +252,6 @@ module.exports = {
             username: data.uniqueId, nickname: data.nickname || data.uniqueId, avatar: data.profilePictureUrl,
             userKey: data.userId || data.uniqueId, stickers, messageId, holdForTts: readable,
         });
-
-        // Overlay de chat: TODO el mensaje, incluidos comandos y @menciones
-        // (pedido explícito), con sus insignias y stickers. Va a su propia
-        // sala (ver lib/tenant/chatOverlay.js), no a todo el room.
-        this.pushChatItem(chatMessageItem(data, { comment: rawComment && stickers.length > 0 ? readableCommentText(rawComment) : rawComment, stickers }));
 
         if (readable) {
             // Pedido explícito (overlay de chat en vivo): mismo broadcast

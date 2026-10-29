@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, rowBorder } from '../overlayCustomization';
 import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, visibleChatItems } from '../chatOverlayModel';
 
@@ -50,6 +50,17 @@ function Avatar({ user, show }) {
     : <span className="tkc-ovl-fill w-[2.1em] h-[2.1em] rounded-full bg-gray-700 flex-shrink-0" />;
 }
 
+// El texto del mensaje con sus emotes en su lugar, como el chat de TikTok
+// (`parts` lo arma el servidor, ver commentParts en backend/lib/chatOverlay.js).
+// Un emote mandado solo es un mensaje de solo emote.
+function MessageParts({ item }) {
+  const emote = (url, key) => <img key={key} alt="" src={url} className="inline-block h-[1.5em] w-auto align-middle mx-[0.1em]" />;
+  if (Array.isArray(item.parts) && item.parts.length > 0) {
+    return item.parts.map((part, i) => (part.type === 'emote' ? emote(part.url, i) : <span key={i}>{part.value}</span>));
+  }
+  return <>{item.text}{item.emotes?.map((url, i) => emote(url, `e${i}`))}</>;
+}
+
 // Una fila. El momento en que empieza a desvanecerse se calcula UNA vez al
 // montarla (si se recalculara en cada render, el navegador reiniciaría la
 // animación a la mitad).
@@ -96,15 +107,14 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
       <span className="flex flex-col min-w-0">
         {header}
         <span className="tkc-chat-text break-words [overflow-wrap:anywhere]">
-          {item.text}
-          {item.emotes?.map((url) => <img key={url} alt="" src={url} className="inline-block h-[1.5em] w-auto align-middle ml-[0.2em]" />)}
+          <MessageParts item={item} />
         </span>
       </span>
     );
   }
 
   return (
-    <div style={fadeStyle} className="flex-shrink-0">
+    <div data-chat-row={item.id} style={fadeStyle} className="flex-shrink-0">
       <div
         className={`${animClass} ${bubbleClass} flex items-start gap-[0.55em] rounded-2xl px-[0.75em] py-[0.55em]`}
         style={{ ...rowBg, border: rowBorderStyle, ...(accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
@@ -130,6 +140,66 @@ function PinnedBanner({ pinned, settings, rowBg, nameStyle, bubbleClass, rowBord
   );
 }
 
+const MOVE_MS = 350;
+const MOVE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+// La lista de mensajes, sin barra de desplazamiento (pedido explícito):
+// - Orden normal (como TikTok): el primero arriba y cada nuevo debajo. Si ya
+//   no caben, la lista entera se desliza hacia arriba para que el último se
+//   vea completo; lo más viejo sale por arriba.
+// - "Lo nuevo arriba": lo que no cabe completo abajo no se muestra a medias.
+// Cuando un mensaje se va (se desvaneció) o llega uno nuevo, los demás se
+// deslizan a su lugar nuevo en vez de saltar.
+function ChatList({ newestOnTop, children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const positions = useRef(new Map());
+  const [offset, setOffset] = useState(0);
+  const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  // Sin lista de dependencias a propósito: hay que medir después de CADA
+  // render (llegó o se fue un mensaje, cambió el tamaño de letra...). No hace
+  // un ciclo: setOffset con el mismo valor no vuelve a renderizar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return;
+    const rows = [...inner.querySelectorAll(':scope > [data-chat-row]')];
+    if (newestOnTop) {
+      for (const row of rows) row.style.visibility = row.offsetTop + row.offsetHeight <= outer.clientHeight ? '' : 'hidden';
+      setOffset(0);
+    } else {
+      for (const row of rows) row.style.visibility = '';
+      setOffset(Math.max(0, inner.scrollHeight - outer.clientHeight));
+    }
+    // Cada fila que cambió de lugar se anima desde donde estaba.
+    const next = new Map();
+    for (const row of rows) {
+      const id = row.dataset.chatRow;
+      const top = row.offsetTop;
+      const previous = positions.current.get(id);
+      next.set(id, top);
+      if (!reduceMotion && previous !== undefined && previous !== top && row.animate) {
+        row.animate([{ transform: `translateY(${previous - top}px)` }, { transform: 'translateY(0)' }], { duration: MOVE_MS, easing: MOVE_EASING });
+      }
+    }
+    positions.current = next;
+  });
+
+  return (
+    <div ref={outerRef} className="flex-1 min-h-0 overflow-hidden">
+      <div
+        ref={innerRef}
+        className="flex flex-col gap-2"
+        style={{ transform: `translateY(${-offset}px)`, transition: reduceMotion ? 'none' : `transform ${MOVE_MS}ms ${MOVE_EASING}` }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // Lo que se dibuja (sin socket): lo usa el overlay y las vistas previas.
 export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, customize, now = Date.now(), emptyText = 'Esperando mensajes del chat...' }) {
   const settings = { ...CHAT_DEFAULT_SETTINGS, ...(rawSettings || {}) };
@@ -149,7 +219,8 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
   const shown = visibleChatItems(items || [], settings, now);
   const ordered = settings.newestOnTop ? [...shown].reverse() : shown;
   // Animación de entrada: la elegida en Personalizar; si no hay ninguna,
-  // bajar desde arriba (va con "lo nuevo arriba") o subir desde abajo.
+  // subir desde abajo (orden normal: cada nuevo sale debajo del anterior) o
+  // bajar desde arriba (con "lo nuevo arriba").
   const anim = customize?.messageAnimation || (settings.newestOnTop ? 'slide-down' : 'slide-up');
   const animClass = anim !== 'none' ? `tkc-alert-anim-in-${anim}` : '';
 
@@ -165,13 +236,11 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
       )}
       <PinnedBanner pinned={pinned} settings={settings} rowBg={rowBg} nameStyle={nameStyle} bubbleClass={bubbleClass} rowBorderStyle={rowBorderStyle} />
       {ordered.length > 0 ? (
-        // Sin barra de desplazamiento: lo que no cabe se corta por el lado de
-        // lo más viejo (abajo si lo nuevo va arriba, arriba si va abajo).
-        <div className={`flex flex-col gap-2 flex-1 min-h-0 overflow-hidden ${settings.newestOnTop ? 'justify-start' : 'justify-end'}`}>
+        <ChatList newestOnTop={settings.newestOnTop}>
           {ordered.map((item) => (
             <ChatRow key={item.id} item={item} settings={settings} now={now} rowBg={rowBg} nameStyle={nameStyle} animClass={animClass} bubbleClass={bubbleClass} rowBorderStyle={rowBorderStyle} />
           ))}
-        </div>
+        </ChatList>
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <p {...labelProps(customize, 'text-gray-500 text-xs italic text-center')}>{emptyText}</p>

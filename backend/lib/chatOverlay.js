@@ -4,13 +4,17 @@
 // que manda el panel. Todo lo que llega de TikTok se limita en tamaño y tipo
 // antes de reenviarse, igual que el feed del Dashboard (lib/tenant/feed.js).
 
+const { splitStickerMarkers } = require('./stickerCatalog');
+
 const CHAT_SETTINGS_DEFAULTS = Object.freeze({
     // Segundos que se queda cada mensaje antes de desvanecerse; 0 = nunca
     // (solo salen cuando llegan más y se pasa de maxMessages).
     fadeSeconds: 30,
-    // Lo más nuevo arriba y lo anterior va bajando (pedido explícito, como
-    // Social Stream Ninja); en false, lo más nuevo abajo.
-    newestOnTop: true,
+    // false (por defecto, pedido explícito, como el chat de TikTok): el primer
+    // mensaje sale arriba, cada nuevo debajo del anterior, y al desvanecerse
+    // el de arriba los demás suben; si no caben, lo más viejo se desliza hacia
+    // arriba fuera del overlay. true: lo más nuevo arriba, empujando hacia abajo.
+    newestOnTop: false,
     maxMessages: 12,
     // Tamaño de letra fijo del overlay, en px.
     fontSize: 16,
@@ -91,15 +95,83 @@ function userFrom(data = {}) {
     };
 }
 
+const MAX_EMOTES_PER_MESSAGE = 10;
+const MAX_TEXT_LENGTH = 300;
+
+// La imagen de un emote tal como llega (comentario parcheado o evento suelto).
+function emoteImage(emote) {
+    return image(emote?.emoteImageUrl || emote?.image?.urlList?.[0] || emote?.image?.imageUrl || emote?.imageUrl || '');
+}
+
+// Los emotes de un mensaje con imagen, en el orden en que aparecen. Para el
+// chat cuentan TODOS los que traen imagen (como los muestra TikTok), no solo
+// los que cuentan como sticker para las alertas (ver lib/stickerCatalog.js).
+function emotesInOrder(emotes) {
+    return (Array.isArray(emotes) ? emotes : [])
+        .map((emote, order) => ({ url: emoteImage(emote), place: Number(emote?.placeInComment ?? emote?.index), order }))
+        .filter((emote) => emote.url)
+        .sort((a, b) => (Number.isFinite(a.place) && Number.isFinite(b.place) ? a.place - b.place : a.order - b.order))
+        .slice(0, MAX_EMOTES_PER_MESSAGE);
+}
+
+// El comentario en partes: texto y emotes donde los puso la persona, como el
+// chat de TikTok. TikTok deja un marcador en el lugar de cada emote (ver
+// splitStickerMarkers): el primer emote va en el primer marcador, y así. Si
+// no trae marcadores se usa la posición que manda (placeInComment). Lo que
+// sobre va al final. Nunca visto con un LIVE real: si la posición no cuadra,
+// lo peor que pasa es que el emote quede en otro lugar del mismo mensaje.
+function commentParts(rawComment, emotes) {
+    const raw = String(rawComment ?? '');
+    const images = emotesInOrder(emotes);
+    const parts = [];
+    let textLeft = MAX_TEXT_LENGTH;
+    const pushText = (value) => {
+        const clean = String(value).replace(/\s+/g, ' ').slice(0, Math.max(0, textLeft));
+        if (!clean) return;
+        textLeft -= clean.length;
+        const last = parts[parts.length - 1];
+        if (last?.type === 'text') last.value += clean; else parts.push({ type: 'text', value: clean });
+    };
+    const pushEmote = (url) => parts.push({ type: 'emote', url });
+
+    const pieces = splitStickerMarkers(raw);
+    const markers = pieces.length - 1;
+    if (images.length > 0 && markers > 0) {
+        pieces.forEach((piece, i) => {
+            pushText(piece);
+            if (i < markers && i < images.length) pushEmote(images[i].url);
+        });
+        images.slice(markers).forEach((emote) => pushEmote(emote.url));
+    } else if (images.length > 0) {
+        let cursor = 0;
+        for (const emote of images) {
+            const at = Number.isFinite(emote.place) ? Math.min(raw.length, Math.max(cursor, emote.place)) : raw.length;
+            pushText(raw.slice(cursor, at));
+            pushEmote(emote.url);
+            cursor = at;
+        }
+        pushText(raw.slice(cursor));
+    } else {
+        pushText(raw);
+    }
+    // Sin espacios sueltos al principio ni al final del mensaje.
+    if (parts[0]?.type === 'text') parts[0].value = parts[0].value.trimStart();
+    const last = parts[parts.length - 1];
+    if (last?.type === 'text') last.value = last.value.trimEnd();
+    return parts.filter((part) => part.type !== 'text' || part.value);
+}
+
 // Un mensaje de chat. Va TODO, incluidos comandos (!play) y @menciones
-// (pedido explícito: "mostrar todo, como en el chat real"). `stickers` son
-// los emotes del mensaje ya resueltos (ver lib/stickerCatalog.js).
-function chatMessageItem(data, { comment = '', stickers = [] } = {}) {
+// (pedido explícito: "mostrar todo, como en el chat real"), y sus emotes en
+// su lugar. Un emote mandado solo (sin texto) es un mensaje más, como en
+// TikTok. `text` es el mensaje sin emotes (para lo que solo lee texto).
+function chatMessageItem(data, { rawComment = '', emotes = [] } = {}) {
     const user = userFrom(data);
-    const body = text(comment, 300);
-    const emotes = (Array.isArray(stickers) ? stickers : []).map((s) => image(s?.imageUrl || s?.image || s?.url)).filter(Boolean).slice(0, 6);
-    if (!user.uniqueId || (!body && emotes.length === 0)) return null;
-    return { kind: 'chat', user, text: body, emotes };
+    if (!user.uniqueId) return null;
+    const parts = commentParts(rawComment, emotes);
+    if (parts.length === 0) return null;
+    const plain = text(parts.filter((part) => part.type === 'text').map((part) => part.value).join(''), MAX_TEXT_LENGTH);
+    return { kind: 'chat', user, text: plain, parts };
 }
 
 function followItem(data) {
@@ -174,4 +246,5 @@ module.exports = {
     giftItem,
     isShareSocial,
     pinnedFromRoomPin,
+    commentParts,
 };

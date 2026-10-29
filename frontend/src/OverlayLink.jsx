@@ -282,7 +282,7 @@ const OBS_HELP = {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
       'Objetivo: 960×260 (es horizontal) — inícialo y ajústalo desde su propia pestaña en TikTokEvents.',
-      'Chat en vivo + espectadores: 380×700 (igual que los demás overlays verticales). Lo nuevo aparece arriba y cada mensaje se desvanece solo; cuánto dura, el orden, el tamaño de letra y qué eventos se ven se eligen en TikTokEvents → Chat.',
+      'Chat en vivo + espectadores: 380×700 (igual que los demás overlays verticales). Como el chat de TikTok: cada mensaje nuevo sale debajo del anterior y se desvanece solo; cuánto dura, el orden, el tamaño de letra y qué eventos se ven se eligen en TikTokEvents → Chat.',
     ],
   },
 };

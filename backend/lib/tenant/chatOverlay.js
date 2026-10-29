@@ -120,7 +120,7 @@ module.exports = {
             if (now - (this.chatTestAt || 0) < 1500) return;
             this.chatTestAt = now;
             const tester = { uniqueId: 'prueba', nickname: 'Prueba', teamMemberLevel: 12, isModerator: true };
-            this.pushChatItem(chatMessageItem(tester, { comment: '¡Hola! Así se ve un mensaje en tu chat.' }));
+            this.pushChatItem(chatMessageItem(tester, { rawComment: '¡Hola! Así se ve un mensaje en tu chat.' }));
             this.pushChatItem(followItem({ uniqueId: 'nuevo_seguidor', nickname: 'Nuevo seguidor' }));
             this.pushChatItem(giftItem({ username: 'fan_top', nickname: 'Fan top', giftName: 'Rosa', count: 5, coins: 5, badgesSource: { topGifterRank: 1 } }));
         });

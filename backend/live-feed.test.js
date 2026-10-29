@@ -110,3 +110,18 @@ test('a fan club sticker is handed to the sticker logic, an ordinary emote is no
   tenant.handleEmoteEvent({ uniqueId: 'dani', emoteList: [{ emoteType: 1 }] });
   assert.equal(stickerUses.length, 1, 'an ordinary emote is not a fan club sticker');
 });
+
+test('chat overlay: a sticker sent alone shows as a message of its own, and so does a comment with an emote that is not a sticker', () => {
+  const { tenant } = eventsTenant();
+  tenant.broadcast = { emit() {} };
+  tenant.processPlayCommand = () => {};
+  tenant.processRouletteComment = () => {};
+  tenant.handleEmoteEvent({ uniqueId: 'carla', nickname: 'Carla', emoteList: [{ emoteId: '123', image: { urlList: ['https://p16/fan.png'] } }] });
+  const alone = tenant.chatItems.at(-1);
+  assert.equal(alone.kind, 'chat');
+  assert.equal(alone.user.uniqueId, 'carla');
+  assert.deepEqual(alone.parts, [{ type: 'emote', url: 'https://p16/fan.png' }]);
+  // An emote with no id and no fan club mark is not a sticker for the alerts, but TikTok shows it in the chat.
+  tenant.handleChatEvent({ uniqueId: 'dani', nickname: 'Dani', msgId: 'm9', content: '[x]', emotes: [{ emoteImageUrl: 'https://p16/plain.png', placeInComment: 0 }] });
+  assert.deepEqual(tenant.chatItems.at(-1).parts, [{ type: 'emote', url: 'https://p16/plain.png' }]);
+});

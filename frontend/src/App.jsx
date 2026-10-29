@@ -28,6 +28,7 @@ import OverlayModeView from './app/OverlayModeView';
 import useGiftCatalog from './app/useGiftCatalog';
 import useSectionRouting from './app/useSectionRouting';
 import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
+import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
 
@@ -267,6 +268,12 @@ export default function App() {
   const [serverRestarted, setServerRestarted]  = useState(false);
   const bootIdRef = useRef(null);
   useSectionRouting({ overlayMode, sidebarMode, setSidebarMode, eventsTab, setEventsTab });
+  // Con MercadoPago apagado (Stripe es el único medio de pago oficial, ver
+  // paymentProviders.js), un enlace viejo a /membership/mercadopago lleva a
+  // Membresía en lugar de a una pantalla de pago que ya no se ofrece.
+  useEffect(() => {
+    if (!MERCADOPAGO_ENABLED && sidebarMode === 'mpcheckout') setSidebarMode('membership');
+  }, [sidebarMode]);
 
   // Control remoto del TTS para el shortcut del Dashboard (ver
   // TtsChat.jsx/Dashboard.jsx) -- `ttsEnabled` es solo para MOSTRAR el
@@ -867,8 +874,10 @@ export default function App() {
         )}
         {/* Pago con tarjeta de MercadoPago, en su propia dirección
             (/membership/mercadopago): se llega desde el botón "Pagar con
-            Mercado Pago" de Membresía, que ya pidió sesión y datos. */}
-        {sidebarMode === 'mpcheckout' && <MercadoPagoCheckout />}
+            Mercado Pago" de Membresía, que ya pidió sesión y datos. Con
+            MercadoPago apagado (ver paymentProviders.js) esa dirección
+            muestra Membresía (ver el efecto que corrige sidebarMode). */}
+        {sidebarMode === 'mpcheckout' && MERCADOPAGO_ENABLED && <MercadoPagoCheckout />}
         {sidebarMode === 'legal' && <LegalNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'privacy' && <PrivacyNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'cookies' && <CookiesNotice onNavigate={setSidebarMode} />}

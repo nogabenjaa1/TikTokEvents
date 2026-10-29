@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError } from './stripeCheckout';
+import { MERCADOPAGO_ENABLED } from './paymentProviders';
 
 const DECLINE_FALLBACK = 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
-const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.';
+// Solo sugiere MercadoPago si se ofrece (ver paymentProviders.js).
+const LOAD_ERROR = MERCADOPAGO_ENABLED
+  ? 'No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.'
+  : 'No se pudo cargar el formulario de pago. Revisa tu conexión o si un bloqueador de anuncios lo está frenando, e intenta de nuevo.';
 const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos en cuanto se confirme.';
 
 // Cobro con el formulario de Checkout de Stripe (Checkout Session con

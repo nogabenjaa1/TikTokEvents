@@ -128,10 +128,16 @@ module.exports = {
         }
 
         // Versus: sin timer que rearmar (es un contador, no una cuenta
-        // regresiva) -- alcanza con restaurar los counts tal cual quedaron.
+        // regresiva) -- alcanza con restaurar el marcador tal cual quedó. Un
+        // estado guardado antes del marcador por lado (counts por regalo)
+        // arranca en 0.
         const versus = saved.versus;
         if (isPlainObject(versus) && versus.isActive && !this.versusState.isActive) {
-            this.versusState = { ...this.versusState, ...versus, isActive: true, paused: true };
+            const scores = isPlainObject(versus.scores) ? versus.scores : {};
+            this.versusState = {
+                isActive: true, paused: true,
+                scores: { hero: Number(scores.hero) || 0, villain: Number(scores.villain) || 0 },
+            };
             restored += 1;
         }
 

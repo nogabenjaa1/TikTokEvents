@@ -108,7 +108,7 @@ export default function App() {
   // Modo Versus: héroes contra villanos, sin timer (contador, no cuenta
   // regresiva) — con su propio overlay (?screen=versus), tampoco participa
   // del selector activeApp.
-  const [versusState, setVersusState] = useState({ isActive: false, paused: false, heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false, heroes: [], villains: [], extHeroes: [], extVillains: [] });
+  const [versusState, setVersusState] = useState({ isActive: false, paused: false, heroLabel: 'HÉROES', villainLabel: 'VILLANOS', heroAction: '', villainAction: '', heroScore: 0, villainScore: 0, extensibleLinkEnabled: false, heroes: [], villains: [], extHeroes: [], extVillains: [] });
   // Objetivo (meta de regalos en monedas o de seguidores nuevos, pedido
   // explícito) — acumulador simple sin paso del tiempo, con su propio
   // overlay horizontal (?screen=goal), no participa del selector activeApp.

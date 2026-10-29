@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, rowBorder } from '../overlayCustomization';
-import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, visibleChatItems } from '../chatOverlayModel';
+import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, CHAT_OVERLAY_SIZE, visibleChatItems } from '../chatOverlayModel';
 
 // CHAT EN VIVO (pestaña Chat de Eventos). Pedido explícito: que se vea y se
 // comporte como el chat de Social Stream Ninja -- lo más nuevo ARRIBA y lo
@@ -116,7 +116,7 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
   return (
     <div data-chat-row={item.id} style={fadeStyle} className="flex-shrink-0">
       <div
-        className={`${animClass} ${bubbleClass} flex items-start gap-[0.55em] rounded-2xl px-[0.75em] py-[0.55em]`}
+        className={`${animClass} ${bubbleClass} flex items-start gap-[0.55em] rounded-2xl pl-[0.75em] pr-[0.5em] py-[0.55em]`}
         style={{ ...rowBg, border: rowBorderStyle, ...(accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
       >
         <Avatar user={item.user} show={settings.showAvatars !== false} />
@@ -129,7 +129,7 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
 function PinnedBanner({ pinned, settings, rowBg, nameStyle, bubbleClass, rowBorderStyle }) {
   if (!pinned || settings.showPinned === false) return null;
   return (
-    <div className={`${bubbleClass} flex-shrink-0 rounded-2xl px-[0.75em] py-[0.55em] flex items-start gap-[0.55em]`} style={{ ...rowBg, border: rowBorderStyle, boxShadow: 'inset 3px 0 0 var(--accent)' }}>
+    <div className={`${bubbleClass} flex-shrink-0 rounded-2xl pl-[0.75em] pr-[0.5em] py-[0.55em] flex items-start gap-[0.55em]`} style={{ ...rowBg, border: rowBorderStyle, boxShadow: 'inset 3px 0 0 var(--accent)' }}>
       <Avatar user={pinned.user} show={settings.showAvatars !== false} />
       <div className="min-w-0 flex-1 leading-snug">
         <span className="flex items-center gap-[0.35em] text-[0.75em] font-black uppercase tracking-widest theme-accent-text"><PinIcon />Anclado</span>
@@ -224,10 +224,12 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
   const anim = customize?.messageAnimation || (settings.newestOnTop ? 'slide-down' : 'slide-up');
   const animClass = anim !== 'none' ? `tkc-alert-anim-in-${anim}` : '';
 
+  // Casi sin margen a los lados (pedido explícito: se veía espacio perdido
+  // entre la burbuja y la orilla del overlay).
   return (
-    <div className="w-[380px] h-[700px] p-4 flex flex-col gap-2 font-sans overflow-hidden" {...overlayRootProps(customize, { fontSize: `${settings.fontSize}px` })}>
+    <div className="px-1.5 py-3 flex flex-col gap-2 font-sans overflow-hidden" {...overlayRootProps(customize, { width: CHAT_OVERLAY_SIZE.w, height: CHAT_OVERLAY_SIZE.h, fontSize: `${settings.fontSize}px` })}>
       {settings.showViewerCount && (
-        <div className="flex items-center justify-between flex-shrink-0 text-[12px]">
+        <div className="flex items-center justify-between flex-shrink-0 text-[12px] px-1">
           <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>Chat en vivo</p>
           <span className="tkc-ovl-fill tkc-chat-bubble tkc-chat-text text-xs font-black px-2.5 py-1 rounded-full flex-shrink-0">
             {Math.max(0, viewerCount || 0).toLocaleString('es-MX')} viendo

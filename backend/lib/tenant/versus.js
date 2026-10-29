@@ -1,11 +1,14 @@
 // Modo Versus: héroes contra villanos. A diferencia de los demás juegos no
-// tiene timer -- es un contador que sube con cada regalo que matchea, con el
+// tiene timer -- es un marcador por lado que suma las MONEDAS de cada regalo
+// que matchea (pedido explícito: "un solo score global que vaya sumando el
+// total de valor en coins"; antes cada regalo llevaba su propio contador y
+// el overlay mostraba una fila suelta por regalo), con el
 // mismo ciclo Iniciar/Pausar/Reanudar/Reiniciar/Detener de siempre (mientras
 // está pausado, los regalos no cuentan, mismo criterio que Rey del
 // Trono/Zubastinis). Dos listas de configuración INDEPENDIENTES por
 // licencia, cada una hasta con su propio tope (ver versus_configs en
-// db.js): héroes/villanos con una "acción" de texto (para el marcador de
-// este overlay) y, aparte, un vínculo opcional con el modo Extensible
+// db.js): los regalos que suman a héroes/villanos (la "acción" de texto es
+// una por lado, en versusSettings) y, aparte, un vínculo opcional con el modo Extensible
 // (héroes/villanos con segundos +/-, hasta 10 de cada lado) que suma/resta
 // tiempo a SU timer cuando un regalo vinculado llega. Un mismo regalo puede
 // estar en la lista base Y en la de Extensible a la vez (son cosas
@@ -19,6 +22,15 @@ const BASE_LIST_CAP = 30;
 const EXT_LIST_CAP = 10;
 const MAX_ACTION_TEXT = 40;
 const MAX_SECONDS_DELTA = 7200; // mismo tope que MAX_EXTENSIBLE_BASE_SECONDS en extensible.js
+const MAX_ICON_LENGTH = 500;
+
+// Ícono que manda el panel al agregar (sale de SU catálogo en vivo): solo una
+// imagen por https, igual que el directorio de regalos.
+function cleanIcon(value) {
+    return typeof value === 'string' && /^https:\/\//i.test(value) && value.length <= MAX_ICON_LENGTH ? value : null;
+}
+
+const emptyScores = () => ({ hero: 0, villain: 0 });
 
 function clampSecondsDelta(value) {
     const n = Math.round(Number(value) || 0);
@@ -31,6 +43,7 @@ function rowToEntry(row) {
     return {
         id: row.id, giftName: row.gift_name, giftId: row.gift_id || null,
         actionText: row.action_text || '', secondsDelta: row.seconds_delta != null ? Number(row.seconds_delta) : 0,
+        savedIcon: row.gift_icon || '',
     };
 }
 
@@ -71,7 +84,9 @@ module.exports = {
     // Ícono de cada regalo resuelto contra el directorio GLOBAL (mismo
     // criterio que getGiftTickerSnapshot en lib/tenant/alerts.js) -- el
     // overlay no tiene sesión ni el catálogo en vivo del panel, así que no
-    // puede resolverlo por su cuenta.
+    // puede resolverlo por su cuenta. El directorio solo tiene los regalos
+    // que ya llegaron en algún directo: si este todavía no, se usa el ícono
+    // que guardó el panel al agregarlo (antes se quedaba sin imagen).
     async resolveVersusIcons(list) {
         await giftDirectory.load();
         const gifts = giftDirectory.list();
@@ -82,15 +97,26 @@ module.exports = {
                 const wanted = giftNameKey(entry.giftName);
                 icon = (wanted && gifts.find((g) => giftNameKey(g.name) === wanted)?.icon) || '';
             }
-            return { ...entry, giftIcon: icon };
+            const { savedIcon, ...rest } = entry;
+            return { ...rest, giftIcon: icon || savedIcon || '' };
         });
     },
 
+    // La acción de cada lado. Antes era una por regalo: si todavía no se
+    // guardó la del lado, se toma la del primer regalo (lo que ya veía el
+    // streamer) en vez de dejarla vacía.
+    versusSideAction(side) {
+        const saved = this.versusSettings[side === 'hero' ? 'heroAction' : 'villainAction'];
+        if (typeof saved === 'string') return saved;
+        const list = this.versusConfigs[side === 'hero' ? 'heroes' : 'villains'];
+        return list.find((e) => e.actionText)?.actionText || '';
+    },
+
     async getVersusPublicState() {
-        const withCount = (list) => list.map((e) => ({ ...e, count: this.versusState.counts[e.id] || 0 }));
+        const scores = this.versusState.scores || emptyScores();
         const [heroes, villains, extHeroes, extVillains] = await Promise.all([
-            this.resolveVersusIcons(withCount(this.versusConfigs.heroes)),
-            this.resolveVersusIcons(withCount(this.versusConfigs.villains)),
+            this.resolveVersusIcons(this.versusConfigs.heroes),
+            this.resolveVersusIcons(this.versusConfigs.villains),
             this.resolveVersusIcons(this.versusConfigs.extHeroes),
             this.resolveVersusIcons(this.versusConfigs.extVillains),
         ]);
@@ -98,6 +124,8 @@ module.exports = {
             isActive: this.versusState.isActive, paused: this.versusState.paused,
             heroLabel: this.versusSettings.heroLabel, villainLabel: this.versusSettings.villainLabel,
             extensibleLinkEnabled: this.versusSettings.extensibleLinkEnabled,
+            heroAction: this.versusSideAction('hero'), villainAction: this.versusSideAction('villain'),
+            heroScore: scores.hero || 0, villainScore: scores.villain || 0,
             heroes, villains, extHeroes, extVillains,
         };
     },
@@ -106,18 +134,19 @@ module.exports = {
         this.broadcast.emit('versus_state_update', await this.getVersusPublicState());
     },
 
-    // Un regalo que matchea en la lista base suma 1 "voto" por cada unidad
-    // realmente enviada (repeatCount de la racha, no 1 por evento -- pedido
-    // explícito: "cuántos regalos de esos van enviando"). El vínculo con
+    // Un regalo que matchea en la lista base suma sus monedas al marcador de
+    // su lado: el valor de la racha completa (monedas x repeatCount, ya
+    // calculado en dispatchGiftEvent como totalCoins). El vínculo con
     // Extensible es independiente: un mismo regalo puede sumar al marcador Y
     // ajustar el timer a la vez si está en las dos listas.
-    processGiftVersus({ giftName, giftId, repeatCount }) {
+    processGiftVersus({ giftName, giftId, repeatCount, diamondCount, totalCoins }) {
         if (this.versusState.isActive && !this.versusState.paused) {
-            const hero = findEntry(this.versusConfigs.heroes, giftName, giftId);
-            const villain = !hero ? findEntry(this.versusConfigs.villains, giftName, giftId) : null;
-            const matched = hero || villain;
-            if (matched) {
-                this.versusState.counts[matched.id] = (this.versusState.counts[matched.id] || 0) + Math.max(1, repeatCount || 1);
+            const side = findEntry(this.versusConfigs.heroes, giftName, giftId) ? 'hero'
+                : findEntry(this.versusConfigs.villains, giftName, giftId) ? 'villain' : null;
+            const coins = Number(totalCoins ?? (Number(diamondCount) || 0) * Math.max(1, repeatCount || 1)) || 0;
+            if (side && coins > 0) {
+                if (!this.versusState.scores) this.versusState.scores = emptyScores();
+                this.versusState.scores[side] += coins;
                 this.emitVersusState();
             }
         }
@@ -132,7 +161,7 @@ module.exports = {
     stopVersus() {
         this.versusState.isActive = false;
         this.versusState.paused = false;
-        this.versusState.counts = {};
+        this.versusState.scores = emptyScores();
         this.emitVersusState();
         this.maybeDisconnectTikTok();
     },
@@ -141,7 +170,7 @@ module.exports = {
     registerVersusHandlers(socket) {
         socket.on('start_versus', (config) => {
             console.log(`\n[${this.logId}] [JUEGO] ▶️ INICIANDO VERSUS...`);
-            this.versusState = { isActive: true, paused: false, counts: {} };
+            this.versusState = { isActive: true, paused: false, scores: emptyScores() };
             this.emitVersusState();
             if (config?.tiktokUsername) this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
         });
@@ -158,7 +187,7 @@ module.exports = {
             if (this.versusState.isActive) {
                 console.log(`\n[${this.logId}] [JUEGO] ⟲ REINICIANDO VERSUS...`);
                 this.versusState.paused = false;
-                this.versusState.counts = {};
+                this.versusState.scores = emptyScores();
                 this.emitVersusState();
             }
         });
@@ -169,10 +198,14 @@ module.exports = {
         // se guardan siempre (sobreviven a un reinicio aunque Versus no esté
         // corriendo), a diferencia de isActive/paused/counts (efímero, ver
         // runtimeState.js).
-        socket.on('update_versus_settings', async ({ heroLabel, villainLabel, extensibleLinkEnabled } = {}) => {
+        socket.on('update_versus_settings', async ({ heroLabel, villainLabel, heroAction, villainAction, extensibleLinkEnabled } = {}) => {
+            const action = (value, side) => (typeof value === 'string' ? value.trim().slice(0, MAX_ACTION_TEXT) : this.versusSideAction(side));
             this.versusSettings = {
                 heroLabel: typeof heroLabel === 'string' && heroLabel.trim() ? heroLabel.trim().slice(0, 30) : this.versusSettings.heroLabel,
                 villainLabel: typeof villainLabel === 'string' && villainLabel.trim() ? villainLabel.trim().slice(0, 30) : this.versusSettings.villainLabel,
+                // La acción sí puede quedar vacía (el overlay no la muestra).
+                heroAction: action(heroAction, 'hero'),
+                villainAction: action(villainAction, 'villain'),
                 extensibleLinkEnabled: extensibleLinkEnabled !== undefined ? !!extensibleLinkEnabled : this.versusSettings.extensibleLinkEnabled,
             };
             this.emitVersusState();
@@ -189,7 +222,7 @@ module.exports = {
         // contrario de la MISMA familia (el panel ya valida esto antes de
         // ofrecer el botón, ver Versus.jsx) -- este chequeo es la última
         // barrera, mismo criterio que /api/alerts en server.js.
-        socket.on('versus_add_gift', async ({ kind, giftName, giftId, actionText, secondsDelta } = {}) => {
+        socket.on('versus_add_gift', async ({ kind, giftName, giftId, giftIcon, secondsDelta } = {}) => {
             const key = KIND_LIST_KEY[kind];
             if (!key) return;
             const cleanName = typeof giftName === 'string' ? giftName.trim().slice(0, 120) : '';
@@ -204,8 +237,7 @@ module.exports = {
             try {
                 const row = await db.insertVersusConfig({
                     id: crypto.randomUUID(), licenseId: this.licenseId, kind,
-                    giftName: cleanName, giftId: cleanGiftId,
-                    actionText: (kind === 'hero' || kind === 'villain') ? String(actionText || '').trim().slice(0, MAX_ACTION_TEXT) : null,
+                    giftName: cleanName, giftId: cleanGiftId, giftIcon: cleanIcon(giftIcon),
                     secondsDelta: (kind === 'ext_hero' || kind === 'ext_villain') ? clampSecondsDelta(secondsDelta) : null,
                 });
                 list.push(rowToEntry(row));
@@ -222,7 +254,6 @@ module.exports = {
                 const idx = list.findIndex((e) => e.id === id);
                 if (idx === -1) continue;
                 list.splice(idx, 1);
-                delete this.versusState.counts[id];
                 try { await db.deleteVersusConfig(id, this.licenseId); } catch (err) {
                     console.error(`[${this.logId}] [DB] deleteVersusConfig:`, err.message);
                 }

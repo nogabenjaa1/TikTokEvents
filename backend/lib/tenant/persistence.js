@@ -101,6 +101,10 @@ module.exports = {
                 this.versusSettings = {
                     heroLabel: typeof vs.heroLabel === 'string' && vs.heroLabel.trim() ? vs.heroLabel.trim().slice(0, 30) : this.versusSettings.heroLabel,
                     villainLabel: typeof vs.villainLabel === 'string' && vs.villainLabel.trim() ? vs.villainLabel.trim().slice(0, 30) : this.versusSettings.villainLabel,
+                    // Sin guardar todavía (antes era una por regalo): undefined,
+                    // y versusSideAction toma la del primer regalo.
+                    heroAction: typeof vs.heroAction === 'string' ? vs.heroAction.slice(0, 40) : undefined,
+                    villainAction: typeof vs.villainAction === 'string' ? vs.villainAction.slice(0, 40) : undefined,
                     extensibleLinkEnabled: !!vs.extensibleLinkEnabled,
                 };
             }

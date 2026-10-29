@@ -163,12 +163,12 @@ class Tenant {
         this.extensibleTimerInterval = null;
 
         // ── VERSUS (héroes vs. villanos) ── ver lib/tenant/versus.js.
-        // Sin timer -- counts es efímero (se resetea al Iniciar/Reiniciar, se
+        // Sin timer -- scores es efímero (se resetea al Iniciar/Reiniciar, se
         // restaura en pausa tras un reinicio del server como el resto, ver
         // runtimeState.js), heroLabel/villainLabel/extensibleLinkEnabled
         // sobreviven al reinicio aunque no esté corriendo (versus_settings en
         // la licencia, ver loadPersistedSettings).
-        this.versusState = { isActive: false, paused: false, counts: {} }; // counts: { [configId]: number }
+        this.versusState = { isActive: false, paused: false, scores: { hero: 0, villain: 0 } }; // monedas por lado
         this.versusSettings = { heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false };
 
         // ── OBJETIVO (meta de regalos o de seguidores, pedido explícito) ──

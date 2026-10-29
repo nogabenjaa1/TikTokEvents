@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HowItWorks } from './PanelHelp';
 import { buildOverlayUrl } from './auth';
 import { ChatOverlay } from './overlays/ChatOverlay';
-import { CHAT_DEFAULT_SETTINGS } from './chatOverlayModel';
+import { CHAT_DEFAULT_SETTINGS, CHAT_OVERLAY_SIZE } from './chatOverlayModel';
 
 // ─────────────────────────────────────────────
 // CHAT (pestaña de Eventos, pedido explícito): el overlay de chat con su
@@ -34,6 +34,35 @@ function Toggle({ label, hint, checked, onChange }) {
         {hint && <span className="block text-[10px] text-gray-500 leading-snug">{hint}</span>}
       </span>
     </label>
+  );
+}
+
+// El overlay a su tamaño real (960x480), achicado para que entre a lo ancho
+// del panel. Se mide con el ancho disponible, igual que OverlayPreviewBox.
+function ScaledPreview({ children }) {
+  const wrapRef = useRef(null);
+  const [available, setAvailable] = useState(null);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return undefined;
+    const measure = () => setAvailable(el.clientWidth);
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, []);
+  const { w, h } = CHAT_OVERLAY_SIZE;
+  const scale = Math.min(1, available ? available / w : 0.5);
+  return (
+    <div ref={wrapRef} className="w-full">
+      <div
+        className="themed-app rounded-2xl overflow-hidden border mx-auto"
+        // minHeight: .themed-app trae el alto de la pantalla completa.
+        style={{ width: Math.round(w * scale), height: Math.round(h * scale), minHeight: 0, borderColor: 'var(--surface-border-color)', background: 'repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 50% / 20px 20px' }}
+      >
+        <div style={{ width: w, height: h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -86,19 +115,19 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
   const fadeIsPreset = FADE_OPTIONS.some((o) => o.value === settings.fadeSeconds);
 
   return (
-    <div className="min-h-screen text-white flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 p-6 font-sans flex-1">
+    <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 font-sans flex-1">
 
       {/* Vista previa en vivo: el mismo overlay que ve OBS, con los ajustes
-          de abajo aplicados al momento. */}
-      <div className="flex flex-col items-center gap-2 flex-shrink-0">
+          de abajo aplicados al momento. Es horizontal: arriba, a lo ancho. */}
+      <div className="w-full max-w-4xl flex flex-col items-center gap-2">
         <p className="theme-label text-[10px]">Vista previa en vivo</p>
-        <div className="themed-app rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--surface-border-color)', background: 'repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 50% / 20px 20px' }}>
+        <ScaledPreview>
           <ChatOverlay socket={socket} viewerCount={viewerCount} customize={customization} previewSettings={settings} />
-        </div>
-        <p className="text-[10px] text-gray-500 text-center max-w-[380px]">Sin LIVE no llega nada: usa "Mensaje de prueba" para ver cómo se ve.</p>
+        </ScaledPreview>
+        <p className="text-[10px] text-gray-500 text-center">Sin LIVE no llega nada: usa "Mensaje de prueba" para ver cómo se ve.</p>
       </div>
 
-      <div className="theme-surface w-full max-w-md p-6 relative">
+      <div className="theme-surface w-full max-w-4xl p-6 relative">
         <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">CHAT</h1>
@@ -119,7 +148,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
           ) : (
             <p className="text-[11px] text-gray-500">Inicia sesión para ver tu enlace.</p>
           )}
-          <p className="text-[10px] text-gray-500 mt-1">Fuente de navegador de 380 × 700. Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
+          <p className="text-[10px] text-gray-500 mt-1">Fuente de navegador de 960 × 480 (horizontal). Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
         </div>
 
         <div className="mb-5">

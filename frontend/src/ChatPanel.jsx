@@ -105,7 +105,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
         </div>
 
         <HowItWorks storageKey="chat">
-          <p>Tu chat de TikTok en un overlay para OBS: los mensajes nuevos aparecen <span className="font-bold text-white">arriba</span> y los anteriores van bajando, y cada uno se desvanece después del tiempo que elijas.</p>
+          <p>Tu chat de TikTok en un overlay para OBS, como el chat de TikTok: el primer mensaje sale <span className="font-bold text-white">arriba</span> y cada nuevo debajo del anterior. Cuando uno se desvanece, los demás suben; si ya no caben, los más viejos se deslizan hacia arriba para que el nuevo se vea completo.</p>
           <p>También muestra a quien te sigue, los regalos, quien comparte el LIVE y el mensaje anclado, con las insignias de cada usuario. El fondo, el color de los nombres y la fuente se cambian en <span className="font-bold text-white">Overlays → Personalizar</span>.</p>
         </HowItWorks>
 
@@ -145,10 +145,10 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
         <div className="mb-5">
           <SectionLabel>Orden</SectionLabel>
           <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => update({ newestOnTop: false })}
+              className={`theme-btn-md font-bold transition-all ${!settings.newestOnTop ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>Como TikTok</button>
             <button type="button" onClick={() => update({ newestOnTop: true })}
               className={`theme-btn-md font-bold transition-all ${settings.newestOnTop ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>Lo nuevo arriba</button>
-            <button type="button" onClick={() => update({ newestOnTop: false })}
-              className={`theme-btn-md font-bold transition-all ${!settings.newestOnTop ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>Lo nuevo abajo</button>
           </div>
         </div>
 

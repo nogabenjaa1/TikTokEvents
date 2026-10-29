@@ -16,6 +16,10 @@ const MOCK_AVATAR = 'data:image/svg+xml;utf8,' + encodeURIComponent(
 // etc.), nunca datos que dependan de qué esté pasando en un LIVE real.
 // Filas de prueba del overlay de chat (Overlays > Personalizar y la vista
 // previa de Eventos > Chat sin LIVE). Mismo formato que el servidor.
+const MOCK_STICKER = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#facc15"/><circle cx="22" cy="26" r="5" fill="#1f2937"/><circle cx="42" cy="26" r="5" fill="#1f2937"/><path d="M18 40q14 12 28 0" stroke="#1f2937" stroke-width="5" fill="none" stroke-linecap="round"/></svg>',
+);
+
 export function chatPreviewItems(now = Date.now()) {
   const user = (n, badges = {}) => ({
     uniqueId: `test${n}`, nickname: `Test${n}`, avatar: MOCK_AVATAR,
@@ -27,6 +31,8 @@ export function chatPreviewItems(now = Date.now()) {
     { id: 'p3', at: now - 4000, kind: 'gift', user: user(3, { topGifterRank: 1 }), gift: { name: 'Rosa', icon: '', count: 7, coins: 7 } },
     { id: 'p4', at: now - 2000, kind: 'chat', user: user(4, { moderator: true }), text: '!play despacito', emotes: [] },
     { id: 'p5', at: now - 1000, kind: 'share', user: user(5) },
+    // Un sticker mandado solo: un mensaje más, como en TikTok.
+    { id: 'p6', at: now - 500, kind: 'chat', user: user(6, { fanLevel: 3 }), text: '', parts: [{ type: 'emote', url: MOCK_STICKER }] },
   ];
 }
 

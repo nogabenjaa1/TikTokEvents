@@ -12,14 +12,14 @@ const {
 } = require('./lib/chatOverlay');
 
 test('settings: defaults, limits, and anything invalid keeps what was there', () => {
-  assert.equal(CHAT_SETTINGS_DEFAULTS.newestOnTop, true, 'newest on top by default, like Social Stream Ninja');
+  assert.equal(CHAT_SETTINGS_DEFAULTS.newestOnTop, false, 'first message on top and each new one below it, like the TikTok chat');
   assert.equal(CHAT_SETTINGS_DEFAULTS.fadeSeconds, 30);
-  const s = sanitizeChatSettings({ fadeSeconds: 99999, maxMessages: 0, fontSize: 4, showGifts: 0, newestOnTop: false });
+  const s = sanitizeChatSettings({ fadeSeconds: 99999, maxMessages: 0, fontSize: 4, showGifts: 0, newestOnTop: true });
   assert.equal(s.fadeSeconds, FADE_MAX_SECONDS);
   assert.equal(s.maxMessages, 1);
   assert.equal(s.fontSize, FONT_SIZE_MIN);
   assert.equal(s.showGifts, false);
-  assert.equal(s.newestOnTop, false);
+  assert.equal(s.newestOnTop, true);
   assert.equal(sanitizeChatSettings({ fontSize: 99 }).fontSize, FONT_SIZE_MAX);
   assert.equal(sanitizeChatSettings({ maxMessages: 999 }).maxMessages, MAX_MESSAGES_MAX);
   assert.equal(sanitizeChatSettings({ fadeSeconds: 0 }).fadeSeconds, 0, '0 = never fades');
@@ -51,15 +51,16 @@ test('badges: the real TikTok badge images (https only, no repeats, at most 4) p
 
 test('a chat message keeps everything, commands and @mentions included, with its stickers', () => {
   const data = { uniqueId: 'ana', nickname: 'Ana  ⭐', profilePictureUrl: 'https://p16/ana.jpg' };
-  assert.equal(chatMessageItem(data, { comment: '!play despacito' }).text, '!play despacito');
-  assert.equal(chatMessageItem(data, { comment: '@bob hola' }).text, '@bob hola');
-  const withSticker = chatMessageItem(data, { comment: '', stickers: [{ imageUrl: 'https://p16/emote.png' }, { imageUrl: 'http://bad' }] });
-  assert.deepEqual(withSticker.emotes, ['https://p16/emote.png']);
+  assert.equal(chatMessageItem(data, { rawComment: '!play despacito' }).text, '!play despacito');
+  assert.equal(chatMessageItem(data, { rawComment: '@bob hola' }).text, '@bob hola');
+  const onlySticker = chatMessageItem(data, { rawComment: '', emotes: [{ emoteImageUrl: 'https://p16/emote.png' }, { emoteImageUrl: 'http://bad' }] });
+  assert.deepEqual(onlySticker.parts, [{ type: 'emote', url: 'https://p16/emote.png' }], 'a sticker sent alone is a message of its own');
+  const withSticker = onlySticker;
   assert.equal(withSticker.user.nickname, 'Ana ⭐', 'spaces collapsed');
-  assert.equal(chatMessageItem(data, { comment: 'x'.repeat(500) }).text.length, 300);
-  assert.equal(chatMessageItem({ uniqueId: '' }, { comment: 'hola' }), null, 'no user, no message');
-  assert.equal(chatMessageItem(data, { comment: '   ' }), null, 'nothing to show');
-  assert.equal(chatMessageItem({ ...data, profilePictureUrl: 'http://x/a.jpg' }, { comment: 'hola' }).user.avatar, '', 'https only');
+  assert.equal(chatMessageItem(data, { rawComment: 'x'.repeat(500) }).text.length, 300);
+  assert.equal(chatMessageItem({ uniqueId: '' }, { rawComment: 'hola' }), null, 'no user, no message');
+  assert.equal(chatMessageItem(data, { rawComment: '   ' }), null, 'nothing to show');
+  assert.equal(chatMessageItem({ ...data, profilePictureUrl: 'http://x/a.jpg' }, { rawComment: 'hola' }).user.avatar, '', 'https only');
 });
 
 test('follows, shares and gifts become their own chat events', () => {
@@ -128,7 +129,7 @@ function fakeSocket({ authMethod = 'jwt', overlayScreen } = {}) {
 
 test('the chat goes only to its own room, not to every screen of the license', () => {
   const { tenant, emitted } = chatTenant();
-  tenant.pushChatItem(chatMessageItem({ uniqueId: 'ana' }, { comment: 'hola' }));
+  tenant.pushChatItem(chatMessageItem({ uniqueId: 'ana' }, { rawComment: 'hola' }));
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0].room, 'l1:chat');
   assert.equal(emitted[0].name, 'chat_item');
@@ -178,7 +179,7 @@ test('only the panel can change the settings; they are sanitized, broadcast and 
 
 test('only the most recent chat is remembered', () => {
   const { tenant } = chatTenant();
-  for (let i = 0; i < 50; i++) tenant.pushChatItem(chatMessageItem({ uniqueId: `u${i}` }, { comment: 'hola' }));
+  for (let i = 0; i < 50; i++) tenant.pushChatItem(chatMessageItem({ uniqueId: `u${i}` }, { rawComment: 'hola' }));
   assert.equal(tenant.chatRecent.length, 30);
   assert.equal(tenant.chatRecent.at(-1).user.uniqueId, 'u49');
 });
@@ -228,4 +229,26 @@ test('tenant.js registers the chat viewing handlers for the read-only overlay (i
   const source = fs.readFileSync(require.resolve('./tenant'), 'utf8').replace(/\r\n/g, '\n');
   const branch = source.slice(source.indexOf("if (socket.authMethod === 'overlay') {"), source.indexOf('return;', source.indexOf("if (socket.authMethod === 'overlay') {")));
   assert.match(branch, /registerChatOverlayViewerHandlers\(socket\)/);
+});
+
+test('emotes go where the person put them: one per TikTok marker, in order; leftovers at the end', () => {
+  const { commentParts } = require('./lib/chatOverlay');
+  const inv = String.fromCodePoint(0xE001);
+  const e = (n, place) => ({ emoteImageUrl: `https://p16/e${n}.png`, placeInComment: place });
+  assert.deepEqual(commentParts(`hola [a] mundo [b]`, [e(1, 5), e(2, 14)]), [
+    { type: 'text', value: 'hola ' }, { type: 'emote', url: 'https://p16/e1.png' },
+    { type: 'text', value: ' mundo ' }, { type: 'emote', url: 'https://p16/e2.png' },
+  ]);
+  assert.deepEqual(commentParts(`${inv}${inv} jaja`, [e(1, 0), e(2, 1)]).map((p) => p.type), ['emote', 'emote', 'text'], 'invisible markers too');
+  assert.deepEqual(commentParts('[a] solo uno', [e(1, 0), e(2, 1)]).map((p) => p.url || p.value), ['https://p16/e1.png', ' solo uno', 'https://p16/e2.png'], 'more emotes than markers: the rest at the end');
+});
+
+test('without markers the emote goes at the position TikTok sends; without any, at the end; no images, plain text', () => {
+  const { commentParts } = require('./lib/chatOverlay');
+  const e = (n, place) => ({ emoteImageUrl: `https://p16/e${n}.png`, placeInComment: place });
+  assert.deepEqual(commentParts('holamundo', [e(1, 4)]).map((p) => p.url || p.value), ['hola', 'https://p16/e1.png', 'mundo']);
+  assert.deepEqual(commentParts('hola', [{ emoteImageUrl: 'https://p16/x.png' }]).map((p) => p.url || p.value), ['hola', 'https://p16/x.png']);
+  assert.deepEqual(commentParts('  hola   que tal  ', []), [{ type: 'text', value: 'hola que tal' }], 'spaces tidied');
+  assert.deepEqual(commentParts('hola', [{ image: { urlList: ['https://p16/raw.png'] } }]).at(-1), { type: 'emote', url: 'https://p16/raw.png' }, 'raw emote events too');
+  assert.equal(commentParts('', Array.from({ length: 20 }, (_, i) => e(i, i))).length, 10, 'at most 10 emotes');
 });

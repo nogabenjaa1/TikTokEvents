@@ -3,7 +3,7 @@
 // backend/lib/chatOverlay.js) y qué mensajes se ven en un momento dado.
 
 export const CHAT_DEFAULT_SETTINGS = {
-  fadeSeconds: 30, newestOnTop: true, maxMessages: 12, fontSize: 16,
+  fadeSeconds: 30, newestOnTop: false, maxMessages: 12, fontSize: 16,
   showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showPinned: true, showViewerCount: true,
 };
 

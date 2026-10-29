@@ -100,6 +100,16 @@ function readableCommentText(text) {
         .trim();
 }
 
+// El comentario partido en los marcadores de sticker (los mismos que quita
+// readableCommentText): los textos que quedan entre uno y otro, en orden. Un
+// comentario con N marcadores da N+1 pedazos (pueden venir vacíos). Lo usa el
+// overlay de chat para poner cada sticker en su lugar (ver lib/chatOverlay.js).
+const BRACKET_MARKER = /\[[^[\]\n]{1,60}\]/;
+const STICKER_MARKER = new RegExp(`${BRACKET_MARKER.source}|${INVISIBLE_CHARS.source}`, 'g');
+function splitStickerMarkers(text) {
+    return String(text ?? '').split(STICKER_MARKER);
+}
+
 // La clave con la que se guarda la alerta de un sticker (en la misma columna que el
 // nombre de un regalo): `sticker` = cualquiera del club de fans (la de siempre) y
 // `sticker:<id>` = ese sticker en particular.
@@ -165,6 +175,7 @@ module.exports = {
     stickerFromEmote,
     extractStickers,
     readableCommentText,
+    splitStickerMarkers,
     stickerAlertKey,
     stickerIdFromKey,
     pickStickerAlerts,

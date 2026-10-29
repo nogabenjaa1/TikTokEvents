@@ -381,6 +381,10 @@ const ready = pool.query(`
       UNIQUE(license_id, kind, gift_name)
     )
   `))
+  // Ícono del regalo tal como lo tenía el catálogo del panel al agregarlo:
+  // el directorio de regalos vistos solo trae los que ya llegaron en algún
+  // directo (ver resolveVersusIcons en lib/tenant/versus.js).
+  .then(() => pool.query(`ALTER TABLE versus_configs ADD COLUMN IF NOT EXISTS gift_icon TEXT`))
   // Precios editables desde el panel de Licencias (pedido explicito:
   // "Modificacion manual de precios de licencias desde el panel de
   // administracion") -- una fila por plan que el admin haya tocado; un plan
@@ -1003,13 +1007,13 @@ async function listVersusConfigs(licenseId) {
 // es un regalo agregado a una lista, no "el" registro de un disparador --
 // insertar de nuevo con el mismo (license_id, kind, gift_name) simplemente
 // falla por el UNIQUE (el caller ya revisó duplicados antes, ver versus.js).
-async function insertVersusConfig({ id, licenseId, kind, giftName, giftId = null, actionText = null, secondsDelta = null }) {
+async function insertVersusConfig({ id, licenseId, kind, giftName, giftId = null, giftIcon = null, actionText = null, secondsDelta = null }) {
     await ready;
     const { rows } = await pool.query(`
-        INSERT INTO versus_configs (id, license_id, kind, gift_name, gift_id, action_text, seconds_delta, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO versus_configs (id, license_id, kind, gift_name, gift_id, gift_icon, action_text, seconds_delta, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
-    `, [id, licenseId, kind, giftName, giftId, actionText, secondsDelta, Date.now()]);
+    `, [id, licenseId, kind, giftName, giftId, giftIcon, actionText, secondsDelta, Date.now()]);
     return rows[0];
 }
 

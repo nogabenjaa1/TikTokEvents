@@ -1384,11 +1384,13 @@ select:disabled { cursor: not-allowed; }
 .tkc-vs { container-type: inline-size; }
 .tkc-vs-frame { padding: clamp(10px, 2.2cqw, 28px); gap: clamp(6px, 1.2cqw, 14px); }
 .tkc-vs-cols { gap: clamp(8px, 2cqw, 24px); }
-.tkc-vs-col { gap: clamp(6px, 1.1cqw, 12px); min-width: clamp(140px, 26cqw, 360px); }
-.tkc-vs-row { gap: clamp(8px, 1.6cqw, 18px); padding: clamp(6px, 1cqw, 12px) clamp(8px, 1.4cqw, 16px); border-radius: var(--surface-radius-sm); }
+.tkc-vs-col { gap: clamp(8px, 1.8cqw, 22px); }
+.tkc-vs-info { gap: clamp(4px, 0.8cqw, 10px); }
+.tkc-vs-chips { gap: clamp(4px, 0.8cqw, 10px); padding: clamp(2px, 0.4cqw, 6px); border-radius: var(--surface-radius-sm); }
+.tkc-vs-chip { gap: 2px; }
 .tkc-vs-title { font-size: clamp(16px, 3.4cqw, 44px); letter-spacing: 0.06em; }
 .tkc-vs-action { font-size: clamp(13px, 2.3cqw, 28px); }
 .tkc-vs-sub { font-size: clamp(10px, 1.4cqw, 16px); letter-spacing: 0.12em; }
-.tkc-vs-count { font-size: calc(clamp(22px, 5.2cqw, 68px) * var(--tkc-vs-count-scale, 1)); }
-.tkc-vs-gift { width: clamp(40px, 8cqw, 104px); height: clamp(40px, 8cqw, 104px); }
+.tkc-vs-count { font-size: calc(clamp(28px, 7cqw, 96px) * var(--tkc-vs-count-scale, 1)); }
+.tkc-vs-gift { width: clamp(26px, 5cqw, 64px); height: clamp(26px, 5cqw, 64px); }
 .tkc-vs-badge { width: clamp(44px, 9cqw, 120px); height: clamp(44px, 9cqw, 120px); }

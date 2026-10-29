@@ -3,10 +3,12 @@ import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOve
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
 import { buildPreviewMock } from './overlayPreviewMocks';
+import { CHAT_OVERLAY_SIZE } from './chatOverlayModel';
 
 // Tamaño real (sin escalar) de cada overlay — mismos valores que sus
 // propios w-[...]/h-[...] en Overlay.jsx/DiceOverlay.jsx, ya estandarizados
-// (pedido explícito): 380x700 para todos los verticales, 960x260 para los
+// (pedido explícito): 380x700 para todos los verticales (el chat ahora es
+// horizontal, 960x480), 960x260 para los
 // dos horizontales (Colores y Extensible ya compartían esa medida entre
 // sí — se mantiene, cambiarla implicaría rediseñar su layout interno, que
 // está pensado para una franja ancha y baja tipo "barra de subathon", no
@@ -21,7 +23,7 @@ const NATURAL_SIZE = {
   gifter: { w: 380, h: 700 },
   musicqueue: { w: 380, h: 700 },
   goal: { w: 960, h: 260 },
-  chat: { w: 380, h: 700 },
+  chat: CHAT_OVERLAY_SIZE,
   ticker: { w: 960, h: 200 },
   versus: { w: 900, h: 420 },
 };

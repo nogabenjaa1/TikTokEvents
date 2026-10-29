@@ -83,8 +83,9 @@ export function buildPreviewMock(overlayId) {
       return {
         state: {
           isActive: true, paused: false, heroLabel: 'HÉROES', villainLabel: 'VILLANOS', extensibleLinkEnabled: false,
-          heroes: [{ id: 'h1', giftName: 'Rosa', giftIcon: '', actionText: 'hablar', count: 12 }],
-          villains: [{ id: 'v1', giftName: 'TikTok', giftIcon: '', actionText: 'silencio', count: 7 }],
+          heroAction: 'hablar', villainAction: 'silencio', heroScore: 120, villainScore: 85,
+          heroes: [{ id: 'h1', giftName: 'Rosa', giftIcon: '' }, { id: 'h2', giftName: 'Finger Heart', giftIcon: '' }],
+          villains: [{ id: 'v1', giftName: 'TikTok', giftIcon: '' }],
           extHeroes: [], extVillains: [],
         },
       };

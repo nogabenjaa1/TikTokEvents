@@ -7,6 +7,11 @@ export const CHAT_DEFAULT_SETTINGS = {
   showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showPinned: true, showViewerCount: true,
 };
 
+// Tamaño del overlay: horizontal (pedido explícito), con el mismo ancho que
+// los banners horizontales (960, ver NATURAL_SIZE en OverlayPreviewBox.jsx) y
+// proporción 2:1.
+export const CHAT_OVERLAY_SIZE = { w: 960, h: 480 };
+
 // Lo que dura la animación de desvanecido, después de vencer el tiempo.
 export const CHAT_FADE_OUT_MS = 700;
 

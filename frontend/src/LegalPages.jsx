@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react';
 import { backendUrl } from './auth';
 import { openCookieSettings } from './cookieConsent';
 import LegalLinks from './LegalLinks';
+import { MERCADOPAGO_ENABLED } from './paymentProviders';
+
+// Quién procesa los pagos hoy (ver paymentProviders.js): con MercadoPago
+// apagado el texto legal solo nombra a Stripe.
+const PAYMENT_PROCESSORS = MERCADOPAGO_ENABLED ? 'Mercado Pago o Stripe' : 'Stripe';
+const PAYMENT_PROVIDERS_LIST = MERCADOPAGO_ENABLED ? 'Mercado Pago y Stripe' : 'Stripe';
 
 // Aviso Legal, Aviso de Privacidad (LFPDPPP, México) y Cookies. El texto
 // describe lo que el sitio hace de verdad (qué guarda, con qué proveedores);
@@ -83,7 +89,7 @@ export function LegalNotice({ onNavigate }) {
         <p>Eres responsable del contenido que subes a tus alertas (imágenes, audio, video) y de lo que descargas con el Downloader: solo descarga contenido propio o que tengas derecho a usar.</p>
       </Section>
       <Section title="Pagos y reembolsos">
-        <p>Los pagos se procesan con Mercado Pago o Stripe; BenjaApis no ve ni guarda los datos de tu tarjeta. Al ser un servicio digital que se entrega al momento, las ventas son finales salvo que la ley aplicable disponga otra cosa. Si tuviste un problema real con un cobro, escríbenos (<Contact info={info} />) antes de iniciar una disputa con tu banco.</p>
+        <p>Los pagos se procesan con {PAYMENT_PROCESSORS}; BenjaApis no ve ni guarda los datos de tu tarjeta. Al ser un servicio digital que se entrega al momento, las ventas son finales salvo que la ley aplicable disponga otra cosa. Si tuviste un problema real con un cobro, escríbenos (<Contact info={info} />) antes de iniciar una disputa con tu banco.</p>
       </Section>
       <Section title="Disponibilidad y responsabilidad">
         <p>Hacemos lo posible para que el servicio funcione siempre, pero depende de terceros (TikTok, Spotify, proveedores de pago y de alojamiento) que pueden cambiar o fallar sin aviso. El servicio se ofrece tal cual; no respondemos por pérdidas derivadas de interrupciones ajenas a nosotros.</p>
@@ -108,7 +114,7 @@ export function PrivacyNotice({ onNavigate }) {
         <ul className="list-disc pl-5 flex flex-col gap-1">
           <li><strong className="text-white">De tu licencia:</strong> el alias o usuario que elegiste, el tipo de plan y su vencimiento, la fecha de tu último inicio de sesión y cuántas veces usas cada juego. Tu clave de licencia se guarda como una huella cifrada; la única excepción es la clave nueva que genera una compra, que se guarda hasta que la ves por primera vez y entonces se borra.</li>
           <li><strong className="text-white">De tu transmisión:</strong> el usuario de TikTok al que conectas el panel y, mientras estás en vivo, los eventos públicos de tu LIVE (regalos, seguidores, comentarios y nombres de quienes participan) para mostrar juegos, alertas y lectura del chat. Los eventos recientes se guardan solo en memoria; las listas que tú armas (por ejemplo, a quién lee o no el TTS) se guardan con tu licencia.</li>
-          <li><strong className="text-white">De tus pagos:</strong> el identificador y estado del pago, el plan y el monto. Los datos de tu tarjeta los recibe directamente Mercado Pago o Stripe. Para cobrar, el procesador pide además tu correo, nombre y, según el medio, dirección o identificación: nuestro servidor se los entrega al procesador en ese momento y no los guarda; con el pago queda registrada la fecha en que aceptaste la política de reembolsos. En la prueba gratis con tarjeta guardamos una huella de la tarjeta que entrega Stripe (no el número) para evitar pruebas repetidas.</li>
+          <li><strong className="text-white">De tus pagos:</strong> el identificador y estado del pago, el plan y el monto. Los datos de tu tarjeta los recibe directamente {PAYMENT_PROCESSORS}. Para cobrar, el procesador pide además tu correo y nombre{MERCADOPAGO_ENABLED ? ' y, según el medio, dirección o identificación' : ''}: nuestro servidor se los entrega al procesador en ese momento y no los guarda; con el pago queda registrada la fecha en que aceptaste la política de reembolsos. En la prueba gratis con tarjeta guardamos una huella de la tarjeta que entrega Stripe (no el número) para evitar pruebas repetidas.</li>
           <li><strong className="text-white">De Spotify (si lo conectas):</strong> tu nombre en Spotify y los permisos de acceso, cifrados, para poder añadir canciones a tu cola.</li>
           <li><strong className="text-white">Lo que subes:</strong> imágenes, audio o video de tus alertas y del objetivo.</li>
           <li><strong className="text-white">Datos técnicos:</strong> la dirección IP se usa al momento para limitar intentos abusivos y no se guarda. Si algo falla, guardamos un reporte del error (qué pasó, en qué página y con qué navegador) para corregirlo. Las visitas se cuentan de forma anónima, sin cookies y sin guardar la IP.</li>
@@ -120,7 +126,7 @@ export function PrivacyNotice({ onNavigate }) {
         <p><strong className="text-white">Finalidades secundarias:</strong> medir de forma anónima qué páginas se usan para mejorar el sitio, y mostrar anuncios a quien usa las funciones gratuitas sin licencia. Puedes oponerte a los anuncios personalizados en cualquier momento desde «Preferencias de anuncios».</p>
       </Section>
       <Section title="Con quién se comparten">
-        <p>No vendemos tus datos. Para dar el servicio los tratan, por cuenta nuestra, estos proveedores: Render (alojamiento del servidor), Supabase (base de datos y archivos), Mercado Pago y Stripe (pagos), Spotify (si lo conectas), Google AdSense y Adsterra (anuncios para visitantes sin licencia) y Google Fonts (tipografías). Algunos están fuera de México; se les exige proteger tus datos. También podemos entregarlos a una autoridad que lo requiera conforme a la ley.</p>
+        <p>No vendemos tus datos. Para dar el servicio los tratan, por cuenta nuestra, estos proveedores: Render (alojamiento del servidor), Supabase (base de datos y archivos), {PAYMENT_PROVIDERS_LIST} (pagos), Spotify (si lo conectas), Google AdSense y Adsterra (anuncios para visitantes sin licencia) y Google Fonts (tipografías). Algunos están fuera de México; se les exige proteger tus datos. También podemos entregarlos a una autoridad que lo requiera conforme a la ley.</p>
       </Section>
       <Section title="Tus derechos ARCO y cómo revocar tu consentimiento">
         <p>Puedes pedir acceso a tus datos, su rectificación, su cancelación u oponerte a su uso (derechos ARCO), así como revocar tu consentimiento, escribiendo a <Contact info={info} /> desde un medio que nos permita confirmar que la licencia es tuya. Indica qué pides y, si aplica, qué dato corregir. Te responderemos en un máximo de 20 días hábiles y, si procede, lo aplicaremos dentro de los 15 días hábiles siguientes.</p>
@@ -147,7 +153,7 @@ export function CookiesNotice({ onNavigate }) {
       <Section title="Cookies de terceros">
         <ul className="list-disc pl-5 flex flex-col gap-1">
           <li><strong className="text-white">Anuncios (Google AdSense y Adsterra):</strong> se muestran a quien usa las funciones gratuitas sin licencia, y pueden usar cookies para medir y elegir anuncios. Puedes pedir anuncios no personalizados.</li>
-          <li><strong className="text-white">Pagos (Mercado Pago y Stripe):</strong> sus formularios usan cookies propias para prevenir fraude, solo cuando abres un pago.</li>
+          <li><strong className="text-white">Pagos ({PAYMENT_PROVIDERS_LIST}):</strong> {MERCADOPAGO_ENABLED ? 'sus formularios usan' : 'su formulario usa'} cookies propias para prevenir fraude, solo cuando abres un pago.</li>
         </ul>
       </Section>
       <Section title="Cómo elegir">

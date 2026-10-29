@@ -6,6 +6,7 @@ import LegalLinks from './LegalLinks';
 import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import { saveMpCheckout } from './mpCheckoutHandoff';
+import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
 import RewardedAdGate from './RewardedAdGate';
@@ -650,11 +651,12 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             </div>
           </div>
 
-          {/* Selector de forma de pago -- Stripe principal (pedido
-              explícito), MercadoPago secundaria seleccionable. El correo/
+          {/* Selector de forma de pago -- solo cuando MercadoPago está
+              encendido (ver paymentProviders.js): hoy Stripe es el único
+              medio oficial y el selector ni se muestra. El correo/
               nombre/apellido de arriba son compartidos por las dos; lo único
               que cambia es el formulario de tarjeta de más abajo. */}
-          <div className="w-full max-w-2xl">
+          {MERCADOPAGO_ENABLED && <div className="w-full max-w-2xl">
             <label className="theme-label block text-[10px] mb-2">Método de pago</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button type="button" onClick={() => setPaymentProvider('stripe')}
@@ -668,12 +670,12 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 Tarjeta de crédito/débito (MercadoPago)
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Dirección: solo la usa MercadoPago (ayuda a su motor
               antifraude, ver MercadoPagoCheckout.jsx/server.js) -- no tiene
               sentido pedirla si el streamer eligió Stripe. */}
-          {paymentProvider === 'mercadopago' && (
+          {MERCADOPAGO_ENABLED && paymentProvider === 'mercadopago' && (
             <div className="w-full max-w-2xl">
               <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
               <div className="flex gap-2">
@@ -716,7 +718,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           </div>
 
           {readyToPay ? (
-            paymentProvider === 'stripe' ? (
+            (!MERCADOPAGO_ENABLED || paymentProvider === 'stripe') ? (
               <StripePaymentForm
                 planType={buyingAddon ? undefined : payingPlan}
                 spotifyAddon={buyingAddon}

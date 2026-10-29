@@ -4,7 +4,7 @@
 // cuando la ruta no existe, armar el sitemap y aceptar solo estas rutas en la
 // analítica. site-pages.test.js comprueba que coincidan con navigation.js.
 const SECTION_PATHS = ['dashboard', 'overlays', 'tiktokevents', 'colordice', 'downloader', 'theme', 'membership', 'membership/mercadopago', 'licenses', 'system', 'aviso-legal', 'privacidad', 'cookies'];
-const EVENT_TAB_PATHS = ['kingthrone', 'zubastinis', 'elimination', 'roulette', 'versus', 'extensible', 'objetivo', 'spotify', 'alerts', 'tts'];
+const EVENT_TAB_PATHS = ['kingthrone', 'zubastinis', 'elimination', 'roulette', 'versus', 'extensible', 'objetivo', 'spotify', 'alerts', 'tts', 'chat'];
 
 // Lo que se ofrece a los buscadores (lo público; el resto pide sesión o es
 // del admin) con su prioridad en el sitemap.

@@ -527,7 +527,7 @@ function chatTenant({ holds = false } = {}) {
   const context = {
     module: { exports: {} },
     require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog')
-      : name.includes('giftDirectory') ? { record() {} } : name.includes('stickerCatalog') ? require('./lib/stickerCatalog') : {}),
+      : name.includes('giftDirectory') ? { record() {} } : name.includes('stickerCatalog') ? require('./lib/stickerCatalog') : name.includes('chatOverlay') ? require('./lib/chatOverlay') : {}),
     setTimeout, clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/events'), 'utf8'), context);
@@ -540,6 +540,7 @@ function chatTenant({ holds = false } = {}) {
   tenant.noteEmoteSample = () => {};
   tenant.processPlayCommand = (comment) => commands.push(comment);
   tenant.processRouletteComment = () => {};
+  tenant.pushChatItem = () => {};
   return { tenant, spoken, stickerCalls, commands };
 }
 const chat = (extra) => ({ uniqueId: 'ana', nickname: 'Ana', userId: '9', msgId: 'm-1', content: 'hola', emotes: [], ...extra });

@@ -34,6 +34,7 @@ export const EVENT_TABS = [
   { id: 'spotify',  label: 'Spotify' },
   { id: 'alerts',   label: 'Alertas' },
   { id: 'tts',      label: 'TTS' },
+  { id: 'chat',     label: 'Chat' },
 ];
 
 // Pedido explicito: URLs reales para cada sección (benjaapis.dev/overlays,
@@ -82,6 +83,7 @@ export const EVENT_TAB_PATHS = {
   spotify: 'spotify',
   alerts: 'alerts',
   tts: 'tts',
+  chat: 'chat',
 };
 export const PATH_TO_EVENT_TAB = Object.fromEntries(Object.entries(EVENT_TAB_PATHS).map(([id, path]) => [path, id]));
 

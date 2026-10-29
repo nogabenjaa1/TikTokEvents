@@ -16,6 +16,7 @@ const Extensible = lazyPanel(() => import('../Extensible'));
 const Spotify = lazyPanel(() => import('../Spotify'));
 const Goal = lazyPanel(() => import('../Goal'));
 const AlertsAdmin = lazyPanel(() => import('../AlertsAdmin'));
+const ChatPanel = lazyPanel(() => import('../ChatPanel'));
 
 // La sección "TikTokEvents": la subnavegación y el panel de la pestaña elegida. Cada panel que necesita sesión
 // muestra el login embebido si no la hay (`needsAccess`). El estado en vivo llega de App.jsx.
@@ -25,7 +26,7 @@ export default function EventsSection({
   state, zubState, elimState, rouletteState, extensibleState, versusState, goalState,
   spotifyQueueState, spotifySettingsState, spotifyOAuthResult, onOAuthResultConsumed,
   panelOverlayDraft, onCustomizeChange, onApplyToAll,
-  soundEnabled, onSoundEnabledChange, alertsOverlayConnected, monitorSink, onMonitorSinkChange,
+  soundEnabled, onSoundEnabledChange, alertsOverlayConnected, monitorSink, onMonitorSinkChange, viewerCount,
 }) {
   return (
     <>
@@ -174,6 +175,15 @@ export default function EventsSection({
               sinkId: monitorSink.id, sinkLabel: monitorSink.label, onSinkChange: onMonitorSinkChange,
             }}
           />
+        )
+      )}
+      {/* Overlay de chat (pedido explícito: su propio apartado en Eventos,
+          con ajustes además de los de Overlays > Personalizar). */}
+      {eventsTab === 'chat' && (
+        needsAccess('chat') ? (
+          <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={onGoMembership} notice="Necesitas una licencia o una prueba gratis para usar el overlay de chat." />
+        ) : (
+          <ChatPanel socket={socket} viewerCount={viewerCount} customization={panelOverlayDraft?.chat || overlayCustomization?.chat} />
         )
       )}
       {/* TTS también requiere sesión — se muestra el login embebido en

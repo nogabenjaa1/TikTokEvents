@@ -157,6 +157,17 @@ input[type=range]::-moz-range-thumb {
 .tkc-alert-anim-out-zoom { animation: tkc-alert-out-zoom var(--tkc-anim-ms, 400ms) ease-in forwards; }
 .tkc-alert-anim-in-bounce { animation: tkc-alert-in-bounce var(--tkc-anim-ms, 400ms) cubic-bezier(0.34, 1.56, 0.64, 1) backwards; }
 
+/* Overlay de chat (ChatOverlay.jsx): cada mensaje se desvanece al vencer su
+   tiempo (el retraso se pone en línea, calculado una vez por mensaje). */
+@keyframes tkc-chat-out { from { opacity: 1; } to { opacity: 0; } }
+/* Burbuja por defecto del chat: oscura y semitransparente, como Social Stream
+   Ninja, para leerse sobre cualquier video. Si en Personalizar se elige otro
+   fondo (degradado, arcoíris, transparente), manda ese. El texto usa clases
+   propias porque los temas claros fuerzan .text-white a oscuro. */
+.tkc-chat-bubble { background: rgba(14, 14, 20, 0.78); }
+.themed-app .tkc-chat-text { color: #f4f4f6 !important; }
+.themed-app .tkc-chat-muted { color: rgba(244, 244, 246, 0.72) !important; }
+
 /* Todos los overlays (juegos, Colores, Top Tap-Tap, Top Gifter, Extensible,
    Alertas, Objetivo, Chat, Cola de Spotify) se componen sobre la escena real
    de OBS -- ahí SOLO debe verse el recuadro/fila de cada uno, con todo lo

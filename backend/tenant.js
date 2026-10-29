@@ -236,6 +236,9 @@ class Tenant {
         // que la lista visible crezca sin límite en pantalla.
         this.spotifySettings = { enabled: true, allUsers: false, moderators: true, fanMembers: false, minFanLevel: 1, maxQueueSize: SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT };
 
+        // ── Overlay de chat (pestaña Chat, ver lib/tenant/chatOverlay.js) ──
+        this.initChatOverlayState();
+
         // ── TTS (lee el chat en voz alta, 100% del lado del navegador del
         // streamer -- ver TtsChat.jsx) ──
         // A diferencia del resto de TtsChat (que corre y decide TODO en el
@@ -423,6 +426,7 @@ class Tenant {
             socket.emit('spotify_settings_update', this.getSpotifySettingsPublicState());
             socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             socket.emit('tts_settings_update', this.ttsSettings);
+            socket.emit('chat_settings_update', this.chatSettings);
             socket.emit('goal_state_update', this.getGoalPublicState());
             // Si loadPersistedSettings restauró estado en vivo tras un
             // reinicio, este cliente lo recibe ahora (los emits de más
@@ -483,6 +487,9 @@ class Tenant {
         // Solo se anota su presencia (ver registerAlertHandlers).
         if (socket.authMethod === 'overlay') {
             this.registerAlertHandlers(socket);
+            // El overlay de chat recibe su chat (solo ver, ver
+            // lib/tenant/chatOverlay.js): sin esto nunca entraba a su sala.
+            this.registerChatOverlayViewerHandlers(socket);
             return;
         }
 
@@ -502,6 +509,7 @@ class Tenant {
         this.registerAlertHandlers(socket);
         this.registerStickerHandlers(socket);
         this.registerFeedHandlers(socket);
+        this.registerChatOverlayHandlers(socket);
     }
 }
 
@@ -513,6 +521,7 @@ Object.assign(Tenant.prototype, require('./lib/tenant/runtimeState'));
 Object.assign(Tenant.prototype, require('./lib/tenant/alerts'));
 Object.assign(Tenant.prototype, require('./lib/tenant/stickers'));
 Object.assign(Tenant.prototype, require('./lib/tenant/feed'));
+Object.assign(Tenant.prototype, require('./lib/tenant/chatOverlay'));
 Object.assign(Tenant.prototype, require('./lib/tenant/spotify'));
 Object.assign(Tenant.prototype, require('./lib/tenant/king'));
 Object.assign(Tenant.prototype, require('./lib/tenant/zub'));

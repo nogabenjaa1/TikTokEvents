@@ -12,6 +12,7 @@ const {
     sanitizeUsernameOverrides,
     sanitizeOverlayCustomization,
 } = require('../../lib/tenantSanitizers');
+const { sanitizeChatSettings } = require('../../lib/chatOverlay');
 
 module.exports = {
     // ==========================================
@@ -55,6 +56,9 @@ module.exports = {
                     minFanLevel: Math.max(1, Math.min(50, Number(s.minFanLevel) || 1)),
                     maxQueueSize: Math.max(1, Math.min(20, Number(s.maxQueueSize) || SPOTIFY_QUEUE_DISPLAY_SIZE_DEFAULT)),
                 };
+            }
+            if (license.chat_settings) {
+                this.chatSettings = sanitizeChatSettings(license.chat_settings, this.chatSettings);
             }
             if (license.tts_settings) {
                 const tt = license.tts_settings;

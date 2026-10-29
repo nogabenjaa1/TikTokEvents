@@ -20,7 +20,7 @@ function load() {
   };
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? directory : {}),
+    require: (name) => (name.includes('tenantHelpers') ? require('./lib/tenantHelpers') : name.includes('giftCatalog') ? require('./lib/giftCatalog') : name.includes('giftDirectory') ? directory : name.includes('chatOverlay') ? require('./lib/chatOverlay') : {}),
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     Date: { now: () => now }, console, Math, Number, String, Map, Set, Object, Array,
   };
@@ -34,6 +34,7 @@ function load() {
   const games = [];
   const feed = [];
   tenant.pushFeed = (item) => feed.push(item);
+  tenant.pushChatItem = () => {};
   tenant.broadcast = { emit: (name, payload) => emitted.push({ name, payload }) };
   for (const method of ['processGiftKing', 'processGiftZub', 'processGiftElim', 'processGiftRoulette', 'processGiftGifterBoard', 'processGiftVersus', 'processGiftExtensible', 'processGiftGoal']) {
     tenant[method] = (event) => games.push({ method, event });

@@ -282,7 +282,7 @@ const OBS_HELP = {
     title: 'En OBS Studio / TikTok LIVE Studio',
     steps: [
       'Objetivo: 960×260 (es horizontal) — inícialo y ajústalo desde su propia pestaña en TikTokEvents.',
-      'Chat en vivo + espectadores: 380×700 (igual que los demás overlays verticales) — no necesita configuración aparte, muestra el chat y el contador de espectadores apenas te conectes a un LIVE.',
+      'Chat en vivo + espectadores: 380×700 (igual que los demás overlays verticales). Lo nuevo aparece arriba y cada mensaje se desvanece solo; cuánto dura, el orden, el tamaño de letra y qué eventos se ven se eligen en TikTokEvents → Chat.',
     ],
   },
 };
@@ -484,7 +484,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             />
             <OverlayUrlCard
               title="Chat en vivo + espectadores"
-              description={`Widget angosto aparte con el chat en vivo y el contador de espectadores${typeof viewerCount === 'number' && viewerCount > 0 ? ` — ${viewerCount.toLocaleString('es-MX')} viendo ahora` : ''}. No necesita configuración: se activa solo apenas te conectes a un LIVE.`}
+              description={`Widget angosto aparte con el chat en vivo y el contador de espectadores${typeof viewerCount === 'number' && viewerCount > 0 ? ` — ${viewerCount.toLocaleString('es-MX')} viendo ahora` : ''}. Se activa solo apenas te conectes a un LIVE; sus ajustes están en TikTokEvents → Chat.`}
               dimensions="380×700 px (vertical)"
               url={chatUrl}
               onCustomize={() => setCustomizingId('chat')}

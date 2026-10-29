@@ -1,79 +1,246 @@
 import { useEffect, useRef, useState } from 'react';
-import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps } from '../overlayCustomization';
+import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, rowBorder } from '../overlayCustomization';
+import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, visibleChatItems } from '../chatOverlayModel';
 
-// CHAT EN VIVO + ESPECTADORES (pedido explícito): reusa el mismo broadcast
-// que ya alimenta al TTS (`tts_chat_message`, SIN filtrar por sus ajustes —
-// esos filtros son 100% del lado de TtsChat.jsx, ver su comentario) para no
-// duplicar tráfico de socket con un segundo evento idéntico. Cola propia
-// (últimos N mensajes, se caen los viejos) — mismo criterio simple que
-// TtsChat.jsx, pero acá es solo para MOSTRAR, no hay síntesis de voz.
-const CHAT_OVERLAY_MAX_MESSAGES = 12;
+// CHAT EN VIVO (pestaña Chat de Eventos). Pedido explícito: que se vea y se
+// comporte como el chat de Social Stream Ninja -- lo más nuevo ARRIBA y lo
+// anterior va bajando, cada mensaje se desvanece después de un tiempo, la
+// letra conserva su tamaño (nada de deslizar para ver lo nuevo), insignias
+// junto al nombre y los eventos (seguidores, regalos, compartidos) dentro del
+// mismo chat, más el mensaje anclado arriba. Diseño propio: no se copia nada
+// del código de Social Stream Ninja (es GPL-3.0).
+//
+// Los datos llegan por su propia sala del socket (ver
+// backend/lib/tenant/chatOverlay.js): `chat_snapshot` (lo reciente, el
+// anclado y los ajustes), `chat_item`, `chat_pinned` y
+// `chat_settings_update`. Los ajustes se editan en Eventos > Chat; el
+// fondo, el color de los nombres y la fuente, en Overlays > Personalizar.
 
-// `previewMessages`: solo lo usa OverlayPreviewBox.jsx (modal de
-// "Personalizar") -- ahí no hay un socket real conectado a un LIVE, así que
-// se le pasan un par de mensajes de prueba fijos en vez de escuchar el
-// socket, para poder ver el efecto de la personalización sobre filas reales
-// en vez de la lista vacía.
-export function ChatOverlay({ socket, viewerCount, customize, previewMessages }) {
-  const [liveMessages, setLiveMessages] = useState([]);
-  const seenIds = useRef(new Set());
+function HeartIcon() {
+  return <svg viewBox="0 0 24 24" className="w-[1.1em] h-[1.1em] flex-shrink-0" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C1 8.6 3 5 6.6 5c2 0 3.4 1.1 4.4 2.5C12 6.1 13.4 5 15.4 5 19 5 21 8.6 19.6 11.8 17.5 16.4 12 21 12 21z" /></svg>;
+}
+function ShareIcon() {
+  return <svg viewBox="0 0 24 24" className="w-[1.1em] h-[1.1em] flex-shrink-0" fill="currentColor" aria-hidden="true"><path d="M14 4l7 7-7 7v-4c-5 0-8.5 1.6-11 5 1-5 4-10 11-11V4z" /></svg>;
+}
+function PinIcon() {
+  return <svg viewBox="0 0 24 24" className="w-[1em] h-[1em] flex-shrink-0" fill="currentColor" aria-hidden="true"><path d="M15 3l6 6-3 1-4 4 1 5-2 2-4-5-5 5-1-1 5-5-5-4 2-2 5 1 4-4 1-3z" /></svg>;
+}
 
-  useEffect(() => {
-    if (previewMessages || !socket) return;
-    const onMessage = (message) => {
-      if (message.comment.includes('@')) return; // mismo filtro que TTS: nunca @menciones
-      if (seenIds.current.has(message.id)) return;
-      seenIds.current.add(message.id);
-      if (seenIds.current.size > 500) seenIds.current.clear();
-      setLiveMessages((current) => [...current, message].slice(-CHAT_OVERLAY_MAX_MESSAGES));
-    };
-    socket.on('tts_chat_message', onMessage);
-    return () => socket.off('tts_chat_message', onMessage);
-  }, [socket, previewMessages]);
+// Insignias como en TikTok: las imágenes reales que manda TikTok; si no vino
+// ninguna, unas propias con lo que la conexión sí reconoce.
+function Badges({ badges }) {
+  if (!badges) return null;
+  if (badges.images?.length) {
+    return badges.images.map((url) => <img key={url} alt="" src={url} className="h-[1.15em] w-auto flex-shrink-0" />);
+  }
+  const chips = [];
+  if (badges.moderator) chips.push(['MOD', 'bg-emerald-500']);
+  if (badges.topGifterRank) chips.push([`#${badges.topGifterRank}`, 'bg-amber-500']);
+  if (badges.subscriber) chips.push(['SUB', 'bg-fuchsia-500']);
+  if (badges.fanLevel > 0) chips.push([`Fan ${badges.fanLevel}`, 'bg-rose-500']);
+  return chips.map(([label, color]) => (
+    <span key={label} className={`tkc-ovl-fill ${color} text-white text-[0.65em] font-black leading-none px-1.5 py-[0.2em] rounded-md flex-shrink-0`}>{label}</span>
+  ));
+}
 
-  const messages = previewMessages || liveMessages;
-  const rowBg = resolveBackgroundStyle(customize, 'var(--surface-bg-alt)');
-  const nameOverride = getUsernameOverride(customize);
-  // Animación de entrada por mensaje (pedido explícito) -- mismas clases
-  // que las Alertas (`.tkc-alert-anim-in-*`, ver index.css), reusadas tal
-  // cual. Al ser CSS de animación (no JS), solo se dispara una vez cuando
-  // React monta la fila por primera vez -- las filas viejas ya montadas
-  // nunca la vuelven a reproducir cuando entra una nueva al fondo de la
-  // lista, que es exactamente el efecto buscado.
-  const messageAnim = customize?.messageAnimation || 'fade';
-  const animClass = messageAnim !== 'none' ? `tkc-alert-anim-in-${messageAnim}` : '';
+function Avatar({ user, show }) {
+  if (!show) return null;
+  return user?.avatar
+    ? <img alt="" src={user.avatar} className="w-[2.1em] h-[2.1em] rounded-full object-cover flex-shrink-0" />
+    : <span className="tkc-ovl-fill w-[2.1em] h-[2.1em] rounded-full bg-gray-700 flex-shrink-0" />;
+}
+
+// Una fila. El momento en que empieza a desvanecerse se calcula UNA vez al
+// montarla (si se recalculara en cada render, el navegador reiniciaría la
+// animación a la mitad).
+function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass, rowBorderStyle }) {
+  const [fadeDelayMs] = useState(() => {
+    const fadeMs = (settings.fadeSeconds || 0) * 1000;
+    return fadeMs > 0 ? Math.max(0, fadeMs - (now - (item.at || now))) : null;
+  });
+  const fadeStyle = fadeDelayMs === null ? {} : { animation: `tkc-chat-out ${FADE_OUT_MS}ms ease-in ${fadeDelayMs}ms forwards` };
+  const name = (
+    <span className={`font-black truncate ${nameStyle.className}`} style={nameStyle.style}>
+      {item.user?.nickname || item.user?.uniqueId}
+    </span>
+  );
+  const header = (
+    <span className="flex items-center gap-[0.35em] min-w-0">
+      {settings.showBadges !== false && <Badges badges={item.user?.badges} />}
+      {name}
+    </span>
+  );
+
+  let body;
+  let accent = null;
+  if (item.kind === 'follow') {
+    accent = 'var(--accent)';
+    body = <span className="flex items-center gap-[0.4em] min-w-0"><span className="theme-accent-text"><HeartIcon /></span>{header}<span className="tkc-chat-muted flex-shrink-0">te siguió</span></span>;
+  } else if (item.kind === 'share') {
+    accent = '#38bdf8';
+    body = <span className="flex items-center gap-[0.4em] min-w-0"><span className="text-sky-400"><ShareIcon /></span>{header}<span className="tkc-chat-muted flex-shrink-0">compartió el LIVE</span></span>;
+  } else if (item.kind === 'gift') {
+    accent = '#f59e0b';
+    body = (
+      <span className="flex flex-col min-w-0">
+        {header}
+        <span className="flex items-center gap-[0.4em] tkc-chat-text">
+          <span>envió <span className="font-black text-amber-300">{item.gift?.name || 'un regalo'}</span></span>
+          {item.gift?.icon && <img alt="" src={item.gift.icon} className="w-[1.6em] h-[1.6em] object-contain flex-shrink-0" />}
+          {item.gift?.count > 1 && <span className="font-black text-amber-300 flex-shrink-0">×{item.gift.count}</span>}
+        </span>
+      </span>
+    );
+  } else {
+    body = (
+      <span className="flex flex-col min-w-0">
+        {header}
+        <span className="tkc-chat-text break-words [overflow-wrap:anywhere]">
+          {item.text}
+          {item.emotes?.map((url) => <img key={url} alt="" src={url} className="inline-block h-[1.5em] w-auto align-middle ml-[0.2em]" />)}
+        </span>
+      </span>
+    );
+  }
 
   return (
-    <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
-      <div className="flex items-center justify-between flex-shrink-0">
-        <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>💬 Chat en vivo</p>
-        <span className="tkc-ovl-fill text-xs font-black text-white bg-black/30 px-2.5 py-1 rounded-full flex items-center gap-1 flex-shrink-0">
-          👁️ {Math.max(0, viewerCount || 0).toLocaleString('es-MX')}
-        </span>
+    <div style={fadeStyle} className="flex-shrink-0">
+      <div
+        className={`${animClass} ${bubbleClass} flex items-start gap-[0.55em] rounded-2xl px-[0.75em] py-[0.55em]`}
+        style={{ ...rowBg, border: rowBorderStyle, ...(accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
+      >
+        <Avatar user={item.user} show={settings.showAvatars !== false} />
+        <div className="min-w-0 flex-1 leading-snug">{body}</div>
       </div>
-      {messages.length > 0 ? (
-        <div className="flex flex-col gap-2 flex-1 overflow-y-auto justify-end">
-          {messages.map((m) => (
-            <div key={m.id} className={`flex items-start gap-2 rounded-xl px-3 py-2 border ${animClass}`} style={{ borderColor: 'var(--surface-border-color)', ...rowBg }}>
-              {m.avatar ? (
-                <img alt="" src={m.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
-              ) : (
-                <span className="tkc-ovl-fill w-7 h-7 rounded-full bg-gray-700 flex-shrink-0" />
-              )}
-              <div className="min-w-0">
-                <p className={`text-xs font-black truncate ${nameOverride.className}`} style={nameOverride.cssVars}>
-                  {m.isModerator ? '🛡️ ' : ''}{m.isSuperFan ? '⭐ ' : ''}@{m.uniqueId || m.username}
-                </p>
-                <p className="text-sm text-white break-words">{m.comment}</p>
-              </div>
-            </div>
+    </div>
+  );
+}
+
+function PinnedBanner({ pinned, settings, rowBg, nameStyle, bubbleClass, rowBorderStyle }) {
+  if (!pinned || settings.showPinned === false) return null;
+  return (
+    <div className={`${bubbleClass} flex-shrink-0 rounded-2xl px-[0.75em] py-[0.55em] flex items-start gap-[0.55em]`} style={{ ...rowBg, border: rowBorderStyle, boxShadow: 'inset 3px 0 0 var(--accent)' }}>
+      <Avatar user={pinned.user} show={settings.showAvatars !== false} />
+      <div className="min-w-0 flex-1 leading-snug">
+        <span className="flex items-center gap-[0.35em] text-[0.75em] font-black uppercase tracking-widest theme-accent-text"><PinIcon />Anclado</span>
+        <span className={`block font-black truncate ${nameStyle.className}`} style={nameStyle.style}>{pinned.user?.nickname || pinned.user?.uniqueId}</span>
+        <span className="block tkc-chat-text break-words [overflow-wrap:anywhere]">{pinned.text}</span>
+      </div>
+    </div>
+  );
+}
+
+// Lo que se dibuja (sin socket): lo usa el overlay y las vistas previas.
+export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, customize, now = Date.now(), emptyText = 'Esperando mensajes del chat...' }) {
+  const settings = { ...CHAT_DEFAULT_SETTINGS, ...(rawSettings || {}) };
+  // Fondo de cada burbuja: el oscuro de Social Stream Ninja salvo que en
+  // Personalizar se haya elegido otro (degradado, arcoíris, transparente).
+  const bgType = customize?.background?.type;
+  const darkBubble = !bgType || bgType === 'solid';
+  const rowBg = darkBubble ? {} : resolveBackgroundStyle(customize, 'transparent');
+  const bubbleClass = darkBubble ? 'tkc-chat-bubble' : '';
+  const rowBorderStyle = rowBorder(customize) === '1px solid transparent' || !darkBubble ? rowBorder(customize) : '1px solid rgba(255,255,255,0.08)';
+  // Con el color de nombres en "Predeterminado" se usa el del tema (como los
+  // nombres de colores de Social Stream Ninja); si el streamer eligió uno en
+  // Personalizar, manda ese.
+  const custom = customize?.usernameColor?.type && customize.usernameColor.type !== 'default';
+  const override = custom ? getUsernameOverride(customize, { scale: false }) : null;
+  const nameStyle = override ? { className: override.className, style: override.cssVars } : { className: 'tkc-username-theme', style: {} };
+  const shown = visibleChatItems(items || [], settings, now);
+  const ordered = settings.newestOnTop ? [...shown].reverse() : shown;
+  // Animación de entrada: la elegida en Personalizar; si no hay ninguna,
+  // bajar desde arriba (va con "lo nuevo arriba") o subir desde abajo.
+  const anim = customize?.messageAnimation || (settings.newestOnTop ? 'slide-down' : 'slide-up');
+  const animClass = anim !== 'none' ? `tkc-alert-anim-in-${anim}` : '';
+
+  return (
+    <div className="w-[380px] h-[700px] p-4 flex flex-col gap-2 font-sans overflow-hidden" {...overlayRootProps(customize, { fontSize: `${settings.fontSize}px` })}>
+      {settings.showViewerCount && (
+        <div className="flex items-center justify-between flex-shrink-0 text-[12px]">
+          <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>Chat en vivo</p>
+          <span className="tkc-ovl-fill tkc-chat-bubble tkc-chat-text text-xs font-black px-2.5 py-1 rounded-full flex-shrink-0">
+            {Math.max(0, viewerCount || 0).toLocaleString('es-MX')} viendo
+          </span>
+        </div>
+      )}
+      <PinnedBanner pinned={pinned} settings={settings} rowBg={rowBg} nameStyle={nameStyle} bubbleClass={bubbleClass} rowBorderStyle={rowBorderStyle} />
+      {ordered.length > 0 ? (
+        // Sin barra de desplazamiento: lo que no cabe se corta por el lado de
+        // lo más viejo (abajo si lo nuevo va arriba, arriba si va abajo).
+        <div className={`flex flex-col gap-2 flex-1 min-h-0 overflow-hidden ${settings.newestOnTop ? 'justify-start' : 'justify-end'}`}>
+          {ordered.map((item) => (
+            <ChatRow key={item.id} item={item} settings={settings} now={now} rowBg={rowBg} nameStyle={nameStyle} animClass={animClass} bubbleClass={bubbleClass} rowBorderStyle={rowBorderStyle} />
           ))}
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
-          <p {...labelProps(customize, 'text-gray-600 text-xs italic text-center')}>Esperando mensajes del chat...</p>
+          <p {...labelProps(customize, 'text-gray-500 text-xs italic text-center')}>{emptyText}</p>
         </div>
       )}
     </div>
+  );
+}
+
+// El overlay de OBS (y la vista previa en vivo de la pestaña Chat): escucha su
+// sala del socket. `previewMessages` (Overlays > Personalizar) son filas de
+// prueba fijas, sin socket.
+export function ChatOverlay({ socket, viewerCount, customize, previewMessages, previewSettings }) {
+  const [items, setItems] = useState([]);
+  const [pinned, setPinned] = useState(null);
+  const [settings, setSettings] = useState(CHAT_DEFAULT_SETTINGS);
+  const [now, setNow] = useState(() => Date.now());
+  const seenIds = useRef(new Set());
+
+  useEffect(() => {
+    if (previewMessages || !socket) return undefined;
+    const onSnapshot = (snapshot) => {
+      seenIds.current = new Set((snapshot?.items || []).map((item) => item.id));
+      setItems(snapshot?.items || []);
+      setPinned(snapshot?.pinned || null);
+      if (snapshot?.settings) setSettings(snapshot.settings);
+    };
+    const onItem = (item) => {
+      if (!item || seenIds.current.has(item.id)) return;
+      seenIds.current.add(item.id);
+      if (seenIds.current.size > 500) seenIds.current = new Set([...seenIds.current].slice(-200));
+      setItems((current) => [...current, item].slice(-30));
+    };
+    const onPinned = (value) => setPinned(value || null);
+    const onSettings = (value) => { if (value) setSettings(value); };
+    // Se pide el resumen cuando ya se está escuchando (y de nuevo tras una
+    // reconexión): si llegara antes, se perdería.
+    const subscribe = () => socket.emit('chat_overlay_subscribe');
+    socket.on('chat_snapshot', onSnapshot);
+    socket.on('chat_item', onItem);
+    socket.on('chat_pinned', onPinned);
+    socket.on('chat_settings_update', onSettings);
+    socket.on('connect', subscribe);
+    if (socket.connected) subscribe();
+    return () => {
+      socket.off('chat_snapshot', onSnapshot);
+      socket.off('chat_item', onItem);
+      socket.off('chat_pinned', onPinned);
+      socket.off('chat_settings_update', onSettings);
+      socket.off('connect', subscribe);
+      socket.emit('chat_overlay_unsubscribe');
+    };
+  }, [socket, previewMessages]);
+
+  // Reloj para sacar de la lista lo que ya se desvaneció.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const effectiveSettings = previewSettings ? { ...settings, ...previewSettings } : settings;
+  return (
+    <ChatVisual
+      items={previewMessages || items}
+      pinned={previewMessages ? null : pinned}
+      settings={previewMessages ? { ...effectiveSettings, fadeSeconds: 0 } : effectiveSettings}
+      viewerCount={viewerCount}
+      customize={customize}
+      now={now}
+    />
   );
 }

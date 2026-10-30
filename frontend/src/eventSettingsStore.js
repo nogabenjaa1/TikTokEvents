@@ -3,16 +3,23 @@
 // aunque no lo haya iniciado. La fuente de verdad es el servidor
 // (backend/lib/eventSettings.js); este navegador guarda una copia para pintar
 // al instante y para no perder nada sin conexión. App.jsx los sincroniza con
-// settingsSync.js, igual que el tema y la personalización de overlays.
+// eventSettingsSync.js.
 //
-// Antes cada panel guardaba lo suyo en el navegador con su propia clave (y tres
-// formas distintas de hacerlo): desde otro navegador había que configurar todo
-// de nuevo. Esas claves se leen una vez para no perder lo que ya había.
+// La copia de este navegador lleva el dueño (el id de la licencia): en un
+// equipo que usan varias cuentas, una nunca ve ni sube los ajustes de otra.
+//
+// Antes cada panel guardaba lo suyo en el navegador con su propia clave, sin
+// dueño. Esas claves se suben al servidor una sola vez (ver
+// planLegacyMigration) y nunca se usan para pintar el panel.
 // Con extensión: este módulo se prueba con `node --test` tal cual.
 import { readStorage, writeStorage } from './safeStorage.js';
+import { EVENT_SETTINGS_IDS, normalizeEventEntry, normalizeEventSettings } from './eventSettingsSchema.js';
+import { sameValue } from './eventSettingsSync.js';
 
-export const EVENT_SETTINGS_IDS = ['king', 'zub', 'elim', 'roulette', 'extensible', 'goal'];
+export { EVENT_SETTINGS_IDS };
 const STORAGE_KEY = 'tkc_event_settings';
+const MIGRATED_KEY = 'tkc_event_settings_migrated';
+const LEGACY_OWNER_KEY = 'tkc_event_settings_legacy_owner';
 // Claves de antes, por evento (solo se leen).
 const LEGACY_KEYS = {
   king: 'tkc_king_draft',
@@ -29,39 +36,65 @@ function parse(raw) {
   try { const v = JSON.parse(raw); return isPlainObject(v) ? v : null; } catch { return null; }
 }
 
-export function loadLocalEventSettings(read = readStorage) {
-  const saved = parse(read(STORAGE_KEY)) || {};
+// El id de la licencia dentro del token de sesión (`sub`). Solo se usa para
+// separar las copias locales por cuenta: no valida nada (eso lo hace el servidor).
+export function ownerFromToken(token) {
+  try {
+    const part = String(token || '').split('.')[1];
+    if (!part) return null;
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.sub === 'string' && json.sub ? json.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadLocalEventSettings(owner, read = readStorage) {
+  if (!owner) return {};
+  const saved = parse(read(STORAGE_KEY));
+  if (!saved || saved.owner !== owner) return {};
+  return normalizeEventSettings(saved.settings);
+}
+
+export function saveLocalEventSettings(owner, map, write = writeStorage) {
+  if (!owner) return;
+  write(STORAGE_KEY, JSON.stringify({ owner, settings: map }));
+}
+
+export function readLegacyEventSettings(read = readStorage) {
   const out = {};
   for (const id of EVENT_SETTINGS_IDS) {
-    const entry = isPlainObject(saved[id]) ? saved[id] : parse(read(LEGACY_KEYS[id]));
-    if (entry) out[id] = entry;
+    const entry = normalizeEventEntry(id, parse(read(LEGACY_KEYS[id])));
+    if (entry && Object.keys(entry).length) out[id] = entry;
   }
   return out;
 }
 
-export function saveLocalEventSettings(map, write = writeStorage) {
-  write(STORAGE_KEY, JSON.stringify(map));
+// Qué subir de las claves de antes al recibir lo del servidor. Reglas:
+// - Una sola vez por navegador, y se da por hecha solo cuando el servidor
+//   confirma que la recibió (markLegacyMigrationDone): si se corta a mitad,
+//   se vuelve a intentar en la próxima conexión.
+// - Solo para la cuenta dueña de esas claves: la primera cuenta que entra en
+//   este navegador con esta versión (las claves de antes no decían de quién
+//   eran; lo más probable es que sean de quien ya estaba usando el equipo).
+//   Otra cuenta en el mismo navegador nunca las recibe.
+// - Lo del servidor siempre gana: solo se completan los eventos que el
+//   servidor no tiene (nunca se pisa algo guardado, que es más nuevo).
+// Devuelve el mapa parcial a subir, o null.
+export function planLegacyMigration({ owner, server = {} }, read = readStorage, write = writeStorage) {
+  if (!owner || read(MIGRATED_KEY) === '1') return null;
+  const legacy = readLegacyEventSettings(read);
+  if (!Object.keys(legacy).length) { write(MIGRATED_KEY, '1'); return null; }
+  const legacyOwner = read(LEGACY_OWNER_KEY);
+  if (!legacyOwner) write(LEGACY_OWNER_KEY, owner);
+  else if (legacyOwner !== owner) return null;
+  const missing = Object.fromEntries(Object.entries(legacy).filter(([id]) => !server[id]));
+  if (!Object.keys(missing).length) { write(MIGRATED_KEY, '1'); return null; }
+  return missing;
 }
 
-// Al recibir lo del servidor por primera vez: lo del servidor manda, y los
-// eventos que el servidor todavía no conoce se completan con lo de este
-// navegador (así lo que ya estaba configurado aquí no se pierde al estrenar el
-// guardado en el servidor). Devuelve también si hay algo que subir.
-//
-// Solo una vez por navegador (ver legacyMigrationPending): después, la copia de
-// este navegador puede ser de OTRA cuenta que usó el mismo equipo, y completar
-// con ella mezclaría los ajustes de dos cuentas.
-export function mergeMissingEvents(server, local) {
-  const merged = { ...(server || {}) };
-  let added = false;
-  for (const id of EVENT_SETTINGS_IDS) {
-    if (!merged[id] && local?.[id]) { merged[id] = local[id]; added = true; }
-  }
-  return { merged, added };
+export function markLegacyMigrationDone(write = writeStorage) {
+  write(MIGRATED_KEY, '1');
 }
 
-const MIGRATED_KEY = 'tkc_event_settings_migrated';
-export const legacyMigrationPending = (read = readStorage) => read(MIGRATED_KEY) !== '1';
-export const markLegacyMigrationDone = (write = writeStorage) => write(MIGRATED_KEY, '1');
-
-export const sameEventSettings = (a, b) => JSON.stringify(a || {}) === JSON.stringify(b || {});
+export const sameEventSettings = sameValue;

@@ -28,12 +28,17 @@ export function useLiveApplied({ active, localKey, serverKey }) {
   const prevLocal = useRef(localKey);
   const prevActive = useRef(active);
 
+  // Un cambio que deja el panel IGUAL a lo del servidor no es del streamer (es
+  // el panel copiando lo que ya corre, por ejemplo Extensible al abrirse con el
+  // contador activo): no hay nada que confirmar y no se dice "aplicado".
   useEffect(() => {
-    const changedByUser = active && prevActive.current && prevLocal.current !== localKey;
+    const changedByUser = active && prevActive.current && prevLocal.current !== localKey && localKey !== serverKey;
     prevLocal.current = localKey;
     prevActive.current = active;
     if (!active) { setState({ touchedKey: null, timedOut: false, hidden: false }); return; }
     if (changedByUser) setState({ touchedKey: localKey, timedOut: false, hidden: false });
+    // serverKey se lee solo en el momento del cambio, a propósito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, localKey]);
 
   const phase = liveApplyPhase({ active, touched: state.touchedKey !== null, localKey, serverKey });

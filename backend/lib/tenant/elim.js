@@ -281,6 +281,8 @@ module.exports = {
 
         socket.on('update_elim_settings', (newConfig) => {
             if (this.elimState.isActive) {
+                const prevBase = this.elimState.baseTime;
+                const prevRejoin = this.elimState.rejoinTime;
                 this.elimState.targetGiftName = newConfig.targetGiftName;
                 this.elimState.targetGiftIcon = newConfig.targetGiftIcon;
                 this.elimState.targetGiftCoins = newConfig.targetGiftCoins;
@@ -301,8 +303,11 @@ module.exports = {
                 // tiempo al instante si la fase correspondiente está corriendo
                 // ahora mismo — si se agranda el tiempo, el conteo salta hacia
                 // arriba; si se achica, salta hacia abajo.
-                if (this.elimState.mode === 'joining') this.elimState.timeLeft = newConfig.baseTime;
-                else if (this.elimState.mode === 'rejoin') this.elimState.timeLeft = newConfig.rejoinTime;
+                // Solo si cambió ESE tiempo: antes cualquier ajuste (un regalo,
+                // el mínimo...) mandaba el reloj de vuelta al tiempo completo y le
+                // devolvía a quien iba ganando todo el tiempo que ya había corrido.
+                if (this.elimState.mode === 'joining' && newConfig.baseTime !== prevBase) this.elimState.timeLeft = newConfig.baseTime;
+                else if (this.elimState.mode === 'rejoin' && newConfig.rejoinTime !== prevRejoin) this.elimState.timeLeft = newConfig.rejoinTime;
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
             }
         });

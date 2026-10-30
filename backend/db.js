@@ -116,7 +116,14 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS chat_settings JSONB`))
   // Ajustes guardados de cada evento (ver lib/eventSettings.js): antes solo
   // vivían en el navegador y se perdían al entrar desde otro dispositivo.
-  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS event_settings JSONB`))
+  // Columna nueva, nula y sin valor por defecto: Postgres solo cambia el
+  // catálogo (no reescribe la tabla) y las licencias existentes quedan en
+  // NULL ("nunca guardó nada"). Si fallara, NO corta la cadena de arranque:
+  // sin esto, un error aquí dejaba `ready` rechazado y con él todos los
+  // inicios de sesión. Sin la columna, el panel sigue funcionando y los
+  // ajustes quedan en memoria y en el navegador (setEventSettings registra el error).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS event_settings JSONB`)
+    .catch((err) => console.error('[DB] No se pudo crear licenses.event_settings (los ajustes de eventos no se guardarán en la base):', err.message)))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS tts_settings JSONB`))
   // Sonido opcional al completar el Objetivo (pedido explícito) --
   // { audioUrl, audioPath }, mismo criterio que spotify_settings/

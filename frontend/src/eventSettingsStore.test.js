@@ -1,67 +1,90 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  loadLocalEventSettings, saveLocalEventSettings, mergeMissingEvents, sameEventSettings,
-  legacyMigrationPending, markLegacyMigrationDone,
+  loadLocalEventSettings, saveLocalEventSettings, readLegacyEventSettings,
+  planLegacyMigration, markLegacyMigrationDone, ownerFromToken,
 } from './eventSettingsStore.js';
 
 function memory(initial = {}) {
   const data = { ...initial };
   return { read: (k) => (k in data ? data[k] : null), write: (k, v) => { data[k] = String(v); }, data };
 }
+const LEGACY = {
+  tkc_king_draft: JSON.stringify({ mainTime: 30, snipeTime: 5, selectedGift: { name: 'Rosa', coins: 1, icon: 'https://x/r.png' } }),
+  tkc_zub_draft: JSON.stringify({ minCoins: 50 }),
+};
 
-test('lo guardado se vuelve a leer igual', () => {
+test('la copia de este navegador es de una cuenta: otra cuenta no la ve', () => {
   const m = memory();
-  saveLocalEventSettings({ king: { mainTime: 90 }, goal: { targetType: 'followers' } }, m.write);
-  assert.deepEqual(loadLocalEventSettings(m.read), { king: { mainTime: 90 }, goal: { targetType: 'followers' } });
+  saveLocalEventSettings('lic-A', { king: { mainTime: 90 } }, m.write);
+  assert.deepEqual(loadLocalEventSettings('lic-A', m.read), { king: { mainTime: 90 } });
+  assert.deepEqual(loadLocalEventSettings('lic-B', m.read), {});
+  assert.deepEqual(loadLocalEventSettings(null, m.read), {}, 'sin sesión no hay copia');
 });
 
-test('las claves de antes (una por evento) se leen si no hay nada nuevo', () => {
-  const m = memory({
-    tkc_king_draft: JSON.stringify({ mainTime: 30 }),
-    'tiktok-concurso-extensible-settings': JSON.stringify({ baseTimeSec: 120 }),
-  });
-  assert.deepEqual(loadLocalEventSettings(m.read), { king: { mainTime: 30 }, extensible: { baseTimeSec: 120 } });
+test('sin sesión no se escribe nada', () => {
+  const m = memory();
+  saveLocalEventSettings(null, { king: { mainTime: 90 } }, m.write);
+  assert.deepEqual(m.data, {});
 });
 
-test('lo nuevo gana sobre las claves de antes', () => {
-  const m = memory({
-    tkc_king_draft: JSON.stringify({ mainTime: 30 }),
-    tkc_event_settings: JSON.stringify({ king: { mainTime: 45 } }),
-  });
-  assert.equal(loadLocalEventSettings(m.read).king.mainTime, 45);
+test('las claves de antes nunca se usan para pintar el panel', () => {
+  const m = memory(LEGACY);
+  assert.deepEqual(loadLocalEventSettings('lic-A', m.read), {});
+  assert.equal(readLegacyEventSettings(m.read).king.mainTime, 30);
 });
 
 test('datos corruptos o de otro tipo se ignoran, nunca rompen el panel', () => {
-  assert.deepEqual(loadLocalEventSettings(memory({ tkc_event_settings: '{no' }).read), {});
-  assert.deepEqual(loadLocalEventSettings(memory({ tkc_event_settings: '[1]', tkc_zub_draft: '"x"' }).read), {});
-  assert.deepEqual(loadLocalEventSettings(memory({ tkc_event_settings: JSON.stringify({ king: 'x', otro: {} }) }).read), {});
+  assert.deepEqual(loadLocalEventSettings('A', memory({ tkc_event_settings: '{no' }).read), {});
+  assert.deepEqual(loadLocalEventSettings('A', memory({ tkc_event_settings: '[1]' }).read), {});
+  assert.deepEqual(loadLocalEventSettings('A', memory({ tkc_event_settings: JSON.stringify({ owner: 'A', settings: { king: 'x', otro: {} } }) }).read), {});
+  assert.deepEqual(readLegacyEventSettings(memory({ tkc_king_draft: '"x"', tkc_zub_draft: '{mal' }).read), {});
 });
 
-test('migración: lo del servidor manda y solo se completan los eventos que no tiene', () => {
-  const { merged, added } = mergeMissingEvents(
-    { king: { mainTime: 60 } },
-    { king: { mainTime: 10 }, zub: { minCoins: 5 } },
-  );
-  assert.deepEqual(merged, { king: { mainTime: 60 }, zub: { minCoins: 5 } });
-  assert.equal(added, true);
+test('migración: cuenta con claves viejas y nada en el servidor sube todo', () => {
+  const m = memory(LEGACY);
+  const plan = planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write);
+  assert.deepEqual(Object.keys(plan).sort(), ['king', 'zub']);
+  assert.deepEqual(plan.king.selectedGift, { name: 'Rosa', icon: 'https://x/r.png', coins: 1 }, 'ya con la forma del servidor');
 });
 
-test('migración: si el servidor ya tiene todo, no hay nada que subir', () => {
-  const { merged, added } = mergeMissingEvents({ king: { mainTime: 60 } }, { king: { mainTime: 10 } });
-  assert.deepEqual(merged, { king: { mainTime: 60 } });
-  assert.equal(added, false);
+test('migración: lo guardado en el servidor gana; solo se completa lo que falta', () => {
+  const m = memory(LEGACY);
+  const plan = planLegacyMigration({ owner: 'lic-A', server: { king: { mainTime: 120 } } }, m.read, m.write);
+  assert.deepEqual(Object.keys(plan), ['zub'], 'king del servidor no se toca');
 });
 
-test('la migración ocurre una sola vez por navegador (no mezcla cuentas)', () => {
-  const m = memory();
-  assert.equal(legacyMigrationPending(m.read), true);
+test('migración: si el servidor ya tiene todo, no hay nada que subir y queda hecha', () => {
+  const m = memory(LEGACY);
+  assert.equal(planLegacyMigration({ owner: 'lic-A', server: { king: {}, zub: {} } }, m.read, m.write), null);
+  assert.equal(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), null, 'no se repite');
+});
+
+test('migración: navegador compartido, las claves viejas son solo de la primera cuenta', () => {
+  const m = memory(LEGACY);
+  assert.ok(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), 'A es la primera');
+  assert.equal(planLegacyMigration({ owner: 'lic-B', server: {} }, m.read, m.write), null, 'B nunca las recibe');
+  assert.ok(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), 'A todavía puede terminarla');
+});
+
+test('migración interrumpida: se repite hasta que el servidor la confirma, y después nunca más', () => {
+  const m = memory(LEGACY);
+  assert.ok(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write));
+  assert.ok(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), 'sin confirmar: se vuelve a intentar');
   markLegacyMigrationDone(m.write);
-  assert.equal(legacyMigrationPending(m.read), false);
+  assert.equal(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), null);
 });
 
-test('comparación por contenido', () => {
-  assert.equal(sameEventSettings({ a: { b: 1 } }, { a: { b: 1 } }), true);
-  assert.equal(sameEventSettings(undefined, {}), true);
-  assert.equal(sameEventSettings({ a: 1 }, { a: 2 }), false);
+test('sin claves viejas no hay nada que migrar', () => {
+  const m = memory();
+  assert.equal(planLegacyMigration({ owner: 'lic-A', server: {} }, m.read, m.write), null);
+  assert.equal(m.data.tkc_event_settings_migrated, '1');
+});
+
+test('el dueño sale del token de sesión; un token raro no rompe nada', () => {
+  const payload = btoa(JSON.stringify({ sub: 'lic-123', typ: 'session' })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  assert.equal(ownerFromToken(`h.${payload}.firma`), 'lic-123');
+  assert.equal(ownerFromToken(null), null);
+  assert.equal(ownerFromToken('no-es-un-token'), null);
+  assert.equal(ownerFromToken('a.%%%.b'), null);
 });

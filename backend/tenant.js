@@ -430,7 +430,8 @@ class Tenant {
             socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             socket.emit('tts_settings_update', this.ttsSettings);
             socket.emit('chat_settings_update', this.chatSettings);
-            socket.emit('event_settings_update', this.eventSettings);
+            // Solo al panel: el overlay de OBS no usa los ajustes guardados.
+            if (socket.authMethod === 'jwt') socket.emit('event_settings_update', this.eventSettings);
             socket.emit('goal_state_update', this.getGoalPublicState());
             // Si loadPersistedSettings restauró estado en vivo tras un
             // reinicio, este cliente lo recibe ahora (los emits de más

@@ -31,8 +31,10 @@ export default function EventsSection({
   soundEnabled, onSoundEnabledChange, alertsOverlayConnected, monitorSink, onMonitorSinkChange, viewerCount,
 }) {
   // Si llegan ajustes nuevos de otra pestaña o dispositivo, el panel abierto
-  // se vuelve a abrir con ellos (los paneles leen sus ajustes al montarse).
-  const { epoch } = useContext(EventSettingsContext);
+  // se vuelve a abrir con ellos (los paneles leen sus ajustes al montarse), y
+  // se avisa: así un cambio que se pisó no desaparece sin decir nada.
+  const { epochs = {}, notice, dismissNotice } = useContext(EventSettingsContext);
+  const noticeHere = notice && notice.ids.includes(eventsTab);
   return (
     <>
       {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
@@ -66,8 +68,18 @@ export default function EventsSection({
       {/* El panel de la pestaña entra con un fade corto (la barra de arriba no
           se mueve: su indicador ya se desliza). TTS con sesión no va acá: su
           panel vive siempre montado en App.jsx y anima por su cuenta. */}
+      {noticeHere && (
+        <div role="status" className="mx-4 mt-4 sm:mx-6 theme-notice theme-notice-warning flex items-start justify-between gap-3">
+          <span>
+            {notice.kind === 'conflict'
+              ? 'Estos ajustes también se cambiaron en otra pestaña o dispositivo mientras editabas aquí. Se guardó lo que ves ahora.'
+              : 'Estos ajustes se cambiaron en otra pestaña o dispositivo. Ahora ves lo último que se guardó.'}
+          </span>
+          <button type="button" onClick={dismissNotice} className="theme-link whitespace-nowrap">Entendido</button>
+        </div>
+      )}
       {(eventsTab !== 'tts' || needsAccess('tts')) && (
-      <ViewEnter key={`${eventsTab}:${epoch}`}>
+      <ViewEnter key={`${eventsTab}:${epochs[eventsTab] || 0}`}>
 
       {eventsTab === 'king' && (
         needsAccess('king') ? (

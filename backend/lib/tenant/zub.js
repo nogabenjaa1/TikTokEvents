@@ -161,14 +161,18 @@ module.exports = {
 
         socket.on('update_zub_settings', (newConfig) => {
             if (this.zubState.isActive) {
+                const prev = { main: this.zubState.mainTime, snipe: this.zubState.snipeTime, tiebreak: this.zubState.tiebreakTime };
                 this.zubState.mainTime = newConfig.mainTime;
                 this.zubState.snipeTime = newConfig.snipeTime;
                 this.zubState.tiebreakTime = newConfig.tiebreakTime;
                 this.zubState.minCoins = newConfig.minCoins || 0;
 
-                if (this.zubState.mode === 'main') this.zubState.timeLeft = newConfig.mainTime;
-                else if (this.zubState.mode === 'snipe') this.zubState.timeLeft = newConfig.snipeTime;
-                else if (this.zubState.mode === 'tiebreak') this.zubState.timeLeft = newConfig.tiebreakTime;
+                // Solo si cambió ESE tiempo: antes cualquier ajuste (un regalo,
+                // el mínimo...) mandaba el reloj de vuelta al tiempo completo y le
+                // devolvía a quien iba ganando todo el tiempo que ya había corrido.
+                if (this.zubState.mode === 'main' && newConfig.mainTime !== prev.main) this.zubState.timeLeft = newConfig.mainTime;
+                else if (this.zubState.mode === 'snipe' && newConfig.snipeTime !== prev.snipe) this.zubState.timeLeft = newConfig.snipeTime;
+                else if (this.zubState.mode === 'tiebreak' && newConfig.tiebreakTime !== prev.tiebreak) this.zubState.timeLeft = newConfig.tiebreakTime;
 
                 this.broadcast.emit('zub_state_update', this.getZubPublicState());
             }

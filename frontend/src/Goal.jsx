@@ -192,7 +192,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
 
         <div className="mb-4">
           <label htmlFor="goal-target" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">
-            META {targetType === 'coins' ? '(EN MONEDAS)' : '(NUEVOS SEGUIDORES)'}<LiveTag active={state.isActive} title="Se aplica al tocar Actualizar meta, sin perder el progreso" />
+            META {targetType === 'coins' ? '(EN MONEDAS)' : '(NUEVOS SEGUIDORES)'}<LiveTag active={state.isActive} when="button" title="Se aplica al tocar Actualizar meta, sin perder el progreso" />
           </label>
           <input
             id="goal-target"
@@ -205,7 +205,7 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-6">
-          <label htmlFor="goal-title" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">¿PARA QUÉ ES ESTE OBJETIVO?<LiveTag active={state.isActive} title="Se aplica al tocar Actualizar meta" /></label>
+          <label htmlFor="goal-title" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">¿PARA QUÉ ES ESTE OBJETIVO?<LiveTag active={state.isActive} when="button" title="Se aplica al tocar Actualizar meta" /></label>
           <input
             id="goal-title"
             value={title}

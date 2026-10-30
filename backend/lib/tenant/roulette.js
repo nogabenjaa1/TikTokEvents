@@ -326,6 +326,7 @@ module.exports = {
         // activa) — si se agranda, salta hacia arriba; si se achica, hacia abajo.
         socket.on('update_roulette_settings', (newConfig) => {
             if (this.rouletteState.isActive && this.rouletteState.mode === 'joining') {
+                const prevWindow = this.rouletteState.entryWindowSec;
                 this.rouletteState.entryMode = newConfig.entryMode === 'gift' ? 'gift' : 'chat';
                 this.rouletteState.keyword = newConfig.keyword || '';
                 this.rouletteState.entryWindowSec = newConfig.entryWindowSec || this.rouletteState.entryWindowSec;
@@ -336,7 +337,9 @@ module.exports = {
                 this.rouletteState.winnerPosition = newConfig.winnerPosition || 1;
                 this.rouletteState.fastMode = !!newConfig.fastMode;
                 this.rouletteState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
-                this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
+                // Solo si cambió la ventana: antes cambiar la palabra clave o la
+                // posición ganadora reiniciaba la cuenta para entrar.
+                if (this.rouletteState.entryWindowSec !== prevWindow) this.rouletteState.timeLeft = this.rouletteState.entryWindowSec;
                 this.broadcast.emit('roulette_state_update', this.getRoulettePublicState());
             }
         });

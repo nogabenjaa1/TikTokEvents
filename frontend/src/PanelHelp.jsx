@@ -78,9 +78,10 @@ export function SkeletonKpis({ count = 4, label = 'Cargando...', className = 'gr
 // Trono decía "próx. ronda" en ajustes que en verdad se aplican al instante).
 // Solo se muestra con el evento en curso: antes de iniciar, todo se aplica al
 // iniciar y no hace falta decirlo.
-// `when`: 'now' (al instante), 'restart' (al reiniciar) o 'stop' (requiere
-// detener e iniciar uno nuevo). `title`: el detalle de qué pasa exactamente.
-const LIVE_TAG_TEXT = { now: 'Al instante', restart: 'Al reiniciar', stop: 'Al iniciar uno nuevo' };
+// `when`: 'now' (al instante), 'button' (al tocar el botón de actualizar),
+// 'restart' (al reiniciar) o 'stop' (requiere detener e iniciar uno nuevo).
+// `title`: el detalle de qué pasa exactamente.
+const LIVE_TAG_TEXT = { now: 'Al instante', button: 'Al actualizar', restart: 'Al reiniciar', stop: 'Al iniciar uno nuevo' };
 export function LiveTag({ active, when = 'now', title }) {
   if (!active) return null;
   const live = when === 'now';

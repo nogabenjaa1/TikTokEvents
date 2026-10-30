@@ -9,9 +9,26 @@ const {
     sanitizeUsernameOverrides,
     sanitizeOverlayCustomization,
 } = require('../../lib/tenantSanitizers');
-const { sanitizeEventSettings } = require('../../lib/eventSettings');
+const { EVENT_SETTINGS_IDS, sanitizeEventEntry } = require('../../lib/eventSettings');
 
 module.exports = {
+    // Guarda los ajustes de eventos en la base de a una escritura a la vez y
+    // siempre con lo último que hay en memoria: dos UPDATE en paralelo podían
+    // terminar en otro orden y dejar guardada la versión vieja. Si llegan
+    // cambios mientras se escribe, se hace una escritura más al terminar.
+    persistEventSettings() {
+        if (this.eventSettingsWriting) { this.eventSettingsDirty = true; return this.eventSettingsWriting; }
+        this.eventSettingsDirty = false;
+        this.eventSettingsWriting = db.setEventSettings(this.licenseId, this.eventSettings)
+            .catch((err) => console.error(`[${this.logId}] No se pudo guardar event_settings:`, err.message))
+            .then(() => {
+                this.eventSettingsWriting = null;
+                if (this.eventSettingsDirty) return this.persistEventSettings();
+                return undefined;
+            });
+        return this.eventSettingsWriting;
+    },
+
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
     registerSettingsHandlers(socket) {
         // ── TEMA (panel -> overlay) ──────────────────
@@ -43,18 +60,37 @@ module.exports = {
         // del modal de "Personalizar" — mismo patrón que set_theme: se sanea
         // y se reenvía tal cual a todo el room, overlay de OBS incluido.
         // ── AJUSTES GUARDADOS DE CADA EVENTO ──
-        // El panel manda el mapa completo cuando cambia algo (con espera, ver
-        // App.jsx); se sanea, se guarda y se reenvía a las demás pestañas.
+        // El panel manda SOLO los eventos que cambió ({ king: {...} }, ver
+        // eventSettingsSync.js): se sanean y se mezclan con lo que ya había,
+        // evento por evento. Antes llegaba el mapa entero y dos pestañas que
+        // cambiaban eventos distintos casi a la vez se pisaban: la segunda
+        // borraba lo de la primera sin que nadie se enterara.
         // Solo el panel con sesión: el overlay de OBS nunca configura nada.
-        socket.on('set_event_settings', (map) => {
-            if (socket.authMethod !== 'jwt') return;
-            this.eventSettings = sanitizeEventSettings(map);
-            // A las demás pestañas y dispositivos, no a quien lo mandó: su panel ya
-            // lo tiene y el eco (saneado) volvería a abrir el panel que está editando.
+        // Nunca toca una partida en curso: estos son los valores con los que
+        // se abre el panel, no los de la ronda (esos van por update_*_settings).
+        socket.on('set_event_settings', (partial, ack) => {
+            const reply = typeof ack === 'function' ? ack : () => {};
+            if (socket.authMethod !== 'jwt' || !partial || typeof partial !== 'object' || Array.isArray(partial)) return reply({ ok: false });
+            const next = { ...this.eventSettings };
+            let changed = false;
+            for (const id of EVENT_SETTINGS_IDS) {
+                if (!(id in partial)) continue;
+                const entry = sanitizeEventEntry(id, partial[id]);
+                if (!entry) continue;
+                next[id] = entry;
+                changed = true;
+            }
+            if (!changed) return reply({ ok: false });
+            this.eventSettings = next;
+            // A las demás pestañas, no a quien lo mandó: su panel ya lo tiene y el
+            // eco volvería a abrir el panel que está editando.
             socket.to(this.licenseId).emit('event_settings_update', this.eventSettings);
-            db.setEventSettings(this.licenseId, this.eventSettings).catch((err) => {
-                console.error(`[${this.logId}] No se pudo guardar event_settings:`, err.message);
-            });
+            this.persistEventSettings();
+            // Aceptado: lo que se guarda (y lo que reciben las demás pestañas) es
+            // esto, saneado. El panel lo toma como lo último que tiene el servidor.
+            const accepted = {};
+            for (const id of EVENT_SETTINGS_IDS) if (id in partial && next[id]) accepted[id] = next[id];
+            reply({ ok: true, accepted });
         });
 
         socket.on('set_overlay_customization', (map) => {

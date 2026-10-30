@@ -9,6 +9,7 @@ const {
     sanitizeUsernameOverrides,
     sanitizeOverlayCustomization,
 } = require('../../lib/tenantSanitizers');
+const { sanitizeEventSettings } = require('../../lib/eventSettings');
 
 module.exports = {
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
@@ -41,6 +42,21 @@ module.exports = {
         // Alertas incluido) cada vez que el streamer toca cualquier control
         // del modal de "Personalizar" — mismo patrón que set_theme: se sanea
         // y se reenvía tal cual a todo el room, overlay de OBS incluido.
+        // ── AJUSTES GUARDADOS DE CADA EVENTO ──
+        // El panel manda el mapa completo cuando cambia algo (con espera, ver
+        // App.jsx); se sanea, se guarda y se reenvía a las demás pestañas.
+        // Solo el panel con sesión: el overlay de OBS nunca configura nada.
+        socket.on('set_event_settings', (map) => {
+            if (socket.authMethod !== 'jwt') return;
+            this.eventSettings = sanitizeEventSettings(map);
+            // A las demás pestañas y dispositivos, no a quien lo mandó: su panel ya
+            // lo tiene y el eco (saneado) volvería a abrir el panel que está editando.
+            socket.to(this.licenseId).emit('event_settings_update', this.eventSettings);
+            db.setEventSettings(this.licenseId, this.eventSettings).catch((err) => {
+                console.error(`[${this.logId}] No se pudo guardar event_settings:`, err.message);
+            });
+        });
+
         socket.on('set_overlay_customization', (map) => {
             this.overlayCustomization = sanitizeOverlayCustomization(map);
             this.broadcast.emit('overlay_customization_update', this.overlayCustomization);

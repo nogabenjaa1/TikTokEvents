@@ -114,6 +114,9 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_customization JSONB`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS spotify_settings JSONB`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS chat_settings JSONB`))
+  // Ajustes guardados de cada evento (ver lib/eventSettings.js): antes solo
+  // vivían en el navegador y se perdían al entrar desde otro dispositivo.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS event_settings JSONB`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS tts_settings JSONB`))
   // Sonido opcional al completar el Objetivo (pedido explícito) --
   // { audioUrl, audioPath }, mismo criterio que spotify_settings/
@@ -654,6 +657,12 @@ async function setSpotifySettings(id, settings) {
 async function setChatSettings(id, settings) {
     await ready;
     await pool.query('UPDATE licenses SET chat_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
+}
+
+// Ajustes guardados de cada evento (ver lib/eventSettings.js).
+async function setEventSettings(id, settings) {
+    await ready;
+    await pool.query('UPDATE licenses SET event_settings = $1 WHERE id = $2', [JSON.stringify(settings), id]);
 }
 
 async function setTtsSettings(id, settings) {
@@ -1408,7 +1417,7 @@ async function listReferencedMediaPaths() {
 module.exports = {
     insertLicense, findByKeyHash, findById, findCoreById, findCoreByKeyHash, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
-    setThemeSettings, setOverlayCustomization, setSpotifySettings, setChatSettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
+    setThemeSettings, setOverlayCustomization, setSpotifySettings, setChatSettings, setEventSettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,
     getSpotifyAccount, upsertSpotifyAccount, updateSpotifyTokens, deleteSpotifyAccount,
     getSpotifyApp, upsertSpotifyApp, deleteSpotifyApp, getSharedSpotifySlotHolders, setSpotifyAddon, setDiceTier, deletePaymentRecord, listPaymentsForStats, upsertSeenGift, listSeenGifts, upsertSeenSticker, listSeenStickers,
     setLicenseKey, listSpotifyAccountLinks,

@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useContext } from 'react';
 import { lazyPanel } from '../lazyPanel';
 import Login from '../Login';
 import ScrollRow from '../ScrollRow';
@@ -6,6 +6,8 @@ import SystemHealth from '../SystemHealth';
 import MobileOverlayPreview from './MobileOverlayPreview';
 import ViewEnter from './ViewEnter';
 import { EVENT_TABS, EVENT_TAB_GROUP_STARTS } from './navigation';
+import { EventStatusDot } from './EventStatusBadge';
+import { EventSettingsContext } from './eventSettingsContext';
 
 const AdminPanel = lazyPanel(() => import('../AdminPanel'));
 const Zubastinis = lazyPanel(() => import('../Zubastinis'));
@@ -21,13 +23,16 @@ const ChatPanel = lazyPanel(() => import('../ChatPanel'));
 // La sección "TikTokEvents": la subnavegación y el panel de la pestaña elegida. Cada panel que necesita sesión
 // muestra el login embebido si no la hay (`needsAccess`). El estado en vivo llega de App.jsx.
 export default function EventsSection({
-  eventsTab, onSelectTab, socketConnected, connectionStatus, ttsEnabled, ttsEngine, needsAccess, onLoggedIn, onGoMembership,
+  eventsTab, onSelectTab, eventStatuses = {}, socketConnected, connectionStatus, ttsEnabled, ttsEngine, needsAccess, onLoggedIn, onGoMembership,
   socket, username, giftsList, prize, activeApp, overlayTheme, overlayCustomization,
   state, zubState, elimState, rouletteState, extensibleState, versusState, goalState,
   spotifyQueueState, spotifySettingsState, spotifyOAuthResult, onOAuthResultConsumed,
   panelOverlayDraft, onCustomizeChange, onApplyToAll,
   soundEnabled, onSoundEnabledChange, alertsOverlayConnected, monitorSink, onMonitorSinkChange, viewerCount,
 }) {
+  // Si llegan ajustes nuevos de otra pestaña o dispositivo, el panel abierto
+  // se vuelve a abrir con ellos (los paneles leen sus ajustes al montarse).
+  const { epoch } = useContext(EventSettingsContext);
   return (
     <>
       {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
@@ -50,6 +55,7 @@ export default function EventsSection({
             <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
               {t.label}
             </span>
+            <EventStatusDot status={eventStatuses[t.id]} />
           </button>
           </Fragment>
         ))}
@@ -61,7 +67,7 @@ export default function EventsSection({
           se mueve: su indicador ya se desliza). TTS con sesión no va acá: su
           panel vive siempre montado en App.jsx y anima por su cuenta. */}
       {(eventsTab !== 'tts' || needsAccess('tts')) && (
-      <ViewEnter key={eventsTab}>
+      <ViewEnter key={`${eventsTab}:${epoch}`}>
 
       {eventsTab === 'king' && (
         needsAccess('king') ? (

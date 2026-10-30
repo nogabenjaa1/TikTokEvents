@@ -72,3 +72,68 @@ export function SkeletonKpis({ count = 4, label = 'Cargando...', className = 'gr
     </div>
   );
 }
+
+// Cuándo se aplica un ajuste si el evento ya está en curso. Mismo texto y
+// aspecto en todos los paneles (antes cada uno decía algo distinto, y Rey del
+// Trono decía "próx. ronda" en ajustes que en verdad se aplican al instante).
+// Solo se muestra con el evento en curso: antes de iniciar, todo se aplica al
+// iniciar y no hace falta decirlo.
+// `when`: 'now' (al instante), 'restart' (al reiniciar) o 'stop' (requiere
+// detener e iniciar uno nuevo). `title`: el detalle de qué pasa exactamente.
+const LIVE_TAG_TEXT = { now: 'Al instante', restart: 'Al reiniciar', stop: 'Al iniciar uno nuevo' };
+export function LiveTag({ active, when = 'now', title }) {
+  if (!active) return null;
+  const live = when === 'now';
+  return (
+    <span
+      title={title}
+      className={`ml-2 inline-flex items-center gap-1 align-middle px-1.5 py-px rounded-full border text-[9px] font-bold uppercase tracking-wider normal-case ${live ? 'text-green-300 border-green-500/40' : 'text-gray-400 border-gray-600/50'}`}
+    >
+      {live && <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />}
+      {LIVE_TAG_TEXT[when]}
+    </span>
+  );
+}
+
+// Resultado de un cambio en vivo (ver useLiveApplied en liveApply.js).
+const APPLIED_TEXT = {
+  pending: 'Aplicando el cambio...',
+  applied: 'Cambio aplicado en vivo',
+  unconfirmed: 'No se pudo confirmar el cambio. Revisa tu conexión: se volverá a enviar al cambiar cualquier ajuste.',
+};
+export function LiveAppliedNote({ phase }) {
+  return (
+    <p role="status" aria-live="polite" className={`tkc-hint min-h-[1.25rem] ${phase === 'applied' ? 'text-green-300' : phase === 'unconfirmed' ? 'text-amber-500' : ''}`}>
+      {phase ? APPLIED_TEXT[phase] : ''}
+    </p>
+  );
+}
+
+// Botón de una acción que borra el progreso (Detener, Reiniciar): si hay algo
+// que perder, el primer clic pide confirmación en el mismo botón (sin ventanas
+// emergentes) y el segundo la ejecuta; se cancela solo a los pocos segundos,
+// con Escape o al salir del botón con el teclado. Sin progreso, actúa al primer
+// clic: no se pide confirmar lo que no tiene consecuencias.
+export function ConfirmButton({ needsConfirm, onConfirm, confirmLabel = '¿Seguro? Toca otra vez', className = '', disabled, children }) {
+  const [armed, setArmed] = useState(false);
+  const [timer, setTimer] = useState(null);
+  const disarm = () => { if (timer) clearTimeout(timer); setTimer(null); setArmed(false); };
+  const onClick = () => {
+    if (!needsConfirm || armed) { disarm(); onConfirm(); return; }
+    setArmed(true);
+    setTimer(setTimeout(() => setArmed(false), 4000));
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onBlur={() => armed && disarm()}
+      onKeyDown={(e) => { if (e.key === 'Escape' && armed) { e.preventDefault(); disarm(); } }}
+      disabled={disabled}
+      aria-live="polite"
+      className={`${className} ${armed ? 'ring-2 ring-offset-2 ring-[var(--accent)]' : ''}`}
+    >
+      {armed ? confirmLabel : children}
+    </button>
+  );
+}

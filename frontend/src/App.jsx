@@ -32,6 +32,10 @@ import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
 import { createSettingsSync } from './settingsSync';
+import { loadLocalEventSettings, saveLocalEventSettings, mergeMissingEvents, sameEventSettings, legacyMigrationPending, markLegacyMigrationDone } from './eventSettingsStore';
+import { EventSettingsContext } from './app/eventSettingsContext';
+import { getAllEventStatuses } from './app/eventStatus';
+import { readStorage, writeStorage } from './safeStorage';
 
 // Paneles pesados cargados bajo demanda (ver lazyPanel.jsx): el overlay de
 // OBS y el primer render del panel ya no descargan pagos, Downloader,
@@ -46,6 +50,8 @@ const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
 const OverlayLink = lazyPanel(() => import('./OverlayLink'));
 
 
+
+const LAST_EVENT_TAB_KEY = 'tkc_last_event_tab';
 
 export default function App() {
   const overlayMode = isOverlayMode();
@@ -195,6 +201,25 @@ export default function App() {
   const panelThemeRef = useRef({ style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor });
   useEffect(() => { panelThemeRef.current = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor }; }, [panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
   const panelOverlayDraftRef = useRef(panelOverlayDraft);
+
+  // Ajustes guardados de cada evento (ver eventSettingsStore.js): misma
+  // sincronización que el tema y los overlays (settingsSync.js). `epoch` sube
+  // cuando llega del servidor algo distinto de lo que se mostraba, para que el
+  // panel abierto se vuelva a abrir con esos valores.
+  const [eventSettings, setEventSettings] = useState(() => loadLocalEventSettings());
+  const [eventSettingsEpoch, setEventSettingsEpoch] = useState(0);
+  const eventSettingsRef = useRef(eventSettings);
+  useEffect(() => { eventSettingsRef.current = eventSettings; }, [eventSettings]);
+  const [eventSync] = useState(() => createSettingsSync({ initial: eventSettings, same: sameEventSettings }));
+  const eventEmitTimeoutRef = useRef(null);
+  const lastEmittedEventsRef = useRef(null);
+  const updateEventSettings = useCallback((id, value) => {
+    setEventSettings((prev) => (sameEventSettings(prev[id], value) ? prev : { ...prev, [id]: value }));
+  }, []);
+  const eventSettingsContext = useMemo(
+    () => ({ settings: eventSettings, update: updateEventSettings, epoch: eventSettingsEpoch }),
+    [eventSettings, updateEventSettings, eventSettingsEpoch],
+  );
   useEffect(() => { panelOverlayDraftRef.current = panelOverlayDraft; }, [panelOverlayDraft]);
 
   // Bug real reportado: cambiar rápido varias veces un ajuste del modal de
@@ -388,6 +413,7 @@ export default function App() {
     // es de esta cuenta (ver rebase en settingsSync.js).
     themeSync.rebase(panelThemeRef.current);
     overlaySync.rebase(panelOverlayDraftRef.current);
+    eventSync.rebase(eventSettingsRef.current);
 
     socket.on('state_update',    setState);
     socket.on('contest_started', setState);
@@ -477,6 +503,33 @@ export default function App() {
     // ver el useEffect de abajo) — sin esto, un dispositivo nuevo pisaría en
     // silencio lo ya guardado con sus propios valores de fábrica apenas se
     // conectara.
+    // Ajustes guardados de cada evento. La primera vez que este navegador los
+    // recibe, los eventos que el servidor todavía no conoce se completan con
+    // lo que había aquí y se suben (así no se pierde lo configurado antes de
+    // que existiera el guardado en el servidor). Solo esa vez: ver
+    // mergeMissingEvents.
+    socket.on('event_settings_update', (map) => {
+      const local = eventSettingsRef.current;
+      const decision = eventSync.receive(map, local);
+      if (decision === 'keep-local' || decision === 'adopt') {
+        let result = { merged: map, added: false };
+        if (decision === 'keep-local') result = { merged: local, added: true };
+        else if (legacyMigrationPending() && !overlayMode) { result = mergeMissingEvents(map, local); markLegacyMigrationDone(); }
+        const { merged, added } = result;
+        if (!sameEventSettings(merged, local)) { setEventSettings(merged); setEventSettingsEpoch((n) => n + 1); }
+        if (added && !overlayMode) {
+          socket.emit('set_event_settings', merged);
+          eventSync.sent(merged);
+          lastEmittedEventsRef.current = merged;
+        }
+        return;
+      }
+      if (eventEmitTimeoutRef.current) return;
+      const sent = lastEmittedEventsRef.current;
+      if (sent && !sameEventSettings(sent, local)) return;
+      if (!sameEventSettings(map, local)) { setEventSettings(map); setEventSettingsEpoch((n) => n + 1); }
+    });
+
     socket.on('overlay_customization_update', (map) => {
       const decision = overlaySync.receive(map, panelOverlayDraftRef.current);
       if (decision === 'keep-local') {
@@ -561,6 +614,7 @@ export default function App() {
     socket.on('disconnect', () => {
       themeSync.disconnected();
       overlaySync.disconnected();
+      eventSync.disconnected();
     });
 
     socket.on('live_stream_ended', ({ username: endedUsername } = {}) => {
@@ -603,6 +657,67 @@ export default function App() {
   useEffect(() => {
     saveOverlayCustomization(panelOverlayDraft);
   }, [panelOverlayDraft]);
+
+  // Estado real de cada evento (ver eventStatus.js), para el Dashboard y la
+  // barra de Eventos.
+  const eventStatuses = Object.fromEntries(getAllEventStatuses(
+    { king: state, zub: zubState, elim: elimState, roulette: rouletteState, versus: versusState, extensible: extensibleState, goal: goalState },
+    eventSettings,
+  ).map((st) => [st.id, st]));
+
+  // El último evento que se abrió en este navegador, para el "Seguir donde lo
+  // dejaste" del Dashboard (dato de comodidad, no de la cuenta).
+  const [lastEventTab, setLastEventTab] = useState(() => readStorage(LAST_EVENT_TAB_KEY));
+  useEffect(() => {
+    if (overlayMode || sidebarMode !== 'events') return;
+    setLastEventTab(eventsTab);
+    writeStorage(LAST_EVENT_TAB_KEY, eventsTab);
+  }, [overlayMode, sidebarMode, eventsTab]);
+
+  // Qué juego del overlay compartido (?screen=games) está en curso. Al
+  // iniciarse uno, el overlay pasa a mostrarlo aunque se haya iniciado desde
+  // otra pestaña o dispositivo (ver switchGamesOverlay más abajo).
+  const gameInProgress = { king: state.isActive, zub: zubState.isActive, elim: elimState.isActive, roulette: rouletteState.isActive };
+  const startedGameRef = useRef({});
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    const now = { king: state.isActive, zub: zubState.isActive, elim: elimState.isActive, roulette: rouletteState.isActive };
+    const started = OVERLAY_APPS.find((id) => now[id] && !startedGameRef.current[id]);
+    startedGameRef.current = now;
+    if (started && activeApp !== started) socket.emit('set_active_app', started);
+  }, [socket, overlayMode, state.isActive, zubState.isActive, elimState.isActive, rouletteState.isActive, activeApp]);
+
+  // Ajustes de eventos: copia en este navegador y envío al servidor con espera
+  // (un deslizador o un campo de texto no manda un mensaje por cada paso).
+  useEffect(() => {
+    saveLocalEventSettings(eventSettings);
+  }, [eventSettings]);
+  useEffect(() => {
+    if (overlayMode || !socket) return;
+    if (eventEmitTimeoutRef.current) clearTimeout(eventEmitTimeoutRef.current);
+    eventEmitTimeoutRef.current = setTimeout(() => {
+      eventEmitTimeoutRef.current = null;
+      if (!eventSync.canSend()) return;
+      socket.emit('set_event_settings', eventSettings);
+      eventSync.sent(eventSettings);
+      lastEmittedEventsRef.current = eventSettings;
+    }, 400);
+    // Recargar o cerrar la pestaña justo después de un cambio: se manda ya en
+    // vez de esperar, para que la próxima carga no lo pise con lo del servidor.
+    const flush = () => {
+      if (!eventEmitTimeoutRef.current || !eventSync.canSend()) return;
+      clearTimeout(eventEmitTimeoutRef.current);
+      eventEmitTimeoutRef.current = null;
+      socket.emit('set_event_settings', eventSettings);
+      eventSync.sent(eventSettings);
+      lastEmittedEventsRef.current = eventSettings;
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      if (eventEmitTimeoutRef.current) clearTimeout(eventEmitTimeoutRef.current);
+    };
+  }, [socket, overlayMode, eventSettings, eventSync]);
 
   useEffect(() => {
     if (overlayMode || !socket) return;
@@ -814,24 +929,34 @@ export default function App() {
     });
   };
 
-  // Cambio de pestaña dentro de TikTokEvents: además del estado, avisamos al backend que cambiamos de modo (solo si
-  // ese modo tiene overlay y hay socket — sin sesión no hay nada que avisar).
+  // Cambio de pestaña dentro de TikTokEvents: además del estado, el overlay
+  // de juegos de OBS pasa a mostrar ese juego (solo si tiene overlay y hay
+  // socket). Salvo que OTRO juego esté en curso: antes, con un juego en vivo,
+  // bastaba con abrir otra pestaña para revisar su configuración y el overlay
+  // de los espectadores cambiaba de juego a mitad de la partida. En ese caso
+  // el overlay se queda donde está y cambia solo al iniciar el otro juego
+  // (ver el efecto de gameInProgress más arriba).
+  const switchGamesOverlay = (tabId) => {
+    if (!socket || !OVERLAY_APPS.includes(tabId)) return;
+    const busy = OVERLAY_APPS.find((id) => id !== tabId && gameInProgress[id]);
+    if (!busy) socket.emit('set_active_app', tabId);
+  };
   const selectEventsTab = (tabId) => {
     setEventsTab(tabId);
-    if (socket && OVERLAY_APPS.includes(tabId)) socket.emit('set_active_app', tabId);
+    switchGamesOverlay(tabId);
   };
 
   // Shortcut del Dashboard: ir directo a una pestaña de TikTokEvents --
-  // misma lógica que ya usan los botones de la subsidebar (ver EVENT_TABS
-  // más abajo, `set_active_app` solo si esa pestaña tiene overlay propio).
+  // misma lógica que ya usan los botones de la subsidebar.
   const goToEventTab = (tabId) => {
     setSidebarMode('events');
     setEventsTab(tabId);
-    if (socket && OVERLAY_APPS.includes(tabId)) socket.emit('set_active_app', tabId);
+    switchGamesOverlay(tabId);
   };
 
   return (
     <ThemedShell className="flex flex-col tkc-app-enter">
+    <EventSettingsContext.Provider value={eventSettingsContext}>
       <a href="#contenido-principal" className="tkc-skip-link">Saltar al contenido</a>
       {kickedOutMessage && (
         <div className="w-full bg-red-500/10 border-b border-red-500/40 text-red-700 text-[11px] font-bold text-center py-1.5 tracking-wide flex-shrink-0">
@@ -875,7 +1000,7 @@ export default function App() {
             session={session} connectionStatus={connectionStatus} username={username}
             setUsername={handleSetUsername} connectionError={connectionError}
             usernameLocked={usernameLocked} onDisconnectTikTok={() => handleSetUsername('')}
-            anyGameActive={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
+            eventStatuses={eventStatuses} lastEventTab={lastEventTab}
             ttsEnabled={ttsEnabled} ttsLocked={needsAccess('tts')}
             onToggleTts={() => ttsRef.current?.toggleEnabled()}
             socketConnected={socketConnected} ttsEngine={ttsEngine} feed={feed}
@@ -940,7 +1065,7 @@ export default function App() {
 
         {sidebarMode === 'events' && (
           <EventsSection
-            eventsTab={eventsTab} onSelectTab={selectEventsTab} socketConnected={socketConnected} connectionStatus={connectionStatus}
+            eventsTab={eventsTab} onSelectTab={selectEventsTab} eventStatuses={eventStatuses} socketConnected={socketConnected} connectionStatus={connectionStatus}
             ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
             socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
             overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
@@ -1007,6 +1132,7 @@ export default function App() {
         en el documento queda encima: antes el botón flotante tapaba el
         "Listo" de Personalizar en el celular. */}
     <div id="tkc-modal-root" />
+    </EventSettingsContext.Provider>
     </ThemedShell>
   );
 }

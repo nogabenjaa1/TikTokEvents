@@ -4,6 +4,8 @@ import SystemHealth from './SystemHealth';
 import LiveFeed from './LiveFeed';
 import NavIcon from './app/NavIcon';
 import LegalLinks from './LegalLinks';
+import { EventStatusBadge } from './app/EventStatusBadge';
+import { isRunning } from './app/eventStatus';
 
 // Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
 // nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
@@ -28,6 +30,7 @@ const EVENT_GROUPS = [
       { id: 'zub', label: 'Zubastinis', hint: 'Gana quien más monedas regale' },
       { id: 'elim', label: 'Eliminación', hint: 'Los participantes van saliendo hasta que queda uno' },
       { id: 'roulette', label: 'Ruleta', hint: 'Sortea un ganador entre los participantes' },
+      { id: 'versus', label: 'Versus', hint: 'Héroes contra villanos: cada regalo suma a su lado' },
     ],
   },
   {
@@ -88,7 +91,41 @@ function ShortcutCard({ icon, label, hint, onClick, locked }) {
 // por evento. Antes era una tarjeta por evento repartida en una grilla de 4
 // columnas: los grupos de 2 o 3 dejaban huecos y cada tarjeta repetía "Con
 // licencia" (10 veces). Ahora se dice una sola vez, encima de los grupos.
-function EventGroupCard({ group, locked, onGo }) {
+// Lo que está pasando ahora (eventos en curso, en pausa o con resultado en
+// pantalla) y, si no hay nada, el último evento que se abrió: lo primero que
+// necesita alguien que vuelve al panel a mitad de un directo.
+function NowCard({ statuses, labels, lastEventTab, onGo }) {
+  const current = Object.values(statuses).filter((s) => isRunning(s) || s.tone === 'finished');
+  const resume = lastEventTab && !current.some((s) => s.id === lastEventTab) ? lastEventTab : null;
+  if (!current.length && !resume) return null;
+  return (
+    <section className="w-full max-w-5xl theme-surface p-4 sm:px-5 flex flex-col gap-3" aria-labelledby="dash-now">
+      <h2 id="dash-now" className="tkc-label theme-label">{current.length ? 'Ahora en tu directo' : 'Seguir donde lo dejaste'}</h2>
+      {current.length > 0 && (
+        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {current.map((s) => (
+            <li key={s.id}>
+              <button type="button" onClick={() => onGo(s.id)} className="tkc-row-link theme-input w-full text-left px-3 py-2.5 flex items-center justify-between gap-2">
+                <span className="min-w-0 flex flex-col">
+                  <span className="text-sm font-black text-white leading-tight truncate">{labels[s.id]}</span>
+                  {s.detail && <span className="tkc-hint tabular-nums">{s.detail}</span>}
+                </span>
+                <EventStatusBadge status={s} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {resume && (
+        <button type="button" onClick={() => onGo(resume)} className={current.length ? 'theme-link self-start' : 'theme-btn-primary theme-btn-sm self-start font-black uppercase tracking-widest'}>
+          {current.length ? `Volver a ${labels[resume]}` : `Abrir ${labels[resume]}`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function EventGroupCard({ group, locked, onGo, statuses }) {
   const titleId = `dash-group-${group.id}`;
   return (
     <section className="theme-surface p-2 flex flex-col" aria-labelledby={titleId}>
@@ -99,11 +136,14 @@ function EventGroupCard({ group, locked, onGo }) {
             <button
               type="button"
               onClick={() => onGo(t.id)}
-              aria-label={locked ? `${t.label} (requiere licencia)` : t.label}
+              aria-label={locked ? `${t.label} (requiere licencia)` : undefined}
               className="tkc-row-link w-full text-left px-3 py-2 flex flex-col gap-0.5"
             >
-              <span className="text-sm font-black text-white leading-tight">{t.label}</span>
-              <span className="tkc-hint">{t.hint}</span>
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-sm font-black text-white leading-tight">{t.label}</span>
+                {!locked && <EventStatusBadge status={statuses?.[t.id]} />}
+              </span>
+              <span className="tkc-hint">{statuses?.[t.id]?.tone === 'setup' && !locked ? statuses[t.id].detail : t.hint}</span>
             </button>
           </li>
         ))}
@@ -123,9 +163,11 @@ function EventGroupCard({ group, locked, onGo }) {
 // quien es nuevo (se puede ocultar, y recuerda lo que ya hiciste).
 export default function Dashboard({
   session, connectionStatus, username, setUsername, connectionError, usernameLocked, onDisconnectTikTok,
-  anyGameActive, ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab,
+  ttsEnabled, ttsLocked, onToggleTts, onGoSection, onGoEventTab,
   socketConnected, ttsEngine, onResetVoice, onReconnectTikTok, feed = [],
+  eventStatuses = {}, lastEventTab = null,
 }) {
+  const eventLabels = Object.fromEntries(EVENT_GROUPS.flatMap((g) => g.items.map((t) => [t.id, t.label])));
   const connected = connectionStatus === 'connected';
   const daysLeft = session?.expiresAt
     ? Math.ceil((session.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
@@ -223,6 +265,10 @@ export default function Dashboard({
         </div>
       )}
 
+      {/* Lo más urgente primero: lo que está en curso (o el último evento
+          abierto), antes que la guía de primeros pasos. */}
+      {session && <NowCard statuses={eventStatuses} labels={eventLabels} lastEventTab={eventLabels[lastEventTab] ? lastEventTab : null} onGo={onGoEventTab} />}
+
       {showOnboarding && (
         <section className="w-full max-w-5xl theme-surface-featured p-5 sm:px-6" aria-labelledby="onboarding-title">
           <div className="flex items-start justify-between gap-4 mb-3">
@@ -274,7 +320,6 @@ export default function Dashboard({
               {!connected && connectionStatus !== 'connecting' && connectionStatus !== 'checking' && (
                 <p className="tkc-hint">Conéctate cuando vayas a empezar tu directo. Puedes dejar todo configurado antes.</p>
               )}
-              {anyGameActive && <p className="text-xs text-amber-500 font-bold">Hay un juego activo ahora mismo</p>}
             </div>
 
             <div className="theme-surface p-4 flex flex-col gap-2">
@@ -333,7 +378,7 @@ export default function Dashboard({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {EVENT_GROUPS.map((group) => (
-            <EventGroupCard key={group.id} group={group} locked={!session} onGo={onGoEventTab} />
+            <EventGroupCard key={group.id} group={group} locked={!session} onGo={onGoEventTab} statuses={eventStatuses} />
           ))}
         </div>
       </section>

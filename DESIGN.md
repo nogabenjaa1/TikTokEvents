@@ -412,6 +412,25 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 
 **Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).
 
+## Dashboard y Eventos: estado, configuración y cambios en vivo
+
+El Dashboard y la barra de Eventos leen **el mismo estado de cada evento** (`app/eventStatus.js`), calculado solo con datos reales: el estado en vivo que manda el servidor, los ajustes guardados de la cuenta y, en Versus, los regalos asignados. Cinco tonos, del más urgente al menos: **En curso**, **En pausa**, **Terminado** (el overlay muestra el resultado), **Falta configurar** (con qué falta: el regalo objetivo, el regalo para unirse o para entrar, la meta, regalos en Versus) y **Listo para iniciar**. Se pinta con `EventStatusBadge` (Dashboard) y `EventStatusDot` (barra de Eventos; sin punto cuando está listo, para no llenar la barra de ruido). El color nunca va solo: siempre lo acompaña el texto, visible o para lectores de pantalla.
+
+- **Dashboard, de arriba abajo:** saludo y estado del LIVE → **"Ahora en tu directo"** (lo que está en curso, en pausa o con resultado, con un acceso directo a cada uno; si no hay nada, **"Seguir donde lo dejaste"** con el último evento abierto en este navegador) → primeros pasos → actividad en vivo → cuenta → eventos agrupados con su estado → herramientas. Lo urgente va antes que la guía.
+- **Ajustes guardados en la cuenta** (`eventSettingsStore.js`, `eventSettingsContext.js`, columna `licenses.event_settings`, `lib/eventSettings.js`): lo que se configura en un evento sin iniciarlo sobrevive a cambiar de sección, recargar y entrar desde otro navegador. Se sincroniza con `settingsSync.js` igual que el tema y los overlays (nada se manda hasta recibir lo del servidor en cada conexión). Lo que había en las claves viejas de cada panel se sube una sola vez por navegador, para no mezclar cuentas en un equipo compartido. El estado de una partida (puntos, participantes, tiempo) **no** se guarda aquí: vive en el servidor y llega por su propio evento.
+- **Cambios en vivo:** cada ajuste dice cuándo se aplica con `LiveTag` (solo con el evento en curso): **Al instante**, **Al reiniciar** o **Al iniciar uno nuevo**. Después de un cambio, `LiveAppliedNote` dice "Aplicando…", "Cambio aplicado en vivo" (cuando el estado del servidor ya lo refleja) o que no se pudo confirmar. Ver la tabla de abajo.
+- **Acciones que borran progreso** (Detener, Reiniciar, Reiniciar progreso): `ConfirmButton` pide confirmar en el mismo botón (segundo clic, se cancela solo a los 4 segundos, con Escape o al salir con el teclado), y solo si hay algo que perder. Sin progreso actúan al primer clic. Iniciar y Reiniciar se bloquean tras un clic hasta que el servidor responde (`useActionLock`), así un doble clic no arranca dos veces.
+- **Overlay de juegos de OBS:** abrir la pestaña de otro juego para revisarlo **no** cambia lo que ven los espectadores si hay un juego en curso; el overlay cambia solo al iniciar otro juego (desde cualquier pestaña o dispositivo).
+
+| Evento | Al instante | Al reiniciar / iniciar uno nuevo, y por qué |
+|---|---|---|
+| Rey del Trono | Regalo objetivo, Insta-Win, tiempo base y de snipe (si esa fase corre, el reloj salta al tiempo nuevo) | — |
+| Zubastinis | Tiempos (principal, snipe, desempate; mismo salto) y mínimo para ganar | — |
+| Eliminación | Regalos, tiempos, eliminados por ronda, Fast Mode; Locked Mode se puede prender | Apagar Locked Mode: al detener o reiniciar (si no, se podría dejar entrar gente a último momento) |
+| Ruleta | Todo, mientras se están uniendo participantes | Con la ruleta girando o en el resultado, todo al reiniciar: el sorteo ya está armado y cambiarlo a mitad lo haría injusto |
+| Extensible | Segundos por follow y por moneda, Modo Inverso, y el ajuste manual de tiempo | Tiempo base: al reiniciar (es con cuánto arranca; para mover el tiempo que corre están los botones de ajuste) |
+| Objetivo | Meta y título, con el botón Actualizar meta (aviso si hay cambios sin aplicar) | Tipo (monedas o seguidores): iniciar uno nuevo, porque el progreso está en una sola unidad. La meta no se aplica en cada tecla: escribir "500" pasa por "5" y una meta cumplida haría sonar el aviso en el directo |
+
 ## Do's and Don'ts
 
 ### Do:

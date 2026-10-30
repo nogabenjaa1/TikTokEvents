@@ -238,6 +238,9 @@ class Tenant {
 
         // ── Overlay de chat (pestaña Chat, ver lib/tenant/chatOverlay.js) ──
         this.initChatOverlayState();
+        // Ajustes guardados de cada evento (ver lib/eventSettings.js), aunque
+        // no se hayan iniciado. Se cargan con loadPersistedSettings.
+        this.eventSettings = {};
 
         // ── TTS (lee el chat en voz alta, 100% del lado del navegador del
         // streamer -- ver TtsChat.jsx) ──
@@ -427,6 +430,7 @@ class Tenant {
             socket.emit('spotify_queue_update', this.getSpotifyQueuePublicState());
             socket.emit('tts_settings_update', this.ttsSettings);
             socket.emit('chat_settings_update', this.chatSettings);
+            socket.emit('event_settings_update', this.eventSettings);
             socket.emit('goal_state_update', this.getGoalPublicState());
             // Si loadPersistedSettings restauró estado en vivo tras un
             // reinicio, este cliente lo recibe ahora (los emits de más

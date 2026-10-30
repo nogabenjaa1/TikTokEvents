@@ -1,11 +1,11 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
+import { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
-import { loadDraft, saveDraft } from './gameDraftStorage';
+import { useEventDraft } from './app/eventSettingsContext';
 
-const DRAFT_KEY = 'tkc_zub_draft';
 
 
 const MODE_LABEL = {
@@ -25,11 +25,11 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con el King.
 // ─────────────────────────────────────────────
 export default function Zubastinis({ state, socket, username, connectionStatus, prize }) {
-  // Lo último configurado en este dispositivo sin llegar a presionar Iniciar (ver
-  // gameDraftStorage.js) -- mientras el concurso está EN VIVO manda el servidor
+  // Lo último configurado en la cuenta sin llegar a presionar Iniciar (ver
+  // eventSettingsStore.js) -- mientras el concurso está EN VIVO manda el servidor
   // (antes ni siquiera se intentaba leer de ahí: el panel siempre arrancaba en
   // 60/15/15/0 aunque hubiera una ronda activa con otros valores).
-  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
+  const [draft, saveDraft] = useEventDraft('zub');
   const [startError, setStartError] = useState('');
   const [mainTime, setMainTime]         = useState(() => state.isActive ? (state.mainTime ?? 60) : (draft.mainTime ?? 60));
   const [snipeTime, setSnipeTime]       = useState(() => state.isActive ? (state.snipeTime ?? 15) : (draft.snipeTime ?? 15));
@@ -37,8 +37,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   const [minCoins, setMinCoins]         = useState(() => state.isActive ? (state.minCoins ?? 0) : (draft.minCoins ?? 0)); // 0 = NO MINIMUM
 
   useEffect(() => {
-    saveDraft(DRAFT_KEY, { mainTime, snipeTime, tiebreakTime, minCoins });
-  }, [mainTime, snipeTime, tiebreakTime, minCoins]);
+    saveDraft({ mainTime, snipeTime, tiebreakTime, minCoins });
+  }, [mainTime, snipeTime, tiebreakTime, minCoins, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una
@@ -68,6 +68,16 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
     if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     socket.emit('start_zubastinis', { tiktokUsername: username, mainTime, snipeTime, tiebreakTime, minCoins });
   };
+
+  // Confirmación de los cambios en vivo y protección de los botones (ver
+  // liveApply.js).
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([mainTime, snipeTime, tiebreakTime, minCoins || 0]),
+    serverKey: liveKey([state.mainTime, state.snipeTime, state.tiebreakTime, state.minCoins || 0]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
+  const hasProgress = state.isActive && state.mode !== 'finished' && (state.top3?.length ?? 0) > 0;
 
   const stopZubastinis    = () => socket.emit('stop_zubastinis');
   const restartZubastinis = () => socket.emit('restart_zubastinis');
@@ -161,7 +171,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {/* Base Time */}
             <div className="pt-2 mb-4">
               <label className="theme-label tkc-label block mb-1">
-                TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
+                TIEMPO BASE<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
@@ -169,7 +179,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {/* Snipe Time */}
             <div className="mb-4">
               <label className="tkc-label text-red-400 block mb-1">
-                TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
+                TIEMPO DE SNIPE<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
@@ -177,7 +187,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {/* Tiebreak Time */}
             <div className="mb-4">
               <label className="tkc-label text-amber-400 block mb-1">
-                TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
+                TIEMPO DE DESEMPATE<LiveTag active={state.isActive} title="Si el desempate está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={tiebreakTime} onChange={setTiebreakTime} />
             </div>
@@ -186,7 +196,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             <div className="mb-6">
               <div className="flex justify-between items-center mb-1">
                 <label className="tkc-label text-gray-400">
-                  MÍNIMO PARA GANAR {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
+                  MÍNIMO PARA GANAR<LiveTag active={state.isActive} title="Se revisa al terminar el tiempo" />
                 </label>
               </div>
               <input
@@ -197,6 +207,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               />
               <p className="tkc-hint mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
             </div>
+            <LiveAppliedNote phase={appliedPhase} />
 
           </div>
 
@@ -213,8 +224,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
         <div className="flex flex-wrap gap-3">
           {!state.isActive ? (
             <button
-              onClick={startZubastinis}
-              disabled={connectionStatus !== 'connected'}
+              onClick={() => runLocked(startZubastinis)}
+              disabled={connectionStatus !== 'connected' || actionLocked}
               className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
@@ -228,20 +239,23 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
-              <button
-                onClick={restartZubastinis}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
+              <ConfirmButton
+                needsConfirm={hasProgress}
+                onConfirm={() => runLocked(restartZubastinis)}
+                disabled={actionLocked}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 REINICIAR ⟲
-              </button>
+              </ConfirmButton>
             </>
           )}
-          <button
-            onClick={stopZubastinis}
+          <ConfirmButton
+            needsConfirm={hasProgress}
+            onConfirm={stopZubastinis}
             className="theme-btn-danger theme-btn-lg font-bold transition-all"
           >
             DETENER
-          </button>
+          </ConfirmButton>
         </div>
       </div>
 

@@ -1,12 +1,12 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
+import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
-import { loadDraft, saveDraft } from './gameDraftStorage';
+import { useEventDraft } from './app/eventSettingsContext';
 
-const DRAFT_KEY = 'tkc_king_draft';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -22,11 +22,11 @@ const NO_INSTA_WIN = {
 // comparte con Zubastinis y cualquier módulo futuro.
 // ─────────────────────────────────────────────
 export default function AdminPanel({ state, socket, username, connectionStatus, giftsList, prize }) {
-  // Lo último que se dejó configurado en este dispositivo SIN llegar a presionar
-  // Iniciar (ver gameDraftStorage.js) -- se lee una sola vez al montar. El servidor
+  // Lo último que se dejó configurado en la cuenta SIN llegar a presionar
+  // Iniciar (ver eventSettingsStore.js) -- se lee una sola vez al montar. El servidor
   // manda un regalo/tiempos reales en cuanto el concurso se inició alguna vez (ni
   // siquiera se borran al detenerlo), así que sigue ganando sobre el borrador.
-  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
+  const [draft, saveDraft] = useEventDraft('king');
   const [startError, setStartError] = useState('');
   const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
   const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : (draft.selectedInstaWin ?? NO_INSTA_WIN));
@@ -40,8 +40,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   // guarda en ESTE dispositivo (siempre) -- cosas distintas, sin ningún guard en
   // común que compartir.
   useEffect(() => {
-    saveDraft(DRAFT_KEY, { selectedGift, selectedInstaWin, mainTime, snipeTime });
-  }, [selectedGift, selectedInstaWin, mainTime, snipeTime]);
+    saveDraft({ selectedGift, selectedInstaWin, mainTime, snipeTime });
+  }, [selectedGift, selectedInstaWin, mainTime, snipeTime, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una
@@ -91,6 +91,17 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
       snipeTime,
     });
   };
+
+  // Confirmación de los cambios en vivo y protección de los botones (ver
+  // liveApply.js): Iniciar/Reiniciar no se mandan dos veces por un doble clic,
+  // y Detener/Reiniciar piden confirmar si ya hay alguien en el trono.
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, mainTime, snipeTime]),
+    serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.mainTime, state.snipeTime]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
+  const hasProgress = state.isActive && !!state.lastParticipant && state.mode !== 'finished';
 
   const stopContest    = () => socket.emit('stop_contest');
   const restartContest = () => socket.emit('restart_contest');
@@ -167,7 +178,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector regalo normal */}
             <div className="mb-4 relative z-20">
-              <label className="tkc-label block text-gray-400 mb-1">REGALO OBJETIVO</label>
+              <label className="tkc-label block text-gray-400 mb-1">REGALO OBJETIVO<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
@@ -181,7 +192,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
-              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN</label>
+              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -197,7 +208,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             {/* Base Time */}
             <div className="pt-2 mb-4">
               <label className="theme-label tkc-label block mb-1">
-                TIEMPO BASE {state.isActive && <span className="text-gray-400 ml-1 normal-case tracking-normal font-semibold" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
+                TIEMPO BASE<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo; si no, se usa la próxima vez que alguien tome el trono" />
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
@@ -205,10 +216,11 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             {/* Snipe Time */}
             <div className="mb-6">
               <label className="tkc-label text-red-400 block mb-1">
-                TIEMPO DE SNIPE {state.isActive && <span className="text-gray-400 ml-1 normal-case tracking-normal font-semibold" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
+                TIEMPO DE SNIPE<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo; si no, se usa cuando empiece" />
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
+            <LiveAppliedNote phase={appliedPhase} />
 
           </div>
 
@@ -226,8 +238,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
         <div className="flex flex-wrap gap-3">
           {!state.isActive ? (
             <button
-              onClick={startContest}
-              disabled={connectionStatus !== 'connected' || !selectedGift}
+              onClick={() => runLocked(startContest)}
+              disabled={connectionStatus !== 'connected' || !selectedGift || actionLocked}
               className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
@@ -241,20 +253,23 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
-              <button
-                onClick={restartContest}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
+              <ConfirmButton
+                needsConfirm={hasProgress}
+                onConfirm={() => runLocked(restartContest)}
+                disabled={actionLocked}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 REINICIAR ⟲
-              </button>
+              </ConfirmButton>
             </>
           )}
-          <button
-            onClick={stopContest}
+          <ConfirmButton
+            needsConfirm={hasProgress}
+            onConfirm={stopContest}
             className="theme-btn-danger theme-btn-lg font-bold transition-all"
           >
             DETENER
-          </button>
+          </ConfirmButton>
         </div>
       </div>
 

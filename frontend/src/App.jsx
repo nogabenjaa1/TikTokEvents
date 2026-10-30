@@ -384,6 +384,10 @@ export default function App() {
 
   useEffect(() => {
     if (!socket) return;
+    // Socket nuevo = sesión nueva: lo que se cambió antes de iniciar sesión no
+    // es de esta cuenta (ver rebase en settingsSync.js).
+    themeSync.rebase(panelThemeRef.current);
+    overlaySync.rebase(panelOverlayDraftRef.current);
 
     socket.on('state_update',    setState);
     socket.on('contest_started', setState);

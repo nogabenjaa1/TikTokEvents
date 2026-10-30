@@ -116,3 +116,36 @@ test('funciona igual con la personalización de overlays (comparación por conte
   assert.deepEqual(shown, saved);
   assert.deepEqual(server.saved, saved);
 });
+
+test('un tema elegido en la pantalla de inicio de sesión no pisa el de la cuenta al entrar', () => {
+  const saved = { style: 'cute', accent: 'pink', customColor: '#7C3AED' };
+  const server = fakeServer(saved);
+  const sync = createSettingsSync({ initial: FACTORY, same });
+  const chosenBeforeLogin = { style: 'default', accent: 'blue', customColor: '#7C3AED' };
+  sync.rebase(chosenBeforeLogin); // App.jsx lo hace al crear el socket de la sesión
+  const shown = connectNew(server, sync, chosenBeforeLogin);
+  assert.deepEqual(server.saved, saved, 'el tema de la cuenta se conserva');
+  assert.deepEqual(shown, saved, 'y es el que se muestra');
+});
+
+test('cerrar sesión, cambiar el tema y entrar con otra cuenta no pisa la de la otra cuenta', () => {
+  const accountA = { style: 'cute', accent: 'pink', customColor: '#7C3AED' };
+  const accountB = { style: 'default', accent: 'purple', customColor: '#7C3AED' };
+  const sync = createSettingsSync({ initial: accountA, same });
+  connectNew(fakeServer(accountA), sync, accountA);
+  sync.disconnected(); // cierra sesión
+  const changedLoggedOut = { style: 'cute', accent: 'blue', customColor: '#7C3AED' };
+  const serverB = fakeServer(accountB);
+  sync.rebase(changedLoggedOut); // entra con la cuenta B
+  connectNew(serverB, sync, changedLoggedOut);
+  assert.deepEqual(serverB.saved, accountB);
+});
+
+test('un cambio hecho ya con la sesión iniciada, antes de recibir el estado, sí se guarda', () => {
+  const server = fakeServer({ style: 'cute', accent: 'pink', customColor: '#7C3AED' });
+  const sync = createSettingsSync({ initial: FACTORY, same });
+  sync.rebase(FACTORY); // sesión iniciada
+  const chosen = { style: 'default', accent: 'blue', customColor: '#7C3AED' }; // elegido justo después
+  connectNew(server, sync, chosen);
+  assert.deepEqual(server.saved, chosen);
+});

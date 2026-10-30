@@ -27,6 +27,13 @@ export function createSettingsSync({ initial, same }) {
     canSend: () => synced,
     sent(value) { serverKnown = value; },
     disconnected() { synced = false; },
+    // Sesión nueva (otro inicio de sesión, otra cuenta): lo que se cambió antes
+    // NO es un cambio de esta cuenta. Sin esto, un tema elegido en la pantalla
+    // de inicio de sesión (que también es el aspecto de los overlays de OBS de
+    // la cuenta) se guardaba al entrar, y cerrar sesión, cambiar el tema y
+    // entrar con otra cuenta pisaba el de esa otra cuenta. Lo que se ve al
+    // iniciar sesión pasa a ser el punto de partida y se adopta lo guardado.
+    rebase(value) { synced = false; serverKnown = value; },
     receive(serverValue, localValue) {
       if (synced) return 'echo';
       synced = true;

@@ -216,6 +216,8 @@ El overlay de la cola de Spotify marca la canción que está sonando con un bord
 - **Ámbar Aviso** (`#F59E0B`): avisos de vencimiento de licencia, estados "por vencer" o "verificando".
 - **Esmeralda Premio** (`#10B981`): franja de premio compartida por los tres juegos y estado "activa"/"conectado en vivo" — casualmente comparte hex con el acento verde, pero es un token de estado independiente, no cambia si el streamer elige otro acento.
 - **Gris Apagado** (`#6B7280`): estados offline, deshabilitado, texto secundario de baja prioridad.
+- **Superficies del panel más claras** (oct 2026): dentro de `.themed-panel` (solo el panel, nunca un overlay ni una vista previa, que declaran su propio tema) `--surface-bg` sube a `L 0.85` en Clásico y `0.86` en Cute (y a `0.25` en oscuro) para que la tarjeta se separe del fondo de página. Títulos, etiquetas y texto de acento (`theme-heading`/`theme-label`/`theme-accent-text`) bajan a `L 0.31` en Clásico y `0.33` en Cute (antes `0.36`): con un acento personalizado verde azulado o amarillo daban 3.9:1 sobre el fondo de página. El chip de Cute sube a `L 0.68` por el mismo motivo.
+- **Texto de estado sobre tarjetas**: las utilidades `text-red/amber/yellow/green/emerald/sky-*` del panel usan la tinta de estado mezclada con `--status-mix` (como los avisos), igual que `theme-btn-danger`/`-warning`; sola, la tinta daba entre 1.6:1 y 4:1 (axe).
 - **Tintas de estado** (`--ink-danger` `#B91C1C`, `--ink-warning` `#A16207`, `--ink-success` `#15803D`, `--ink-premio` `#047857`, `--ink-info` `#0369A1`, `--ink-amber` `#B45309`): versiones oscuras de los colores de estado, usadas SOLO para texto sobre los paneles claros (`.themed-panel`), donde los tonos vivos de arriba no alcanzan contraste. Viven como variables en `index.css` y son la única fuente de estos valores.
 - **Arcoíris** (`#ff3b3b`, `#ff9f1c`, `#ffe135`, `#3ddc84`, `#3b82f6`, `#a855f7`): degradado fijo de la opción "Arcoíris" del fondo/texto de los overlays. Es deliberadamente independiente del acento del tema (no cambia con él) y solo aparece cuando el streamer lo elige.
 
@@ -234,7 +236,7 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 
 ## Typography
 
-**Display/Body Font:** Tailwind `font-sans` (system UI stack — sin fuente custom cargada).
+**Display/Body Font:** Sora (Google Fonts), puesta como `--font-sans` en `index.css`; si no carga, cae a la del sistema.
 
 **Character:** Una sola familia tipográfica hace todo el trabajo; la jerarquía se construye enteramente con peso, tamaño y `letter-spacing`, no con variedad de fuentes. El registro dominante es la "etiqueta": mayúsculas, `tracking` amplio, peso `black` — el mismo tratamiento para el nombre de un módulo, un badge de estado o un botón.
 
@@ -246,12 +248,23 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 - **Control** (peso 700–900, 12px, `tracking-widest`): el texto de los botones medianos (`theme-btn-md`) y de los avisos (`theme-notice`). Los botones pequeños usan el paso Title (10px) y los grandes el Body (14px).
 - **Label** (peso 700, 11px, `tracking-widest`, mayúsculas): etiquetas de formulario, badges de estado, metadata secundaria (fechas, contadores de uso).
 
+### Escala de texto del panel (`index.css`, oct 2026)
+El panel acumulaba más de 450 textos de 8 a 11px escritos a mano. Para lo nuevo (y lo que se toque) hay tres clases, que no fijan color salvo la ayuda:
+- **`tkc-eyebrow`** (11px, 900, `0.24em`, mayúsculas): antetítulo de pantalla ("DASHBOARD", "MEMBRESÍA").
+- **`tkc-label`** (11px, 800, `0.12em`, mayúsculas): etiqueta de campo, título de grupo, dato de estado.
+- **`tkc-hint`** (12px, interlineado 1.35, tinta al 80%): ayuda o descripción **dentro de una tarjeta**. Sobre el fondo de página se usa `text-xs`/`text-sm` con `text-gray-500` (88%), que es lo que pasa 4.5:1 ahí.
+- Nada por debajo de 11px salvo lo que depende del espacio (nombres en las cuadrículas de participantes, la insignia sobre un avatar, las etiquetas del dock).
+
 ### Named Rules
 **La Regla de la Mayúscula Obligatoria.** Todo lo que es etiqueta, botón o estado va en mayúsculas con tracking amplio. El texto en minúsculas queda reservado casi exclusivamente para contenido variable (usernames, mensajes).
 
 ## Layout
 
 Layout de aplicación de una sola pantalla (no hay scroll de página, cada panel maneja su propio `overflow-y-auto`). Estructura fija: sidebar de navegación de íconos a la izquierda (72px), barra de conexión TikTok flotante fija en la esquina superior derecha, y un panel principal central que ocupa el resto del viewport. No hay grilla responsive tradicional — la app está diseñada para una ventana de escritorio (el streamer trabajando junto a OBS), no para mobile.
+
+**Paneles de los juegos** (Rey del Trono, Zubastinis, Eliminación, Ruleta: `.tkc-game-layout`): en móvil una columna en el orden de siempre (vista previa, ajustes, controles, premio); desde 1024px, la cabina a la izquierda (vista previa, controles de Iniciar/Pausar/Detener y premio) y los ajustes a la derecha. Un juego nuevo usa las mismas clases (`tkc-game-main` para los ajustes, `tkc-game-controls` para los botones).
+
+**Dashboard**: los eventos van en tres tarjetas por grupo (una fila por evento, `tkc-row-link`) y las herramientas en tarjetas compactas (`tkc-card-link`); "Requiere licencia" se dice una vez, no por tarjeta.
 
 El overlay de OBS es un layout completamente aparte, sin sidebar ni chrome: solo la tarjeta o card del juego activo, pensada para recortarse directamente como fuente de captura.
 
@@ -300,7 +313,7 @@ Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` 
 - Los avisos de ancho completo (las franjas de arriba de la pantalla) siguen siendo componentes propios.
 
 ### Enlaces de texto (`theme-link`)
-Botones sin caja: subrayados, texto de 10px en negrita, área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
+Botones sin caja: subrayados, texto de 11px en negrita (antes 10px), área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
 
 ### Chips
 - **Style:** fondo del acento activo al 22% de opacidad, siempre píldora completa. Texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.36 0.16 h)`, no `--accent-soft`) en Default y Minimal. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado — los cuatro materiales resuelven el mismo problema (texto legible sobre fondo claro), cada uno con su propio tono.

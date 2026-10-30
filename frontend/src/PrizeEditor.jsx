@@ -71,8 +71,8 @@ export default function PrizeEditor({ socket, prize }) {
   };
 
   return (
-    <div className="theme-surface p-3 mt-4">
-      <label className="block text-[10px] uppercase tracking-widest text-emerald-400 mb-2 font-black">
+    <div className="theme-surface p-3">
+      <label className="tkc-label block text-emerald-400 mb-2">
         Premio <span className="text-gray-500 normal-case tracking-normal font-semibold">(visible en el overlay, opcional)</span>
       </label>
       <div className="flex items-center gap-3">

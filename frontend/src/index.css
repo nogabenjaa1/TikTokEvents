@@ -262,7 +262,10 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="default"] .theme-heading,
 .themed-app[data-theme-style="default"] .theme-label,
 .themed-app[data-theme-style="default"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.36 0.16 h);
+  color: oklch(from var(--accent) 0.31 0.16 h);
+  /* 0.31 (antes 0.36): con un acento personalizado verde azulado o amarillo,
+     estos textos sobre el fondo de página daban 3.9:1 (axe); así pasan 4.5:1.
+     Cute queda en 0.33: su fondo de página es un poco más claro. */
 }
 /* theme-btn-secondary y theme-chip heredan color: var(--accent-soft) de la
    regla global (pensada para fondo oscuro) — sobre el fondo pastel de acá
@@ -331,7 +334,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-heading,
 .themed-app[data-theme-style="cute"] .theme-label,
 .themed-app[data-theme-style="cute"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.36 0.16 h);
+  color: oklch(from var(--accent) 0.33 0.16 h);
 }
 .themed-app[data-theme-style="cute"] .theme-heading { font-weight: 700; letter-spacing: 0.01em; }
 /* La píldora completa solo va en los campos de UNA línea (input/select).
@@ -370,7 +373,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-chip {
   border: 1px dashed var(--surface-border-color);
   border-radius: 999px;
-  background: oklch(from var(--accent) 0.6 0.14 h);
+  /* L 0.68 (antes 0.6): con la tinta oscura daba 3.8:1 en rosa (axe); ahora pasa 4.5:1. */
+  background: oklch(from var(--accent) 0.68 0.13 h);
   color: var(--ink-cute);
 }
 /* Dock flotante redondeado, igual de "sticker" que el resto del material. */
@@ -419,7 +423,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style][data-mode="dark"] {
   color-scheme: dark;
   --page-bg: oklch(from var(--accent) 0.17 0.045 h);
-  --surface-bg: oklch(from var(--accent) 0.235 0.06 h);
+  /* 0.25 (antes 0.235): la tarjeta se separa mejor del fondo de página. */
+  --surface-bg: oklch(from var(--accent) 0.25 0.06 h);
   --surface-bg-alt: oklch(from var(--accent) 0.2 0.05 h);
   --surface-border-color: color-mix(in oklch, var(--accent) 50%, transparent);
   --surface-shadow: 0 10px 30px -12px var(--page-bg), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
@@ -605,6 +610,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: #F59E0B;
   border-radius: var(--surface-radius-sm);
 }
+/* En el panel el texto del botón usa la tinta de estado mezclada como los
+   avisos: el ámbar puro no llegaba a 4.5:1 sobre el pastel. */
+.themed-panel .theme-btn-warning { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)); }
 .theme-btn-warning:hover { background: color-mix(in oklch, #F59E0B 26%, var(--surface-bg-alt)); }
 .theme-btn-danger {
   background: color-mix(in oklch, #EF4444 14%, var(--surface-bg-alt));
@@ -612,6 +620,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: #EF4444;
   border-radius: var(--surface-radius-sm);
 }
+/* Igual que el de aviso: el rojo puro daba 1.6:1 sobre el pastel (axe). */
+.themed-panel .theme-btn-danger { color: color-mix(in oklch, var(--ink-danger) 65%, var(--status-mix)); }
 .theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
 
 /* ==========================================
@@ -656,8 +666,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    un cambio visible al pasar el cursor. Por defecto van en tinta apagada. */
 .theme-link {
   padding-block: 0.5rem;
-  font-size: 0.625rem;
-  line-height: 0.875rem;
+  /* 11px (antes 10px): mismo paso que .tkc-label, el más chico de la escala. */
+  font-size: 0.6875rem;
+  line-height: 1rem;
   font-weight: 700;
   text-decoration: underline;
   color: color-mix(in oklch, var(--ink, currentColor) 88%, transparent);
@@ -667,6 +678,78 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .theme-link-info,    .theme-link-info:hover    { color: color-mix(in oklch, var(--ink-info) 65%, var(--status-mix)); }
 .theme-link-warning, .theme-link-warning:hover { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)); }
 .theme-link-danger:hover, .theme-link-info:hover, .theme-link-warning:hover { opacity: 0.75; }
+
+/* ==========================================
+   ESCALA DE TEXTO DEL PANEL
+   ==========================================
+   El panel acumulaba textos de 8, 9, 10 y 11px escritos a mano (más de 450),
+   casi todos en mayúsculas: a esa medida la etiqueta, la ayuda y el dato se
+   leían igual de chicos. Tres pasos con nombre, que no fijan color (lo sigue
+   poniendo el tema o la utilidad de color de cada elemento), salvo la ayuda,
+   que va un poco más tenue que el texto principal para que se note qué es qué.
+   En una capa: una utilidad de Tailwind puesta junto a ellas manda. */
+@layer components {
+  /* Antetítulo de una pantalla ("DASHBOARD", "MEMBRESÍA"). */
+  .tkc-eyebrow { font-size: 0.6875rem; line-height: 1rem; font-weight: 900; letter-spacing: 0.24em; text-transform: uppercase; }
+  /* Etiqueta de campo, título de grupo, dato de estado. */
+  .tkc-label { font-size: 0.6875rem; line-height: 1rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  /* Ayuda o descripción bajo un título o un campo. */
+  .tkc-hint { font-size: 0.75rem; line-height: 1.35; color: color-mix(in oklch, var(--ink, currentColor) 80%, transparent); }
+}
+
+/* Superficies del panel un escalón más claras que el fondo de la página: antes
+   la tarjeta (L 0.80) y la página (L 0.72) casi se confundían, todo era morado
+   sobre morado. Solo en el panel (ThemedShell lleva .themed-panel): las vistas
+   previas y los overlays de OBS declaran su propio tema y no lo heredan, así
+   que lo que ve la audiencia no cambia. */
+.themed-panel[data-theme-style="default"]:not([data-mode="dark"]) { --surface-bg: oklch(from var(--accent) 0.85 0.08 h); }
+.themed-panel[data-theme-style="cute"]:not([data-mode="dark"]) { --surface-bg: oklch(from var(--accent) 0.86 0.075 h); }
+
+/* Tarjeta que es un acceso directo (Dashboard): sube un poco y toma el borde
+   del acento al pasar el cursor; se hunde al presionarla. Antes bajaba la
+   opacidad, que es justo lo contrario de "esto se puede tocar". */
+.tkc-card-link {
+  transition: transform var(--motion-fast) var(--ease-out-soft),
+              border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.tkc-card-link:hover { transform: translateY(-2px); border-color: var(--accent); }
+.tkc-card-link:active { transform: scale(0.98); }
+/* Paneles de los juegos (Rey del Trono, Zubastinis, Eliminación, Ruleta).
+   Antes era siempre una columna de 448px centrada: en escritorio quedaba vacío
+   más de la mitad del ancho y los botones de Iniciar/Detener quedaban al final
+   de los ajustes, bajo el pliegue.
+   - Móvil: una columna en el mismo orden de siempre (vista previa, ajustes,
+     controles, premio). El HTML trae los controles después de los ajustes.
+   - Desde 1024px: a la izquierda la cabina (vista previa, controles y premio)
+     y a la derecha los ajustes. La última fila es 1fr para que el alto extra
+     de los ajustes no separe las tarjetas de la izquierda. */
+.tkc-game-layout {
+  width: 100%;
+  max-width: 28rem;
+  display: grid;
+  /* minmax(0, …): sin esto la columna crece al ancho mínimo de su contenido
+     (una fila de botones, una grilla de casillas) y en 320px se salía. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+@media (min-width: 1024px) {
+  .tkc-game-layout {
+    max-width: 64rem;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-rows: auto auto auto 1fr;
+    align-items: start;
+  }
+  .tkc-game-layout > .tkc-game-main { grid-column: 2; grid-row: 1 / span 4; }
+  .tkc-game-layout > :not(.tkc-game-main) { grid-column: 1; }
+}
+/* Fila de una lista de accesos (los grupos de eventos del Dashboard): se
+   tiñe del acento al pasar el cursor y se hunde al presionarla. */
+.tkc-row-link {
+  border-radius: var(--surface-radius-sm);
+  transition: background var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft);
+}
+.tkc-row-link:hover { background: color-mix(in oklch, var(--accent) 14%, transparent); }
+.tkc-row-link:active { transform: scale(0.99); }
 
 /* Tokens de tinta de estado y radios del material Cute -- documentados en
    DESIGN.md (Colors › Estado / Shapes). Cada valor vive UNA sola vez acá y
@@ -702,27 +785,35 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    quedan intactos para la audiencia. `!important` por el mismo motivo que
    las reglas de `.text-gray-*` de cada material: hace falta ganarle a la
    capa de utilities de Tailwind de forma explícita.
+   La tinta se mezcla con --status-mix (negro en claro, blanco en oscuro),
+   igual que los avisos: sola, la tinta de estado daba entre 2.6:1 y 4:1 sobre
+   las tarjetas (axe, oct 2026); mezclada pasa de 4.5:1.
    ========================================== */
 .themed-panel .text-red-200,
 .themed-panel .text-red-300,
 .themed-panel .text-red-400,
-.themed-panel .text-red-500 { color: var(--ink-danger) !important; }
+.themed-panel .text-red-500,
+.themed-panel .text-red-600,
+.themed-panel .text-red-700 { color: color-mix(in oklch, var(--ink-danger) 65%, var(--status-mix)) !important; }
 .themed-panel .text-yellow-100,
 .themed-panel .text-yellow-200,
 .themed-panel .text-yellow-300,
 .themed-panel .text-yellow-400,
-.themed-panel .text-yellow-500 { color: var(--ink-warning) !important; }
+.themed-panel .text-yellow-500 { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)) !important; }
 .themed-panel .text-green-100,
 .themed-panel .text-green-300,
-.themed-panel .text-green-400 { color: var(--ink-success) !important; }
+.themed-panel .text-green-400 { color: color-mix(in oklch, var(--ink-success) 65%, var(--status-mix)) !important; }
 .themed-panel .text-emerald-300,
-.themed-panel .text-emerald-400 { color: var(--ink-premio) !important; }
-.themed-panel .text-sky-400 { color: var(--ink-info) !important; }
+.themed-panel .text-emerald-400,
+.themed-panel .text-emerald-600 { color: color-mix(in oklch, var(--ink-premio) 65%, var(--status-mix)) !important; }
+.themed-panel .text-sky-400 { color: color-mix(in oklch, var(--ink-info) 65%, var(--status-mix)) !important; }
 /* Ámbar queda en su propia familia (no rojo): sigue usándose como un
    tercer estado real y distinto de error/éxito (ej. "esperando LIVE" en
    TTS Chat, ni activo ni apagado) — solo se oscurece para que se lea. */
 .themed-panel .text-amber-400,
-.themed-panel .text-amber-500 { color: var(--ink-amber) !important; }
+.themed-panel .text-amber-500,
+.themed-panel .text-amber-600,
+.themed-panel .text-amber-700 { color: color-mix(in oklch, var(--ink-amber) 65%, var(--status-mix)) !important; }
 .theme-sidebar {
   background: var(--surface-bg);
   border-right: var(--surface-border);

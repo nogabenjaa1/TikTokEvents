@@ -796,8 +796,9 @@ export default function App() {
       )}
       {/* Recordatorio de vencimiento (ver expiry.js): lleva directo a renovar. */}
       <ExpiryBanner session={session} hidden={sidebarMode === 'membership'} onRenew={() => setSidebarMode('membership')} />
-      {/* El sonido de alertas y eventos lo pone este panel: hay que avisar si el navegador aún lo bloquea. */}
-      <AudioUnlockBanner enabled={soundEnabled} />
+      {/* El sonido de alertas y eventos lo pone este panel: hay que avisar si el navegador aún lo bloquea.
+          Sin sesión no hay socket ni nada que suene, así que no se le muestra a un visitante. */}
+      <AudioUnlockBanner enabled={soundEnabled && !!session} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <AppSidebar
         /* La pantalla de pago de MercadoPago es parte de Membresía: la barra

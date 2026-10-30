@@ -91,28 +91,30 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
     : null;
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
+      {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
+      <div className="tkc-game-layout">
 
       {/* Preview del leaderboard */}
-      <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
+      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
         {state.mode === 'finished' && (
           <div className={`absolute inset-0 animate-pulse ${state.winner ? 'bg-yellow-500/20' : 'bg-red-500/10'}`} />
         )}
 
         {/* Mínimo configurado, siempre visible arriba */}
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">ZUBASTINIS</p>
-          <span className="theme-input text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md text-gray-300">
+          <p className="theme-accent-text tkc-eyebrow">ZUBASTINIS</p>
+          <span className="theme-input tkc-label px-2 py-1 text-gray-300">
             MÍNIMO: {minCoins > 0 ? `${minCoins} monedas` : 'SIN MÍNIMO'}
           </span>
         </div>
 
         <div className="flex justify-between items-center relative z-10 mb-3">
           {state.mode === 'tiebreak' && (
-            <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 animate-pulse">EMPATE</span>
+            <span className="tkc-label text-amber-400 animate-pulse">EMPATE</span>
           )}
           <div className="text-right ml-auto">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerLabel}</p>
+            <p className="tkc-label text-gray-500">{timerLabel}</p>
             <p className={`text-3xl font-black tabular-nums transition-colors ${timerColorClass}`}>
               {formatMMSS(state.timeLeft || 0)}
             </p>
@@ -124,7 +126,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {top3.map((g, i) => (
               <div key={g.username} className="theme-input flex items-center gap-3 px-3 py-2">
                 <span className="theme-accent-text text-sm font-black w-6 text-center">{i + 1}</span>
-                <img alt="" src={g.avatar} className="w-8 h-8 rounded-full border-2 border-purple-500 object-cover" />
+                <img alt="" src={g.avatar} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: 'var(--accent)' }} />
                 <span className="flex-1 font-bold text-gray-100 text-sm truncate">@{g.username}</span>
                 <span className="text-yellow-400 text-xs font-black">{g.coins} monedas</span>
               </div>
@@ -142,8 +144,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
       </div>
 
       {/* Panel principal de configuración */}
-      <div className="theme-surface w-full max-w-md p-8 relative">
-        <div className="flex items-center gap-3 mb-8">
+      <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
+        <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
@@ -158,24 +160,24 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
-              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
-                TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              <label className="theme-label tkc-label block mb-1">
+                TIEMPO BASE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
             <div className="mb-4">
-              <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold block mb-1">
-                TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              <label className="tkc-label text-red-400 block mb-1">
+                TIEMPO DE SNIPE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
 
             {/* Tiebreak Time */}
             <div className="mb-4">
-              <label className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold block mb-1">
-                TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              <label className="tkc-label text-amber-400 block mb-1">
+                TIEMPO DE DESEMPATE {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
               </label>
               <TimeInput seconds={tiebreakTime} onChange={setTiebreakTime} />
             </div>
@@ -183,8 +185,8 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             {/* Minimum */}
             <div className="mb-6">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">
-                  MÍNIMO PARA GANAR {state.isActive && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+                <label className="tkc-label text-gray-400">
+                  MÍNIMO PARA GANAR {state.isActive && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
                 </label>
               </div>
               <input
@@ -193,51 +195,60 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                 placeholder="SIN MÍNIMO"
                 className="theme-input w-full p-3 outline-none text-sm placeholder-gray-600"
               />
-              <p className="text-[10px] text-gray-600 mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
+              <p className="tkc-hint mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-
-            {/* Botones */}
-            <div className="flex gap-3 flex-wrap">
-              {!state.isActive ? (
-                <button
-                  onClick={startZubastinis}
-                  disabled={connectionStatus !== 'connected'}
-                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={togglePause}
-                    disabled={state.mode === 'finished'}
-                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
-                  </button>
-                  <button
-                    onClick={restartZubastinis}
-                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
-                  >
-                    REINICIAR ⟲
-                  </button>
-                </>
-              )}
-              <button
-                onClick={stopZubastinis}
-                className="theme-btn-danger theme-btn-lg font-bold transition-all"
-              >
-                DETENER
-              </button>
-            </div>
           </div>
 
-          {/* Premio: aparte de los ajustes a propósito — se puede
-              configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} prize={prize} />
         </div>
+      </div>
+
+      {/* Controles del juego: en escritorio, bajo la vista previa (estado y
+          botones juntos, sin bajar hasta el final de los ajustes); en móvil,
+          después de los ajustes, como antes (ver .tkc-game-layout). */}
+      <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+
+        {/* Botones */}
+        <div className="flex flex-wrap gap-3">
+          {!state.isActive ? (
+            <button
+              onClick={startZubastinis}
+              disabled={connectionStatus !== 'connected'}
+              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={togglePause}
+                disabled={state.mode === 'finished'}
+                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {state.paused ? 'REANUDAR' : 'PAUSAR'}
+              </button>
+              <button
+                onClick={restartZubastinis}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
+              >
+                REINICIAR ⟲
+              </button>
+            </>
+          )}
+          <button
+            onClick={stopZubastinis}
+            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+          >
+            DETENER
+          </button>
+        </div>
+      </div>
+
+      {/* Premio: aparte de los ajustes a propósito — se puede
+          configurar antes de tener la conexión live confirmada. En
+          escritorio va debajo de la vista previa (columna izquierda). */}
+      <PrizeEditor socket={socket} prize={prize} />
       </div>
     </div>
   );

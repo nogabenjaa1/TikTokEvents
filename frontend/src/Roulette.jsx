@@ -141,17 +141,19 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
+      {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
+      <div className="tkc-game-layout">
 
       {/* Preview */}
-      <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
+      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
         {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
 
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">RULETA</p>
+          <p className="theme-accent-text tkc-eyebrow">RULETA</p>
           {state.mode !== 'idle' && (
             <div className="text-right">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
+              <p className="tkc-label text-gray-500">{timerTitle}</p>
               {state.mode === 'joining' && (
                 <p className="text-3xl font-black tabular-nums text-white">
                   {formatMMSS(state.timeLeft || 0)}
@@ -185,13 +187,13 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
         )}
 
         {entries.length > 0 && state.mode !== 'finished' && (
-          <p className="text-[10px] text-gray-500 text-center mt-2 relative z-10">{entries.length} entrada{entries.length === 1 ? '' : 's'}</p>
+          <p className="tkc-hint text-center mt-2 relative z-10">{entries.length} entrada{entries.length === 1 ? '' : 's'}</p>
         )}
       </div>
 
       {/* Settings */}
-      <div className="theme-surface w-full max-w-md p-8 relative">
-        <div className="flex items-center gap-3 mb-8">
+      <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
+        <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
@@ -206,7 +208,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
             {/* Modo de entrada */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">CÓMO SE CONSIGUE UNA ENTRADA</label>
+              <label className="tkc-label block text-gray-400 mb-2">CÓMO SE CONSIGUE UNA ENTRADA</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setEntryMode('chat')}
                   className={`flex-1 font-black uppercase tracking-widest transition-all theme-btn-sm ${entryMode === 'chat' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
@@ -221,24 +223,24 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
             {entryMode === 'chat' ? (
               <div className="mb-4">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">PALABRA CLAVE</label>
+                <label className="tkc-label block text-gray-400 mb-1">PALABRA CLAVE</label>
                 <input
                   value={keyword} onChange={e => setKeyword(e.target.value)}
                   placeholder="ej: participo"
                   className="theme-input w-full p-3 text-sm outline-none"
                 />
-                <p className="text-[10px] text-gray-500 mt-1">Cualquier comentario que la contenga cuenta — no hace falta que sea exacto.</p>
+                <p className="tkc-hint mt-1">Cualquier comentario que la contenga cuenta — no hace falta que sea exacto.</p>
               </div>
             ) : (
               <div className="mb-4 relative z-20">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO PARA PARTICIPAR</label>
+                <label className="tkc-label block text-gray-400 mb-1">REGALO PARA PARTICIPAR</label>
                 <GiftPicker
                   gifts={giftsList.filter(g => g.coins > 0)}
                   selected={selectedGift}
                   onSelect={setSelectedGift}
                   placeholder="Elige un regalo..."
                 />
-                <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                <p className="tkc-hint mt-1">
                   Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
                 </p>
               </div>
@@ -246,22 +248,22 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
 
             {/* Ventana de entrada */}
             <div className="mb-4">
-              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
-                TIEMPO PARA ENTRAR {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+              <label className="theme-label tkc-label block mb-1">
+                TIEMPO PARA ENTRAR {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 normal-case tracking-normal font-semibold">(EN VIVO)</span>}
               </label>
               <TimeInput seconds={entryWindowSec} onChange={setEntryWindowSec} />
-              <p className="text-[10px] text-gray-500 mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
+              <p className="tkc-hint mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
             </div>
 
             {/* Cuántas caen por paso del sorteo */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">ELIMINADAS POR PASO</label>
+              <label className="tkc-label block text-gray-400 mb-1">ELIMINADAS POR PASO</label>
               <input
                 type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
                 className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántas entradas se sacan de una en cada paso del sorteo (nunca incluye a la ganadora).</p>
+              <p className="tkc-hint mt-1">Cuántas entradas se sacan de una en cada paso del sorteo (nunca incluye a la ganadora).</p>
             </div>
 
             {/* Fast Mode (sin Locked Mode a propósito: en Ruleta las entradas
@@ -281,12 +283,12 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 Solo mientras la ventana de entrada sigue abierta: una vez
                 que arranca el giro, el orden ya quedó barajado y fijo. */}
             <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">AGREGAR ENTRADA MANUAL</label>
+              <label className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADA MANUAL</label>
               <div className="flex gap-2">
                 <input
                   value={manualUsername} onChange={e => setManualUsername(e.target.value)}
                   placeholder="usuario"
-                  className="theme-input flex-1 p-2 text-sm outline-none"
+                  className="theme-input flex-1 min-w-0 p-2 text-sm outline-none"
                 />
                 <input
                   type="number" min="1" value={manualCount}
@@ -299,12 +301,12 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                   Agregar
                 </button>
               </div>
-              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo/comentario. Solo mientras está abierta la ventana de entrada.</p>
+              <p className="tkc-hint mt-1">Cuenta igual que una entrada por regalo/comentario. Solo mientras está abierta la ventana de entrada.</p>
             </div>
 
             {/* Regla de ganador */}
             <div className="mb-6">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">POSICIÓN GANADORA</label>
+              <label className="tkc-label block text-gray-400 mb-2">POSICIÓN GANADORA</label>
               <div className="flex gap-2 mb-2">
                 {Object.entries(WINNER_RULE_LABELS).map(([value, label]) => (
                   <button key={value} type="button" onClick={() => setWinnerRule(value)}
@@ -322,53 +324,62 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                   className="theme-input w-full p-2 text-sm outline-none"
                 />
               )}
-              <p className="text-[10px] text-gray-500 mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
+              <p className="tkc-hint mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-            {!state.isActive && connectionStatus === 'connected' && (entryMode === 'gift' && !selectedGift) && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
-
-            {/* Botones */}
-            <div className="flex gap-4">
-              {!state.isActive ? (
-                <button
-                  onClick={startRoulette}
-                  disabled={connectionStatus !== 'connected' || (entryMode === 'gift' && !selectedGift)}
-                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={togglePause}
-                    disabled={state.mode !== 'joining'}
-                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
-                  </button>
-                  <button
-                    onClick={restartRoulette}
-                    disabled={state.mode === 'spinning'}
-                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    REINICIAR ⟲
-                  </button>
-                </>
-              )}
-              <button
-                onClick={stopRoulette}
-                className="theme-btn-danger theme-btn-lg font-bold transition-all"
-              >
-                DETENER
-              </button>
-            </div>
           </div>
 
-          {/* Premio: aparte de los ajustes a propósito — se puede
-              configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} prize={prize} />
         </div>
+      </div>
+
+      {/* Controles del juego: en escritorio, bajo la vista previa (estado y
+          botones juntos, sin bajar hasta el final de los ajustes); en móvil,
+          después de los ajustes, como antes (ver .tkc-game-layout). */}
+      <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+        {!state.isActive && connectionStatus === 'connected' && (entryMode === 'gift' && !selectedGift) && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+
+        {/* Botones */}
+        <div className="flex flex-wrap gap-3">
+          {!state.isActive ? (
+            <button
+              onClick={startRoulette}
+              disabled={connectionStatus !== 'connected' || (entryMode === 'gift' && !selectedGift)}
+              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={togglePause}
+                disabled={state.mode !== 'joining'}
+                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {state.paused ? 'REANUDAR' : 'PAUSAR'}
+              </button>
+              <button
+                onClick={restartRoulette}
+                disabled={state.mode === 'spinning'}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                REINICIAR ⟲
+              </button>
+            </>
+          )}
+          <button
+            onClick={stopRoulette}
+            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+          >
+            DETENER
+          </button>
+        </div>
+      </div>
+
+      {/* Premio: aparte de los ajustes a propósito — se puede
+          configurar antes de tener la conexión live confirmada. En
+          escritorio va debajo de la vista previa (columna izquierda). */}
+      <PrizeEditor socket={socket} prize={prize} />
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ export function HowItWorks({ storageKey, children }) {
   };
   return (
     <details open={open} onToggle={onToggle} className="theme-input mb-6 px-4 py-3">
-      <summary className="cursor-pointer text-[11px] font-black uppercase tracking-widest theme-accent-text">¿Cómo funciona?</summary>
+      <summary className="cursor-pointer tkc-label theme-accent-text">¿Cómo funciona?</summary>
       <div className="mt-2 text-xs text-gray-400 leading-relaxed space-y-2">{children}</div>
     </details>
   );
@@ -34,9 +34,9 @@ export function StartRequirement({ connectionStatus, active, error }) {
   const connecting = connectionStatus === 'connecting' || connectionStatus === 'checking';
   return (
     <>
-      {error && <p role="alert" className="text-[11px] text-red-500 font-bold mb-3 leading-snug">{error}</p>}
+      {error && <p role="alert" className="text-xs text-red-500 font-bold mb-3 leading-snug">{error}</p>}
       {needsLive && (
-        <p role="status" className="text-[11px] text-amber-500 font-bold mb-3 leading-snug">
+        <p role="status" className="text-xs text-amber-500 font-bold mb-3 leading-snug">
           {connecting
             ? 'Conectando con tu LIVE... en cuanto se confirme podrás iniciar.'
             : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde el Dashboard). Mientras tanto puedes dejar todo configurado.'}

@@ -431,7 +431,7 @@ class Tenant {
             socket.emit('tts_settings_update', this.ttsSettings);
             socket.emit('chat_settings_update', this.chatSettings);
             // Solo al panel: el overlay de OBS no usa los ajustes guardados.
-            if (socket.authMethod === 'jwt') socket.emit('event_settings_update', this.eventSettings);
+            if (socket.authMethod === 'jwt') socket.emit('event_settings_update', this.persistedEventSettings());
             socket.emit('goal_state_update', this.getGoalPublicState());
             // Si loadPersistedSettings restauró estado en vivo tras un
             // reinicio, este cliente lo recibe ahora (los emits de más

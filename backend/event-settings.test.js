@@ -113,7 +113,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 test('set_event_settings mezcla por evento, sanea, responde y avisa a las demás pestañas', async () => {
-  const { tenant, saved } = settingsTenant();
+  const { tenant, saved, releaseWrite } = settingsTenant();
   tenant.eventSettings = { zub: { minCoins: 100 } };
   const sent = [];
   const socket = fakeSocket('jwt', sent);
@@ -121,12 +121,27 @@ test('set_event_settings mezcla por evento, sanea, responde y avisa a las demás
   let reply = null;
   socket.fire('set_event_settings', { king: { mainTime: 30, otro: 1 }, basura: {} }, (r) => { reply = r; });
   await flush();
+  releaseWrite();
+  await flush(); await flush();
   assert.deepEqual(plain(tenant.eventSettings), { zub: { minCoins: 100 }, king: { mainTime: 30 } }, 'zub no se pierde');
   assert.equal(reply.ok, true);
   assert.deepEqual(plain(reply.accepted), { king: { mainTime: 30 } });
   assert.equal(saved.length, 1);
   assert.equal(saved[0].id, 'lic-1');
-  assert.ok(sent.some((s) => s.name === 'event_settings_update' && s.room === 'lic-1'), 'va al room de la licencia, sin el emisor');
+  assert.equal(sent.length, 0, 'el aviso a las demás pestañas no sale por socket.to (sale al guardar, ver la prueba de abajo)');
+});
+
+test('dos pestañas que cambian campos distintos del mismo evento no se pisan', async () => {
+  const { tenant } = settingsTenant();
+  tenant.eventSettings = { zub: { mainTime: 60, snipeTime: 20, minCoins: 0 } };
+  const a = fakeSocket('jwt');
+  const b = fakeSocket('jwt');
+  tenant.registerSettingsHandlers(a);
+  tenant.registerSettingsHandlers(b);
+  a.fire('set_event_settings', { zub: { minCoins: 25 } });
+  b.fire('set_event_settings', { zub: { snipeTime: 40 } });
+  await flush();
+  assert.deepEqual(plain(tenant.eventSettings.zub), { mainTime: 60, snipeTime: 40, minCoins: 25 });
 });
 
 test('dos pestañas que cambian eventos distintos casi a la vez no se pisan', async () => {
@@ -147,13 +162,89 @@ test('las escrituras a la base van de a una y la última guarda lo más nuevo', 
   tenant.registerSettingsHandlers(socket);
   socket.fire('set_event_settings', { king: { mainTime: 10 } });
   socket.fire('set_event_settings', { king: { mainTime: 20 } });
-  socket.fire('set_event_settings', { king: { mainTime: 30 } });
   await flush();
   assert.equal(saved.length, 1, 'mientras escribe no lanza otra');
+  socket.fire('set_event_settings', { king: { mainTime: 30 } });
+  socket.fire('set_event_settings', { king: { mainTime: 40 } });
+  await flush();
+  assert.equal(saved.length, 1, 'sigue esperando a la primera');
   releaseWrite();
   await flush(); await flush();
   assert.equal(saved.length, 2, 'una sola escritura más para todo lo que llegó mientras tanto');
-  assert.equal(saved[1].map.king.mainTime, 30);
+  assert.equal(saved[1].map.king.mainTime, 40);
+});
+
+test('se confirma como guardado recién cuando quedó en la base', async () => {
+  const { tenant, releaseWrite } = settingsTenant();
+  const socket = fakeSocket('jwt');
+  tenant.registerSettingsHandlers(socket);
+  let reply = null;
+  socket.fire('set_event_settings', { king: { mainTime: 30 } }, (r) => { reply = r; });
+  await flush();
+  assert.equal(reply, null, 'todavía no está en la base: no se confirma');
+  releaseWrite();
+  await flush(); await flush();
+  assert.equal(reply.ok, true);
+});
+
+test('si la base falla, no se confirma como guardado (y no se calla)', async () => {
+  const errors = [];
+  const db = { setEventSettings: async () => { throw new Error('column "event_settings" does not exist'); } };
+  const { tenant } = loadTenantModule('settings', { db, extra: { eventSettings: {} } });
+  const realError = console.error;
+  console.error = (...a) => errors.push(a.join(' '));
+  try {
+    const socket = fakeSocket('jwt');
+    tenant.registerSettingsHandlers(socket);
+    let reply = null;
+    socket.fire('set_event_settings', { king: { mainTime: 30 } }, (r) => { reply = r; });
+    await flush(); await flush();
+    assert.equal(reply.ok, false);
+    assert.equal(reply.error, 'save_failed');
+    assert.ok(errors.some((e) => /event_settings/.test(e)), 'queda en el registro del servidor');
+    // Se puede volver a intentar: una falla no traba las escrituras siguientes.
+    db.setEventSettings = async () => {};
+    let second = null;
+    socket.fire('set_event_settings', { king: { mainTime: 31 } }, (r) => { second = r; });
+    await flush(); await flush();
+    assert.equal(second.ok, true);
+  } finally {
+    console.error = realError;
+  }
+});
+
+test('si la base falla, las demás pestañas no reciben lo que no se guardó', async () => {
+  const db = { setEventSettings: async () => { throw new Error('sin columna'); } };
+  const { tenant, sent: broadcast } = loadTenantModule('settings', { db, extra: { eventSettings: { zub: { minCoins: 1 } } } });
+  const realError = console.error;
+  console.error = () => {};
+  try {
+    const toRoom = [];
+    const socket = fakeSocket('jwt', toRoom);
+    tenant.registerSettingsHandlers(socket);
+    socket.fire('set_event_settings', { zub: { minCoins: 999 } }, () => {});
+    await flush(); await flush();
+    const announced = [...toRoom, ...broadcast].filter((m) => m.name === 'event_settings_update');
+    assert.equal(announced.length, 0, 'nadie lo toma como guardado');
+    assert.deepEqual(plain(tenant.persistedEventSettings()), { zub: { minCoins: 1 } }, 'una pestaña que se conecta recibe lo guardado');
+  } finally {
+    console.error = realError;
+  }
+});
+
+test('lo guardado se anuncia a la licencia recién después de escribirlo', async () => {
+  const { tenant, releaseWrite } = settingsTenant();
+  const broadcast = [];
+  tenant.broadcast = { emit: (name, payload) => broadcast.push({ name, payload: plain(payload) }) };
+  const socket = fakeSocket('jwt');
+  tenant.registerSettingsHandlers(socket);
+  socket.fire('set_event_settings', { king: { mainTime: 30 } });
+  await flush();
+  assert.equal(broadcast.length, 0, 'todavía no está en la base');
+  releaseWrite();
+  await flush(); await flush();
+  assert.deepEqual(broadcast, [{ name: 'event_settings_update', payload: { king: { mainTime: 30 } } }]);
+  assert.deepEqual(plain(tenant.persistedEventSettings()), { king: { mainTime: 30 } });
 });
 
 test('un socket sin sesión de panel (overlay, clave en la URL) no puede cambiar los ajustes', async () => {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState } from 'react';
-import { createMountGuard } from '../eventSettingsSync.js';
+import { createFieldTracker } from '../eventSettingsSync.js';
 
 // Los ajustes guardados de cada evento (ver eventSettingsStore.js), compartidos
 // por App.jsx con los paneles. `epochs[id]` sube cuando llega del servidor una
@@ -11,19 +11,20 @@ export const EventSettingsContext = createContext({ settings: {}, update: () => 
 // Lo que un panel necesita: lo guardado al abrirlo (se lee una sola vez, como
 // hacían los paneles con su copia local) y cómo guardar lo nuevo.
 //
-// Cada panel guarda con un efecto que también corre al montarse, con los
-// valores con los que abrió (lo guardado, o los de fábrica si no había nada).
-// Eso NO es un cambio del streamer: si se tomara como tal, abrir un panel antes
-// de que el servidor respondiera hacía que los valores de fábrica (o una copia
-// vieja de este navegador) se subieran por encima de lo guardado en la cuenta.
-// Por eso se ignora lo que llega igual a lo del montaje (también la segunda
-// pasada del modo estricto de React), hasta el primer cambio de verdad.
+// Cada panel llama a `save` con TODOS sus valores, también al montarse. De eso
+// solo se guarda lo que cambió desde la llamada anterior (ver
+// createFieldTracker): el montaje no es un cambio del streamer (si se tomara
+// como tal, abrir un panel antes de que respondiera el servidor subía los
+// valores de fábrica por encima de lo guardado), y un campo que el panel
+// muestra con un valor viejo, porque otra pestaña lo cambió mientras se
+// editaba otro, no se vuelve a subir.
 export function useEventDraft(id) {
   const { settings, update } = useContext(EventSettingsContext);
   const [initial] = useState(() => settings[id] || {});
-  const [shouldSave] = useState(createMountGuard);
+  const [patchOf] = useState(createFieldTracker);
   const save = useCallback((value) => {
-    if (shouldSave(value)) update(id, value);
-  }, [update, id, shouldSave]);
+    const patch = patchOf(value);
+    if (patch) update(id, patch);
+  }, [update, id, patchOf]);
   return [initial, save];
 }

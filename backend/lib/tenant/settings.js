@@ -14,19 +14,39 @@ const { EVENT_SETTINGS_IDS, sanitizeEventEntry } = require('../../lib/eventSetti
 module.exports = {
     // Guarda los ajustes de eventos en la base de a una escritura a la vez y
     // siempre con lo último que hay en memoria: dos UPDATE en paralelo podían
-    // terminar en otro orden y dejar guardada la versión vieja. Si llegan
-    // cambios mientras se escribe, se hace una escritura más al terminar.
+    // terminar en otro orden y dejar guardada la versión vieja. Devuelve una
+    // promesa que se cumple cuando quedó en la base una escritura que empezó
+    // DESPUÉS de esta llamada (o sea, que incluye el cambio de quien llama), y
+    // se rechaza si esa escritura falla. Los cambios que llegan mientras se
+    // escribe comparten la escritura siguiente.
+    //
+    // Recién cuando quedó en la base se anuncia a la licencia (todas sus
+    // pestañas; quien lo mandó lo recibe igual a lo que tiene y no cambia nada)
+    // y pasa a ser lo que recibe una pestaña nueva al conectarse. Antes se
+    // anunciaba al recibirlo: si la escritura fallaba, las otras pestañas lo
+    // tomaban como guardado aunque se perdiera en el siguiente reinicio.
     persistEventSettings() {
-        if (this.eventSettingsWriting) { this.eventSettingsDirty = true; return this.eventSettingsWriting; }
-        this.eventSettingsDirty = false;
-        this.eventSettingsWriting = db.setEventSettings(this.licenseId, this.eventSettings)
-            .catch((err) => console.error(`[${this.logId}] No se pudo guardar event_settings:`, err.message))
-            .then(() => {
-                this.eventSettingsWriting = null;
-                if (this.eventSettingsDirty) return this.persistEventSettings();
-                return undefined;
+        if (!this.eventSettingsQueued) {
+            const previous = this.eventSettingsWriting || Promise.resolve();
+            this.eventSettingsQueued = previous.then(() => {
+                this.eventSettingsQueued = null;
+                const snapshot = this.eventSettings;
+                const write = db.setEventSettings(this.licenseId, snapshot).then(() => {
+                    this.eventSettingsSaved = snapshot;
+                    this.broadcast.emit('event_settings_update', snapshot);
+                });
+                this.eventSettingsWriting = write.then(() => {}, () => {});
+                return write;
             });
-        return this.eventSettingsWriting;
+        }
+        return this.eventSettingsQueued;
+    },
+
+    // Lo último que se sabe guardado en la base (lo que recibe una pestaña al
+    // conectarse). Lo aceptado y todavía sin guardar queda solo en
+    // this.eventSettings, para mezclar los cambios siguientes.
+    persistedEventSettings() {
+        return this.eventSettingsSaved || this.eventSettings;
     },
 
     // Handlers de socket de esta área (los registra attachSocket en tenant.js).
@@ -60,9 +80,9 @@ module.exports = {
         // del modal de "Personalizar" — mismo patrón que set_theme: se sanea
         // y se reenvía tal cual a todo el room, overlay de OBS incluido.
         // ── AJUSTES GUARDADOS DE CADA EVENTO ──
-        // El panel manda SOLO los eventos que cambió ({ king: {...} }, ver
-        // eventSettingsSync.js): se sanean y se mezclan con lo que ya había,
-        // evento por evento. Antes llegaba el mapa entero y dos pestañas que
+        // El panel manda SOLO lo que cambió ({ king: { mainTime: 30 } }, ver
+        // eventSettingsSync.js): se sanea y se mezcla con lo que ya había,
+        // evento por evento y campo por campo. Antes llegaba el mapa entero y dos pestañas que
         // cambiaban eventos distintos casi a la vez se pisaban: la segunda
         // borraba lo de la primera sin que nadie se enterara.
         // Solo el panel con sesión: el overlay de OBS nunca configura nada.
@@ -75,22 +95,33 @@ module.exports = {
             let changed = false;
             for (const id of EVENT_SETTINGS_IDS) {
                 if (!(id in partial)) continue;
-                const entry = sanitizeEventEntry(id, partial[id]);
+                // Campo por campo: llega solo lo que se cambió (ver useEventDraft),
+                // y lo demás de ese evento se conserva.
+                const raw = partial[id];
+                const entry = raw && typeof raw === 'object' && !Array.isArray(raw)
+                    ? sanitizeEventEntry(id, { ...(this.eventSettings[id] || {}), ...raw })
+                    : null;
                 if (!entry) continue;
                 next[id] = entry;
                 changed = true;
             }
             if (!changed) return reply({ ok: false });
+            if (!this.eventSettingsSaved) this.eventSettingsSaved = this.eventSettings;
             this.eventSettings = next;
-            // A las demás pestañas, no a quien lo mandó: su panel ya lo tiene y el
-            // eco volvería a abrir el panel que está editando.
-            socket.to(this.licenseId).emit('event_settings_update', this.eventSettings);
-            this.persistEventSettings();
-            // Aceptado: lo que se guarda (y lo que reciben las demás pestañas) es
-            // esto, saneado. El panel lo toma como lo último que tiene el servidor.
+            // Se confirma recién cuando quedó en la base: antes se confirmaba al
+            // recibirlo, y si la escritura fallaba (por ejemplo, sin la columna
+            // event_settings) el panel lo daba por guardado y se perdía en el
+            // siguiente reinicio del servidor sin que nadie se enterara. Con
+            // ok: false el panel lo deja pendiente, lo avisa y lo reintenta.
             const accepted = {};
             for (const id of EVENT_SETTINGS_IDS) if (id in partial && next[id]) accepted[id] = next[id];
-            reply({ ok: true, accepted });
+            this.persistEventSettings().then(
+                () => reply({ ok: true, accepted }),
+                (err) => {
+                    console.error(`[${this.logId}] No se pudo guardar event_settings:`, err.message);
+                    reply({ ok: false, error: 'save_failed' });
+                },
+            );
         });
 
         socket.on('set_overlay_customization', (map) => {

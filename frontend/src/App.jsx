@@ -31,8 +31,8 @@ import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
 import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
-import { createSettingsSync } from './settingsSync';
-import { loadLocalEventSettings, saveLocalEventSettings, sameEventSettings, ownerFromToken, planLegacyMigration, markLegacyMigrationDone } from './eventSettingsStore';
+import { createSettingsSync, overlayEchoPlan } from './settingsSync';
+import { loadLocalEventCache, saveLocalEventSettings, sameEventSettings, ownerFromToken, planLegacyMigration, markLegacyMigrationDone } from './eventSettingsStore';
 import { normalizeEventEntry, normalizeEventSettings } from './eventSettingsSchema';
 import { createEventSync } from './eventSettingsSync';
 import { EventSettingsContext } from './app/eventSettingsContext';
@@ -211,31 +211,73 @@ export default function App() {
   // que se mostraba, para que ese panel se vuelva a abrir con esos valores.
   const eventOwner = ownerFromToken(session?.token);
   const [eventSettingsOwner, setEventSettingsOwner] = useState(eventOwner);
-  const [eventSettings, setEventSettings] = useState(() => loadLocalEventSettings(eventOwner));
+  const [initialEventCache] = useState(() => loadLocalEventCache(eventOwner));
+  const [eventSettings, setEventSettings] = useState(initialEventCache.settings);
+  // Lo último confirmado por el servidor según la copia de este navegador
+  // (ver loadLocalEventCache): con eso, lo que se cambió y no llegó a
+  // confirmarse sigue pendiente después de recargar.
+  const [eventConfirmed, setEventConfirmed] = useState(initialEventCache.base);
   const [eventSettingsEpochs, setEventSettingsEpochs] = useState({});
   const [eventSyncNotice, setEventSyncNotice] = useState(null);
   const [eventSyncTick, setEventSyncTick] = useState(0);
+  const [eventBaseTick, setEventBaseTick] = useState(0);
   if (eventSettingsOwner !== eventOwner) {
+    const cache = loadLocalEventCache(eventOwner);
     setEventSettingsOwner(eventOwner);
-    setEventSettings(loadLocalEventSettings(eventOwner));
+    setEventSettings(cache.settings);
+    setEventConfirmed(cache.base);
     setEventSettingsEpochs({});
     setEventSyncNotice(null);
   }
   const eventSettingsRef = useRef(eventSettings);
   useEffect(() => { eventSettingsRef.current = eventSettings; }, [eventSettings]);
+  const eventConfirmedRef = useRef(eventConfirmed);
+  useEffect(() => { eventConfirmedRef.current = eventConfirmed; }, [eventConfirmed]);
   const eventOwnerRef = useRef(eventOwner);
   useEffect(() => { eventOwnerRef.current = eventOwner; }, [eventOwner]);
+  const eventsTabRef = useRef(eventsTab);
+  useEffect(() => { eventsTabRef.current = eventsTab; }, [eventsTab]);
   const [eventSync] = useState(() => createEventSync());
   const eventEmitTimeoutRef = useRef(null);
   const migratingEventsRef = useRef(null);
-  // Cada ajuste se guarda ya con la forma que le da el servidor (ver
+  const eventRetryRef = useRef({ timer: null, delay: 5000 });
+  // Paneles que hay que volver a abrir con lo nuevo cuando se termine de
+  // editar (ver deferEventReopen más abajo).
+  const deferredEventsRef = useRef(new Set());
+  // Un panel manda solo los campos que se cambiaron (ver useEventDraft); cada
+  // ajuste se guarda ya con la forma que le da el servidor (ver
   // eventSettingsSchema.js), para poder comparar lo de aquí con lo de allá.
-  const updateEventSettings = useCallback((id, value) => {
-    const entry = normalizeEventEntry(id, value);
-    if (!entry) return;
-    setEventSettings((prev) => (sameEventSettings(prev[id], entry) ? prev : { ...prev, [id]: entry }));
+  const updateEventSettings = useCallback((id, patch) => {
+    setEventSettings((prev) => {
+      const entry = normalizeEventEntry(id, { ...(prev[id] || {}), ...patch });
+      if (!entry || sameEventSettings(prev[id], entry)) return prev;
+      return { ...prev, [id]: entry };
+    });
   }, []);
   const dismissEventSyncNotice = useCallback(() => setEventSyncNotice(null), []);
+  // ¿El streamer está escribiendo en el panel de este evento? (el foco está en
+  // un campo dentro del panel abierto, ver data-event-panel en EventsSection).
+  const isEditingEventPanel = (id) => {
+    if (id !== eventsTabRef.current) return false;
+    const panel = document.querySelector('[data-event-panel]');
+    const active = document.activeElement;
+    return !!(panel && active && panel.contains(active) && active.matches('input, textarea, select, [contenteditable="true"]'));
+  };
+  const deferEventReopen = (ids) => {
+    const pending = deferredEventsRef.current;
+    const wasEmpty = pending.size === 0;
+    ids.forEach((id) => pending.add(id));
+    if (!wasEmpty) return;
+    const onFocusOut = () => setTimeout(() => {
+      if ([...pending].some(isEditingEventPanel)) return;
+      document.removeEventListener('focusout', onFocusOut);
+      const reopen = [...pending];
+      pending.clear();
+      setEventSettingsEpochs((prev) => ({ ...prev, ...Object.fromEntries(reopen.map((id) => [id, (prev[id] || 0) + 1])) }));
+      setEventSyncNotice((n) => (n?.deferred ? { ...n, deferred: false } : n));
+    }, 0);
+    document.addEventListener('focusout', onFocusOut);
+  };
   const eventSettingsContext = useMemo(
     () => ({ settings: eventSettings, update: updateEventSettings, epochs: eventSettingsEpochs, notice: eventSyncNotice, dismissNotice: dismissEventSyncNotice }),
     [eventSettings, updateEventSettings, eventSettingsEpochs, eventSyncNotice, dismissEventSyncNotice],
@@ -255,6 +297,8 @@ export default function App() {
   const lastEmittedThemeRef = useRef(null);
   const overlayEmitTimeoutRef = useRef(null);
   const lastEmittedOverlayRef = useRef(null);
+  // Lo último que se sabe que tiene el servidor: lo que es igual a eso no se manda.
+  const overlayServerRef = useRef(null);
   // Bug real (pérdida de datos), en el tema y en la personalización de
   // overlays: al conectarse, el panel mandaba lo que tuviera este navegador
   // (o los valores de fábrica, si no tenía nada) antes de recibir lo guardado,
@@ -433,7 +477,7 @@ export default function App() {
     // es de esta cuenta (ver rebase en settingsSync.js).
     themeSync.rebase(panelThemeRef.current);
     overlaySync.rebase(panelOverlayDraftRef.current);
-    eventSync.rebase(eventSettingsRef.current);
+    eventSync.rebase(eventSettingsRef.current, eventConfirmedRef.current, eventOwnerRef.current);
 
     socket.on('state_update',    setState);
     socket.on('contest_started', setState);
@@ -545,13 +589,21 @@ export default function App() {
         }
       }
       if (!sameEventSettings(merged, local)) { eventSettingsRef.current = merged; setEventSettings(merged); }
+      setEventBaseTick((n) => n + 1);
       // Todo panel cuyo valor cambió se vuelve a abrir con lo nuevo (lo que llegó
-      // de otro lado y lo recuperado de las claves de antes).
+      // de otro lado y lo recuperado de las claves de antes). Salvo el que se
+      // está editando: volver a abrirlo le quitaba el cursor del campo a mitad
+      // de escribir. Ese se vuelve a abrir al salir del panel; mientras tanto,
+      // lo que se cambie ahí se guarda igual, campo por campo, sin volver a
+      // subir los campos que llegaron de la otra pestaña.
       const changed = Object.keys({ ...merged, ...local }).filter((id) => !sameEventSettings(merged[id], local[id]));
-      if (changed.length) setEventSettingsEpochs((prev) => ({ ...prev, ...Object.fromEntries(changed.map((id) => [id, (prev[id] || 0) + 1])) }));
+      const deferred = changed.filter(isEditingEventPanel);
+      const now = changed.filter((id) => !deferred.includes(id));
+      if (now.length) setEventSettingsEpochs((prev) => ({ ...prev, ...Object.fromEntries(now.map((id) => [id, (prev[id] || 0) + 1])) }));
+      if (deferred.length) deferEventReopen(deferred);
       // Al conectar es lo normal (la copia de aquí se pone al día): no se avisa.
-      if (replaced.length && !firstAfterConnect) setEventSyncNotice({ kind: 'remote', ids: replaced });
       if (conflicts.length) setEventSyncNotice({ kind: 'conflict', ids: conflicts });
+      else if (replaced.length && !firstAfterConnect) setEventSyncNotice({ kind: 'remote', ids: replaced, deferred: deferred.length > 0 });
       if (pending.length) setEventSyncTick((n) => n + 1);
     });
 
@@ -565,23 +617,14 @@ export default function App() {
         }
         return;
       }
-      // Lo que llega igual a lo que ya se ve no se vuelve a poner: el servidor
-      // reenvía cada cambio también a quien lo mandó, y poner un objeto nuevo
-      // (aunque igual) disparaba otro envío, cuyo eco disparaba otro... Con
-      // el panel abierto se mandaban unos 3 por segundo sin parar, cada uno
-      // reenviado a todos los overlays de OBS y guardado en la base.
-      const current = panelOverlayDraftRef.current;
-      const sameAsShown = JSON.stringify(map) === JSON.stringify(current);
-      if (decision === 'adopt') {
-        setOverlayCustomizationState(map);
-        if (!sameAsShown) setPanelOverlayDraft(map);
-        return;
-      }
-      if (overlayEmitTimeoutRef.current) return;
-      const sent = lastEmittedOverlayRef.current;
-      if (sent && JSON.stringify(sent) !== JSON.stringify(current)) return;
-      setOverlayCustomizationState(map);
-      if (!sameAsShown) setPanelOverlayDraft(map);
+      // Lo que llega igual a lo que ya se ve no se vuelve a poner (ver
+      // overlayEchoPlan: así se cortó un bucle de envíos sin fin).
+      const plan = overlayEchoPlan({
+        decision, incoming: map, shown: panelOverlayDraftRef.current,
+        lastSent: lastEmittedOverlayRef.current, sending: !!overlayEmitTimeoutRef.current,
+      });
+      if (plan.adopt) { overlayServerRef.current = map; setOverlayCustomizationState(map); }
+      if (plan.replaceShown) setPanelOverlayDraft(map);
     });
 
     // Botón "Refrescar overlays" del panel (ver OverlayLink.jsx) — solo las
@@ -721,8 +764,8 @@ export default function App() {
   // Ajustes de eventos: copia en este navegador y envío al servidor con espera
   // (un deslizador o un campo de texto no manda un mensaje por cada paso).
   useEffect(() => {
-    saveLocalEventSettings(eventSettingsOwner, eventSettings);
-  }, [eventSettingsOwner, eventSettings]);
+    saveLocalEventSettings(eventSettingsOwner, eventSettings, eventSync.baseFor(eventSettingsOwner) || eventConfirmed);
+  }, [eventSettingsOwner, eventSettings, eventSync, eventConfirmed, eventBaseTick]);
   // Solo los eventos que cambiaron (ver outgoing en eventSettingsSync.js). Lo
   // enviado sigue pendiente hasta que el servidor responde que lo aceptó: si
   // la conexión se corta antes, se vuelve a mandar al reconectar.
@@ -733,8 +776,24 @@ export default function App() {
       const out = eventSync.outgoing(eventSettings);
       if (!out) return;
       socket.emit('set_event_settings', out, (reply) => {
-        if (!reply?.ok || !reply.accepted) return;
+        const retry = eventRetryRef.current;
+        if (!reply?.ok || !reply.accepted) {
+          // El servidor lo recibió pero no lo pudo guardar: sigue pendiente (no
+          // se da por guardado), se avisa y se vuelve a intentar cada vez más
+          // espaciado, hasta 2 minutos.
+          if (reply?.error === 'save_failed') {
+            setEventSyncNotice({ kind: 'save-failed', ids: Object.keys(out) });
+            if (!retry.timer) {
+              retry.timer = setTimeout(() => { retry.timer = null; setEventSyncTick((n) => n + 1); }, retry.delay);
+              retry.delay = Math.min(retry.delay * 2, 120000);
+            }
+          }
+          return;
+        }
+        retry.delay = 5000;
         eventSync.accepted(normalizeEventSettings(reply.accepted));
+        setEventBaseTick((n) => n + 1);
+        setEventSyncNotice((n) => (n?.kind === 'save-failed' ? null : n));
         const migrating = migratingEventsRef.current;
         if (migrating && migrating.every((id) => reply.accepted[id])) {
           markLegacyMigrationDone();
@@ -764,6 +823,10 @@ export default function App() {
     overlayEmitTimeoutRef.current = setTimeout(() => {
       overlayEmitTimeoutRef.current = null;
       if (!overlaySync.canSend()) return;
+      // Lo que se acaba de recibir de otra pestaña ya está en el servidor: si se
+      // reenviaba, cada cambio con dos pestañas abiertas costaba dos mensajes a
+      // todos los overlays y dos escrituras.
+      if (sameEventSettings(panelOverlayDraft, overlayServerRef.current)) return;
       socket.emit('set_overlay_customization', panelOverlayDraft);
       overlaySync.sent(panelOverlayDraft);
       lastEmittedOverlayRef.current = panelOverlayDraft;

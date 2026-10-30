@@ -17,6 +17,27 @@
 //   conserva lo suyo y se manda ('keep-local').
 // Después, hasta la próxima desconexión, los mensajes del servidor son ecos de
 // lo que se mandó ('echo') y los maneja el código de siempre.
+import { sameValue } from './eventSettingsSync.js';
+
+// Qué hacer con la personalización de overlays que manda el servidor
+// (`incoming`) cuando no es el primer mensaje de la conexión ('adopt') ni hay
+// que conservar lo de aquí ('keep-local'). El servidor la reenvía también a
+// quien la mandó: si el panel ponía ese eco como un objeto nuevo aunque fuera
+// igual, eso disparaba otro envío, cuyo eco disparaba otro... con el panel
+// abierto salían unos 3 por segundo sin parar, a todos los overlays de OBS y a
+// la base. Se compara por contenido (sin importar el orden de las claves), así
+// ni un eco ni un valor equivalente con las claves en otro orden reemplazan lo
+// que se ve. `adopt`: tomarlo como lo que tiene el servidor (lo usan los
+// overlays de OBS para pintarse). `replaceShown`: cambiar lo que se ve en el panel.
+export function overlayEchoPlan({ decision, incoming, shown, lastSent, sending }) {
+  const replaceShown = !sameValue(incoming, shown);
+  if (decision === 'adopt') return { adopt: true, replaceShown };
+  // Un cambio de aquí está por salir, o lo que se ve ya no es lo último que se
+  // mandó: el eco es viejo, no se toca nada (lo nuevo sale enseguida).
+  if (sending || (lastSent && !sameValue(lastSent, shown))) return { adopt: false, replaceShown: false };
+  return { adopt: true, replaceShown };
+}
+
 export function createSettingsSync({ initial, same }) {
   let synced = false;
   // Lo último que este navegador sabe que tiene el servidor. Al arrancar, lo

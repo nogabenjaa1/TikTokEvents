@@ -149,3 +149,63 @@ test('un cambio hecho ya con la sesión iniciada, antes de recibir el estado, s�
   connectNew(server, sync, chosen);
   assert.deepEqual(server.saved, chosen);
 });
+
+// ── Bucle de la personalización de overlays (ver overlayEchoPlan) ──
+// Simula pestañas del panel con su efecto de envío (manda cada vez que cambia
+// lo que se ve, como App.jsx) y un servidor que reenvía cada cambio a todas las
+// pestañas, con las claves en otro orden (como al sanearlo). Cuenta mensajes.
+import { overlayEchoPlan } from './settingsSync.js';
+import { sameValue } from './eventSettingsSync.js';
+
+function simulateOverlayTabs(tabCount, userChange) {
+  const reorder = (v) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(v).reverse())));
+  const initial = { bg: 'solid', font: 'sora' };
+  const tabs = Array.from({ length: tabCount }, () => ({ shown: initial, server: initial, lastSent: null, dirty: false }));
+  let sent = 0;
+  const deliver = (msg) => {
+    for (const tab of tabs) {
+      const plan = overlayEchoPlan({ decision: 'echo', incoming: msg, shown: tab.shown, lastSent: tab.lastSent, sending: tab.dirty });
+      if (plan.adopt) tab.server = msg;
+      if (plan.replaceShown) { tab.shown = msg; tab.dirty = true; }
+    }
+  };
+  if (userChange) { tabs[0].shown = userChange; tabs[0].dirty = true; }
+  for (let round = 0; round < 50; round++) {
+    const sending = tabs.filter((t) => t.dirty);
+    if (!sending.length) return sent;
+    for (const tab of sending) {
+      tab.dirty = false;
+      if (sameValue(tab.shown, tab.server)) continue; // ya está en el servidor (ver App.jsx)
+      tab.lastSent = tab.shown;
+      sent++;
+      deliver(reorder(tab.shown));
+    }
+  }
+  return Infinity;
+}
+
+test('overlays: sin cambios, el panel no manda nada', () => {
+  assert.equal(simulateOverlayTabs(1, null), 0);
+  assert.equal(simulateOverlayTabs(2, null), 0);
+});
+
+test('overlays: un cambio es un solo mensaje, con una o dos pestañas (antes no paraba)', () => {
+  assert.equal(simulateOverlayTabs(1, { bg: 'transparent', font: 'poppins' }), 1);
+  assert.equal(simulateOverlayTabs(2, { bg: 'transparent', font: 'poppins' }), 1);
+});
+
+test('overlays: lo mismo con las claves en otro orden no cuenta como cambio', () => {
+  const plan = overlayEchoPlan({ decision: 'echo', incoming: { font: 'sora', bg: 'solid' }, shown: { bg: 'solid', font: 'sora' }, lastSent: null, sending: false });
+  assert.equal(plan.replaceShown, false);
+  assert.equal(plan.adopt, true, 'los overlays de OBS igual lo reciben');
+});
+
+test('overlays: transparente y fondo sólido son distintos, y un cambio real sí se muestra', () => {
+  const plan = overlayEchoPlan({ decision: 'echo', incoming: { bg: 'transparent' }, shown: { bg: 'solid' }, lastSent: null, sending: false });
+  assert.equal(plan.replaceShown, true);
+});
+
+test('overlays: un eco viejo no pisa lo que se está por mandar', () => {
+  const plan = overlayEchoPlan({ decision: 'echo', incoming: { bg: 'solid' }, shown: { bg: 'neon' }, lastSent: { bg: 'solid' }, sending: true });
+  assert.deepEqual(plan, { adopt: false, replaceShown: false });
+});

@@ -50,15 +50,28 @@ export function ownerFromToken(token) {
 }
 
 export function loadLocalEventSettings(owner, read = readStorage) {
-  if (!owner) return {};
-  const saved = parse(read(STORAGE_KEY));
-  if (!saved || saved.owner !== owner) return {};
-  return normalizeEventSettings(saved.settings);
+  return loadLocalEventCache(owner, read).settings;
 }
 
-export function saveLocalEventSettings(owner, map, write = writeStorage) {
+// La copia completa: lo que se ve (`settings`) y lo último que el servidor
+// confirmó (`base`, ver eventSettingsSync.js). Lo que difiere entre las dos es
+// un cambio que todavía no llegó al servidor: guardar la base hace que eso no
+// se pierda al recargar (antes, al volver a cargar, se tomaba todo lo de aquí
+// como ya confirmado y lo del servidor lo pisaba sin avisar).
+// `base` es null si no se sabe (copia de antes, o de otra cuenta).
+export function loadLocalEventCache(owner, read = readStorage) {
+  if (!owner) return { settings: {}, base: null };
+  const saved = parse(read(STORAGE_KEY));
+  if (!saved || saved.owner !== owner) return { settings: {}, base: null };
+  return {
+    settings: normalizeEventSettings(saved.settings),
+    base: isPlainObject(saved.base) ? normalizeEventSettings(saved.base) : null,
+  };
+}
+
+export function saveLocalEventSettings(owner, map, base = null, write = writeStorage) {
   if (!owner) return;
-  write(STORAGE_KEY, JSON.stringify({ owner, settings: map }));
+  write(STORAGE_KEY, JSON.stringify(base ? { owner, settings: map, base } : { owner, settings: map }));
 }
 
 export function readLegacyEventSettings(read = readStorage) {

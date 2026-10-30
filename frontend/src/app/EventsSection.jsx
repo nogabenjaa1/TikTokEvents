@@ -35,6 +35,12 @@ export default function EventsSection({
   // se avisa: así un cambio que se pisó no desaparece sin decir nada.
   const { epochs = {}, notice, dismissNotice } = useContext(EventSettingsContext);
   const noticeHere = notice && notice.ids.includes(eventsTab);
+  const NOTICE_TEXT = {
+    remote: 'Estos ajustes se cambiaron en otra pestaña o dispositivo. Ahora ves lo último que se guardó.',
+    'remote-deferred': 'Estos ajustes se cambiaron en otra pestaña o dispositivo. Se mostrarán cuando termines de editar; lo que cambies aquí también se guarda.',
+    conflict: 'Lo mismo que cambiaste aquí se cambió también en otra pestaña o dispositivo. Se guardó lo de esta pestaña, que es lo que ves ahora.',
+    'save-failed': 'No se pudieron guardar estos cambios en tu cuenta. Siguen guardados en este navegador y se volverá a intentar solo.',
+  };
   return (
     <>
       {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
@@ -71,14 +77,15 @@ export default function EventsSection({
       {noticeHere && (
         <div role="status" className="mx-4 mt-4 sm:mx-6 theme-notice theme-notice-warning flex items-start justify-between gap-3">
           <span>
-            {notice.kind === 'conflict'
-              ? 'Estos ajustes también se cambiaron en otra pestaña o dispositivo mientras editabas aquí. Se guardó lo que ves ahora.'
-              : 'Estos ajustes se cambiaron en otra pestaña o dispositivo. Ahora ves lo último que se guardó.'}
+            {NOTICE_TEXT[notice.kind === 'remote' && notice.deferred ? 'remote-deferred' : notice.kind]}
           </span>
           <button type="button" onClick={dismissNotice} className="theme-link whitespace-nowrap">Entendido</button>
         </div>
       )}
       {(eventsTab !== 'tts' || needsAccess('tts')) && (
+      <div data-event-panel className="contents">
+      {/* Sin caja propia (display: contents): solo marca la zona del panel para
+          saber si el foco está en un campo del panel (ver isEditingEventPanel en App.jsx). */}
       <ViewEnter key={`${eventsTab}:${epochs[eventsTab] || 0}`}>
 
       {eventsTab === 'king' && (
@@ -212,6 +219,7 @@ export default function EventsSection({
         <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={onGoMembership} notice="Necesitas una licencia o una prueba gratis para usar TTS." />
       )}
       </ViewEnter>
+      </div>
       )}
     </>
   );

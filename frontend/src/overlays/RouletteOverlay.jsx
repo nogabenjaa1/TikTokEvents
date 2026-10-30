@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { rouletteSnapshot, rouletteSounds } from '../eventSoundRules';
-import { getUsernameFill, getUsernameOverride, resolveBackgroundStyle, rowBorder, overlayRootProps, labelProps, labelScaleStyle } from '../overlayCustomization';
+import { getUsernameFill, getUsernameOverride, resolveBackgroundStyle, rowBorder, overlayRootProps, labelProps, labelScaleStyle, RAINBOW_STOPS } from '../overlayCustomization';
 import { formatMMSS } from '../timeFormat';
 import { playOverlaySounds } from './helpers';
 import { EliminationResultVisual, OfflineCard, PhaseProgressBar, PrizeStrip, TimeWarningBadge } from './shared';
@@ -53,12 +53,7 @@ function UsernameSvgDefs({ customize }) {
   return (
     <defs>
       <linearGradient id="tkc-rainbow-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#ff3b3b" />
-        <stop offset="20%" stopColor="#ff9f1c" />
-        <stop offset="40%" stopColor="#ffe135" />
-        <stop offset="60%" stopColor="#3ddc84" />
-        <stop offset="80%" stopColor="#3b82f6" />
-        <stop offset="100%" stopColor="#a855f7" />
+        {RAINBOW_STOPS.map((color, i) => <stop key={color} offset={`${(i / (RAINBOW_STOPS.length - 1)) * 100}%`} stopColor={color} />)}
       </linearGradient>
       <linearGradient id="tkc-custom-grad" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stopColor={uc?.from || '#7C3AED'} />

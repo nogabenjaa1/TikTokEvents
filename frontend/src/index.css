@@ -262,10 +262,11 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="default"] .theme-heading,
 .themed-app[data-theme-style="default"] .theme-label,
 .themed-app[data-theme-style="default"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.31 0.16 h);
-  /* 0.31 (antes 0.36): con un acento personalizado verde azulado o amarillo,
-     estos textos sobre el fondo de página daban 3.9:1 (axe); así pasan 4.5:1.
-     Cute queda en 0.33: su fondo de página es un poco más claro. */
+  /* La luminosidad viene de --tkc-accent-ink-l: 0.36 de fábrica (lo que ven
+     los overlays de OBS) y más oscura solo en el panel (ver .themed-panel más
+     abajo), donde con un acento personalizado verde azulado o amarillo estos
+     textos daban 3.9:1 sobre el fondo de página. */
+  color: oklch(from var(--accent) var(--tkc-accent-ink-l, 0.36) 0.16 h);
 }
 /* theme-btn-secondary y theme-chip heredan color: var(--accent-soft) de la
    regla global (pensada para fondo oscuro) — sobre el fondo pastel de acá
@@ -334,7 +335,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-heading,
 .themed-app[data-theme-style="cute"] .theme-label,
 .themed-app[data-theme-style="cute"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.33 0.16 h);
+  color: oklch(from var(--accent) var(--tkc-accent-ink-l, 0.36) 0.16 h);
 }
 .themed-app[data-theme-style="cute"] .theme-heading { font-weight: 700; letter-spacing: 0.01em; }
 /* La píldora completa solo va en los campos de UNA línea (input/select).
@@ -373,8 +374,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-chip {
   border: 1px dashed var(--surface-border-color);
   border-radius: 999px;
-  /* L 0.68 (antes 0.6): con la tinta oscura daba 3.8:1 en rosa (axe); ahora pasa 4.5:1. */
-  background: oklch(from var(--accent) 0.68 0.13 h);
+  /* En el panel va más claro (ver .themed-panel más abajo): con la tinta
+     oscura daba 3.8:1 en rosa (axe). Los overlays conservan el de siempre. */
+  background: oklch(from var(--accent) var(--tkc-cute-chip-l, 0.6) var(--tkc-cute-chip-c, 0.14) h);
   color: var(--ink-cute);
 }
 /* Dock flotante redondeado, igual de "sticker" que el resto del material. */
@@ -651,7 +653,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   border: 1px solid color-mix(in oklch, var(--notice) 40%, transparent);
   border-radius: var(--surface-radius-sm);
   background: color-mix(in oklch, var(--notice) 10%, transparent);
-  color: color-mix(in oklch, var(--notice-ink) 65%, var(--status-mix));
+  /* 58% (antes 65%): un aviso de atención sobre el fondo de página (no sobre
+     una tarjeta) daba 4.35:1; así pasa 4.5:1 también ahí (axe, oct 2026). */
+  color: color-mix(in oklch, var(--notice-ink) 58%, var(--status-mix));
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 700;
@@ -702,8 +706,24 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    sobre morado. Solo en el panel (ThemedShell lleva .themed-panel): las vistas
    previas y los overlays de OBS declaran su propio tema y no lo heredan, así
    que lo que ve la audiencia no cambia. */
-.themed-panel[data-theme-style="default"]:not([data-mode="dark"]) { --surface-bg: oklch(from var(--accent) 0.85 0.08 h); }
-.themed-panel[data-theme-style="cute"]:not([data-mode="dark"]) { --surface-bg: oklch(from var(--accent) 0.86 0.075 h); }
+.themed-panel[data-theme-style="default"]:not([data-mode="dark"]) {
+  --surface-bg: oklch(from var(--accent) 0.85 0.08 h);
+  /* Títulos, etiquetas y texto de acento: 4.5:1 con cualquier acento. */
+  --tkc-accent-ink-l: 0.31;
+}
+.themed-panel[data-theme-style="cute"]:not([data-mode="dark"]) {
+  --surface-bg: oklch(from var(--accent) 0.86 0.075 h);
+  --tkc-accent-ink-l: 0.33;
+  --tkc-cute-chip-l: 0.68;
+  --tkc-cute-chip-c: 0.13;
+}
+/* Las vistas previas de overlays dentro del panel vuelven a los valores de
+   OBS: declaran su propio tema, pero estas variables se heredarían. */
+.themed-panel .themed-app[data-theme-style] {
+  --tkc-accent-ink-l: 0.36;
+  --tkc-cute-chip-l: 0.6;
+  --tkc-cute-chip-c: 0.14;
+}
 
 /* Tarjeta que es un acceso directo (Dashboard): sube un poco y toma el borde
    del acento al pasar el cursor; se hunde al presionarla. Antes bajaba la
@@ -714,6 +734,29 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 }
 .tkc-card-link:hover { transform: translateY(-2px); border-color: var(--accent); }
 .tkc-card-link:active { transform: scale(0.98); }
+/* Personalizar un overlay (OverlayCustomizePanel.jsx): opciones en fila y
+   tarjetas de estilo. Se tiñen al pasar el cursor y se hunden al presionar;
+   la tarjeta de estilo además sube un poco, como las del Dashboard. */
+.tkc-seg {
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft);
+}
+.tkc-seg:hover { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.tkc-seg:active { transform: scale(0.97); }
+.tkc-preset {
+  transition: transform var(--motion-fast) var(--ease-out-soft), border-color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.tkc-preset:hover { transform: translateY(-2px); border-color: var(--accent); }
+.tkc-preset:active { transform: scale(0.98); }
+/* Miniatura de un overlay en su tarjeta (OverlayLink.jsx): es un botón que
+   abre Personalizar; el aro del acento dice que se puede tocar. */
+.tkc-thumb { transition: box-shadow var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft); }
+.tkc-thumb:hover { box-shadow: 0 0 0 2px var(--accent); }
+.tkc-thumb:active { transform: scale(0.99); }
+.tkc-thumb-cta { pointer-events: none; transition: transform var(--motion-fast) var(--ease-out-soft); }
+.tkc-thumb:hover .tkc-thumb-cta { transform: translateY(-2px); }
+/* "Más opciones" abre con el mismo movimiento que el resto de los <details>. */
+.tkc-more[open] > summary { margin-bottom: 0.25rem; }
+
 /* Paneles de los juegos (Rey del Trono, Zubastinis, Eliminación, Ruleta).
    Antes era siempre una columna de 448px centrada: en escritorio quedaba vacío
    más de la mitad del ancho y los botones de Iniciar/Detener quedaban al final
@@ -875,18 +918,24 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   isolation: isolate;
   overflow: hidden;
 }
+/* Antes: la capa medía el doble del recuadro con el arcoíris dos veces, así
+   que en el ancho visible entraban los 6 colores en bandas finas, y tardaba
+   8s en recorrer una vuelta (unos 47px/s en un overlay vertical): se veía
+   apagado y lento. Ahora la capa mide 4 veces el recuadro con dos copias de
+   la paleta: se ven 3 o 4 colores a la vez, en bandas que se distinguen, y
+   una vuelta completa tarda 5s (más de 3 veces la velocidad de antes). */
 [style*="--tkc-rainbow-bg"]::before {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 200%;
+  width: 400%;
   z-index: -1;
   pointer-events: none;
-  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b);
+  background-image: linear-gradient(90deg,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363);
   will-change: transform;
-  animation: tkc-rainbow-slide 8s linear infinite;
+  animation: tkc-rainbow-slide 5s linear infinite;
 }
 @keyframes tkc-rainbow-slide {
   from { transform: translate3d(0, 0, 0); }
@@ -942,23 +991,33 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    overlayCustomization.js) nunca tuvo este problema porque no usa
    background-clip. */
 .themed-app[data-theme-style] .tkc-username-rainbow {
-  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
-  background-size: 100% 100% !important;
+  background-image: linear-gradient(90deg,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363) !important;
+  background-size: 200% 100% !important;
+  background-repeat: repeat-x !important;
   /* impeccable-disable-next-line gradient-text: opción "arcoíris" que el streamer elige en Personalizar para el nombre de usuario del overlay; es una función, no decoración */
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
-  /* Rendimiento (bug real: la tira de regalos se trababa en OBS): antes se
-     animaba background-position, que obliga a repintar el texto en CADA
-     cuadro desde el hilo principal. Ahora el degradado queda fijo y lo que
-     se anima es el tono con un filtro, que lo resuelve la GPU sin repintar:
-     los colores siguen recorriendo el arcoíris. */
-  will-change: filter;
-  animation: tkc-hue-spin 4s linear infinite;
+  /* Antes el degradado quedaba fijo y se giraba el tono con
+     filter: hue-rotate(). Ese filtro conserva la LUMINANCIA del color de
+     partida, así que al girar un tono claro hacia uno oscuro (o al revés) el
+     resultado se apaga: el rojo puro girado 120 grados da rgb(0,113,0), un
+     verde oscuro. Era la causa de que el texto arcoíris se viera oscuro y
+     sucio. Ahora el degradado, dos veces más ancho que el texto, se desplaza
+     (background-position): los colores son siempre los de la paleta, sin
+     filtros. will-change sigue haciendo falta para que Chromium/CEF repinte
+     el texto recortado en cada cuadro (ver OJO #2 arriba). Medido con 30
+     nombres en una tira en movimiento (oct 2026, navegador de escritorio):
+     mismo ritmo que con el filtro, ningún cuadro de más de 25ms. No se
+     midió en el CEF de OBS de un equipo modesto. */
+  will-change: background-position;
+  animation: tkc-rainbow-text 3s linear infinite;
 }
-@keyframes tkc-hue-spin {
-  from { filter: hue-rotate(0deg); }
-  to   { filter: hue-rotate(360deg); }
+/* Con background-size 200%, 200% de posición es exactamente el ancho de la
+   imagen: el bucle encaja sin salto. */
+@keyframes tkc-rainbow-text {
+  from { background-position: 0% 0; }
+  to   { background-position: 200% 0; }
 }
 /* "Color sólido del tema" para texto/username — mismo tono que ya usan
    theme-label/theme-accent-text (--accent-soft), como opción explícita

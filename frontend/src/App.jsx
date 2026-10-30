@@ -30,7 +30,7 @@ import useSectionRouting from './app/useSectionRouting';
 import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
 import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
-import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS } from './overlayCustomization';
+import { loadOverlayCustomization, saveOverlayCustomization, hasSavedOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
 
 // Paneles pesados cargados bajo demanda (ver lazyPanel.jsx): el overlay de
 // OBS y el primer render del panel ya no descargan pagos, Downloader,
@@ -209,6 +209,14 @@ export default function App() {
   const lastEmittedThemeRef = useRef(null);
   const overlayEmitTimeoutRef = useRef(null);
   const lastEmittedOverlayRef = useRef(null);
+  // Bug real (pérdida de datos): un navegador sin personalización guardada
+  // arrancaba con los valores de fábrica y, al conectarse, los mandaba al
+  // servidor (en el primer envío y en la resincronización de 'connect') antes
+  // de recibir lo guardado: el servidor los guardaba en la base y pisaba la
+  // personalización real. Ahora, si este navegador no tiene una copia, no se
+  // manda ni se guarda nada hasta recibir la del servidor (que la envía al
+  // conectar, ver attachSocket en tenant.js). Con copia local, igual que antes.
+  const overlaySyncedRef = useRef(hasSavedOverlayCustomization());
 
   // Premio COMPARTIDO entre Rey del Trono/Zubastinis/Eliminación/Ruleta
   // (título + imagen opcional) — se setea desde cualquiera de los cuatro
@@ -447,6 +455,12 @@ export default function App() {
     // silencio lo ya guardado con sus propios valores de fábrica apenas se
     // conectara.
     socket.on('overlay_customization_update', (map) => {
+      if (!overlaySyncedRef.current) {
+        overlaySyncedRef.current = true;
+        setOverlayCustomizationState(map);
+        setPanelOverlayDraft(map);
+        return;
+      }
       if (overlayEmitTimeoutRef.current) return;
       const sent = lastEmittedOverlayRef.current;
       const current = panelOverlayDraftRef.current;
@@ -547,11 +561,12 @@ export default function App() {
   // cambia (y una vez al conectar) — nunca en modo overlay, que solo debe
   // RECIBIRLA (ver overlayCustomization arriba).
   useEffect(() => {
+    if (!overlaySyncedRef.current) return;
     saveOverlayCustomization(panelOverlayDraft);
   }, [panelOverlayDraft]);
 
   useEffect(() => {
-    if (overlayMode || !socket) return;
+    if (overlayMode || !socket || !overlaySyncedRef.current) return;
     if (overlayEmitTimeoutRef.current) clearTimeout(overlayEmitTimeoutRef.current);
     overlayEmitTimeoutRef.current = setTimeout(() => {
       socket.emit('set_overlay_customization', panelOverlayDraft);
@@ -618,7 +633,7 @@ export default function App() {
     if (overlayMode || !socket) return;
     const resync = () => {
       socket.emit('set_theme', panelThemeRef.current);
-      socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
+      if (overlaySyncedRef.current) socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
       // Mismo motivo que arriba, para la conexión de TikTok: si el backend
       // se reinició (a diferencia de un simple F5 del panel, ahí sí se
       // pierde la conexión real con TikTok — un reinicio del proceso no
@@ -757,10 +772,12 @@ export default function App() {
   const updateOverlayCustomization = (id, entry) => {
     setPanelOverlayDraft((prev) => ({ ...prev, [id]: entry }));
   };
+  // Solo el aspecto (ver copyOverlayVisual): antes se copiaba el objeto
+  // entero y se perdían el volumen de las Alertas y la animación del Chat.
   const applyOverlayCustomizationToAll = (id) => {
     setPanelOverlayDraft((prev) => {
       const entry = prev[id];
-      return Object.fromEntries(OVERLAY_CUSTOMIZE_IDS.map((oid) => [oid, entry]));
+      return Object.fromEntries(OVERLAY_CUSTOMIZE_IDS.map((oid) => [oid, oid === id ? entry : copyOverlayVisual(entry, prev[oid])]));
     });
   };
 
@@ -950,6 +967,13 @@ export default function App() {
         (quedaba en el flujo y movía la página: lo detectó la auditoría de CLS). */}
     <div><CookieBanner onNavigate={setSidebarMode} /></div>
     <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
+    {/* Destino de las ventanas emergentes que se montan con un portal (ver
+        OverlayCustomizePanel.jsx): va al final, dentro del tema (hereda sus
+        colores) y después del botón flotante y del aviso de cookies. Como
+        .themed-app pone z-index: 1 a cada hijo directo, el que va más abajo
+        en el documento queda encima: antes el botón flotante tapaba el
+        "Listo" de Personalizar en el celular. */}
+    <div id="tkc-modal-root" />
     </ThemedShell>
   );
 }

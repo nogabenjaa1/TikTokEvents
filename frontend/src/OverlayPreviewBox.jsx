@@ -3,30 +3,7 @@ import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOve
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
 import { buildPreviewMock } from './overlayPreviewMocks';
-import { CHAT_OVERLAY_SIZE } from './chatOverlayModel';
-
-// Tamaño real (sin escalar) de cada overlay — mismos valores que sus
-// propios w-[...]/h-[...] en Overlay.jsx/DiceOverlay.jsx, ya estandarizados
-// (pedido explícito): 380x700 para todos los verticales (el chat ahora es
-// horizontal, 960x480), 960x260 para los
-// dos horizontales (Colores y Extensible ya compartían esa medida entre
-// sí — se mantiene, cambiarla implicaría rediseñar su layout interno, que
-// está pensado para una franja ancha y baja tipo "barra de subathon", no
-// para una proporción más cuadrada). Se usan para escalar la vista previa
-// a un tamaño que entre en el modal sin dejar espacio en blanco de más ni
-// recortar nada.
-const NATURAL_SIZE = {
-  games: { w: 380, h: 700 },
-  colors: { w: 960, h: 260 },
-  extensible: { w: 960, h: 260 },
-  taptap: { w: 380, h: 700 },
-  gifter: { w: 380, h: 700 },
-  musicqueue: { w: 380, h: 700 },
-  goal: { w: 960, h: 260 },
-  chat: CHAT_OVERLAY_SIZE,
-  ticker: { w: 960, h: 200 },
-  versus: { w: 900, h: 420 },
-};
+import { NATURAL_SIZE, PREVIEW_BACKDROPS } from './overlayPreview';
 
 // La vista previa se escala para caber en el ancho que tenga (la columna del
 // panel de personalización), sin pasar de un alto cómodo ni agrandarse de más.
@@ -139,7 +116,7 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
 // entrar en el modal — se actualiza solo en cuanto `entry` cambia, porque
 // es el mismo objeto que ya se está editando en vivo (ver
 // OverlayCustomizePanel.jsx).
-export default function OverlayPreviewBox({ overlayId, entry, liveState }) {
+export default function OverlayPreviewBox({ overlayId, entry, liveState, maxHeight = PREVIEW_MAX_HEIGHT, backdrop = 'dark' }) {
   const { style, accent, customColor } = useTheme();
   const theme = { style, accent, customColor };
   const natural = NATURAL_SIZE[overlayId] || { w: 380, h: 260 };
@@ -154,21 +131,23 @@ export default function OverlayPreviewBox({ overlayId, entry, liveState }) {
     ro?.observe(el);
     return () => ro?.disconnect();
   }, []);
-  const scale = Math.min(PREVIEW_MAX_SCALE, PREVIEW_MAX_HEIGHT / natural.h, available ? available / natural.w : 0.42);
+  const scale = Math.min(PREVIEW_MAX_SCALE, maxHeight / natural.h, available ? available / natural.w : 0.42);
   const boxW = Math.round(natural.w * scale);
   const boxH = Math.round(natural.h * scale);
 
   return (
     // `tkc-overlay-preview` (ver index.css): igual que la página real del overlay, este fondo
-    // oscuro representa "lo que sea que haya detrás en OBS" -- el `.themed-app` que arma cada
+    // representa "lo que sea que haya detrás en OBS" -- el `.themed-app` que arma cada
     // PreviewContent trae su propio fondo temático de página (`--page-bg`) para el uso normal
     // del panel, así que esa clase lo anula acá, igual que `body.tkc-overlay-transparent` lo
     // anula en la página real (ver OverlayModeView.jsx). Sin esto, "Transparente" en el fondo
     // del overlay se veía bien en el recuadro/fila propios pero la vista previa entera seguía
     // mostrando un rectángulo sólido del color del tema alrededor -- exactamente el bug que
     // esto previene, pero adentro del modal en vez de en OBS.
-    <div ref={wrapRef} className="w-full">
-      <div className="tkc-overlay-preview rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, background: '#0A0614' }}>
+    // aria-hidden: son datos de prueba (y títulos del overlay); quien la usa
+    // pone su propio texto de "Vista previa".
+    <div ref={wrapRef} className="w-full" aria-hidden="true">
+      <div className="tkc-overlay-preview rounded-xl overflow-hidden mx-auto" style={{ width: boxW, height: boxH, ...(PREVIEW_BACKDROPS[backdrop] || PREVIEW_BACKDROPS.dark).style }}>
         <div style={{ width: natural.w, height: natural.h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
           <PreviewContent overlayId={overlayId} entry={entry} theme={theme} liveState={liveState} />
         </div>

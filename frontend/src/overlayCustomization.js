@@ -76,6 +76,101 @@ export function defaultOverlayCustomizationMap() {
   return Object.fromEntries(OVERLAY_CUSTOMIZE_IDS.map((id) => [id, defaultEntry()]));
 }
 
+// ── Estilos listos (presets) ────────────────────────────────────────────
+// Pedido explícito: que un overlay se vea bien con una sola elección en vez
+// de ajustar fondo, bordes, dos colores de texto y la fuente por separado.
+// Un estilo NO es un campo nuevo: escribe los mismos campos de siempre (el
+// backend los valida igual, ver sanitizeOverlayCustomization), así que no
+// hay nada que migrar y cualquier ajuste posterior se conserva tal cual. Qué
+// estilo está puesto se deduce comparando (ver matchOverlayPreset): si se
+// cambió algo, el panel lo muestra como "Personalizado".
+// Los campos que forman el aspecto de un overlay. `volume` (Alertas) y
+// `messageAnimation` (Chat) quedan fuera a propósito: son de un solo overlay
+// y un estilo o "Aplicar a todos" no deben pisarlos.
+export const VISUAL_KEYS = ['background', 'borders', 'usernameColor', 'labelText', 'font'];
+
+const text = (type, color, fontSize = 'normal') => ({ type, color, from: '#7C3AED', to: '#3B82F6', fontSize });
+
+export const OVERLAY_STYLE_PRESETS = [
+  {
+    id: 'classic', label: 'Clásico', hint: 'Los colores de tu tema',
+    values: {
+      background: { type: 'solid', from: '#7C3AED', to: '#3B82F6' }, borders: true,
+      usernameColor: text('default', '#000000'), labelText: text('default', '#FFFFFF'), font: 'sora',
+    },
+  },
+  {
+    id: 'floating', label: 'Sobre tu escena', hint: 'Sin fondo, texto blanco con sombra',
+    values: {
+      background: { type: 'transparent', from: '#7C3AED', to: '#3B82F6' }, borders: false,
+      usernameColor: text('custom', '#FFFFFF'), labelText: text('custom', '#FFFFFF'), font: 'poppins',
+    },
+  },
+  {
+    id: 'neon', label: 'Neón', hint: 'Fondo nocturno, rosa y cian',
+    values: {
+      background: { type: 'gradient', from: '#14082E', to: '#3B0A63' }, borders: true,
+      usernameColor: text('custom', '#F472D0'), labelText: text('custom', '#5EEAF5'), font: 'oswald',
+    },
+  },
+  {
+    id: 'arcade', label: 'Arcade', hint: 'Azul profundo, amarillo y títulos arcoíris',
+    values: {
+      background: { type: 'gradient', from: '#071A4A', to: '#1D3FB0' }, borders: true,
+      usernameColor: text('custom', '#FDE047', 'large'), labelText: text('rainbow', '#FFFFFF', 'large'), font: 'bebas',
+    },
+  },
+  {
+    id: 'party', label: 'Fiesta', hint: 'Fondo arcoíris en movimiento',
+    values: {
+      background: { type: 'rainbow', from: '#7C3AED', to: '#3B82F6' }, borders: false,
+      usernameColor: text('custom', '#1A1033'), labelText: text('custom', '#1A1033'), font: 'nunito',
+    },
+  },
+];
+
+export function applyOverlayPreset(entry, presetId) {
+  const preset = OVERLAY_STYLE_PRESETS.find((p) => p.id === presetId);
+  if (!preset) return entry;
+  return { ...entry, ...structuredClone(preset.values) };
+}
+
+// Qué estilo coincide con lo que hay guardado (o null: "Personalizado"). Solo
+// se comparan los datos que se ven: los colores de un degradado no cuentan
+// si el fondo no es un degradado, ni el color propio si no es "Un color".
+function visualSignature(entry) {
+  const bg = entry?.background || {};
+  const textSig = (t = {}) => [t.type || 'default', t.type === 'custom' ? String(t.color || '').toLowerCase() : '',
+    t.type === 'gradient' ? `${t.from}>${t.to}`.toLowerCase() : '', t.fontSize || 'normal'].join('|');
+  return [
+    bg.type || 'solid', bg.type === 'gradient' ? `${bg.from}>${bg.to}`.toLowerCase() : '',
+    bordersEnabled(entry) ? 'b' : 'nb', textSig(entry?.usernameColor), textSig(entry?.labelText), entry?.font || 'sora',
+  ].join('#');
+}
+export function matchOverlayPreset(entry) {
+  const sig = visualSignature(entry);
+  return OVERLAY_STYLE_PRESETS.find((p) => visualSignature(p.values) === sig)?.id || null;
+}
+
+// "Restablecer": el aspecto de fábrica de este overlay, sin tocar el volumen
+// de las Alertas (que se ajusta en otra pantalla).
+export function resetOverlayVisual(entry) {
+  const base = defaultEntry();
+  const out = { ...entry };
+  for (const key of VISUAL_KEYS) out[key] = base[key];
+  out.messageAnimation = base.messageAnimation;
+  return out;
+}
+
+// "Aplicar a todos": copia solo el aspecto. Antes copiaba el objeto entero, y
+// llevar los cambios de cualquier overlay a todos reseteaba el volumen de las
+// Alertas y la animación de entrada del Chat.
+export function copyOverlayVisual(from, to) {
+  const out = { ...to };
+  for (const key of VISUAL_KEYS) out[key] = structuredClone(from?.[key] ?? defaultEntry()[key]);
+  return out;
+}
+
 function isValidEntry(e) {
   return !!e && !!e.background && ['transparent', 'solid', 'gradient', 'rainbow'].includes(e.background.type)
     && !!e.usernameColor && ['default', 'theme', 'custom', 'gradient', 'rainbow'].includes(e.usernameColor.type)
@@ -101,6 +196,13 @@ export function loadOverlayCustomization() {
   return base;
 }
 
+// Si este navegador ya tiene una personalización guardada. Uno nuevo (otro
+// dispositivo, o con los datos borrados) no la tiene: ver App.jsx, que en ese
+// caso espera a recibir la del servidor antes de mandar nada.
+export function hasSavedOverlayCustomization() {
+  try { return localStorage.getItem(STORAGE_KEY) !== null; } catch { return false; }
+}
+
 export function saveOverlayCustomization(map) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
@@ -110,9 +212,53 @@ export function saveOverlayCustomization(map) {
   }
 }
 
-// Degradado usado tanto para el fondo "arcoíris" en texto (ver
-// getUsernameOverride) como para la muestra dentro del selector del modal.
-export const RAINBOW_GRADIENT = 'linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b)';
+// Colores del arcoíris (fondo, texto, la ruleta en SVG y la muestra del
+// selector). Antes eran 6 tonos con un azul y un violeta oscuros (#3b82f6,
+// #a855f7, luminancia 0.22 contra 0.75 del amarillo): en la mitad fría del
+// ciclo el efecto se apagaba. Estos 8 van de 0.31 a 0.72, y el degradado
+// cierra en el tono con que empieza para que el bucle no tenga salto.
+// Mismos valores que en index.css y RouletteOverlay.jsx.
+export const RAINBOW_STOPS = ['#FF6363', '#FFA23A', '#FFD93D', '#4CE38A', '#2EDCF2', '#6FB1FF', '#B08CFF', '#FF7AC6'];
+export const RAINBOW_GRADIENT = `linear-gradient(90deg,${[...RAINBOW_STOPS, RAINBOW_STOPS[0]].join(',')})`;
+
+// ── Tinta automática según el fondo ─────────────────────────────────────
+// Los temas pastel fuerzan el texto a una tinta oscura (y el nombre
+// "Original" es negro): con un degradado oscuro el overlay quedaba ilegible y
+// había que corregir a mano cada color de texto. Ahora, si el degradado
+// elegido es oscuro, el overlay pasa solo a tinta clara. Un fondo del tema,
+// transparente o arcoíris (claro) conserva la tinta de siempre.
+function hexLuminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const lin = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+}
+const contrast = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+const DARK_INK_LUMINANCE = hexLuminance('#2E2136');
+const LIGHT_INK = '#F8F5FF';
+const LIGHT_INK_LUMINANCE = hexLuminance(LIGHT_INK);
+
+// true si el fondo pide tinta clara: la que mejor contrasta con el más
+// desfavorable de los dos colores del degradado.
+export function backgroundNeedsLightInk(entry) {
+  const bg = entry?.background;
+  if (bg?.type !== 'gradient') return false;
+  const stops = [hexLuminance(bg.from), hexLuminance(bg.to)].filter((l) => l !== null);
+  if (!stops.length) return false;
+  const worst = (ink) => Math.min(...stops.map((l) => contrast(l, ink)));
+  return worst(LIGHT_INK_LUMINANCE) > worst(DARK_INK_LUMINANCE);
+}
+
+// Variables que pasan a tinta clara lo que va encima de un fondo: el texto
+// que el tema remapea (--ink-*), el nombre "Original" y los textos de acento
+// (--tkc-accent-ink-l, ver index.css). Van en el elemento que lleva el fondo
+// (ver resolveBackgroundStyle), así que todo lo de adentro las hereda.
+function lightInkVars() {
+  // `color` también: lo que no lleva clase de color hereda el del tema, que
+  // ya viene calculado oscuro desde más arriba.
+  return { color: LIGHT_INK, '--ink-default': LIGHT_INK, '--ink-cute': LIGHT_INK, '--ink': LIGHT_INK, '--tkc-name-default': LIGHT_INK, '--tkc-accent-ink-l': 0.86 };
+}
 
 // Fondo de un overlay (marco completo en King/Zub/Elim/Ruleta/Colores/
 // Extensible, o cada fila individual en Top Tap-Tap/Top Gifter/Cola de
@@ -171,8 +317,12 @@ function backgroundOnlyStyle(entry, fallbackVar) {
   return { background: fallbackVar };
 }
 
+// Con un degradado oscuro, el MISMO elemento que lleva el fondo (el marco
+// del overlay, o cada fila en los rankings, el chat y la cola de Spotify)
+// pasa a tinta clara: así cambia lo que está encima del degradado y no un
+// título que queda fuera de las filas, directo sobre la escena de OBS.
 export function resolveBackgroundStyle(entry, fallbackVar = 'var(--surface-bg)') {
-  return { ...backgroundOnlyStyle(entry, fallbackVar), ...bordersOffStyle(entry) };
+  return { ...backgroundOnlyStyle(entry, fallbackVar), ...bordersOffStyle(entry), ...(backgroundNeedsLightInk(entry) ? lightInkVars() : {}) };
 }
 
 // Color del texto de un username en HTML normal (no SVG, ver
@@ -204,7 +354,9 @@ export function getUsernameOverride(entry, { scale: applyScale = true } = {}) {
   // lados en vez de invadir solo al vecino de la derecha en una fila.
   const scaleStyle = scale !== 1 ? { display: 'inline-block', transform: `scale(${scale})`, transformOrigin: 'center' } : {};
 
-  if (!uc.type || uc.type === 'default') return { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': '#000000', ...scaleStyle } };
+  // "Original" sigue siendo negro; solo cambia a claro dentro de un overlay
+  // con fondo oscuro (ver lightInkVars).
+  if (!uc.type || uc.type === 'default') return { className: 'tkc-username-custom', cssVars: { '--tkc-username-color': 'var(--tkc-name-default, #000000)', ...scaleStyle } };
   if (uc.type === 'theme') return { className: 'tkc-username-theme', cssVars: scaleStyle };
   if (uc.type === 'rainbow') return { className: 'tkc-username-rainbow', cssVars: scaleStyle };
   if (uc.type === 'gradient') {
@@ -228,7 +380,7 @@ export function getUsernameOverride(entry, { scale: applyScale = true } = {}) {
 // dentro de cada porción.
 export function getUsernameFill(entry, fallback) {
   const uc = entry?.usernameColor;
-  if (!uc || uc.type === 'default') return '#000000';
+  if (!uc || uc.type === 'default') return 'var(--tkc-name-default, #000000)';
   if (uc.type === 'theme') return 'var(--accent-soft)';
   if (uc.type === 'rainbow') return 'url(#tkc-rainbow-grad)';
   if (uc.type === 'gradient') return 'url(#tkc-custom-grad)';

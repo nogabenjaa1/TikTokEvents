@@ -230,7 +230,7 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
     <div className="px-1.5 py-3 flex flex-col gap-2 font-sans overflow-hidden" {...overlayRootProps(customize, { width: CHAT_OVERLAY_SIZE.w, height: CHAT_OVERLAY_SIZE.h, fontSize: `${settings.fontSize}px` })}>
       {settings.showViewerCount && (
         <div className="flex items-center justify-between flex-shrink-0 text-[12px] px-1">
-          <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>Chat en vivo</p>
+          <p {...labelProps(customize, 'tkc-over-scene theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black')}>Chat en vivo</p>
           <span className="tkc-ovl-fill tkc-chat-bubble tkc-chat-text text-xs font-black px-2.5 py-1 rounded-full flex-shrink-0">
             {Math.max(0, viewerCount || 0).toLocaleString('es-MX')} viendo
           </span>
@@ -245,7 +245,7 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
         </ChatList>
       ) : (
         <div className="flex-1 flex items-center justify-center">
-          <p {...labelProps(customize, 'text-gray-500 text-xs italic text-center')}>{emptyText}</p>
+          <p {...labelProps(customize, 'tkc-over-scene text-gray-500 text-xs italic text-center')}>{emptyText}</p>
         </div>
       )}
     </div>

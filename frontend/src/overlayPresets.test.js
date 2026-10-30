@@ -87,3 +87,22 @@ test('el nombre "Original" sigue siendo negro salvo dentro de un fondo oscuro', 
   const o = getUsernameOverride(fresh());
   assert.equal(o.cssVars['--tkc-username-color'], 'var(--tkc-name-default, #000000)');
 });
+
+test('arcoíris: colores luminosos (sin bandas oscuras) y los mismos en el CSS que en el código', async () => {
+  const { RAINBOW_STOPS } = await import('./overlayCustomization.js');
+  const { readFileSync } = await import('node:fs');
+  const lum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const lin = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  };
+  // Antes el azul y el violeta (#3b82f6, #a855f7) daban 0.22.
+  for (const c of RAINBOW_STOPS) assert.ok(lum(c) >= 0.3, `${c} demasiado oscuro (${lum(c).toFixed(2)})`);
+  const css = readFileSync(new URL('./index.css', import.meta.url), 'utf8');
+  const bg = /\[style\*="--tkc-rainbow-bg"\]::before \{[\s\S]*?linear-gradient\(90deg,([^)]*)\)/.exec(css)[1].split(',');
+  const text = /\.tkc-username-rainbow \{\s*background-image: linear-gradient\(90deg,([^)]*)\)/.exec(css)[1].split(',');
+  const cycle = [...RAINBOW_STOPS, RAINBOW_STOPS[0]];
+  assert.deepEqual(text, cycle, 'texto: una vuelta que cierra en el primer tono');
+  assert.deepEqual(bg, [...RAINBOW_STOPS, ...RAINBOW_STOPS, RAINBOW_STOPS[0]], 'fondo: dos vueltas seguidas para el bucle');
+  assert.ok(!/hue-rotate/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'el texto arcoíris no debe volver a usar hue-rotate (oscurece)');
+});

@@ -43,7 +43,7 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
   const nameOverride = getUsernameOverride(customize);
   return (
     <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
-      <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>{icon} {title}</p>
+      <p {...labelProps(customize, 'tkc-over-scene theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>{icon} {title}</p>
       {entries.length > 0 ? (
         <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
           {entries.map((e, i) => (
@@ -56,7 +56,7 @@ function ContinuousLeaderboardWidget({ title, icon, entries, valueKey, valueSuff
           ))}
         </div>
       ) : (
-        <p {...labelProps(customize, 'text-gray-600 text-xs italic text-center py-4')}>{emptyLabel}</p>
+        <p {...labelProps(customize, 'tkc-over-scene text-gray-600 text-xs italic text-center py-4')}>{emptyLabel}</p>
       )}
     </div>
   );

@@ -196,13 +196,6 @@ export function loadOverlayCustomization() {
   return base;
 }
 
-// Si este navegador ya tiene una personalización guardada. Uno nuevo (otro
-// dispositivo, o con los datos borrados) no la tiene: ver App.jsx, que en ese
-// caso espera a recibir la del servidor antes de mandar nada.
-export function hasSavedOverlayCustomization() {
-  try { return localStorage.getItem(STORAGE_KEY) !== null; } catch { return false; }
-}
-
 export function saveOverlayCustomization(map) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
@@ -257,7 +250,8 @@ export function backgroundNeedsLightInk(entry) {
 function lightInkVars() {
   // `color` también: lo que no lleva clase de color hereda el del tema, que
   // ya viene calculado oscuro desde más arriba.
-  return { color: LIGHT_INK, '--ink-default': LIGHT_INK, '--ink-cute': LIGHT_INK, '--ink': LIGHT_INK, '--tkc-name-default': LIGHT_INK, '--tkc-accent-ink-l': 0.86 };
+  // `--tkc-rainbow-stroke`: el trazo oscuro del texto arcoíris no hace falta sobre un fondo oscuro.
+  return { color: LIGHT_INK, '--ink-default': LIGHT_INK, '--ink-cute': LIGHT_INK, '--ink': LIGHT_INK, '--tkc-name-default': LIGHT_INK, '--tkc-accent-ink-l': 0.86, '--tkc-rainbow-stroke': '0px transparent' };
 }
 
 // Fondo de un overlay (marco completo en King/Zub/Elim/Ruleta/Colores/
@@ -284,7 +278,7 @@ function lightInkVars() {
 // cuadro y trababa los overlays en OBS. El color de base es el del propio
 // arcoíris, para el primer cuadro antes de que la capa se componga.
 function rainbowBackgroundStyle() {
-  return { background: '#a855f7', '--tkc-rainbow-bg': '1' };
+  return { background: RAINBOW_STOPS[2], '--tkc-rainbow-bg': '1' };
 }
 
 // Bordes on/off (pedido explícito). `borders` es opcional en el entry: si
@@ -451,7 +445,20 @@ export function getLabelOverride(entry) {
   if (lt.type === 'gradient') {
     return { className: 'tkc-username-gradient', style: { ...style, '--tkc-username-from': lt.from || '#7C3AED', '--tkc-username-to': lt.to || '#3B82F6' } };
   }
-  return { className: 'tkc-username-custom', style: { ...style, '--tkc-username-color': lt.color || '#FFFFFF' } };
+  // Contorno para cuando este texto va directo sobre la escena (ver
+  // .tkc-over-scene en index.css): el tono contrario al del texto, para que
+  // se lea sobre una escena clara u oscura; el halo de color solo en textos
+  // claros, que es donde se ve como neón.
+  const light = (hexLuminance(lt.color || '#FFFFFF') ?? 1) > 0.3;
+  return {
+    className: 'tkc-username-custom',
+    style: {
+      ...style,
+      '--tkc-username-color': lt.color || '#FFFFFF',
+      '--tkc-scene-outline': light ? 'rgb(10 6 20 / 0.9)' : 'rgb(255 255 255 / 0.9)',
+      '--tkc-scene-glow': light ? 'color-mix(in srgb, currentColor 55%, transparent)' : 'rgb(255 255 255 / 0.55)',
+    },
+  };
 }
 
 // Atajo para un texto fijo: <p {...labelProps(customize, 'text-xs font-black')}>.

@@ -903,10 +903,6 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    mueve por debajo de un texto con color transparente + background-clip,
    así el propio texto queda "pintado" con el arcoíris en movimiento.
    ========================================== */
-@keyframes tkc-rainbow-move {
-  from { background-position: 0% 0; }
-  to   { background-position: 400% 0; }
-}
 
 /* Fondo "arcoíris" de un overlay o de una fila (ver rainbowBackgroundStyle):
    una capa aparte, el doble de ancha y con el arcoíris dos veces, que se
@@ -1012,6 +1008,12 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
      midió en el CEF de OBS de un equipo modesto. */
   will-change: background-position;
   animation: tkc-rainbow-text 3s linear infinite;
+  /* Con la paleta más luminosa, sobre un fondo claro (el del tema es pastel)
+     los tonos amarillo y cian se perdían. Una sombra se vería a través de las
+     letras (están recortadas), así que va un trazo fino oscuro y
+     semitransparente sobre el borde de cada letra. Dentro de un degradado
+     oscuro no hace falta y se apaga (ver lightInkVars en overlayCustomization.js). */
+  -webkit-text-stroke: var(--tkc-rainbow-stroke, 0.6px rgb(26 16 51 / 0.55));
 }
 /* Con background-size 200%, 200% de posición es exactamente el ancho de la
    imagen: el bucle encaja sin salto. */
@@ -1514,6 +1516,20 @@ select:disabled { cursor: not-allowed; }
   -webkit-backdrop-filter: none !important;
 }
 [data-ovl-bg="transparent"] { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+/* Texto con un color propio que va DIRECTO sobre la escena de OBS (el título
+   y los avisos de los rankings, la cola de Spotify y el chat, que pintan su
+   fondo por fila: ver .tkc-over-scene en esos overlays). Un color claro como
+   el cian de Neón se perdía sobre una escena clara. En vez de ponerle una caja,
+   lo que hace un letrero de neón: un contorno fino del tono contrario (oscuro
+   para un texto claro como el de Neón, claro para uno oscuro como el de
+   Fiesta) y, en los textos claros, un halo del mismo color. Solo con
+   "Un color": con Original/Del tema el texto conserva su aspecto, el
+   degradado y el arcoíris se pintan recortados (una sombra se vería a través
+   de las letras) y "Transparente" ya trae su propia sombra. */
+.themed-app[data-theme-style] [data-ovl-bg]:not([data-ovl-bg="transparent"]) .tkc-over-scene.tkc-username-custom {
+  /* Contorno del tono contrario al texto y halo (ver getLabelOverride). */
+  text-shadow: 0 0 1px var(--tkc-scene-outline), 0 1px 2px var(--tkc-scene-outline), 0 0 10px var(--tkc-scene-glow);
+}
 /* El texto con degradado/arcoíris se pinta con background-clip: una sombra
    de texto se vería A TRAVÉS de las letras y las oscurecería, así que esos
    van sin sombra. A propósito sin un filtro drop-shadow en su lugar: el

@@ -30,7 +30,8 @@ import useSectionRouting from './app/useSectionRouting';
 import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
 import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
-import { loadOverlayCustomization, saveOverlayCustomization, hasSavedOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
+import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
+import { createSettingsSync } from './settingsSync';
 
 // Paneles pesados cargados bajo demanda (ver lazyPanel.jsx): el overlay de
 // OBS y el primer render del panel ya no descargan pagos, Downloader,
@@ -209,14 +210,16 @@ export default function App() {
   const lastEmittedThemeRef = useRef(null);
   const overlayEmitTimeoutRef = useRef(null);
   const lastEmittedOverlayRef = useRef(null);
-  // Bug real (pérdida de datos): un navegador sin personalización guardada
-  // arrancaba con los valores de fábrica y, al conectarse, los mandaba al
-  // servidor (en el primer envío y en la resincronización de 'connect') antes
-  // de recibir lo guardado: el servidor los guardaba en la base y pisaba la
-  // personalización real. Ahora, si este navegador no tiene una copia, no se
-  // manda ni se guarda nada hasta recibir la del servidor (que la envía al
-  // conectar, ver attachSocket en tenant.js). Con copia local, igual que antes.
-  const overlaySyncedRef = useRef(hasSavedOverlayCustomization());
+  // Bug real (pérdida de datos), en el tema y en la personalización de
+  // overlays: al conectarse, el panel mandaba lo que tuviera este navegador
+  // (o los valores de fábrica, si no tenía nada) antes de recibir lo guardado,
+  // y el servidor lo guardaba encima. Ver settingsSync.js: en cada conexión no
+  // se manda nada hasta recibir el estado del servidor, y entonces se adopta
+  // salvo que la persona haya cambiado algo mientras tanto.
+  const sameTheme = (a, b) => !!a && !!b && a.style === b.style && a.accent === b.accent && a.customColor === b.customColor;
+  // Un objeto por pestaña, creado una sola vez con lo que había al cargar.
+  const [themeSync] = useState(() => createSettingsSync({ initial: { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor }, same: sameTheme }));
+  const [overlaySync] = useState(() => createSettingsSync({ initial: panelOverlayDraft, same: (a, b) => JSON.stringify(a) === JSON.stringify(b) }));
 
   // Premio COMPARTIDO entre Rey del Trono/Zubastinis/Eliminación/Ruleta
   // (título + imagen opcional) — se setea desde cualquiera de los cuatro
@@ -436,6 +439,22 @@ export default function App() {
     // dispositivo (setSkin) para que no haga falta re-elegirlo al entrar
     // desde otro navegador/computadora.
     socket.on('theme_updated', (t) => {
+      // Primer estado de esta conexión (ver settingsSync.js): adoptarlo, o
+      // mandar el propio si la persona cambió el tema mientras tanto.
+      const decision = themeSync.receive(t, panelThemeRef.current);
+      if (decision === 'keep-local') {
+        if (!overlayMode) {
+          socket.emit('set_theme', panelThemeRef.current);
+          themeSync.sent(panelThemeRef.current);
+          lastEmittedThemeRef.current = panelThemeRef.current;
+        }
+        return;
+      }
+      if (decision === 'adopt') {
+        setOverlayTheme(t);
+        if (t?.style) setSkin(t.style, t.accent, t.customColor);
+        return;
+      }
       // Ver comentario de themeEmitTimeoutRef/lastEmittedThemeRef más
       // arriba: mientras haya un envío pendiente, o este eco no coincida
       // con lo último que mandamos, hay un cambio local más nuevo en
@@ -455,8 +474,16 @@ export default function App() {
     // silencio lo ya guardado con sus propios valores de fábrica apenas se
     // conectara.
     socket.on('overlay_customization_update', (map) => {
-      if (!overlaySyncedRef.current) {
-        overlaySyncedRef.current = true;
+      const decision = overlaySync.receive(map, panelOverlayDraftRef.current);
+      if (decision === 'keep-local') {
+        if (!overlayMode) {
+          socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
+          overlaySync.sent(panelOverlayDraftRef.current);
+          lastEmittedOverlayRef.current = panelOverlayDraftRef.current;
+        }
+        return;
+      }
+      if (decision === 'adopt') {
         setOverlayCustomizationState(map);
         setPanelOverlayDraft(map);
         return;
@@ -527,6 +554,11 @@ export default function App() {
     // "activo" sin ganador por la desconexión a mitad de partida, para
     // poder ingresar otro usuario o reintentar el mismo de forma
     // controlada, en vez de quedar bloqueado repitiendo el mismo error.
+    socket.on('disconnect', () => {
+      themeSync.disconnected();
+      overlaySync.disconnected();
+    });
+
     socket.on('live_stream_ended', ({ username: endedUsername } = {}) => {
       setForceUnlockUsername(true);
       setConnectionStatus('error');
@@ -548,47 +580,43 @@ export default function App() {
     if (overlayMode || !socket) return;
     if (themeEmitTimeoutRef.current) clearTimeout(themeEmitTimeoutRef.current);
     themeEmitTimeoutRef.current = setTimeout(() => {
+      themeEmitTimeoutRef.current = null;
+      // Sin el estado del servidor todavía (o sin conexión) no se manda: el
+      // cambio queda aquí y se decide al recibirlo (ver settingsSync.js).
+      if (!themeSync.canSend()) return;
       const payload = { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor };
       socket.emit('set_theme', payload);
+      themeSync.sent(payload);
       lastEmittedThemeRef.current = payload;
-      themeEmitTimeoutRef.current = null;
     }, 300);
     return () => { if (themeEmitTimeoutRef.current) clearTimeout(themeEmitTimeoutRef.current); };
-  }, [socket, overlayMode, panelThemeStyle, panelThemeAccent, panelThemeCustomColor]);
+  }, [socket, overlayMode, panelThemeStyle, panelThemeAccent, panelThemeCustomColor, themeSync]);
 
   // Mismo criterio que el efecto de arriba, para la personalización de
   // overlays: se persiste en este dispositivo y se re-emite cada vez que
   // cambia (y una vez al conectar) — nunca en modo overlay, que solo debe
   // RECIBIRLA (ver overlayCustomization arriba).
   useEffect(() => {
-    if (!overlaySyncedRef.current) return;
     saveOverlayCustomization(panelOverlayDraft);
   }, [panelOverlayDraft]);
 
   useEffect(() => {
-    if (overlayMode || !socket || !overlaySyncedRef.current) return;
+    if (overlayMode || !socket) return;
     if (overlayEmitTimeoutRef.current) clearTimeout(overlayEmitTimeoutRef.current);
     overlayEmitTimeoutRef.current = setTimeout(() => {
-      socket.emit('set_overlay_customization', panelOverlayDraft);
-      lastEmittedOverlayRef.current = panelOverlayDraft;
       overlayEmitTimeoutRef.current = null;
+      if (!overlaySync.canSend()) return;
+      socket.emit('set_overlay_customization', panelOverlayDraft);
+      overlaySync.sent(panelOverlayDraft);
+      lastEmittedOverlayRef.current = panelOverlayDraft;
     }, 300);
     return () => { if (overlayEmitTimeoutRef.current) clearTimeout(overlayEmitTimeoutRef.current); };
-  }, [socket, overlayMode, panelOverlayDraft]);
+  }, [socket, overlayMode, panelOverlayDraft, overlaySync]);
 
-  // Re-sincroniza tema + personalización de overlays cada vez que el socket
-  // (re)conecta — no solo la primera vez. Sin esto, si el backend se
-  // reinicia (p. ej. un redeploy) el tenant vuelve a arrancar con
-  // theme/overlayCustomization en sus defaults en memoria (nunca se
-  // persisten en disco, ver comentario de `this.theme` en tenant.js) y el
-  // overlay de OBS se queda mostrando esos defaults hasta que el panel
-  // vuelva a tocar CUALQUIER control — el socket.io-client reconecta solo
-  // (comportamiento por defecto) pero, al ser el MISMO objeto socket, los
-  // efectos de arriba (dependientes de panelThemeStyle/panelOverlayDraft)
-  // no se vuelven a disparar si el streamer no cambió nada. Usamos los
-  // refs declarados arriba (panelThemeRef/panelOverlayDraftRef) para
-  // mandar siempre el valor más reciente, sin importar cuándo llegue el
-  // evento 'connect'.
+  // Tema y personalización de overlays: antes se reenviaban a ciegas en cada
+  // reconexión, de cuando el servidor los tenía solo en memoria. Ahora los
+  // guarda en la base y los manda al conectar; lo que haga falta reenviar
+  // (un cambio hecho sin conexión) lo decide settingsSync.js al recibirlos.
   // Estado de la conexión con el servidor + detección de reinicios: cada
   // arranque del backend tiene un id distinto; si un panel que seguía abierto
   // recibe un id nuevo, el servidor se reinició y todo lo que vivía en
@@ -632,8 +660,9 @@ export default function App() {
   useEffect(() => {
     if (overlayMode || !socket) return;
     const resync = () => {
-      socket.emit('set_theme', panelThemeRef.current);
-      if (overlaySyncedRef.current) socket.emit('set_overlay_customization', panelOverlayDraftRef.current);
+      // Tema y personalización de overlays ya NO se mandan aquí: el servidor
+      // envía lo guardado al conectar y settingsSync.js decide (antes este
+      // envío ciego era el que pisaba lo guardado desde un navegador nuevo).
       // Mismo motivo que arriba, para la conexión de TikTok: si el backend
       // se reinició (a diferencia de un simple F5 del panel, ahí sí se
       // pierde la conexión real con TikTok — un reinicio del proceso no

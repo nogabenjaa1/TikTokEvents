@@ -61,7 +61,7 @@ export function SpotifyQueueOverlay({ state, customize }) {
   const nameOverride = getUsernameOverride(customize);
   return (
     <div className="w-[380px] h-[700px] p-5 flex flex-col gap-3 font-sans" {...overlayRootProps(customize)}>
-      <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>🎵 Playlist</p>
+      <p {...labelProps(customize, 'tkc-over-scene theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black text-center flex-shrink-0')}>🎵 Playlist</p>
 
       {nowPlaying ? (
         <SpotifySongRow song={nowPlaying} playing customize={customize} rowBg={rowBg} nameOverride={nameOverride} />
@@ -74,7 +74,7 @@ export function SpotifyQueueOverlay({ state, customize }) {
 
       {queue.length > 0 && (
         <>
-          <p {...labelProps(customize, 'text-[9px] uppercase tracking-widest text-gray-500 font-bold flex-shrink-0')}>Siguientes:</p>
+          <p {...labelProps(customize, 'tkc-over-scene text-[9px] uppercase tracking-widest text-gray-500 font-bold flex-shrink-0')}>Siguientes:</p>
           <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
             {queue.map((song) => (
               <SpotifySongRow key={song.id} song={song} playing={false} customize={customize} rowBg={rowBg} nameOverride={nameOverride} />

@@ -91,21 +91,21 @@ export default function LiveFeed({ feed, connected }) {
   const rows = useMemo(() => filterFeed(visibleBase, filter), [visibleBase, filter]);
 
   return (
-    <section className="w-full max-w-4xl theme-surface p-4 flex flex-col gap-3" aria-labelledby="live-feed-title">
+    <section className="w-full max-w-5xl theme-surface p-4 flex flex-col gap-3" aria-labelledby="live-feed-title">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-3">
           <h2 id="live-feed-title" className="theme-heading text-lg font-black">Actividad en vivo</h2>
-          <span role="status" className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+          <span role="status" className="tkc-label inline-flex items-center gap-1.5 text-gray-400">
             <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} aria-hidden="true" />
             {connected ? 'Recibiendo' : 'Sin conexión'}
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] text-gray-500">
+          <span className="tkc-hint">
             {visibleBase.length} {visibleBase.length === 1 ? 'evento' : 'eventos'}{coins > 0 ? ` · ${coins.toLocaleString('es-MX')} monedas` : ''}
           </span>
           {visibleBase.length > 0 && (
-            <button type="button" onClick={() => setClearedAt(Date.now())} className="text-[10px] font-bold text-gray-400 hover:text-white underline py-2">
+            <button type="button" onClick={() => setClearedAt(Date.now())} className="theme-link">
               Limpiar
             </button>
           )}

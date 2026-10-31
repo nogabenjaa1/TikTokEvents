@@ -1,12 +1,12 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
+import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
-import { loadDraft, saveDraft } from './gameDraftStorage';
+import { useEventDraft } from './app/eventSettingsContext';
 
-const DRAFT_KEY = 'tkc_king_draft';
 
 // Opción por defecto para cuando no quieren un regalo Insta-Win
 const NO_INSTA_WIN = {
@@ -22,11 +22,11 @@ const NO_INSTA_WIN = {
 // comparte con Zubastinis y cualquier módulo futuro.
 // ─────────────────────────────────────────────
 export default function AdminPanel({ state, socket, username, connectionStatus, giftsList, prize }) {
-  // Lo último que se dejó configurado en este dispositivo SIN llegar a presionar
-  // Iniciar (ver gameDraftStorage.js) -- se lee una sola vez al montar. El servidor
+  // Lo último que se dejó configurado en la cuenta SIN llegar a presionar
+  // Iniciar (ver eventSettingsStore.js) -- se lee una sola vez al montar. El servidor
   // manda un regalo/tiempos reales en cuanto el concurso se inició alguna vez (ni
   // siquiera se borran al detenerlo), así que sigue ganando sobre el borrador.
-  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
+  const [draft, saveDraft] = useEventDraft('king');
   const [startError, setStartError] = useState('');
   const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
   const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : (draft.selectedInstaWin ?? NO_INSTA_WIN));
@@ -40,8 +40,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   // guarda en ESTE dispositivo (siempre) -- cosas distintas, sin ningún guard en
   // común que compartir.
   useEffect(() => {
-    saveDraft(DRAFT_KEY, { selectedGift, selectedInstaWin, mainTime, snipeTime });
-  }, [selectedGift, selectedInstaWin, mainTime, snipeTime]);
+    saveDraft({ selectedGift, selectedInstaWin, mainTime, snipeTime });
+  }, [selectedGift, selectedInstaWin, mainTime, snipeTime, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // OJO: si hay más de una pestaña/ventana con este panel abierta, cada una
@@ -92,6 +92,17 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
     });
   };
 
+  // Confirmación de los cambios en vivo y protección de los botones (ver
+  // liveApply.js): Iniciar/Reiniciar no se mandan dos veces por un doble clic,
+  // y Detener/Reiniciar piden confirmar si ya hay alguien en el trono.
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, mainTime, snipeTime]),
+    serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.mainTime, state.snipeTime]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
+  const hasProgress = state.isActive && !!state.lastParticipant && state.mode !== 'finished';
+
   const stopContest    = () => socket.emit('stop_contest');
   const restartContest = () => socket.emit('restart_contest');
   const togglePause    = () => socket.emit(state.paused ? 'resume_contest' : 'pause_contest');
@@ -107,16 +118,18 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
     : 'text-white';
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
+      {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
+      <div className="tkc-game-layout">
 
       {/* Preview del Admin */}
-      <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
+      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
         {state.mode === 'finished' && (
           <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />
         )}
         <div className="flex justify-between items-center relative z-10">
           <div>
-            <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">REY DEL TRONO</p>
+            <p className="theme-accent-text tkc-eyebrow mb-1">REY DEL TRONO</p>
             {state.lastParticipant ? (
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -138,7 +151,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             )}
           </div>
           <div className="text-right">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+            <p className="tkc-label text-gray-500">
               {timerLabel}
             </p>
             <p className={`text-4xl font-black tabular-nums transition-colors ${timerColorClass}`}>
@@ -149,8 +162,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
       </div>
 
       {/* Panel principal de configuración */}
-      <div className="theme-surface w-full max-w-md p-8 relative">
-        <div className="flex items-center gap-3 mb-8">
+      <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
+        <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
@@ -165,21 +178,21 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
 
             {/* Selector regalo normal */}
             <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO OBJETIVO</label>
+              <label className="tkc-label block text-gray-400 mb-1">REGALO OBJETIVO<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
                 onSelect={setSelectedGift}
                 placeholder="Elige un regalo..."
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              <p className="tkc-hint mt-1">
                 Cualquier regalo cuenta si su valor en monedas alcanza a este (acumulando varios seguidos, máximo 10s entre uno y otro) — sin importar por cuánto se pase, siempre cuenta como una sola vez.
               </p>
             </div>
 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
-              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">INSTA-WIN</label>
+              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -187,70 +200,83 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                 placeholder="Elige un regalo..."
                 variant="insta"
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              <p className="tkc-hint mt-1">
                 Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
               </p>
             </div>
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
-              <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
-                TIEMPO BASE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="No corta al participante actual: se aplica la próxima vez que alguien se robe el lugar">(próx. ronda)</span>}
+              <label className="theme-label tkc-label block mb-1">
+                TIEMPO BASE<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo; si no, se usa la próxima vez que alguien tome el trono" />
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
             <div className="mb-6">
-              <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold block mb-1">
-                TIEMPO DE SNIPE {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Se aplica la próxima vez que arranque el modo snipe">(próx. ronda)</span>}
+              <label className="tkc-label text-red-400 block mb-1">
+                TIEMPO DE SNIPE<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo; si no, se usa cuando empiece" />
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
+            <LiveAppliedNote phase={appliedPhase} />
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-            {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
-
-            {/* Botones */}
-            <div className="flex gap-4">
-              {!state.isActive ? (
-                <button
-                  onClick={startContest}
-                  disabled={connectionStatus !== 'connected' || !selectedGift}
-                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={togglePause}
-                    disabled={state.mode === 'finished'}
-                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
-                  </button>
-                  <button
-                    onClick={restartContest}
-                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
-                  >
-                    REINICIAR ⟲
-                  </button>
-                </>
-              )}
-              <button
-                onClick={stopContest}
-                className="theme-btn-danger theme-btn-lg font-bold transition-all"
-              >
-                DETENER
-              </button>
-            </div>
           </div>
 
-          {/* Premio: aparte de los ajustes a propósito — se puede
-              configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} prize={prize} />
         </div>
+      </div>
+
+      {/* Controles del juego: en escritorio, bajo la vista previa (estado y
+          botones juntos, sin bajar hasta el final de los ajustes); en móvil,
+          después de los ajustes, como antes (ver .tkc-game-layout). */}
+      <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+        {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+
+        {/* Botones */}
+        <div className="flex flex-wrap gap-3">
+          {!state.isActive ? (
+            <button
+              onClick={() => runLocked(startContest)}
+              disabled={connectionStatus !== 'connected' || !selectedGift || actionLocked}
+              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={togglePause}
+                disabled={state.mode === 'finished'}
+                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {state.paused ? 'REANUDAR' : 'PAUSAR'}
+              </button>
+              <ConfirmButton
+                needsConfirm={hasProgress}
+                onConfirm={() => runLocked(restartContest)}
+                disabled={actionLocked}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                REINICIAR ⟲
+              </ConfirmButton>
+            </>
+          )}
+          <ConfirmButton
+            needsConfirm={hasProgress}
+            onConfirm={stopContest}
+            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+          >
+            DETENER
+          </ConfirmButton>
+        </div>
+      </div>
+
+      {/* Premio: aparte de los ajustes a propósito — se puede
+          configurar antes de tener la conexión live confirmada. En
+          escritorio va debajo de la vista previa (columna izquierda). */}
+      <PrizeEditor socket={socket} prize={prize} />
       </div>
     </div>
   );

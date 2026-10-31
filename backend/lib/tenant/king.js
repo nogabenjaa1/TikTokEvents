@@ -143,6 +143,8 @@ module.exports = {
 
         socket.on('update_settings', (newConfig) => {
             if (this.contestState.isActive) {
+                const prevMain = this.contestState.mainTime;
+                const prevSnipe = this.contestState.snipeTime;
                 this.contestState.targetGiftName = newConfig.targetGiftName;
                 this.contestState.targetGiftIcon = newConfig.targetGiftIcon;
                 this.contestState.targetGiftCoins = newConfig.targetGiftCoins;
@@ -158,8 +160,11 @@ module.exports = {
                 // hacia arriba; si se achica, salta hacia abajo. En 'waiting'
                 // (todavía no llegó el primer regalo) no hay nada que saltar, el
                 // valor nuevo ya queda guardado para cuando arranque.
-                if (this.contestState.mode === 'main') this.contestState.timeLeft = newConfig.mainTime;
-                else if (this.contestState.mode === 'snipe') this.contestState.timeLeft = newConfig.snipeTime;
+                // Solo si cambió ESE tiempo: antes cualquier ajuste (un regalo,
+                // el mínimo...) mandaba el reloj de vuelta al tiempo completo y le
+                // devolvía a quien iba ganando todo el tiempo que ya había corrido.
+                if (this.contestState.mode === 'main' && newConfig.mainTime !== prevMain) this.contestState.timeLeft = newConfig.mainTime;
+                else if (this.contestState.mode === 'snipe' && newConfig.snipeTime !== prevSnipe) this.contestState.timeLeft = newConfig.snipeTime;
                 this.broadcast.emit('state_update', this.contestState);
             }
         });

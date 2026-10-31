@@ -1,17 +1,14 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef } from 'react';
 import { backendUrl, authHeaders } from './auth';
+import { useEventDraft } from './app/eventSettingsContext';
 
-// Mismo patrón que Extensible.jsx (ver su comentario de STORAGE_KEY): los
-// campos del formulario son estado LOCAL, así que sobreviven a cambiar de
-// pestaña y volver (App.jsx desmonta/remonta este componente cada vez).
-const STORAGE_KEY = 'tiktok-concurso-goal-settings';
+// Mismo patrón que Extensible.jsx (ver su comentario de DEFAULTS): los
+// campos del formulario se guardan con los ajustes de los demás eventos
+// (eventSettingsStore.js), así que sobreviven a cambiar de pestaña, recargar
+// o entrar desde otro dispositivo.
 const DEFAULTS = { targetType: 'coins', targetInput: '', title: '' };
-
-function loadSavedConfig() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
-  catch { return DEFAULTS; }
-}
 
 const TARGET_TYPES = [
   { id: 'coins', label: 'Monedas en regalos' },
@@ -30,11 +27,13 @@ const TARGET_TYPES = [
 // ─────────────────────────────────────────────
 export default function Goal({ state, socket, username, connectionStatus }) {
   const [startError, setStartError] = useState('');
-  const saved = loadSavedConfig();
+  const [draft, saveDraft] = useEventDraft('goal');
+  const saved = { ...DEFAULTS, ...draft };
   const [targetType, setTargetType] = useState(saved.targetType);
   const [targetInput, setTargetInput] = useState(saved.targetInput);
   const [title, setTitle] = useState(saved.title);
   const [error, setError] = useState('');
+  const [lastSentGoal, setLastSentGoal] = useState(null);
 
   // Si el panel se monta con un objetivo YA activo (remontado a mitad de
   // uno -- volver de otra pestaña, o F5), los campos reflejan lo que el
@@ -50,8 +49,8 @@ export default function Goal({ state, socket, username, connectionStatus }) {
   }, [state.isActive, state.targetType, state.target, state.title]);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ targetType, targetInput, title })); } catch { /* sin almacenamiento: solo se pierde recordar la configuración */ }
-  }, [targetType, targetInput, title]);
+    saveDraft({ targetType, targetInput, title });
+  }, [targetType, targetInput, title, saveDraft]);
 
   const cap = targetType === 'coins' ? 10_000_000 : 1_000_000;
   const parsedTarget = Math.round(Number(targetInput));
@@ -74,7 +73,21 @@ export default function Goal({ state, socket, username, connectionStatus }) {
     if (!targetValid) return setError(`Ingresa una meta válida (entre 1 y ${cap.toLocaleString('es-MX')}).`);
     setError('');
     socket.emit('update_goal_settings', { target: parsedTarget, title: title.trim() });
+    setLastSentGoal([parsedTarget, title.trim()]);
   };
+
+  // Meta y título se aplican con el botón Actualizar (no en cada tecla, a
+  // propósito: escribir "500" pasa por "5", y una meta de 5 ya cumplida
+  // dispararía el sonido de meta completada en el directo). Para que eso no
+  // haga perder cambios, se avisa cuando lo escrito todavía no se aplicó.
+  const unapplied = state.isActive && (title.trim() !== (state.title || '') || (targetValid && parsedTarget !== state.target));
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([state.isActive ? lastSentGoal : null]),
+    serverKey: liveKey([state.isActive ? lastSentGoal && [state.target, state.title || ''] : null]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.current === 0}`);
+  const hasProgress = state.isActive && (state.current ?? 0) > 0;
 
   const resetProgress = () => socket.emit('reset_goal');
   const stopGoal = () => socket.emit('stop_goal');
@@ -164,11 +177,11 @@ export default function Goal({ state, socket, username, connectionStatus }) {
 
         <div className="mb-4">
           <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-2 font-semibold">
-            TIPO DE OBJETIVO {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Bloqueado mientras el objetivo está activo -- deténlo primero para cambiar de tipo">(bloqueado)</span>}
+            TIPO DE OBJETIVO<LiveTag active={state.isActive} when="stop" title="El progreso está en una sola unidad (monedas o seguidores): para cambiar de tipo, detén este objetivo e inicia uno nuevo" />
           </label>
           <div className="flex gap-2">
             {TARGET_TYPES.map((t) => (
-              <button key={t.id} type="button" disabled={state.isActive}
+              <button key={t.id} type="button" disabled={state.isActive} aria-pressed={targetType === t.id}
                 onClick={() => setTargetType(t.id)}
                 className={`flex-1 font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-md ${targetType === t.id ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
                 {t.label}
@@ -178,10 +191,11 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-4">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">
-            META {targetType === 'coins' ? '(EN MONEDAS)' : '(NUEVOS SEGUIDORES)'}
+          <label htmlFor="goal-target" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">
+            META {targetType === 'coins' ? '(EN MONEDAS)' : '(NUEVOS SEGUIDORES)'}<LiveTag active={state.isActive} when="button" title="Se aplica al tocar Actualizar meta, sin perder el progreso" />
           </label>
           <input
+            id="goal-target"
             type="number" min="1" step="1"
             value={targetInput}
             onChange={(e) => setTargetInput(e.target.value)}
@@ -191,8 +205,9 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         </div>
 
         <div className="mb-6">
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">¿PARA QUÉ ES ESTE OBJETIVO?</label>
+          <label htmlFor="goal-title" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">¿PARA QUÉ ES ESTE OBJETIVO?<LiveTag active={state.isActive} when="button" title="Se aplica al tocar Actualizar meta" /></label>
           <input
+            id="goal-title"
             value={title}
             onChange={(e) => setTitle(e.target.value.slice(0, 60))}
             placeholder="Ej: Para la silla nueva"
@@ -229,23 +244,25 @@ export default function Goal({ state, socket, username, connectionStatus }) {
         {error && <p className="text-[11px] font-bold text-red-500 mb-3">{error}</p>}
 
         <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+        {unapplied && <p role="status" className="tkc-hint text-amber-500 mb-2">Tienes cambios en la meta o el título que todavía no se ven en el directo. Toca Actualizar meta para aplicarlos.</p>}
+        {!unapplied && <LiveAppliedNote phase={appliedPhase} />}
 
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4">
           {!state.isActive ? (
-            <button onClick={startGoal} disabled={connectionStatus !== 'connected'} className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed">
+            <button onClick={() => runLocked(startGoal)} disabled={connectionStatus !== 'connected' || actionLocked} className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed">
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR OBJETIVO'}
             </button>
           ) : (
             <>
-              <button onClick={updateGoal} className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all">
+              <button onClick={updateGoal} disabled={!unapplied} className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                 ACTUALIZAR META
               </button>
-              <button onClick={resetProgress} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all">
+              <ConfirmButton needsConfirm={hasProgress} onConfirm={resetProgress} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all">
                 REINICIAR PROGRESO ⟲
-              </button>
-              <button onClick={stopGoal} className="theme-btn-danger theme-btn-lg font-bold transition-all">
+              </ConfirmButton>
+              <ConfirmButton needsConfirm={hasProgress} onConfirm={stopGoal} className="theme-btn-danger theme-btn-lg font-bold transition-all">
                 DETENER
-              </button>
+              </ConfirmButton>
             </>
           )}
         </div>

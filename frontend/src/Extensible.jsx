@@ -1,23 +1,18 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef } from 'react';
 import TimeInput from './TimeInput';
 import { formatHHMMSS } from './timeFormat';
+import { useEventDraft } from './app/eventSettingsContext';
 
 // Bug real reportado: los campos de "segundos por moneda"/"segundos por
 // seguidor" (y el tiempo base) son estado LOCAL del componente — al cambiar
 // de pestaña (Ruleta, Eliminación, etc.) y volver, App.jsx desmonta y
 // vuelve a montar <Extensible> de cero, así que esos campos volvían a sus
 // valores por defecto (5/3/60) aunque el streamer ya los hubiera
-// personalizado. Mismo patrón que ya usa TtsChat.jsx (ver STORAGE_KEY ahí):
-// se guarda cada cambio en localStorage y se recupera al montar, en vez de
-// arrancar siempre de los valores por defecto.
-const STORAGE_KEY = 'tiktok-concurso-extensible-settings';
+// personalizado. Se guardan con los ajustes de los demás eventos (ver
+// eventSettingsStore.js): en la cuenta, no solo en este navegador.
 const DEFAULTS = { baseTimeSec: 60, secondsPerFollow: 5, secondsPerGift: 3, reverseMode: false };
-
-function loadSavedConfig() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
-  catch { return DEFAULTS; }
-}
 
 // ─────────────────────────────────────────────
 // MODO EXTENSIBLE
@@ -33,9 +28,10 @@ function loadSavedConfig() {
 // ─────────────────────────────────────────────
 export default function Extensible({ state, socket, username, connectionStatus }) {
   const [startError, setStartError] = useState('');
-  // Semilla inicial (pedido explícito, ver comentario de STORAGE_KEY más
-  // arriba): arranca de lo último guardado en este navegador.
-  const saved = loadSavedConfig();
+  // Semilla inicial (pedido explícito, ver comentario de DEFAULTS más
+  // arriba): arranca de lo último guardado.
+  const [draft, saveDraft] = useEventDraft('extensible');
+  const saved = { ...DEFAULTS, ...draft };
   const [baseTimeSec, setBaseTimeSec] = useState(saved.baseTimeSec);
   const [secondsPerFollow, setSecondsPerFollow] = useState(saved.secondsPerFollow);
   const [secondsPerGift, setSecondsPerGift] = useState(saved.secondsPerGift);
@@ -65,8 +61,8 @@ export default function Extensible({ state, socket, username, connectionStatus }
   // Persiste cualquier cambio para que sobreviva a cambiar de pestaña (o
   // recargar la página) sin perder la configuración personalizada.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode })); } catch { /* sin almacenamiento: solo se pierde recordar la configuración */ }
-  }, [baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode]);
+    saveDraft({ baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode });
+  }, [baseTimeSec, secondsPerFollow, secondsPerGift, reverseMode, saveDraft]);
 
   const buildConfig = () => ({
     tiktokUsername: username,
@@ -82,6 +78,16 @@ export default function Extensible({ state, socket, username, connectionStatus }
     socket.emit('start_extensible', buildConfig());
   };
 
+  // Confirmación de los cambios en vivo y protección de los botones (ver
+  // liveApply.js). Con el contador corriendo hay progreso que perder.
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([Math.max(0, Math.round(secondsPerFollow)), Math.max(0, Math.round(secondsPerGift)), !!reverseMode]),
+    serverKey: liveKey([state.secondsPerFollow, state.secondsPerGift, !!state.reverseMode]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${!!state.finished}`);
+  const hasProgress = state.isActive && !state.finished;
+
   const stopExtensible = () => socket.emit('stop_extensible');
   const restartExtensible = () => socket.emit('restart_extensible', buildConfig());
   const togglePause = () => socket.emit(state.paused ? 'resume_extensible' : 'pause_extensible');
@@ -96,8 +102,10 @@ export default function Extensible({ state, socket, username, connectionStatus }
   // el contador que ya está corriendo — mismo patrón que Ruleta/Eliminación,
   // pero acá SIEMPRE que está activo (no hay una fase "de espera" propia: el
   // contador corre todo el tiempo). El tiempo base YA NO viaja en vivo por
-  // acá (pedido explícito, revisado): mientras está activo queda bloqueado
-  // en el panel, y el valor solo se vuelve a aplicar en el próximo Reiniciar.
+  // acá (pedido explícito, revisado): no corta el contador que ya corre. Se
+  // puede editar igual con el contador activo (antes el campo quedaba
+  // bloqueado y no había forma de dejar listo el próximo Reiniciar): la
+  // etiqueta "Al reiniciar" dice cuándo se usa.
   // El guard de "recién montado" (isMounted) es crítico acá: sin él, cada vez
   // que el streamer cambia de pestaña y vuelve, este efecto corre de nuevo
   // con los valores LOCALES por defecto (secondsPerFollow 5, etc.) y los
@@ -159,10 +167,10 @@ export default function Extensible({ state, socket, username, connectionStatus }
             {/* Tiempo base */}
             <div className="mb-4">
               <label className="theme-label text-[10px] uppercase tracking-widest font-semibold block mb-1">
-                TIEMPO BASE (AL INICIAR/REINICIAR) {state.isActive && <span className="text-gray-400 ml-1 text-[8px]" title="Bloqueado mientras el modo está activo — usa los botones de ajuste manual de acá abajo para cambiar el tiempo en vivo">(bloqueado)</span>}
+                TIEMPO BASE<LiveTag active={state.isActive} when="restart" title="No cambia el contador que está corriendo: para eso están los botones de ajustar tiempo" />
               </label>
-              <TimeInput seconds={baseTimeSec} onChange={setBaseTimeSec} maxSeconds={7200} disabled={state.isActive} />
-              <p className="text-[10px] text-gray-500 mt-1">Con cuánto tiempo arranca el contador — solo se aplica al Iniciar o Reiniciar.</p>
+              <TimeInput seconds={baseTimeSec} onChange={setBaseTimeSec} maxSeconds={7200} />
+              <p className="text-[10px] text-gray-500 mt-1">Con cuánto tiempo arranca el contador al iniciar o reiniciar. Para cambiar el tiempo que corre ahora, usa los botones de abajo.</p>
             </div>
 
             {/* Ajuste manual de tiempo en vivo */}
@@ -197,37 +205,38 @@ export default function Extensible({ state, socket, username, connectionStatus }
 
             {/* Segundos por follow */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR FOLLOW</label>
-              <input
+              <label htmlFor="ext-per-follow" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR FOLLOW<LiveTag active={state.isActive} title="Los seguidores nuevos suman con el valor nuevo" /></label>
+              <input id="ext-per-follow"
                 type="number" min="0"
                 value={secondsPerFollow}
                 onChange={e => setSecondsPerFollow(Math.max(0, Number(e.target.value) || 0))}
                 className="theme-input w-full p-3 text-sm outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1">Cada nuevo seguidor le {reverseMode ? 'resta' : 'suma'} esto al contador — se aplica al instante, sin reiniciar.</p>
+              <p className="text-[10px] text-gray-500 mt-1">Cada nuevo seguidor le {reverseMode ? 'resta' : 'suma'} esto al contador.</p>
             </div>
 
             {/* Segundos por regalo */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR MONEDA DEL REGALO</label>
-              <input
+              <label htmlFor="ext-per-gift" className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">SEGUNDOS POR MONEDA DEL REGALO<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora suman con el valor nuevo" /></label>
+              <input id="ext-per-gift"
                 type="number" min="0"
                 value={secondsPerGift}
                 onChange={e => setSecondsPerGift(Math.max(0, Number(e.target.value) || 0))}
                 className="theme-input w-full p-3 text-sm outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1">Cualquier regalo cuenta, multiplicado por su valor en monedas (ej: con 3 acá, un regalo de 50 monedas suma 150s) — se aplica al instante, sin reiniciar.</p>
+              <p className="text-[10px] text-gray-500 mt-1">Cualquier regalo cuenta, multiplicado por su valor en monedas (ej: con 3 acá, un regalo de 50 monedas suma 150s).</p>
             </div>
 
             {/* Modo Inverso */}
             <div className="mb-6">
-              <button type="button" onClick={() => setReverseMode(r => !r)}
+              <button type="button" onClick={() => setReverseMode(r => !r)} aria-pressed={!!reverseMode}
                 className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${reverseMode ? 'theme-btn-danger' : 'theme-btn-secondary'}`}
                 title="Cada follow o regalo RESTA tiempo en vez de sumar">
                 {reverseMode ? 'Modo Inverso (RESTA tiempo)' : 'Modo Normal (SUMA tiempo)'}
               </button>
               <p className="text-[10px] text-gray-500 mt-1">Se puede cambiar en cualquier momento, incluso con el contador activo.</p>
             </div>
+            <LiveAppliedNote phase={appliedPhase} />
 
             <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
 
@@ -235,8 +244,8 @@ export default function Extensible({ state, socket, username, connectionStatus }
             <div className="flex gap-4">
               {!state.isActive ? (
                 <button
-                  onClick={startExtensible}
-                  disabled={connectionStatus !== 'connected'}
+                  onClick={() => runLocked(startExtensible)}
+                  disabled={connectionStatus !== 'connected' || actionLocked}
                   className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
@@ -250,20 +259,23 @@ export default function Extensible({ state, socket, username, connectionStatus }
                   >
                     {state.paused ? 'REANUDAR' : 'PAUSAR'}
                   </button>
-                  <button
-                    onClick={restartExtensible}
-                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
+                  <ConfirmButton
+                    needsConfirm={hasProgress}
+                    onConfirm={() => runLocked(restartExtensible)}
+                    disabled={actionLocked}
+                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     REINICIAR ⟲
-                  </button>
+                  </ConfirmButton>
                 </>
               )}
-              <button
-                onClick={stopExtensible}
+              <ConfirmButton
+                needsConfirm={hasProgress}
+                onConfirm={stopExtensible}
                 className="theme-btn-danger theme-btn-lg font-bold transition-all"
               >
                 DETENER
-              </button>
+              </ConfirmButton>
             </div>
           </div>
         </div>

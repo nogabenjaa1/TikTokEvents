@@ -216,8 +216,10 @@ El overlay de la cola de Spotify marca la canción que está sonando con un bord
 - **Ámbar Aviso** (`#F59E0B`): avisos de vencimiento de licencia, estados "por vencer" o "verificando".
 - **Esmeralda Premio** (`#10B981`): franja de premio compartida por los tres juegos y estado "activa"/"conectado en vivo" — casualmente comparte hex con el acento verde, pero es un token de estado independiente, no cambia si el streamer elige otro acento.
 - **Gris Apagado** (`#6B7280`): estados offline, deshabilitado, texto secundario de baja prioridad.
+- **Superficies del panel más claras** (oct 2026): dentro de `.themed-panel` (solo el panel, nunca un overlay ni una vista previa, que declaran su propio tema) `--surface-bg` sube a `L 0.85` en Clásico y `0.86` en Cute (y a `0.25` en oscuro) para que la tarjeta se separe del fondo de página. También solo en el panel, títulos, etiquetas y texto de acento (`theme-heading`/`theme-label`/`theme-accent-text`) bajan a `L 0.31` en Clásico y `0.33` en Cute (variable `--tkc-accent-ink-l`, `0.36` de fábrica): con un acento personalizado verde azulado o amarillo daban 3.9:1 sobre el fondo de página. El chip de Cute sube a `L 0.68` por el mismo motivo (`--tkc-cute-chip-l`). Los overlays de OBS y las vistas previas embebidas conservan los valores de fábrica.
+- **Texto de estado sobre tarjetas**: las utilidades `text-red/amber/yellow/green/emerald/sky-*` del panel usan la tinta de estado mezclada con `--status-mix` (como los avisos), igual que `theme-btn-danger`/`-warning`; sola, la tinta daba entre 1.6:1 y 4:1 (axe).
 - **Tintas de estado** (`--ink-danger` `#B91C1C`, `--ink-warning` `#A16207`, `--ink-success` `#15803D`, `--ink-premio` `#047857`, `--ink-info` `#0369A1`, `--ink-amber` `#B45309`): versiones oscuras de los colores de estado, usadas SOLO para texto sobre los paneles claros (`.themed-panel`), donde los tonos vivos de arriba no alcanzan contraste. Viven como variables en `index.css` y son la única fuente de estos valores.
-- **Arcoíris** (`#ff3b3b`, `#ff9f1c`, `#ffe135`, `#3ddc84`, `#3b82f6`, `#a855f7`): degradado fijo de la opción "Arcoíris" del fondo/texto de los overlays. Es deliberadamente independiente del acento del tema (no cambia con él) y solo aparece cuando el streamer lo elige.
+- **Arcoíris** (`#FF6363`, `#FFA23A`, `#FFD93D`, `#4CE38A`, `#2EDCF2`, `#6FB1FF`, `#B08CFF`, `#FF7AC6`, oct 2026): degradado de la opción "Arcoíris" del fondo/texto de los overlays y de la ruleta. Luminancia pareja de 0.31 a 0.72 (antes `#3b82f6`/`#a855f7` bajaban a 0.22 y apagaban medio ciclo); el degradado cierra en el tono con que empieza. Una sola fuente en código: `RAINBOW_STOPS` (`overlayCustomization.js`), copiada en `index.css`. Es deliberadamente independiente del acento del tema y solo aparece cuando el streamer lo elige.
 
 ### Named Rules
 **La Regla del Faro Único.** El acento vivo es siempre el único color saturado en pantalla fuera de los badges de estado (rojo/ámbar/esmeralda). Ningún otro elemento decorativo compite por atención con él — el fondo teñido (ver regla siguiente) no rompe esto porque es el mismo acento, no un segundo color; solo cambia de intensidad.
@@ -234,7 +236,7 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 
 ## Typography
 
-**Display/Body Font:** Tailwind `font-sans` (system UI stack — sin fuente custom cargada).
+**Display/Body Font:** Sora (Google Fonts), puesta como `--font-sans` en `index.css`; si no carga, cae a la del sistema.
 
 **Character:** Una sola familia tipográfica hace todo el trabajo; la jerarquía se construye enteramente con peso, tamaño y `letter-spacing`, no con variedad de fuentes. El registro dominante es la "etiqueta": mayúsculas, `tracking` amplio, peso `black` — el mismo tratamiento para el nombre de un módulo, un badge de estado o un botón.
 
@@ -246,12 +248,23 @@ El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de p�
 - **Control** (peso 700–900, 12px, `tracking-widest`): el texto de los botones medianos (`theme-btn-md`) y de los avisos (`theme-notice`). Los botones pequeños usan el paso Title (10px) y los grandes el Body (14px).
 - **Label** (peso 700, 11px, `tracking-widest`, mayúsculas): etiquetas de formulario, badges de estado, metadata secundaria (fechas, contadores de uso).
 
+### Escala de texto del panel (`index.css`, oct 2026)
+El panel acumulaba más de 450 textos de 8 a 11px escritos a mano. Para lo nuevo (y lo que se toque) hay tres clases, que no fijan color salvo la ayuda:
+- **`tkc-eyebrow`** (11px, 900, `0.24em`, mayúsculas): antetítulo de pantalla ("DASHBOARD", "MEMBRESÍA").
+- **`tkc-label`** (11px, 800, `0.12em`, mayúsculas): etiqueta de campo, título de grupo, dato de estado.
+- **`tkc-hint`** (12px, interlineado 1.35, tinta al 80%): ayuda o descripción **dentro de una tarjeta**. Sobre el fondo de página se usa `text-xs`/`text-sm` con `text-gray-500` (88%), que es lo que pasa 4.5:1 ahí.
+- Nada por debajo de 11px salvo lo que depende del espacio (nombres en las cuadrículas de participantes, la insignia sobre un avatar, las etiquetas del dock).
+
 ### Named Rules
 **La Regla de la Mayúscula Obligatoria.** Todo lo que es etiqueta, botón o estado va en mayúsculas con tracking amplio. El texto en minúsculas queda reservado casi exclusivamente para contenido variable (usernames, mensajes).
 
 ## Layout
 
 Layout de aplicación de una sola pantalla (no hay scroll de página, cada panel maneja su propio `overflow-y-auto`). Estructura fija: sidebar de navegación de íconos a la izquierda (72px), barra de conexión TikTok flotante fija en la esquina superior derecha, y un panel principal central que ocupa el resto del viewport. No hay grilla responsive tradicional — la app está diseñada para una ventana de escritorio (el streamer trabajando junto a OBS), no para mobile.
+
+**Paneles de los juegos** (Rey del Trono, Zubastinis, Eliminación, Ruleta: `.tkc-game-layout`): en móvil una columna en el orden de siempre (vista previa, ajustes, controles, premio); desde 1024px, la cabina a la izquierda (vista previa, controles de Iniciar/Pausar/Detener y premio) y los ajustes a la derecha. Un juego nuevo usa las mismas clases (`tkc-game-main` para los ajustes, `tkc-game-controls` para los botones).
+
+**Dashboard**: los eventos van en tres tarjetas por grupo (una fila por evento, `tkc-row-link`) y las herramientas en tarjetas compactas (`tkc-card-link`); "Requiere licencia" se dice una vez, no por tarjeta.
 
 El overlay de OBS es un layout completamente aparte, sin sidebar ni chrome: solo la tarjeta o card del juego activo, pensada para recortarse directamente como fuente de captura.
 
@@ -296,11 +309,11 @@ Tres, y solo tres, que se suman al tipo de botón (`theme-btn-primary`, `-second
 
 ### Avisos (`theme-notice`)
 Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio del tema (`var(--surface-radius-sm)`: 12px en Clásico, 20px en Cute), borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
-- El texto usa el token de tinta de estado (`--ink-*`) **mezclado 65% con negro en modo claro y con blanco en oscuro** (`--status-mix`), lo que da al menos 4,5:1 sobre el pastel y sobre el fondo oscuro. Mezclar con la tinta morada movía el matiz (el verde salía azul): con un acromático el rojo, el ámbar, el verde y el azul siguen reconociéndose.
+- El texto usa el token de tinta de estado (`--ink-*`) **mezclado 58% (antes 65%) con negro en modo claro y con blanco en oscuro** (`--status-mix`), lo que da al menos 4,5:1 sobre el pastel y sobre el fondo oscuro. Mezclar con la tinta morada movía el matiz (el verde salía azul): con un acromático el rojo, el ámbar, el verde y el azul siguen reconociéndose.
 - Los avisos de ancho completo (las franjas de arriba de la pantalla) siguen siendo componentes propios.
 
 ### Enlaces de texto (`theme-link`)
-Botones sin caja: subrayados, texto de 10px en negrita, área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
+Botones sin caja: subrayados, texto de 11px en negrita (antes 10px), área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
 
 ### Chips
 - **Style:** fondo del acento activo al 22% de opacidad, siempre píldora completa. Texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.36 0.16 h)`, no `--accent-soft`) en Default y Minimal. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado — los cuatro materiales resuelven el mismo problema (texto legible sobre fondo claro), cada uno con su propio tono.
@@ -375,15 +388,55 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 
 ## Overlays: personalización y fondo transparente
 
-Cada overlay se personaliza por separado desde su tarjeta en Overlays (`OverlayCustomizePanel`, vista previa fija a la izquierda y controles en filas de botones a la derecha):
-- **Fondo y bordes**: transparente, del tema, degradado o arcoíris; bordes y separadores con un interruptor.
-- **Nombres de usuario**: color (original, del tema, un color, degradado, arcoíris) y tamaño.
-- **Textos fijos**: lo mismo para los textos que trae el overlay (títulos, etiquetas, la acción de cada regalo en Versus). "Original" conserva el color de siempre. El tamaño se aplica con `zoom` (ocupa espacio real, no se encima). Los avisos de estado (snipe, pausado, eliminado) solo cambian de tamaño: su color comunica algo.
-- **Fuente** de todo el overlay: Sora (la de siempre), Poppins, Nunito, Oswald, Bebas Neue o la del sistema. Las de Google se descargan solo si se eligen.
+Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta muestra una **miniatura en vivo** (el mismo componente que corre en OBS, con datos de prueba) que abre `OverlayCustomizePanel`: vista previa a la izquierda (fija arriba en el celular) y, a la derecha, primero un **estilo listo** y después los ajustes a mano en pestañas.
+- **Estilos listos** (`OVERLAY_STYLE_PRESETS`): una elección deja combinados fondo, bordes, colores de texto y fuente. No son un campo nuevo: escriben los mismos campos de siempre, así que el backend los valida igual y no hay nada que migrar; qué estilo está puesto se deduce comparando (`matchOverlayPreset`), y cualquier ajuste posterior lo deja como "Personalizado" sin perder nada. Un estilo, "Restablecer" y "Usar este aspecto en todos" se pueden deshacer (este último pide confirmación). Ninguno toca el volumen de las Alertas ni la animación del Chat (`VISUAL_KEYS`).
+  - **Clásico**: el aspecto de fábrica (fondo del tema, Sora).
+  - **Sobre tu escena**: transparente, sin bordes, texto blanco con sombra, Poppins.
+  - **Neón**: degradado `#14082E` → `#3B0A63`, nombres `#F472D0`, títulos `#5EEAF5`, Oswald.
+  - **Arcade**: degradado `#071A4A` → `#1D3FB0`, nombres `#FDE047` grandes, títulos arcoíris grandes, Bebas Neue.
+  - **Fiesta**: fondo arcoíris, sin bordes, texto `#1A1033`, Nunito.
+- **Pestaña Fondo**: del tema, transparente, degradado o arcoíris; bordes y separadores con un interruptor.
+- **Pestaña Texto**: color (original, del tema, un color, degradado, arcoíris) y tamaño de dos tipos de texto, **con el nombre de lo que pintan en ese overlay** (en Versus el primero es el marcador, en la tira de regalos el apodo, en las Alertas el texto de la alerta). Colores, Extensible y Objetivo no tienen nombres de usuario: solo muestran "Título y textos". El tamaño de los textos fijos se aplica con `zoom` (ocupa espacio real). Los avisos de estado (snipe, pausado, eliminado) solo cambian de tamaño: su color comunica algo.
+- **Pestaña Fuente**: Sora (la de siempre), Poppins, Nunito, Oswald, Bebas Neue o la del sistema. Las de Google se descargan solo si se eligen.
+- **Pestaña Mensajes** (solo Chat): animación de entrada de cada mensaje.
+- **Vista previa sobre un fondo de referencia**: oscuro `#0A0614`, claro `#F1EEF6` o cuadrícula `#C9C3D6`/`#F4F2F8` (`PREVIEW_BACKDROPS`, recordado por navegador; la muestra del estilo transparente usa una cuadrícula oscura `#3B3450`/`#2A2438`), para juzgar el modo transparente sobre una escena clara u oscura.
+- **Guardado**: automático; el pie dice "Guardando…", "Guardado" o que falta conexión (se envía al reconectar).
+
+**La Regla de la Tinta Automática.** Con un degradado oscuro, el elemento que lleva ese fondo (el marco, o cada fila en los rankings, el chat y la cola) pasa solo a tinta clara (`backgroundNeedsLightInk` elige la tinta con mejor contraste contra el peor de los dos colores; `resolveBackgroundStyle` pone las variables). Antes, los temas pastel forzaban tinta oscura y el nombre "Original" era negro fijo: un degradado oscuro dejaba el overlay ilegible. Un título que queda fuera de las filas, directo sobre la escena, no cambia.
+
+**La Regla del Letrero.** Un texto con "Un color" que va directo sobre la escena de OBS (el título y los avisos de los rankings, la cola de Spotify y el chat, marcados con `tkc-over-scene`) lleva un contorno fino del tono contrario al texto y, si el texto es claro, un halo de su mismo color: como un letrero de neón, se lee sobre una escena clara u oscura sin ponerle una caja. No se aplica con Original/Del tema, ni al degradado o arcoíris (van recortados y una sombra se vería a través), ni con fondo transparente (que ya trae su sombra).
+
+**El texto arcoíris lleva un trazo fino** (`-webkit-text-stroke`, violeta casi negro semitransparente) para leerse sobre el fondo pastel del tema; se apaga dentro de un degradado oscuro. Nunca `hue-rotate` para animarlo: ese filtro conserva la luminancia y oscurece los tonos (lo comprueba `overlayPresets.test.js`).
 
 **La Regla del Transparente Completo.** Con fondo "Transparente", el elemento raíz del overlay lleva `data-ovl-bg="transparent"` (`overlayRootProps`) y ningún fondo de adentro queda pintado: cajas, píldoras de monedas, avisos, dados vacíos o girando, carátulas y avatares de relleno. Todo fondo interno nuevo de un overlay lleva la clase `tkc-ovl-fill` (o usa `resolveBackgroundStyle`) para obedecer esta regla. Solo quedan pintados los indicadores que son contenido (la barra de progreso, el punto de "en vivo", el color de un dado ya asentado).
 
 **Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).
+
+## Dashboard y Eventos: estado, configuración y cambios en vivo
+
+El Dashboard y la barra de Eventos leen **el mismo estado de cada evento** (`app/eventStatus.js`), calculado solo con datos reales: el estado en vivo que manda el servidor, los ajustes guardados de la cuenta y, en Versus, los regalos asignados. Cinco tonos, del más urgente al menos: **En curso**, **En pausa**, **Terminado** (el overlay muestra el resultado), **Falta configurar** (con qué falta: el regalo objetivo, el regalo para unirse o para entrar, la meta, regalos en Versus) y **Listo para iniciar**. Se pinta con `EventStatusBadge` (Dashboard) y `EventStatusDot` (barra de Eventos; sin punto cuando está listo, para no llenar la barra de ruido). El color nunca va solo: siempre lo acompaña el texto, visible o para lectores de pantalla.
+
+- **Dashboard, de arriba abajo:** saludo y estado del LIVE → **"Ahora en tu directo"** (lo que está en curso, en pausa o con resultado, con un acceso directo a cada uno; si no hay nada, **"Seguir donde lo dejaste"** con el último evento abierto en este navegador) → primeros pasos → actividad en vivo → cuenta → eventos agrupados con su estado → herramientas. Lo urgente va antes que la guía.
+- **Ajustes guardados en la cuenta** (`eventSettingsStore.js`, `eventSettingsContext.js`, columna `licenses.event_settings`, `lib/eventSettings.js`): lo que se configura en un evento sin iniciarlo sobrevive a cambiar de sección, recargar y entrar desde otro navegador. Misma regla que el tema y los overlays (nada se manda hasta recibir lo del servidor en cada conexión), pero **campo por campo** (`eventSettingsSync.js`): cada panel manda solo los campos que el streamer cambió y el servidor los mezcla con lo que ya tenía. Reglas:
+  - Un cambio queda **pendiente** hasta que el servidor confirma que lo **guardó en la base** (no al recibirlo). Si la base falla, el panel lo avisa ("No se pudieron guardar estos cambios…"), lo conserva y lo reintenta solo. Las demás pestañas y las que se conectan después solo ven lo que ya quedó guardado.
+  - Lo pendiente sobrevive a perder la conexión **y a recargar o cerrar la pestaña**: la copia del navegador guarda también lo último confirmado.
+  - Dos pestañas que cambian **campos distintos** (aunque sean del mismo evento) no se pisan. Si cambian **el mismo campo**, gana el último en llegar al servidor y las dos lo avisan.
+  - Si llega un cambio de otra pestaña para el panel que se está editando (el foco está en uno de sus campos), el panel **no** se vuelve a abrir en ese momento (antes perdía el cursor): se avisa y se actualiza al salir del panel. Mientras tanto se puede seguir escribiendo sin pisar lo que llegó.
+  - El panel guarda cada ajuste con la misma forma que le da el servidor (`eventSettingsSchema.js`, copia de `lib/eventSettings.js` que una prueba mantiene igual) y compara por contenido, sin importar el orden de las claves.
+  - La copia del navegador lleva el dueño (id de la licencia): otra cuenta en el mismo equipo no la ve. Las claves viejas de cada panel se suben una sola vez, solo a la primera cuenta que entra en ese navegador con esta versión, solo para los eventos que el servidor no tiene, y se dan por migradas cuando el servidor lo confirma.
+  El estado de una partida (puntos, participantes, tiempo) **no** se guarda aquí: vive en el servidor y llega por su propio evento.
+- **Cambios en vivo:** cada ajuste dice cuándo se aplica con `LiveTag` (solo con el evento en curso): **Al instante**, **Al actualizar** (con un botón), **Al reiniciar** o **Al iniciar uno nuevo**. Después de un cambio, `LiveAppliedNote` dice "Aplicando…", "Cambio aplicado en vivo" (cuando el estado del servidor ya lo refleja) o que no se pudo confirmar. Ver la tabla de abajo.
+- **Acciones que borran progreso** (Detener, Reiniciar, Reiniciar progreso): `ConfirmButton` pide confirmar en el mismo botón (segundo clic, se cancela solo a los 4 segundos, con Escape o al salir con el teclado), y solo si hay algo que perder. Sin progreso actúan al primer clic. Iniciar y Reiniciar se bloquean tras un clic hasta que el servidor responde (`useActionLock`), así un doble clic no arranca dos veces.
+- **Overlay de juegos de OBS:** abrir la pestaña de otro juego para revisarlo **no** cambia lo que ven los espectadores si hay un juego en curso; el overlay cambia solo al iniciar otro juego (desde cualquier pestaña o dispositivo).
+
+| Evento | Al instante | Al reiniciar / iniciar uno nuevo, y por qué |
+|---|---|---|
+| Rey del Trono | Regalo objetivo, Insta-Win, tiempo base y de snipe (si esa fase corre y se cambió SU tiempo, el reloj salta al tiempo nuevo; cambiar otra cosa no toca el reloj) | — |
+| Zubastinis | Tiempos (principal, snipe, desempate; mismo salto, solo si cambió ese tiempo) y mínimo para ganar | — |
+| Eliminación | Regalos, tiempos, eliminados por ronda, Fast Mode; Locked Mode se puede prender | Apagar Locked Mode: al detener o reiniciar (si no, se podría dejar entrar gente a último momento) |
+| Ruleta | Todo, mientras se están uniendo participantes (la cuenta para entrar solo salta si se cambia la ventana) | Con la ruleta girando o en el resultado, todo al reiniciar: el sorteo ya está armado y cambiarlo a mitad lo haría injusto |
+| Extensible | Segundos por follow y por moneda, Modo Inverso, y el ajuste manual de tiempo | Tiempo base: al reiniciar (es con cuánto arranca; para mover el tiempo que corre están los botones de ajuste) |
+| Objetivo | Meta y título **al actualizar**, con el botón Actualizar meta (aviso si hay cambios sin aplicar), sin perder el progreso | Tipo (monedas o seguidores): iniciar uno nuevo, porque el progreso está en una sola unidad. La meta no se aplica en cada tecla: escribir "500" pasa por "5" y una meta cumplida haría sonar el aviso en el directo |
 
 ## Do's and Don'ts
 

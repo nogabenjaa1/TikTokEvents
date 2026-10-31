@@ -173,6 +173,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [trialResult, setTrialResult] = useState(null); // { key, token, license }
   const [trialCopied, setTrialCopied] = useState(false);
   const aliasInputRef = useRef(null);
+  const loginInputRef = useRef(null);
+  // El enlace del encabezado lleva al acceso con clave, que está al final.
+  const focusLogin = () => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    loginInputRef.current?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    loginInputRef.current?.focus({ preventScroll: true });
+  };
   // Error propio del alias (no el `error` genérico de más abajo, que
   // renderiza al final de toda la página -- lejos del input, ver el
   // comentario en handleBuy) para que el aviso quede pegado al campo.
@@ -395,24 +402,28 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
 
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
-      <div className="w-full max-w-2xl flex flex-col gap-1">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Membresía</p>
+      <div className="w-full max-w-3xl flex flex-col gap-1">
+        <p className="theme-accent-text tkc-eyebrow">Membresía</p>
         <h1 className="theme-heading text-2xl font-black">{session ? 'Tu plan y tus pagos' : 'Elige cómo empezar'}</h1>
-        <p className="text-xs text-gray-500">
+        <p className="text-sm text-gray-500">
           {session
             ? 'Revisa tu plan actual, mejóralo o renuévalo cuando quieras.'
             : 'Prueba gratis 7 días o elige un plan. Tu clave es tu única credencial: guárdala en un lugar seguro.'}
         </p>
+        {/* El acceso con clave quedó al final de la pantalla (lo primero son
+            los planes): este enlace lleva directo a él. */}
+        {!session && (
+          <button type="button" onClick={focusLogin} className="theme-link self-start">
+            ¿Ya tienes una clave? Entra aquí
+          </button>
+        )}
       </div>
 
-      {/* Mismo tratamiento que los avisos de Login.jsx (fondo teñido + borde
-          fino parejo, no una franja lateral) — un solo lenguaje de "aviso"
-          en toda la app en vez de introducir un segundo estilo de alerta. */}
+      {/* El aviso del sistema (theme-notice, ver DESIGN.md › Avisos): mismo
+          aspecto y contraste que el resto de los avisos, también en oscuro. */}
       {banner && (
-        <div role={banner === 'failure' ? 'alert' : 'status'} className={['w-full max-w-2xl rounded-lg px-4 py-3 text-xs font-bold border',
-          banner === 'success' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600'
-            : banner === 'pending' ? 'bg-amber-500/10 border-amber-500/40 text-amber-600'
-            : 'bg-red-500/10 border-red-500/40 text-red-700'].join(' ')}>
+        <div role={banner === 'failure' ? 'alert' : 'status'} className={['w-full max-w-3xl theme-notice theme-notice-roomy',
+          banner === 'success' ? 'theme-notice-success' : banner === 'pending' ? 'theme-notice-warning' : 'theme-notice-danger'].join(' ')}>
           {banner === 'success' && '¡PAGO APROBADO! TU LICENCIA YA SE ACTUALIZÓ.'}
           {banner === 'pending' && 'TU PAGO ESTÁ PENDIENTE DE APROBACIÓN — SE APLICA SOLO APENAS SE CONFIRME.'}
           {banner === 'failure' && 'EL PAGO NO SE PUDO COMPLETAR. PUEDES INTENTAR DE NUEVO CUANDO QUIERAS.'}
@@ -424,9 +435,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           tiene que actualizar la URL de su overlay en OBS con la key nueva,
           la vieja deja de servir. */}
       {revealedKey && (
-        <div className="theme-surface theme-surface-featured w-full max-w-2xl p-4 flex flex-col gap-2">
-          <p className="theme-label text-[9px]">Tu clave cambió — actualiza tu overlay de OBS</p>
-          <p className="text-[10px] text-gray-500 leading-snug">
+        <div className="theme-surface theme-surface-featured w-full max-w-3xl p-4 flex flex-col gap-2">
+          <p className="theme-label tkc-label">Tu clave cambió — actualiza tu overlay de OBS</p>
+          <p className="tkc-hint">
             Tu plan nuevo necesitó una clave nueva. Cópiala y reemplaza la key en la URL del overlay que tengas guardada en OBS.
           </p>
           <div className="flex items-center gap-2">
@@ -439,42 +450,80 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       )}
 
       {session && (
-        <div className="theme-surface theme-surface-featured w-full max-w-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+        <div className="theme-surface theme-surface-featured w-full max-w-3xl p-4 flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="theme-label text-[9px] mb-1">Tu plan actual</p>
+            <p className="theme-label tkc-label mb-0.5">Tu plan actual</p>
             <p className="text-sm font-black">{PLAN_LABELS[session?.licenseType] || session?.licenseType || '—'}</p>
           </div>
           <div>
-            <p className="theme-label text-[9px] mb-1">Vence</p>
+            <p className="theme-label tkc-label mb-0.5">Vence</p>
             <p className="text-sm font-black">{session?.expiresAt ? new Date(session.expiresAt).toLocaleDateString('es-MX') : 'Nunca'}</p>
           </div>
           <div>
-            <p className="theme-label text-[9px] mb-1">Color Says</p>
+            <p className="theme-label tkc-label mb-0.5">Color Says</p>
             <p className="text-sm font-black">{DICE_TIER_LABELS[session?.diceTier] || 'Regular'}</p>
           </div>
           <div>
-            <p className="theme-label text-[9px] mb-1">Spotify</p>
+            <p className="theme-label tkc-label mb-0.5">Spotify</p>
             <p className="text-sm font-black">{spotifyStatusLabel}</p>
           </div>
         </div>
       )}
 
-      {!session && (
-        <form onSubmit={submitLogin} className="theme-surface w-full max-w-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3 relative">
-          <HoneypotField />
-          <div className="flex-1">
-            <label className="theme-label block text-[10px] mb-2">¿Ya tienes una clave? Ingrésala aquí</label>
-            <input value={loginKey} onChange={e => { setLoginKey(e.target.value); if (loginStatus === 'error') setLoginStatus('idle'); }} readOnly={loginLoading} placeholder="Pega tu clave de licencia"
-              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-          </div>
-          <div className="sm:w-32 flex-shrink-0">
-            <MorphButton type="submit" status={loginStatus} loadingLabel="Verificando tu clave…" disabled={!loginLoading && !loginKey.trim()}
-              className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
-              Entrar
-            </MorphButton>
-          </div>
-          {loginError && <p role="alert" className="text-[10px] font-bold text-red-500 sm:basis-full tkc-msg-enter">{loginError}</p>}
-        </form>
+      {!payingPlan && (
+      <section className="w-full max-w-3xl" aria-labelledby="plans-title">
+        <h2 id="plans-title" className="tkc-label theme-label mb-2">Elige tu plan</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {PLANS.map(plan => {
+            const isCurrent = session?.licenseType === plan.id;
+            const rank = PLAN_RANK[plan.id];
+            const buttonLabel = currentPlanRank >= 1 ? 'Mejorar' : 'Comprar';
+            return (
+              <div key={plan.id} className={`${plan.savingsChip ? 'theme-surface-featured' : 'theme-surface'} p-4 text-left flex flex-col`}>
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <p className="tkc-label">{plan.label}</p>
+                  {plan.savingsChip && <span className="theme-chip tkc-label px-2 py-0.5 rounded-full whitespace-nowrap">{plan.savingsChip}</span>}
+                </div>
+                {(() => {
+                  const mxnPrice = livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn;
+                  return (
+                    <>
+                      <p className="text-3xl font-black tabular-nums leading-tight">MX${mxnPrice.toLocaleString('es-MX')}</p>
+                      <p className="tkc-hint">{plan.period} · referencia US${(mxnPrice / MXN_PER_USD).toFixed(2)}</p>
+                    </>
+                  );
+                })()}
+                {/* Aviso de Spotify por plan (ver backend/spotify.js, "Quién
+                    puede usarlo"): la app de Spotify de la plataforma solo
+                    admite unos pocos usuarios, así que el resto conecta con
+                    su propia app. El total y los cupos que quedan vienen de
+                    /api/pricing (sin número si un backend anterior no lo manda). */}
+                <p className="tkc-hint mt-3">
+                  {plan.id === 'lifetime' && (
+                    <>Incluye Spotify. {spotifySlots ? `Los ${spotifySlots.total} primeros Lifetime usan` : 'Los primeros Lifetime usan'} la app de Spotify de la plataforma
+                      {spotifySlotsLeft != null && (spotifySlotsLeft > 0 ? ` (quedan ${spotifySlotsLeft} de ${spotifySlots.total})` : ' (cupos agotados)')};
+                      el resto conecta con su propia app de Spotify, con guía paso a paso.</>
+                  )}
+                  {plan.id === 'annual' && <>Incluye Spotify: conectas con tu propia app de Spotify, con guía paso a paso.</>}
+                  {plan.id === 'month' && <>Spotify es opcional: complemento de pago único (MX${spotifyAddonMxn.toLocaleString('es-MX')}).</>}
+                </p>
+                <div className="flex-1" />
+                {isCurrent ? (
+                  <p className="theme-chip tkc-label text-center mt-3 py-2 rounded-full">Plan actual</p>
+                ) : rank > currentPlanRank ? (
+                  <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
+                    className="theme-btn-primary theme-btn-md w-full mt-3 font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+                    {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {/* Condiciones de Lifetime: antes iban dentro de su tarjeta en letra de
+            9px y la hacían el doble de alta que las otras. Mismo texto. */}
+        <p className="text-xs text-gray-500 mt-2 px-1">Lifetime: {LIFETIME_LEGEND}</p>
+      </section>
       )}
 
       {/* Pedido explicito: un solo input de alias, compartido entre la
@@ -485,11 +534,11 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           streamer elija todo en un solo lugar, en vez de repetido en cada
           panel bloqueado (que ahora solo pide la clave si ya tienes una). */}
       {!session && (
-        <div className="theme-surface w-full max-w-2xl p-6 flex flex-col gap-4">
+        <div className="theme-surface w-full max-w-3xl p-5 flex flex-col gap-4">
           {trialResult ? (
             <div className="flex flex-col gap-3">
-              <p role="status" className="theme-label text-xs uppercase tracking-widest font-semibold">Guarda tu clave ahora</p>
-              <p className="text-[11px] text-gray-500">
+              <p role="status" className="theme-label tkc-label">Guarda tu clave ahora</p>
+              <p className="tkc-hint">
                 Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
                 plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
               </p>
@@ -511,9 +560,10 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             <>
               <div className="relative">
                 <HoneypotField />
-                <label className="theme-label block text-[10px] mb-2">Elige un alias para tu licencia</label>
+                <label htmlFor="membership-alias" className="theme-label tkc-label block mb-1.5">Elige un alias para tu licencia</label>
                 <input
                   ref={aliasInputRef}
+                  id="membership-alias"
                   value={alias}
                   onChange={e => { setAlias(e.target.value); if (aliasError) setAliasError(''); }}
                   placeholder="Elige un alias"
@@ -522,9 +572,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                     aliasError ? 'ring-2 ring-red-500/30' : ''].join(' ')}
                 />
                 {aliasError ? (
-                  <p role="alert" className="text-[10px] font-bold text-red-500 mt-1">{aliasError}</p>
+                  <p role="alert" className="text-xs font-bold text-red-500 mt-1">{aliasError}</p>
                 ) : (
-                  <p className="text-[9px] text-gray-500 mt-1">Lo usas tanto para la prueba gratis como para comprar un plan — va incluido en tu clave (alias-plan-hash).</p>
+                  <p className="tkc-hint mt-1">Lo usas tanto para la prueba gratis como para comprar un plan — va incluido en tu clave (alias-plan-hash).</p>
                 )}
               </div>
 
@@ -536,8 +586,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 />
               ) : showTrialAdForm ? (
                 <div className="flex flex-col gap-3">
-                  <p className="theme-label text-xs uppercase tracking-widest font-semibold">Prueba gratis de 7 días</p>
-                  <p className="text-[11px] text-gray-500">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
+                  <p className="theme-label tkc-label">Prueba gratis de 7 días</p>
+                  <p className="tkc-hint">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
                   {trialError && <p role="alert" className="theme-notice">{trialError}</p>}
                   <button
                     type="button"
@@ -550,9 +600,10 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <p className="theme-label text-[10px] uppercase tracking-widest font-semibold text-center mb-1">
-                    ¿No tienes una licencia? Elige cómo obtener 7 días gratis
+                  <p className="theme-label tkc-label mb-0.5">
+                    ¿Prefieres probar primero? 7 días gratis
                   </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => { if (requireAlias()) setShowAdGate(true); }}
@@ -567,7 +618,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                   >
                     Verificar una tarjeta (sin cobro)
                   </button>
-                  <p className="text-[10px] text-gray-500 text-center mt-1">O elige un plan más abajo para comprar directo con el mismo alias.</p>
+                  </div>
+                  <p className="tkc-hint">O elige un plan de arriba para comprar directo con el mismo alias.</p>
                 </div>
               )}
             </>
@@ -580,9 +632,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           {/* Resumen fijo del plan elegido: en el formulario de pago (largo)
               siempre se ve qué se está comprando y cuánto, y se puede volver
               a elegir otro sin perder el lugar. */}
-          <div className="sticky top-0 z-20 w-full max-w-2xl theme-surface-featured px-4 py-3 flex items-center justify-between gap-3">
+          <div className="sticky top-0 z-20 w-full max-w-3xl theme-surface-featured px-4 py-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="theme-label text-[9px]">Vas a pagar</p>
+              <p className="theme-label tkc-label">Vas a pagar</p>
               <p className="text-sm font-black truncate">
                 {buyingAddon ? 'Complemento de Spotify (pago único)' : `Plan ${PLAN_LABELS[payingPlan] || payingPlan}`} · MX$ {payingAmountMxn?.toLocaleString('es-MX')}
               </p>
@@ -600,8 +652,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               las dos formas de pago (a ese correo llegan los recibos, tanto
               el automático de Stripe como el de MercadoPago) -- pedido
               explícito de que este campo no se duplique por proveedor. */}
-          <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Correo para el pago (obligatorio, ahí llega tu recibo)</label>
+          <div className="w-full max-w-3xl">
+            <label className="theme-label tkc-label block mb-1.5">Correo para el pago (obligatorio, ahí llega tu recibo)</label>
             <input
               ref={emailInputRef}
               type="email" value={email}
@@ -613,12 +665,12 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 contactTouched.email && !emailValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
             />
             {contactTouched.email && !emailValid && (
-              <p className="text-[10px] font-bold text-red-500 mt-1">Ingresa un correo válido para continuar.</p>
+              <p className="text-xs font-bold text-red-500 mt-1">Ingresa un correo válido para continuar.</p>
             )}
           </div>
 
-          <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Nombre y apellido (obligatorio para procesar el pago)</label>
+          <div className="w-full max-w-3xl">
+            <label className="theme-label tkc-label block mb-1.5">Nombre y apellido (obligatorio para procesar el pago)</label>
             <div className="flex gap-2 items-start">
               <div className="flex-1 flex flex-col gap-1">
                 <input
@@ -631,7 +683,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                     contactTouched.firstName && !firstNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
                 />
                 {contactTouched.firstName && !firstNameValid && (
-                  <p className="text-[10px] font-bold text-red-500">Ingresa tu nombre.</p>
+                  <p className="text-xs font-bold text-red-500">Ingresa tu nombre.</p>
                 )}
               </div>
               <div className="flex-1 flex flex-col gap-1">
@@ -645,7 +697,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                     contactTouched.lastName && !lastNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
                 />
                 {contactTouched.lastName && !lastNameValid && (
-                  <p className="text-[10px] font-bold text-red-500">Ingresa tu apellido.</p>
+                  <p className="text-xs font-bold text-red-500">Ingresa tu apellido.</p>
                 )}
               </div>
             </div>
@@ -656,8 +708,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               medio oficial y el selector ni se muestra. El correo/
               nombre/apellido de arriba son compartidos por las dos; lo único
               que cambia es el formulario de tarjeta de más abajo. */}
-          {MERCADOPAGO_ENABLED && <div className="w-full max-w-2xl">
-            <label className="theme-label block text-[10px] mb-2">Método de pago</label>
+          {MERCADOPAGO_ENABLED && <div className="w-full max-w-3xl">
+            <label className="theme-label tkc-label block mb-1.5">Método de pago</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button type="button" onClick={() => setPaymentProvider('stripe')}
                 className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
@@ -676,8 +728,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               antifraude, ver MercadoPagoCheckout.jsx/server.js) -- no tiene
               sentido pedirla si el streamer eligió Stripe. */}
           {MERCADOPAGO_ENABLED && paymentProvider === 'mercadopago' && (
-            <div className="w-full max-w-2xl">
-              <label className="theme-label block text-[10px] mb-2">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
+            <div className="w-full max-w-3xl">
+              <label className="theme-label tkc-label block mb-1.5">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
               <div className="flex gap-2">
                 <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
                   className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
@@ -694,8 +746,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               aceptación) para mandarlo con el pago como evidencia ante un
               contracargo de mala fe (ver comentario del estado más
               arriba). El texto completo vive en RefundPolicyModal.jsx. */}
-          <div className="w-full max-w-2xl">
-            <label className="flex items-start gap-2 text-[11px] text-gray-400 cursor-pointer">
+          <div className="w-full max-w-3xl">
+            <label className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer">
               <input
                 ref={policyCheckboxRef}
                 type="checkbox"
@@ -714,7 +766,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 {' '}(todas las ventas son finales, servicio digital de acceso inmediato).
               </span>
             </label>
-            {policyError && <p className="text-[10px] font-bold text-red-500 mt-1">{policyError}</p>}
+            {policyError && <p className="text-xs font-bold text-red-500 mt-1">{policyError}</p>}
           </div>
 
           {readyToPay ? (
@@ -732,13 +784,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               />
             ) : (
               <button type="button" data-mp-checkout-cta="checkout-api" onClick={startMercadoPagoCheckout}
-                className="theme-btn-primary theme-btn-md w-full max-w-2xl font-black tracking-widest uppercase transition-all">
+                className="theme-btn-primary theme-btn-md w-full max-w-3xl font-black tracking-widest uppercase transition-all">
                 Pagar con Mercado Pago
               </button>
             )
           ) : (
             <button type="button" onClick={attemptContinue}
-              className="theme-btn-primary theme-btn-md w-full max-w-2xl font-black tracking-widest uppercase transition-all">
+              className="theme-btn-primary theme-btn-md w-full max-w-3xl font-black tracking-widest uppercase transition-all">
               Continuar con el pago
             </button>
           )}
@@ -750,87 +802,49 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           Se paga por el mismo formulario de tarjeta que un plan. Sin sesión
           no hay a qué licencia sumarlo todavía: solo informa. */}
       {!payingPlan && (
-        <div className="w-full max-w-2xl">
-          <p className="theme-label text-[10px] mb-3">Complementos</p>
+        <section className="w-full max-w-3xl" aria-labelledby="addons-title">
+          <h2 id="addons-title" className="tkc-label theme-label mb-2">Complementos</h2>
           <div className={`theme-surface p-4 flex items-center justify-between flex-wrap gap-3 ${canBuyAddon ? 'ring-2 ring-[var(--accent)]' : ''}`}>
             <div className="min-w-0 flex-1 basis-64">
-              <p className="text-xs font-black uppercase tracking-widest">Spotify · pago único</p>
-              <p className="text-2xl font-black mt-1">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
-              <p className="text-[10px] text-gray-400 leading-snug mt-1">
+              <p className="tkc-label">Spotify · pago único</p>
+              <p className="text-2xl font-black tabular-nums mt-0.5">MX${spotifyAddonMxn.toLocaleString('es-MX')}</p>
+              <p className="tkc-hint mt-1">
                 Pedidos de canciones con <code className="theme-chip px-1 py-0.5 rounded">!play</code>. Se paga una sola vez y queda en tu licencia:
                 conectas con tu propia app de Spotify (te guiamos paso a paso) y necesitas Spotify Premium. Ya viene incluido en los planes Anual y Lifetime.
               </p>
             </div>
             {spotifyIncluded ? (
-              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Incluido en tu plan</p>
+              <p className="theme-chip tkc-label text-center px-3 py-2 rounded-full">Incluido en tu plan</p>
             ) : session?.spotifyAddon ? (
-              <p className="theme-chip text-[10px] font-black uppercase tracking-widest text-center px-3 py-2">Activo</p>
+              <p className="theme-chip tkc-label text-center px-3 py-2 rounded-full">Activo</p>
             ) : canBuyAddon ? (
               <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
                 className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
                 {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
               </button>
             ) : (
-              <p className="text-[10px] text-gray-500 leading-snug max-w-[12rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>
+              <p className="tkc-hint max-w-[14rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>
             )}
           </div>
-        </div>
+        </section>
       )}
 
-      {!payingPlan && (
-      <div className="w-full max-w-2xl">
-        <p className="theme-label text-[10px] mb-3">Elige tu plan</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {PLANS.map(plan => {
-            const isCurrent = session?.licenseType === plan.id;
-            const rank = PLAN_RANK[plan.id];
-            const buttonLabel = currentPlanRank >= 1 ? 'Mejorar' : 'Comprar';
-            return (
-              <div key={plan.id} className="theme-surface p-4 text-left flex flex-col">
-                <div className="flex items-center justify-between mb-2 gap-2">
-                  <p className="text-xs font-black uppercase tracking-widest">{plan.label}</p>
-                  {plan.savingsChip && <span className="theme-chip text-[9px] font-black whitespace-nowrap">{plan.savingsChip}</span>}
-                </div>
-                {(() => {
-                  const mxnPrice = livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn;
-                  return (
-                    <>
-                      <p className="text-2xl font-black">MX${mxnPrice.toLocaleString('es-MX')}</p>
-                      <p className="text-[10px] text-gray-500 mb-1">{plan.period} · referencia US${(mxnPrice / MXN_PER_USD).toFixed(2)}</p>
-                    </>
-                  );
-                })()}
-                {plan.id === 'lifetime' && (
-                  <p className="text-[9px] text-gray-500 leading-snug mt-2">{LIFETIME_LEGEND}</p>
-                )}
-                {/* Aviso de Spotify por plan (ver backend/spotify.js, "Quién
-                    puede usarlo"): la app de Spotify de la plataforma solo
-                    admite unos pocos usuarios, así que el resto conecta con
-                    su propia app. El total y los cupos que quedan vienen de
-                    /api/pricing (sin número si un backend anterior no lo manda). */}
-                <p className="text-[10px] text-gray-400 leading-snug mt-2">
-                  {plan.id === 'lifetime' && (
-                    <>Incluye Spotify. {spotifySlots ? `Los ${spotifySlots.total} primeros Lifetime usan` : 'Los primeros Lifetime usan'} la app de Spotify de la plataforma
-                      {spotifySlotsLeft != null && (spotifySlotsLeft > 0 ? ` (quedan ${spotifySlotsLeft} de ${spotifySlots.total})` : ' (cupos agotados)')};
-                      el resto conecta con su propia app de Spotify, con guía paso a paso.</>
-                  )}
-                  {plan.id === 'annual' && <>Incluye Spotify: conectas con tu propia app de Spotify, con guía paso a paso.</>}
-                  {plan.id === 'month' && <>Spotify es opcional: complemento de pago único (MX${spotifyAddonMxn.toLocaleString('es-MX')}).</>}
-                </p>
-                <div className="flex-1" />
-                {isCurrent ? (
-                  <p className="theme-chip text-[9px] font-black uppercase tracking-widest text-center mt-3 py-2">Plan actual</p>
-                ) : rank > currentPlanRank ? (
-                  <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
-                    className="theme-btn-primary theme-btn-sm w-full mt-3 font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                    {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {!session && (
+        <form onSubmit={submitLogin} className="theme-surface w-full max-w-3xl p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3 relative">
+          <HoneypotField />
+          <div className="flex-1">
+            <label htmlFor="membership-login-key" className="theme-label tkc-label block mb-1.5">¿Ya tienes una clave? Ingrésala aquí</label>
+            <input ref={loginInputRef} id="membership-login-key" value={loginKey} onChange={e => { setLoginKey(e.target.value); if (loginStatus === 'error') setLoginStatus('idle'); }} readOnly={loginLoading} placeholder="Pega tu clave de licencia"
+              className="theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
+          </div>
+          <div className="sm:w-32 flex-shrink-0">
+            <MorphButton type="submit" status={loginStatus} loadingLabel="Verificando tu clave…" disabled={!loginLoading && !loginKey.trim()}
+              className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+              Entrar
+            </MorphButton>
+          </div>
+          {loginError && <p role="alert" className="text-xs font-bold text-red-500 sm:basis-full tkc-msg-enter">{loginError}</p>}
+        </form>
       )}
 
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}
@@ -857,7 +871,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       {showPolicyModal && <RefundPolicyModal onClose={() => setShowPolicyModal(false)} />}
 
       {/* Donde se paga, a la vista: aviso legal, privacidad y cookies. */}
-      <LegalLinks onNavigate={onNavigate} className="w-full max-w-2xl" />
+      <LegalLinks onNavigate={onNavigate} className="w-full max-w-3xl" />
     </div>
   );
 }

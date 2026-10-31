@@ -1,12 +1,12 @@
-import { HowItWorks, StartRequirement } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
-import { loadDraft, saveDraft } from './gameDraftStorage';
+import { useEventDraft } from './app/eventSettingsContext';
 
-const DRAFT_KEY = 'tkc_elim_draft';
 
 const NO_PARTICIPANTS = [];
 
@@ -57,10 +57,10 @@ const MODE_LABEL = {
 // normalizada desde App.jsx, compartida con los demás módulos.
 // ─────────────────────────────────────────────
 export default function Elimination({ state, socket, username, connectionStatus, giftsList, prize }) {
-  // Lo último configurado en este dispositivo sin llegar a presionar Iniciar (ver
-  // gameDraftStorage.js) -- el servidor sigue ganando en cuanto la dinámica se
+  // Lo último configurado en la cuenta sin llegar a presionar Iniciar (ver
+  // eventSettingsStore.js) -- el servidor sigue ganando en cuanto la dinámica se
   // arrancó alguna vez (ni siquiera se borra al detenerla).
-  const draft = useMemo(() => loadDraft(DRAFT_KEY, {}), []);
+  const [draft, saveDraft] = useEventDraft('elim');
   const [startError, setStartError] = useState('');
   const [selectedGift, setSelectedGift]         = useState(() => state.targetGiftCoins > 0 ? { name: state.targetGiftName, icon: state.targetGiftIcon, coins: state.targetGiftCoins } : (draft.selectedGift ?? null));
   const [selectedInstaWin, setSelectedInstaWin] = useState(() => state.instaWinGiftCoins > 0 ? { name: state.instaWinGiftName, icon: state.instaWinGiftIcon, coins: state.instaWinGiftCoins } : (draft.selectedInstaWin ?? NO_INSTA_WIN));
@@ -77,8 +77,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [manualCount, setManualCount]           = useState(1);
 
   useEffect(() => {
-    saveDraft(DRAFT_KEY, { selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode });
-  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode]);
+    saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode });
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // Igual que en Zubastinis: solo emitimos si el cambio es en los ajustes
@@ -124,6 +124,16 @@ export default function Elimination({ state, socket, username, connectionStatus,
     });
   };
 
+  // Confirmación de los cambios en vivo y protección de los botones (ver
+  // liveApply.js).
+  const appliedPhase = useLiveApplied({
+    active: state.isActive,
+    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, baseTime, rejoinTime, !!fastMode, eliminationsPerRound, !!lockedMode]),
+    serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.baseTime, state.rejoinTime, !!state.fastMode, state.eliminationsPerRound, !!state.lockedMode]),
+  });
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
+  const hasProgress = state.isActive && state.mode !== 'finished' && (state.participants?.length ?? 0) > 0;
+
   const stopElimination    = () => socket.emit('stop_elimination');
   const restartElimination = () => socket.emit('restart_elimination');
   const togglePause        = () => socket.emit(state.paused ? 'resume_elimination' : 'pause_elimination');
@@ -163,16 +173,18 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const timerTitle = state.paused ? 'PAUSADO' : state.mode === 'finished' ? 'FINALIZADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center justify-center p-6 font-sans flex-1">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
+      {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
+      <div className="tkc-game-layout">
 
       {/* Preview */}
-      <div className="theme-surface-featured w-full max-w-md p-5 mb-6 relative overflow-hidden">
+      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
         {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
 
         <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">ELIMINACIÓN</p>
+          <p className="theme-accent-text tkc-eyebrow">ELIMINACIÓN</p>
           <div className="text-right">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">{timerTitle}</p>
+            <p className="tkc-label text-gray-500">{timerTitle}</p>
             <p className={`text-3xl font-black tabular-nums transition-colors ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500' : 'text-white'}`}>
               {formatMMSS(state.timeLeft || 0)}
             </p>
@@ -205,7 +217,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
         )}
 
         {participants.length > 0 && state.mode !== 'finished' && (
-          <p className="text-[10px] text-gray-500 text-center mt-2 relative z-10">
+          <p className="tkc-hint text-center mt-2 relative z-10">
             {participants.length} slot{participants.length === 1 ? '' : 's'} · {distinctCount} participante{distinctCount === 1 ? '' : 's'}
           </p>
         )}
@@ -225,8 +237,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
       </div>
 
       {/* Settings */}
-      <div className="theme-surface w-full max-w-md p-8 relative">
-        <div className="flex items-center gap-3 mb-8">
+      <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
+        <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
         </div>
@@ -241,21 +253,21 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {/* Selector regalo para unirse */}
             <div className="mb-4 relative z-20">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">REGALO PARA UNIRSE</label>
+              <label className="tkc-label block text-gray-400 mb-1">REGALO PARA UNIRSE<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
                 onSelect={setSelectedGift}
                 placeholder="Elige un regalo..."
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              <p className="tkc-hint mt-1">
                 Cualquier regalo cuenta — se convierte a entradas según su valor en monedas comparado con este (ej: si eliges uno de 1 moneda, un regalo de 30 monedas da 30 entradas). Varios regalos seguidos de la misma persona se suman entre sí si no pasan más de 10s entre uno y otro.
               </p>
             </div>
 
             {/* Selector Insta-Win */}
             <div className="mb-6 relative z-10">
-              <label className="block text-[10px] uppercase tracking-widest text-yellow-500 mb-1 font-black">INSTA-WIN</label>
+              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -263,7 +275,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 placeholder="Elige un regalo..."
                 variant="insta"
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              <p className="tkc-hint mt-1">
                 Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
               </p>
             </div>
@@ -271,8 +283,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
             {/* Base Time */}
             <div className="pt-2 mb-4">
               <div className="flex justify-between items-center mb-1">
-                <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">
-                  TIEMPO PARA UNIRSE {state.isActive && state.mode === 'joining' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+                <label className="theme-label tkc-label">
+                  TIEMPO PARA UNIRSE<LiveTag active={state.isActive} title="Si el tiempo para unirse está corriendo, salta al tiempo nuevo; si no, se usa en la próxima ronda" />
                 </label>
               </div>
               <TimeInput seconds={baseTime} onChange={setBaseTime} />
@@ -281,8 +293,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
             {/* Rejoin Time */}
             <div className="mb-4">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] uppercase tracking-widest text-red-400 font-semibold">
-                  TIEMPO DE REINGRESO {state.isActive && state.mode === 'rejoin' && <span className="text-green-400 ml-1 text-[8px]">(EN VIVO)</span>}
+                <label className="tkc-label text-red-400">
+                  TIEMPO DE REINGRESO<LiveTag active={state.isActive} title="Si el reingreso está corriendo, salta al tiempo nuevo; si no, se usa en el próximo" />
                 </label>
               </div>
               <TimeInput seconds={rejoinTime} onChange={setRejoinTime} />
@@ -290,29 +302,31 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {/* Cuántos caen por ronda */}
             <div className="mb-4">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">ELIMINADOS POR RONDA</label>
+              <label className="tkc-label block text-gray-400 mb-1">ELIMINADOS POR RONDA<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
               <input
                 type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
                 className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
               />
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">Cuántos participantes se eliminan de una en cada sorteo (siempre deja al menos 1 en pie).</p>
+              <p className="tkc-hint mt-1">Cuántos participantes se eliminan de una en cada sorteo (siempre deja al menos 1 en pie).</p>
             </div>
 
             {/* Fast Mode / Locked Mode */}
             <div className="flex gap-3 mb-6">
-              <button type="button" onClick={() => setFastMode(f => !f)}
+              <button type="button" onClick={() => setFastMode(f => !f)} aria-pressed={!!fastMode}
                 className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
                 title="Reduce las animaciones de sorteo/resultado a la mitad (1s en vez de 2s)">
                 Fast Mode
               </button>
-              <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)}
+              <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)} aria-pressed={!!lockedMode}
                 disabled={lockedModeLocked}
                 className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'} ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
                 title={lockedModeLocked ? 'No se puede desactivar hasta Detener o Reiniciar la ronda' : 'Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después'}>
                 Locked Mode
               </button>
             </div>
+            {lockedModeLocked && <p className="tkc-hint -mt-4 mb-4">Locked Mode no se puede apagar con la ronda en curso: así nadie entra a último momento. Se libera al detener o reiniciar.</p>}
+            <LiveAppliedNote phase={appliedPhase} />
 
             {/* Entrada manual (admin): suma entradas a mano a un usuario
                 existente o nuevo, sin depender de un regalo real — cuenta
@@ -320,12 +334,12 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 insta-win, etc.). A propósito ignora Locked Mode: es una
                 acción explícita del admin, no una entrada automática. */}
             <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">AGREGAR ENTRADA MANUAL</label>
+              <label className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADA MANUAL</label>
               <div className="flex gap-2">
                 <input
                   value={manualUsername} onChange={e => setManualUsername(e.target.value)}
                   placeholder="usuario"
-                  className="theme-input flex-1 p-2 text-sm outline-none"
+                  className="theme-input flex-1 min-w-0 p-2 text-sm outline-none"
                 />
                 <input
                   type="number" min="1" value={manualCount}
@@ -338,52 +352,64 @@ export default function Elimination({ state, socket, username, connectionStatus,
                   Agregar
                 </button>
               </div>
-              <p className="text-[10px] text-gray-500 mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
+              <p className="tkc-hint mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
             </div>
 
-            <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-            {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
-
-            {/* Botones */}
-            <div className="flex gap-4">
-              {!state.isActive ? (
-                <button
-                  onClick={startElimination}
-                  disabled={connectionStatus !== 'connected' || !selectedGift}
-                  className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={togglePause}
-                    disabled={state.mode === 'finished'}
-                    className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {state.paused ? 'REANUDAR' : 'PAUSAR'}
-                  </button>
-                  <button
-                    onClick={restartElimination}
-                    className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all"
-                  >
-                    REINICIAR ⟲
-                  </button>
-                </>
-              )}
-              <button
-                onClick={stopElimination}
-                className="theme-btn-danger theme-btn-lg font-bold transition-all"
-              >
-                DETENER
-              </button>
-            </div>
           </div>
 
-          {/* Premio: aparte de los ajustes a propósito — se puede
-              configurar antes de tener la conexión live confirmada. */}
-          <PrizeEditor socket={socket} prize={prize} />
         </div>
+      </div>
+
+      {/* Controles del juego: en escritorio, bajo la vista previa (estado y
+          botones juntos, sin bajar hasta el final de los ajustes); en móvil,
+          después de los ajustes, como antes (ver .tkc-game-layout). */}
+      <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
+        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
+        {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+
+        {/* Botones */}
+        <div className="flex flex-wrap gap-3">
+          {!state.isActive ? (
+            <button
+              onClick={() => runLocked(startElimination)}
+              disabled={connectionStatus !== 'connected' || !selectedGift || actionLocked}
+              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={togglePause}
+                disabled={state.mode === 'finished'}
+                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {state.paused ? 'REANUDAR' : 'PAUSAR'}
+              </button>
+              <ConfirmButton
+                needsConfirm={hasProgress}
+                onConfirm={() => runLocked(restartElimination)}
+                disabled={actionLocked}
+                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                REINICIAR ⟲
+              </ConfirmButton>
+            </>
+          )}
+          <ConfirmButton
+            needsConfirm={hasProgress}
+            onConfirm={stopElimination}
+            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+          >
+            DETENER
+          </ConfirmButton>
+        </div>
+      </div>
+
+      {/* Premio: aparte de los ajustes a propósito — se puede
+          configurar antes de tener la conexión live confirmada. En
+          escritorio va debajo de la vista previa (columna izquierda). */}
+      <PrizeEditor socket={socket} prize={prize} />
       </div>
     </div>
   );

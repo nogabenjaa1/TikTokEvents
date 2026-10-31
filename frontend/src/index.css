@@ -262,7 +262,11 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="default"] .theme-heading,
 .themed-app[data-theme-style="default"] .theme-label,
 .themed-app[data-theme-style="default"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.36 0.16 h);
+  /* La luminosidad viene de --tkc-accent-ink-l: 0.36 de fábrica (lo que ven
+     los overlays de OBS) y más oscura solo en el panel (ver .themed-panel más
+     abajo), donde con un acento personalizado verde azulado o amarillo estos
+     textos daban 3.9:1 sobre el fondo de página. */
+  color: oklch(from var(--accent) var(--tkc-accent-ink-l, 0.36) 0.16 h);
 }
 /* theme-btn-secondary y theme-chip heredan color: var(--accent-soft) de la
    regla global (pensada para fondo oscuro) — sobre el fondo pastel de acá
@@ -331,7 +335,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-heading,
 .themed-app[data-theme-style="cute"] .theme-label,
 .themed-app[data-theme-style="cute"] .theme-accent-text {
-  color: oklch(from var(--accent) 0.36 0.16 h);
+  color: oklch(from var(--accent) var(--tkc-accent-ink-l, 0.36) 0.16 h);
 }
 .themed-app[data-theme-style="cute"] .theme-heading { font-weight: 700; letter-spacing: 0.01em; }
 /* La píldora completa solo va en los campos de UNA línea (input/select).
@@ -370,7 +374,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style="cute"] .theme-chip {
   border: 1px dashed var(--surface-border-color);
   border-radius: 999px;
-  background: oklch(from var(--accent) 0.6 0.14 h);
+  /* En el panel va más claro (ver .themed-panel más abajo): con la tinta
+     oscura daba 3.8:1 en rosa (axe). Los overlays conservan el de siempre. */
+  background: oklch(from var(--accent) var(--tkc-cute-chip-l, 0.6) var(--tkc-cute-chip-c, 0.14) h);
   color: var(--ink-cute);
 }
 /* Dock flotante redondeado, igual de "sticker" que el resto del material. */
@@ -419,7 +425,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-app[data-theme-style][data-mode="dark"] {
   color-scheme: dark;
   --page-bg: oklch(from var(--accent) 0.17 0.045 h);
-  --surface-bg: oklch(from var(--accent) 0.235 0.06 h);
+  /* 0.25 (antes 0.235): la tarjeta se separa mejor del fondo de página. */
+  --surface-bg: oklch(from var(--accent) 0.25 0.06 h);
   --surface-bg-alt: oklch(from var(--accent) 0.2 0.05 h);
   --surface-border-color: color-mix(in oklch, var(--accent) 50%, transparent);
   --surface-shadow: 0 10px 30px -12px var(--page-bg), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
@@ -605,6 +612,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: #F59E0B;
   border-radius: var(--surface-radius-sm);
 }
+/* En el panel el texto del botón usa la tinta de estado mezclada como los
+   avisos: el ámbar puro no llegaba a 4.5:1 sobre el pastel. */
+.themed-panel .theme-btn-warning { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)); }
 .theme-btn-warning:hover { background: color-mix(in oklch, #F59E0B 26%, var(--surface-bg-alt)); }
 .theme-btn-danger {
   background: color-mix(in oklch, #EF4444 14%, var(--surface-bg-alt));
@@ -612,6 +622,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: #EF4444;
   border-radius: var(--surface-radius-sm);
 }
+/* Igual que el de aviso: el rojo puro daba 1.6:1 sobre el pastel (axe). */
+.themed-panel .theme-btn-danger { color: color-mix(in oklch, var(--ink-danger) 65%, var(--status-mix)); }
 .theme-btn-danger:hover { background: color-mix(in oklch, #EF4444 26%, var(--surface-bg-alt)); }
 
 /* ==========================================
@@ -641,7 +653,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   border: 1px solid color-mix(in oklch, var(--notice) 40%, transparent);
   border-radius: var(--surface-radius-sm);
   background: color-mix(in oklch, var(--notice) 10%, transparent);
-  color: color-mix(in oklch, var(--notice-ink) 65%, var(--status-mix));
+  /* 58% (antes 65%): un aviso de atención sobre el fondo de página (no sobre
+     una tarjeta) daba 4.35:1; así pasa 4.5:1 también ahí (axe, oct 2026). */
+  color: color-mix(in oklch, var(--notice-ink) 58%, var(--status-mix));
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 700;
@@ -656,8 +670,9 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    un cambio visible al pasar el cursor. Por defecto van en tinta apagada. */
 .theme-link {
   padding-block: 0.5rem;
-  font-size: 0.625rem;
-  line-height: 0.875rem;
+  /* 11px (antes 10px): mismo paso que .tkc-label, el más chico de la escala. */
+  font-size: 0.6875rem;
+  line-height: 1rem;
   font-weight: 700;
   text-decoration: underline;
   color: color-mix(in oklch, var(--ink, currentColor) 88%, transparent);
@@ -667,6 +682,117 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .theme-link-info,    .theme-link-info:hover    { color: color-mix(in oklch, var(--ink-info) 65%, var(--status-mix)); }
 .theme-link-warning, .theme-link-warning:hover { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)); }
 .theme-link-danger:hover, .theme-link-info:hover, .theme-link-warning:hover { opacity: 0.75; }
+
+/* ==========================================
+   ESCALA DE TEXTO DEL PANEL
+   ==========================================
+   El panel acumulaba textos de 8, 9, 10 y 11px escritos a mano (más de 450),
+   casi todos en mayúsculas: a esa medida la etiqueta, la ayuda y el dato se
+   leían igual de chicos. Tres pasos con nombre, que no fijan color (lo sigue
+   poniendo el tema o la utilidad de color de cada elemento), salvo la ayuda,
+   que va un poco más tenue que el texto principal para que se note qué es qué.
+   En una capa: una utilidad de Tailwind puesta junto a ellas manda. */
+@layer components {
+  /* Antetítulo de una pantalla ("DASHBOARD", "MEMBRESÍA"). */
+  .tkc-eyebrow { font-size: 0.6875rem; line-height: 1rem; font-weight: 900; letter-spacing: 0.24em; text-transform: uppercase; }
+  /* Etiqueta de campo, título de grupo, dato de estado. */
+  .tkc-label { font-size: 0.6875rem; line-height: 1rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  /* Ayuda o descripción bajo un título o un campo. */
+  .tkc-hint { font-size: 0.75rem; line-height: 1.35; color: color-mix(in oklch, var(--ink, currentColor) 80%, transparent); }
+}
+
+/* Superficies del panel un escalón más claras que el fondo de la página: antes
+   la tarjeta (L 0.80) y la página (L 0.72) casi se confundían, todo era morado
+   sobre morado. Solo en el panel (ThemedShell lleva .themed-panel): las vistas
+   previas y los overlays de OBS declaran su propio tema y no lo heredan, así
+   que lo que ve la audiencia no cambia. */
+.themed-panel[data-theme-style="default"]:not([data-mode="dark"]) {
+  --surface-bg: oklch(from var(--accent) 0.85 0.08 h);
+  /* Títulos, etiquetas y texto de acento: 4.5:1 con cualquier acento. */
+  --tkc-accent-ink-l: 0.31;
+}
+.themed-panel[data-theme-style="cute"]:not([data-mode="dark"]) {
+  --surface-bg: oklch(from var(--accent) 0.86 0.075 h);
+  --tkc-accent-ink-l: 0.33;
+  --tkc-cute-chip-l: 0.68;
+  --tkc-cute-chip-c: 0.13;
+}
+/* Las vistas previas de overlays dentro del panel vuelven a los valores de
+   OBS: declaran su propio tema, pero estas variables se heredarían. */
+.themed-panel .themed-app[data-theme-style] {
+  --tkc-accent-ink-l: 0.36;
+  --tkc-cute-chip-l: 0.6;
+  --tkc-cute-chip-c: 0.14;
+}
+
+/* Tarjeta que es un acceso directo (Dashboard): sube un poco y toma el borde
+   del acento al pasar el cursor; se hunde al presionarla. Antes bajaba la
+   opacidad, que es justo lo contrario de "esto se puede tocar". */
+.tkc-card-link {
+  transition: transform var(--motion-fast) var(--ease-out-soft),
+              border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.tkc-card-link:hover { transform: translateY(-2px); border-color: var(--accent); }
+.tkc-card-link:active { transform: scale(0.98); }
+/* Personalizar un overlay (OverlayCustomizePanel.jsx): opciones en fila y
+   tarjetas de estilo. Se tiñen al pasar el cursor y se hunden al presionar;
+   la tarjeta de estilo además sube un poco, como las del Dashboard. */
+.tkc-seg {
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft);
+}
+.tkc-seg:hover { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.tkc-seg:active { transform: scale(0.97); }
+.tkc-preset {
+  transition: transform var(--motion-fast) var(--ease-out-soft), border-color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.tkc-preset:hover { transform: translateY(-2px); border-color: var(--accent); }
+.tkc-preset:active { transform: scale(0.98); }
+/* Miniatura de un overlay en su tarjeta (OverlayLink.jsx): es un botón que
+   abre Personalizar; el aro del acento dice que se puede tocar. */
+.tkc-thumb { transition: box-shadow var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft); }
+.tkc-thumb:hover { box-shadow: 0 0 0 2px var(--accent); }
+.tkc-thumb:active { transform: scale(0.99); }
+.tkc-thumb-cta { pointer-events: none; transition: transform var(--motion-fast) var(--ease-out-soft); }
+.tkc-thumb:hover .tkc-thumb-cta { transform: translateY(-2px); }
+/* "Más opciones" abre con el mismo movimiento que el resto de los <details>. */
+.tkc-more[open] > summary { margin-bottom: 0.25rem; }
+
+/* Paneles de los juegos (Rey del Trono, Zubastinis, Eliminación, Ruleta).
+   Antes era siempre una columna de 448px centrada: en escritorio quedaba vacío
+   más de la mitad del ancho y los botones de Iniciar/Detener quedaban al final
+   de los ajustes, bajo el pliegue.
+   - Móvil: una columna en el mismo orden de siempre (vista previa, ajustes,
+     controles, premio). El HTML trae los controles después de los ajustes.
+   - Desde 1024px: a la izquierda la cabina (vista previa, controles y premio)
+     y a la derecha los ajustes. La última fila es 1fr para que el alto extra
+     de los ajustes no separe las tarjetas de la izquierda. */
+.tkc-game-layout {
+  width: 100%;
+  max-width: 28rem;
+  display: grid;
+  /* minmax(0, …): sin esto la columna crece al ancho mínimo de su contenido
+     (una fila de botones, una grilla de casillas) y en 320px se salía. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+@media (min-width: 1024px) {
+  .tkc-game-layout {
+    max-width: 64rem;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-rows: auto auto auto 1fr;
+    align-items: start;
+  }
+  .tkc-game-layout > .tkc-game-main { grid-column: 2; grid-row: 1 / span 4; }
+  .tkc-game-layout > :not(.tkc-game-main) { grid-column: 1; }
+}
+/* Fila de una lista de accesos (los grupos de eventos del Dashboard): se
+   tiñe del acento al pasar el cursor y se hunde al presionarla. */
+.tkc-row-link {
+  border-radius: var(--surface-radius-sm);
+  transition: background var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-soft);
+}
+.tkc-row-link:hover { background: color-mix(in oklch, var(--accent) 14%, transparent); }
+.tkc-row-link:active { transform: scale(0.99); }
 
 /* Tokens de tinta de estado y radios del material Cute -- documentados en
    DESIGN.md (Colors › Estado / Shapes). Cada valor vive UNA sola vez acá y
@@ -702,27 +828,35 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    quedan intactos para la audiencia. `!important` por el mismo motivo que
    las reglas de `.text-gray-*` de cada material: hace falta ganarle a la
    capa de utilities de Tailwind de forma explícita.
+   La tinta se mezcla con --status-mix (negro en claro, blanco en oscuro),
+   igual que los avisos: sola, la tinta de estado daba entre 2.6:1 y 4:1 sobre
+   las tarjetas (axe, oct 2026); mezclada pasa de 4.5:1.
    ========================================== */
 .themed-panel .text-red-200,
 .themed-panel .text-red-300,
 .themed-panel .text-red-400,
-.themed-panel .text-red-500 { color: var(--ink-danger) !important; }
+.themed-panel .text-red-500,
+.themed-panel .text-red-600,
+.themed-panel .text-red-700 { color: color-mix(in oklch, var(--ink-danger) 65%, var(--status-mix)) !important; }
 .themed-panel .text-yellow-100,
 .themed-panel .text-yellow-200,
 .themed-panel .text-yellow-300,
 .themed-panel .text-yellow-400,
-.themed-panel .text-yellow-500 { color: var(--ink-warning) !important; }
+.themed-panel .text-yellow-500 { color: color-mix(in oklch, var(--ink-warning) 65%, var(--status-mix)) !important; }
 .themed-panel .text-green-100,
 .themed-panel .text-green-300,
-.themed-panel .text-green-400 { color: var(--ink-success) !important; }
+.themed-panel .text-green-400 { color: color-mix(in oklch, var(--ink-success) 65%, var(--status-mix)) !important; }
 .themed-panel .text-emerald-300,
-.themed-panel .text-emerald-400 { color: var(--ink-premio) !important; }
-.themed-panel .text-sky-400 { color: var(--ink-info) !important; }
+.themed-panel .text-emerald-400,
+.themed-panel .text-emerald-600 { color: color-mix(in oklch, var(--ink-premio) 65%, var(--status-mix)) !important; }
+.themed-panel .text-sky-400 { color: color-mix(in oklch, var(--ink-info) 65%, var(--status-mix)) !important; }
 /* Ámbar queda en su propia familia (no rojo): sigue usándose como un
    tercer estado real y distinto de error/éxito (ej. "esperando LIVE" en
    TTS Chat, ni activo ni apagado) — solo se oscurece para que se lea. */
 .themed-panel .text-amber-400,
-.themed-panel .text-amber-500 { color: var(--ink-amber) !important; }
+.themed-panel .text-amber-500,
+.themed-panel .text-amber-600,
+.themed-panel .text-amber-700 { color: color-mix(in oklch, var(--ink-amber) 65%, var(--status-mix)) !important; }
 .theme-sidebar {
   background: var(--surface-bg);
   border-right: var(--surface-border);
@@ -769,10 +903,6 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    mueve por debajo de un texto con color transparente + background-clip,
    así el propio texto queda "pintado" con el arcoíris en movimiento.
    ========================================== */
-@keyframes tkc-rainbow-move {
-  from { background-position: 0% 0; }
-  to   { background-position: 400% 0; }
-}
 
 /* Fondo "arcoíris" de un overlay o de una fila (ver rainbowBackgroundStyle):
    una capa aparte, el doble de ancha y con el arcoíris dos veces, que se
@@ -784,18 +914,24 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   isolation: isolate;
   overflow: hidden;
 }
+/* Antes: la capa medía el doble del recuadro con el arcoíris dos veces, así
+   que en el ancho visible entraban los 6 colores en bandas finas, y tardaba
+   8s en recorrer una vuelta (unos 47px/s en un overlay vertical): se veía
+   apagado y lento. Ahora la capa mide 4 veces el recuadro con dos copias de
+   la paleta: se ven 3 o 4 colores a la vez, en bandas que se distinguen, y
+   una vuelta completa tarda 5s (más de 3 veces la velocidad de antes). */
 [style*="--tkc-rainbow-bg"]::before {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 200%;
+  width: 400%;
   z-index: -1;
   pointer-events: none;
-  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b);
+  background-image: linear-gradient(90deg,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363);
   will-change: transform;
-  animation: tkc-rainbow-slide 8s linear infinite;
+  animation: tkc-rainbow-slide 5s linear infinite;
 }
 @keyframes tkc-rainbow-slide {
   from { transform: translate3d(0, 0, 0); }
@@ -851,23 +987,39 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    overlayCustomization.js) nunca tuvo este problema porque no usa
    background-clip. */
 .themed-app[data-theme-style] .tkc-username-rainbow {
-  background-image: linear-gradient(90deg,#ff3b3b,#ff9f1c,#ffe135,#3ddc84,#3b82f6,#a855f7,#ff3b3b) !important;
-  background-size: 100% 100% !important;
+  background-image: linear-gradient(90deg,#FF6363,#FFA23A,#FFD93D,#4CE38A,#2EDCF2,#6FB1FF,#B08CFF,#FF7AC6,#FF6363) !important;
+  background-size: 200% 100% !important;
+  background-repeat: repeat-x !important;
   /* impeccable-disable-next-line gradient-text: opción "arcoíris" que el streamer elige en Personalizar para el nombre de usuario del overlay; es una función, no decoración */
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
-  /* Rendimiento (bug real: la tira de regalos se trababa en OBS): antes se
-     animaba background-position, que obliga a repintar el texto en CADA
-     cuadro desde el hilo principal. Ahora el degradado queda fijo y lo que
-     se anima es el tono con un filtro, que lo resuelve la GPU sin repintar:
-     los colores siguen recorriendo el arcoíris. */
-  will-change: filter;
-  animation: tkc-hue-spin 4s linear infinite;
+  /* Antes el degradado quedaba fijo y se giraba el tono con
+     filter: hue-rotate(). Ese filtro conserva la LUMINANCIA del color de
+     partida, así que al girar un tono claro hacia uno oscuro (o al revés) el
+     resultado se apaga: el rojo puro girado 120 grados da rgb(0,113,0), un
+     verde oscuro. Era la causa de que el texto arcoíris se viera oscuro y
+     sucio. Ahora el degradado, dos veces más ancho que el texto, se desplaza
+     (background-position): los colores son siempre los de la paleta, sin
+     filtros. will-change sigue haciendo falta para que Chromium/CEF repinte
+     el texto recortado en cada cuadro (ver OJO #2 arriba). Medido con 30
+     nombres en una tira en movimiento (oct 2026, navegador de escritorio):
+     mismo ritmo que con el filtro, ningún cuadro de más de 25ms. No se
+     midió en el CEF de OBS de un equipo modesto. */
+  will-change: background-position;
+  animation: tkc-rainbow-text 3s linear infinite;
+  /* Con la paleta más luminosa, sobre un fondo claro (el del tema es pastel)
+     los tonos amarillo y cian se perdían. Una sombra se vería a través de las
+     letras (están recortadas), así que va un trazo fino oscuro y
+     semitransparente sobre el borde de cada letra. Dentro de un degradado
+     oscuro no hace falta y se apaga (ver lightInkVars en overlayCustomization.js). */
+  -webkit-text-stroke: var(--tkc-rainbow-stroke, 0.6px rgb(26 16 51 / 0.55));
 }
-@keyframes tkc-hue-spin {
-  from { filter: hue-rotate(0deg); }
-  to   { filter: hue-rotate(360deg); }
+/* Con background-size 200%, 200% de posición es exactamente el ancho de la
+   imagen: el bucle encaja sin salto. */
+@keyframes tkc-rainbow-text {
+  from { background-position: 0% 0; }
+  to   { background-position: 200% 0; }
 }
 /* "Color sólido del tema" para texto/username — mismo tono que ya usan
    theme-label/theme-accent-text (--accent-soft), como opción explícita
@@ -1364,6 +1516,20 @@ select:disabled { cursor: not-allowed; }
   -webkit-backdrop-filter: none !important;
 }
 [data-ovl-bg="transparent"] { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+/* Texto con un color propio que va DIRECTO sobre la escena de OBS (el título
+   y los avisos de los rankings, la cola de Spotify y el chat, que pintan su
+   fondo por fila: ver .tkc-over-scene en esos overlays). Un color claro como
+   el cian de Neón se perdía sobre una escena clara. En vez de ponerle una caja,
+   lo que hace un letrero de neón: un contorno fino del tono contrario (oscuro
+   para un texto claro como el de Neón, claro para uno oscuro como el de
+   Fiesta) y, en los textos claros, un halo del mismo color. Solo con
+   "Un color": con Original/Del tema el texto conserva su aspecto, el
+   degradado y el arcoíris se pintan recortados (una sombra se vería a través
+   de las letras) y "Transparente" ya trae su propia sombra. */
+.themed-app[data-theme-style] [data-ovl-bg]:not([data-ovl-bg="transparent"]) .tkc-over-scene.tkc-username-custom {
+  /* Contorno del tono contrario al texto y halo (ver getLabelOverride). */
+  text-shadow: 0 0 1px var(--tkc-scene-outline), 0 1px 2px var(--tkc-scene-outline), 0 0 10px var(--tkc-scene-glow);
+}
 /* El texto con degradado/arcoíris se pinta con background-clip: una sombra
    de texto se vería A TRAVÉS de las letras y las oscurecería, así que esos
    van sin sombra. A propósito sin un filtro drop-shadow en su lugar: el

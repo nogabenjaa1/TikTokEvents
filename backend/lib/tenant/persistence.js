@@ -13,6 +13,7 @@ const {
     sanitizeOverlayCustomization,
 } = require('../../lib/tenantSanitizers');
 const { sanitizeChatSettings } = require('../../lib/chatOverlay');
+const { sanitizeEventSettings } = require('../../lib/eventSettings');
 
 module.exports = {
     // ==========================================
@@ -59,6 +60,9 @@ module.exports = {
             }
             if (license.chat_settings) {
                 this.chatSettings = sanitizeChatSettings(license.chat_settings, this.chatSettings);
+            }
+            if (license.event_settings) {
+                this.eventSettings = sanitizeEventSettings(license.event_settings);
             }
             if (license.tts_settings) {
                 const tt = license.tts_settings;

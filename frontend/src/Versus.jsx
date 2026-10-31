@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { HowItWorks, StartRequirement } from './PanelHelp';
+import { HowItWorks, StartRequirement, ConfirmButton } from './PanelHelp';
+import { useActionLock } from './liveApply';
 import GiftPicker from './GiftPicker';
 
 const MAX_ACTION_TEXT = 40; // mismo tope que MAX_ACTION_TEXT en lib/tenant/versus.js
@@ -152,6 +153,10 @@ export default function Versus({ state, socket, username, connectionStatus, gift
   const resumeVersus = () => socket.emit('resume_versus');
   const restartVersus = () => socket.emit('restart_versus');
   const stopVersus = () => socket.emit('stop_versus');
+  // Sin doble clic en Iniciar/Reiniciar, y confirmar antes de borrar un
+  // marcador que ya tiene puntos (ver liveApply.js / ConfirmButton).
+  const [actionLocked, runLocked] = useActionLock(`${state.isActive}`);
+  const hasProgress = state.isActive && ((state.heroScore ?? 0) + (state.villainScore ?? 0)) > 0;
 
   const heroes = state.heroes || [];
   const villains = state.villains || [];
@@ -176,7 +181,7 @@ export default function Versus({ state, socket, username, connectionStatus, gift
         <div className="flex gap-3 flex-wrap">
           {!state.isActive ? (
             <button
-              onClick={startVersus} disabled={connectionStatus !== 'connected'}
+              onClick={() => runLocked(startVersus)} disabled={connectionStatus !== 'connected' || actionLocked}
               className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
@@ -186,12 +191,12 @@ export default function Versus({ state, socket, username, connectionStatus, gift
               <button onClick={state.paused ? resumeVersus : pauseVersus} className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all">
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
-              <button onClick={restartVersus} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all">
+              <ConfirmButton needsConfirm={hasProgress} onConfirm={() => runLocked(restartVersus)} disabled={actionLocked} className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                 REINICIAR ⟲
-              </button>
+              </ConfirmButton>
             </>
           )}
-          <button onClick={stopVersus} className="theme-btn-danger theme-btn-lg font-bold transition-all">DETENER</button>
+          <ConfirmButton needsConfirm={hasProgress} onConfirm={stopVersus} className="theme-btn-danger theme-btn-lg font-bold transition-all">DETENER</ConfirmButton>
         </div>
         {state.isActive && (
           <p className="text-[11px] text-gray-500 mt-3">

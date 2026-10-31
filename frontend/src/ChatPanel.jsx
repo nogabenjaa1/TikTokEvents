@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HowItWorks } from './PanelHelp';
 import { buildOverlayUrl } from './auth';
 import { ChatOverlay } from './overlays/ChatOverlay';
-import { CHAT_DEFAULT_SETTINGS, CHAT_OVERLAY_SIZE } from './chatOverlayModel';
+import { CHAT_DEFAULT_SETTINGS, CHAT_OVERLAY_SIZE, CHAT_OVERLAY_SIZE_VERTICAL } from './chatOverlayModel';
 
 // ─────────────────────────────────────────────
 // CHAT (pestaña de Eventos, pedido explícito): el overlay de chat con su
@@ -37,9 +37,12 @@ function Toggle({ label, hint, checked, onChange }) {
   );
 }
 
-// El overlay a su tamaño real (960x480), achicado para que entre a lo ancho
-// del panel. Se mide con el ancho disponible, igual que OverlayPreviewBox.
-function ScaledPreview({ children }) {
+// El overlay a un tamaño de referencia (horizontal 960 x 480 o vertical
+// 540 x 960, ver CHAT_OVERLAY_SIZE), achicado para que entre en el panel: a lo
+// ancho y, el vertical, sin pasar de un alto cómodo. Se mide con el ancho
+// disponible, igual que OverlayPreviewBox.
+const PREVIEW_MAX_HEIGHT = 620;
+function ScaledPreview({ size, children }) {
   const wrapRef = useRef(null);
   const [available, setAvailable] = useState(null);
   useLayoutEffect(() => {
@@ -51,8 +54,8 @@ function ScaledPreview({ children }) {
     ro?.observe(el);
     return () => ro?.disconnect();
   }, []);
-  const { w, h } = CHAT_OVERLAY_SIZE;
-  const scale = Math.min(1, available ? available / w : 0.5);
+  const { w, h } = size;
+  const scale = Math.min(1, PREVIEW_MAX_HEIGHT / h, available ? available / w : 0.5);
   return (
     <div ref={wrapRef} className="w-full">
       <div
@@ -73,6 +76,15 @@ function SectionLabel({ children }) {
 export default function ChatPanel({ socket, viewerCount, customization }) {
   const [settings, setSettings] = useState(CHAT_DEFAULT_SETTINGS);
   const [copied, setCopied] = useState(false);
+  // Cómo se ve la vista previa (solo aquí; el overlay se adapta solo al
+  // tamaño de la fuente de OBS). Se recuerda en este navegador.
+  const [orientation, setOrientation] = useState(() => {
+    try { return localStorage.getItem('tkc_chat_preview_orientation') === 'vertical' ? 'vertical' : 'horizontal'; } catch { return 'horizontal'; }
+  });
+  const chooseOrientation = (value) => {
+    setOrientation(value);
+    try { localStorage.setItem('tkc_chat_preview_orientation', value); } catch { /* sin almacenamiento: solo no se recuerda */ }
+  };
   const saveTimer = useRef(null);
   const overlayUrl = buildOverlayUrl('chat');
 
@@ -118,10 +130,20 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
     <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 font-sans flex-1">
 
       {/* Vista previa en vivo: el mismo overlay que ve OBS, con los ajustes
-          de abajo aplicados al momento. Es horizontal: arriba, a lo ancho. */}
+          de abajo aplicados al momento, horizontal o como en OBS vertical. */}
       <div className="w-full max-w-4xl flex flex-col items-center gap-2">
-        <p className="theme-label text-[10px]">Vista previa en vivo</p>
-        <ScaledPreview>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <p className="theme-label text-[10px]">Vista previa en vivo</p>
+          <div className="flex gap-1" role="group" aria-label="Forma de la vista previa">
+            {[['horizontal', 'Horizontal'], ['vertical', 'Vertical']].map(([value, label]) => (
+              <button key={value} type="button" aria-pressed={orientation === value} onClick={() => chooseOrientation(value)}
+                className={`theme-btn-sm font-bold ${orientation === value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ScaledPreview size={orientation === 'vertical' ? CHAT_OVERLAY_SIZE_VERTICAL : CHAT_OVERLAY_SIZE}>
           <ChatOverlay socket={socket} viewerCount={viewerCount} customize={customization} previewSettings={settings} />
         </ScaledPreview>
         <p className="text-[10px] text-gray-500 text-center">Sin LIVE no llega nada: usa "Mensaje de prueba" para ver cómo se ve.</p>
@@ -148,7 +170,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
           ) : (
             <p className="text-[11px] text-gray-500">Inicia sesión para ver tu enlace.</p>
           )}
-          <p className="text-[10px] text-gray-500 mt-1">Fuente de navegador de 960 × 480 (horizontal). Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
+          <p className="text-[10px] text-gray-500 mt-1">Se adapta al tamaño de la fuente de navegador: 960 × 480 para horizontal y 540 × 960 para OBS vertical. Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
         </div>
 
         <div className="mb-5">
@@ -184,7 +206,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
         <div className="mb-5 grid grid-cols-2 gap-4">
           <label className="block">
             <SectionLabel>Tamaño de letra: {settings.fontSize}px</SectionLabel>
-            <input type="range" min="12" max="32" step="1" value={settings.fontSize} onChange={(e) => update({ fontSize: Number(e.target.value) })} className="w-full" />
+            <input type="range" min="12" max="48" step="1" value={settings.fontSize} onChange={(e) => update({ fontSize: Number(e.target.value) })} className="w-full" />
           </label>
           <label className="block">
             <SectionLabel>Máximo en pantalla: {settings.maxMessages}</SectionLabel>

@@ -49,6 +49,26 @@ test('badges: the real TikTok badge images (https only, no repeats, at most 4) p
   assert.equal(badgesFrom({}).topGifterRank, null);
 });
 
+test('badges: images of roles already drawn as icons are not repeated in "others"', () => {
+  // Mismo formato que arma tiktok-live-connector (mapBadges): cada insignia con su badgeSceneType.
+  const b = badgesFrom({
+    userBadges: [
+      { type: 'image', badgeSceneType: 1, url: 'https://p16/moderator.png' },
+      { type: 'image', badgeSceneType: 10, url: 'https://p16/fans_lv12.png' },
+      { type: 'image', badgeSceneType: 8, url: 'https://p16/gifter_lv30.png' },
+      { type: 'image', badgeSceneType: 4, url: 'https://p16/sub_1.png' },
+      { type: 'image', badgeSceneType: 6, url: 'https://p16/ranklist_top_gifter_2.png' },
+      { type: 'image', badgeSceneType: 3, url: 'https://p16/otro_reconocimiento.png' },
+      { type: 'privilege', badgeSceneType: 8, level: 30 },
+    ],
+    isModerator: true, isSubscriber: true, topGifterRank: 2, teamMemberLevel: 12, gifterLevel: 30,
+  });
+  assert.deepEqual(b.others, ['https://p16/otro_reconocimiento.png'], 'solo lo que no es un rol ya dibujado');
+  assert.equal(b.images.length, 4, 'images se mantiene como antes (compatibilidad)');
+  assert.deepEqual(badgesFrom({}).others, []);
+  assert.deepEqual(badgesFrom({ userBadges: [{ url: 'https://p16/sin_tipo.png' }] }).others, ['https://p16/sin_tipo.png'], 'sin tipo conocido: es otro reconocimiento');
+});
+
 test('a chat message keeps everything, commands and @mentions included, with its stickers', () => {
   const data = { uniqueId: 'ana', nickname: 'Ana  ⭐', profilePictureUrl: 'https://p16/ana.jpg' };
   assert.equal(chatMessageItem(data, { rawComment: '!play despacito' }).text, '!play despacito');
@@ -201,7 +221,7 @@ test('a pinned message is kept for overlays that open later, and an unpin or a n
   assert.equal(tenant.chatRecent.length, 0);
 });
 
-test('the panel test button shows a message, a follow and a gift, and cannot be spammed; overlays cannot use it', () => {
+test('the panel test button shows two messages (one long, with several badges), a follow and a gift, and cannot be spammed; overlays cannot use it', () => {
   const { tenant, emitted } = chatTenant();
   const overlay = fakeSocket({ authMethod: 'overlay', overlayScreen: 'chat' });
   tenant.registerChatOverlayHandlers(overlay);
@@ -211,7 +231,7 @@ test('the panel test button shows a message, a follow and a gift, and cannot be 
   tenant.registerChatOverlayHandlers(panel);
   panel.fire('chat_overlay_test');
   panel.fire('chat_overlay_test');
-  assert.deepEqual(emitted.filter((e) => e.name === 'chat_item').map((e) => e.payload.kind), ['chat', 'follow', 'gift']);
+  assert.deepEqual(emitted.filter((e) => e.name === 'chat_item').map((e) => e.payload.kind), ['chat', 'chat', 'follow', 'gift']);
 });
 
 test('a read-only OBS overlay gets only the viewing part of the chat: it joins and receives, but has no controls', () => {

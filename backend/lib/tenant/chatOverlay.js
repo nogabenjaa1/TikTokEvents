@@ -112,8 +112,9 @@ module.exports = {
         });
 
         // "Mensaje de prueba" del panel: para ver el overlay en OBS sin estar
-        // en vivo. Un mensaje, un seguidor y un regalo, como si llegaran de
-        // TikTok. Con freno, para que no se pueda llenar el chat a clics.
+        // en vivo. Un mensaje, uno largo de alguien con varias insignias (para
+        // ver cómo baja de línea), un seguidor y un regalo, como si llegaran
+        // de TikTok. Con freno, para que no se pueda llenar el chat a clics.
         socket.on('chat_overlay_test', () => {
             if (socket.authMethod !== 'jwt') return;
             const now = Date.now();
@@ -121,6 +122,8 @@ module.exports = {
             this.chatTestAt = now;
             const tester = { uniqueId: 'prueba', nickname: 'Prueba', teamMemberLevel: 12, isModerator: true };
             this.pushChatItem(chatMessageItem(tester, { rawComment: '¡Hola! Así se ve un mensaje en tu chat.' }));
+            const regular = { uniqueId: 'fan_de_siempre', nickname: 'Fan de siempre con nombre largo', teamMemberLevel: 25, gifterLevel: 30, isSubscriber: true, topGifterRank: 2 };
+            this.pushChatItem(chatMessageItem(regular, { rawComment: 'Un mensaje largo se ve completo: sigue en las líneas de abajo, alineado con su comienzo, sin cortarse ni perder nada de lo que escribió la persona.' }));
             this.pushChatItem(followItem({ uniqueId: 'nuevo_seguidor', nickname: 'Nuevo seguidor' }));
             this.pushChatItem(giftItem({ username: 'fan_top', nickname: 'Fan top', giftName: 'Rosa', count: 5, coins: 5, badgesSource: { topGifterRank: 1 } }));
         });

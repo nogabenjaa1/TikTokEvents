@@ -16,8 +16,9 @@ const CHAT_SETTINGS_DEFAULTS = Object.freeze({
     // arriba fuera del overlay. true: lo más nuevo arriba, empujando hacia abajo.
     newestOnTop: false,
     maxMessages: 12,
-    // Tamaño de letra fijo del overlay, en px.
-    fontSize: 16,
+    // Tamaño de letra fijo del overlay, en px. 24 (antes 16): pensado para
+    // leerse en OBS vertical, donde la fuente se ve achicada en el lienzo.
+    fontSize: 24,
     showAvatars: true,
     showBadges: true,
     showFollows: true,
@@ -30,7 +31,7 @@ const CHAT_SETTINGS_DEFAULTS = Object.freeze({
 const FADE_MAX_SECONDS = 600;
 const MAX_MESSAGES_MAX = 30;
 const FONT_SIZE_MIN = 12;
-const FONT_SIZE_MAX = 32;
+const FONT_SIZE_MAX = 48;
 const CHAT_RECENT_MAX = MAX_MESSAGES_MAX;
 const BADGE_IMAGES_MAX = 4;
 
@@ -61,22 +62,34 @@ const text = (value, max) => String(value ?? '').replace(/\s+/g, ' ').trim().sli
 // Solo imágenes por https: el overlay corre en OBS y no debe cargar otra cosa.
 const image = (value) => (typeof value === 'string' && /^https:\/\//i.test(value) && value.length <= 500 ? value : '');
 
-// Las insignias del usuario como las muestra TikTok: las imágenes reales que
-// trae `userBadges` (club de fans con su nivel, nivel de gifter, top gifter,
-// moderador...) y, aparte, las señales que ya resuelve la librería, para
-// dibujar una insignia propia cuando TikTok no manda imagen.
+// Insignias que el overlay dibuja con un ícono propio, por el tipo que les da
+// TikTok (badgeSceneType, ver mapBadges en tiktok-live-connector): 1 moderador,
+// 4 y 7 suscriptor, 8 nivel de gifter, 10 club de fans. El top gifter se
+// reconoce por su imagen (ranklist_top_gifter_N), igual que en la librería.
+const ROLE_SCENE_TYPES = new Set([1, 4, 7, 8, 10]);
+const isRoleBadge = (badge, url) => ROLE_SCENE_TYPES.has(Number(badge?.badgeSceneType)) || url.includes('/ranklist_top_gifter_');
+
+// Las insignias del usuario: las señales que ya resuelve la librería
+// (moderador, suscriptor, top gifter, nivel del club de fans y de gifter),
+// que el overlay dibuja como íconos, y las imágenes reales de TikTok.
+// `others` son solo las imágenes que NO son uno de esos roles (otros
+// reconocimientos): mostrar todas repetía el moderador o el club de fans.
+// `images` (todas) se mantiene por compatibilidad.
 function badgesFrom(data = {}) {
     const raw = Array.isArray(data.userBadges) ? data.userBadges : [];
     const images = [];
+    const others = [];
     for (const badge of raw) {
         const url = image(badge?.url);
-        if (url && !images.includes(url)) images.push(url);
-        if (images.length >= BADGE_IMAGES_MAX) break;
+        if (!url) continue;
+        if (!images.includes(url) && images.length < BADGE_IMAGES_MAX) images.push(url);
+        if (!isRoleBadge(badge, url) && !others.includes(url) && others.length < BADGE_IMAGES_MAX) others.push(url);
     }
     const identity = data.userIdentity || {};
     const topGifterRank = clampInt(data.topGifterRank, 0, 3, 0);
     return {
         images,
+        others,
         moderator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
         subscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
         topGifterRank: topGifterRank || null,

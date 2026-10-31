@@ -7,13 +7,22 @@ export const CHAT_DEFAULT_SETTINGS = {
   showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showPinned: true, showViewerCount: true,
 };
 
-// El overlay ocupa toda la fuente de navegador de OBS, del tamaño que tenga:
-// antes medía siempre 960 x 480 y, en un lienzo vertical, OBS lo achicaba
-// hasta que la letra no se leía. Estas medidas son solo las de referencia
-// para las vistas previas: horizontal (la de siempre, con el ancho de los
-// banners horizontales) y vertical (la que se recomienda para OBS vertical).
+// Tamaño del overlay: horizontal (con el ancho de los banners horizontales),
+// 960 x 480, y vertical, 540 x 960, la medida que se recomienda para OBS
+// vertical. Ver chatFrameSize.
 export const CHAT_OVERLAY_SIZE = { w: 960, h: 480 };
 export const CHAT_OVERLAY_SIZE_VERTICAL = { w: 540, h: 960 };
+
+// El tamaño del overlay en OBS según la fuente de navegador. Antes medía
+// siempre 960 x 480: en un lienzo vertical, OBS lo achicaba hasta que la letra
+// no se leía. Ahora, en una fuente VERTICAL (más alta que ancha) ocupa toda la
+// fuente. En una horizontal sigue midiendo 960 x 480 arriba a la izquierda,
+// exactamente como antes: así no cambia nada para quien ya lo tiene puesto
+// (por ejemplo, en una fuente de 1920 x 1080 usando solo esa esquina).
+// Devuelve el tamaño fijo, o null para ocupar toda la fuente.
+export function chatFrameSize(width, height) {
+  return height > width ? null : CHAT_OVERLAY_SIZE;
+}
 
 // Lo que dura la animación de desvanecido, después de vencer el tiempo.
 export const CHAT_FADE_OUT_MS = 700;

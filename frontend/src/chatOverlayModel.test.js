@@ -48,3 +48,13 @@ test('insignias: un mensaje de antes (solo `images`) muestra esas imágenes, sin
   assert.deepEqual(icons.map((i) => i.kind), ['image', 'image'], 'sin `others` no se sabe qué imagen es el moderador: se muestran las de TikTok');
   assert.deepEqual(chatBadgeIcons({ images: [], moderator: true, fanLevel: 3 }).map((i) => i.kind), ['moderator', 'member'], 'sin imágenes: los íconos de los roles');
 });
+
+import { chatFrameSize, CHAT_OVERLAY_SIZE } from './chatOverlayModel.js';
+
+test('tamaño en OBS: en una fuente horizontal, 960 x 480 como siempre; en una vertical, toda la fuente', () => {
+  assert.deepEqual(chatFrameSize(960, 480), CHAT_OVERLAY_SIZE);
+  assert.deepEqual(chatFrameSize(1920, 1080), CHAT_OVERLAY_SIZE, 'una fuente grande horizontal no cambia: sigue usando la esquina de 960 x 480');
+  assert.deepEqual(chatFrameSize(800, 600), CHAT_OVERLAY_SIZE, 'el tamaño por defecto de OBS, como antes');
+  assert.equal(chatFrameSize(540, 960), null);
+  assert.equal(chatFrameSize(1080, 1920), null);
+});

@@ -66,36 +66,55 @@ const image = (value) => (typeof value === 'string' && /^https:\/\//i.test(value
 // TikTok (badgeSceneType, ver mapBadges en tiktok-live-connector): 1 moderador,
 // 4 y 7 suscriptor, 8 nivel de gifter, 10 club de fans. El top gifter se
 // reconoce por su imagen (ranklist_top_gifter_N), igual que en la librería.
-const ROLE_SCENE_TYPES = new Set([1, 4, 7, 8, 10]);
-const isRoleBadge = (badge, url) => ROLE_SCENE_TYPES.has(Number(badge?.badgeSceneType)) || url.includes('/ranklist_top_gifter_');
+// Una imagen se toma por repetida SOLO si el ícono de ese rol de verdad se va
+// a dibujar: si no, se conserva como imagen (nunca desaparece una insignia).
+function roleDrawn(badge, url, roles) {
+    if (url.includes('/ranklist_top_gifter_')) return Boolean(roles.topGifterRank);
+    switch (Number(badge?.badgeSceneType)) {
+        case 1: return roles.moderator;
+        case 4:
+        case 7: return roles.subscriber;
+        case 8: return roles.gifterLevel > 0;
+        case 10: return roles.fanLevel > 0;
+        default: return false;
+    }
+}
+
+// El nivel de un tipo de insignia (8 gifter, 10 club de fans) desde las
+// insignias mismas. La librería toma la PRIMERA insignia de ese tipo, y para
+// el mismo grupo pone antes la imagen (sin nivel) que la entrada con el
+// nivel: el nivel podía llegar en 0 aunque TikTok sí lo mandara.
+function levelFromBadges(raw, sceneType) {
+    return raw.reduce((max, badge) => (Number(badge?.badgeSceneType) === sceneType ? Math.max(max, clampInt(badge?.level, 0, 99, 0)) : max), 0);
+}
 
 // Las insignias del usuario: las señales que ya resuelve la librería
 // (moderador, suscriptor, top gifter, nivel del club de fans y de gifter),
 // que el overlay dibuja como íconos, y las imágenes reales de TikTok.
-// `others` son solo las imágenes que NO son uno de esos roles (otros
-// reconocimientos): mostrar todas repetía el moderador o el club de fans.
-// `images` (todas) se mantiene por compatibilidad.
+// `others` son las imágenes que no son uno de esos roles ya dibujados (otros
+// reconocimientos, o un rol del que no hay datos para su ícono): mostrar todas
+// repetía el moderador o el club de fans. `images` (todas) se mantiene por
+// compatibilidad.
 function badgesFrom(data = {}) {
     const raw = Array.isArray(data.userBadges) ? data.userBadges : [];
+    const identity = data.userIdentity || {};
+    const topGifterRank = clampInt(data.topGifterRank, 0, 3, 0);
+    const roles = {
+        moderator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
+        subscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
+        topGifterRank: topGifterRank || null,
+        fanLevel: clampInt(data.teamMemberLevel || data.user?.fansClubInfo?.fansLevel || levelFromBadges(raw, 10), 0, 99, 0),
+        gifterLevel: clampInt(data.gifterLevel || levelFromBadges(raw, 8), 0, 99, 0),
+    };
     const images = [];
     const others = [];
     for (const badge of raw) {
         const url = image(badge?.url);
         if (!url) continue;
         if (!images.includes(url) && images.length < BADGE_IMAGES_MAX) images.push(url);
-        if (!isRoleBadge(badge, url) && !others.includes(url) && others.length < BADGE_IMAGES_MAX) others.push(url);
+        if (!roleDrawn(badge, url, roles) && !others.includes(url) && others.length < BADGE_IMAGES_MAX) others.push(url);
     }
-    const identity = data.userIdentity || {};
-    const topGifterRank = clampInt(data.topGifterRank, 0, 3, 0);
-    return {
-        images,
-        others,
-        moderator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
-        subscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
-        topGifterRank: topGifterRank || null,
-        fanLevel: clampInt(data.teamMemberLevel ?? data.user?.fansClubInfo?.fansLevel, 0, 99, 0),
-        gifterLevel: clampInt(data.gifterLevel, 0, 99, 0),
-    };
+    return { images, others, ...roles };
 }
 
 function userFrom(data = {}) {

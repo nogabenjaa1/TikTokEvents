@@ -30,6 +30,16 @@ test('settings: defaults, limits, and anything invalid keeps what was there', ()
   assert.deepEqual(sanitizeChatSettings(null), { ...CHAT_SETTINGS_DEFAULTS });
 });
 
+test('settings: a saved font size is kept; the 24 px default only applies with nothing saved', () => {
+  // Así carga lo guardado loadPersistedSettings (lib/tenant/persistence.js).
+  const savedBefore = { ...CHAT_SETTINGS_DEFAULTS, fontSize: 16, fadeSeconds: 45 };
+  const loaded = sanitizeChatSettings(savedBefore, CHAT_SETTINGS_DEFAULTS);
+  assert.equal(loaded.fontSize, 16, 'quien lo tenía en 16 (el valor de antes) sigue en 16');
+  assert.equal(loaded.fadeSeconds, 45);
+  assert.equal(sanitizeChatSettings({ ...CHAT_SETTINGS_DEFAULTS, fontSize: 32 }, CHAT_SETTINGS_DEFAULTS).fontSize, 32, 'el máximo de antes sigue siendo válido');
+  assert.equal(CHAT_SETTINGS_DEFAULTS.fontSize, 24, 'sin nada guardado');
+});
+
 test('badges: the real TikTok badge images (https only, no repeats, at most 4) plus what the library resolves', () => {
   const b = badgesFrom({
     userBadges: [
@@ -67,6 +77,35 @@ test('badges: images of roles already drawn as icons are not repeated in "others
   assert.equal(b.images.length, 4, 'images se mantiene como antes (compatibilidad)');
   assert.deepEqual(badgesFrom({}).others, []);
   assert.deepEqual(badgesFrom({ userBadges: [{ url: 'https://p16/sin_tipo.png' }] }).others, ['https://p16/sin_tipo.png'], 'sin tipo conocido: es otro reconocimiento');
+});
+
+test('badges: a role image whose role is not drawn stays as an extra image (nothing disappears)', () => {
+  // Como lo arma tiktok-live-connector: la imagen del nivel de gifter va ANTES
+  // que la entrada con el nivel, y la librería toma la primera (sin nivel):
+  // gifterLevel llega en 0 aunque TikTok sí mande el nivel.
+  const userBadges = [
+    { type: 'image', badgeSceneType: 8, url: 'https://p16/gifter.png' },
+    { type: 'privilege', badgeSceneType: 8, level: 30 },
+    { type: 'image', badgeSceneType: 10, url: 'https://p16/fans.png' },
+  ];
+  const fromLevels = badgesFrom({ userBadges, gifterLevel: 0, teamMemberLevel: 0 });
+  assert.equal(fromLevels.gifterLevel, 30, 'el nivel se toma de la entrada que lo trae');
+  assert.ok(!fromLevels.others.includes('https://p16/gifter.png'), 'el donador se dibuja como ícono: su imagen no se repite');
+  assert.ok(fromLevels.others.includes('https://p16/fans.png'), 'el club de fans sin nivel conocido no tiene ícono: su imagen se conserva');
+  // Un rol marcado por la librería pero sin datos para dibujarlo nunca se pierde.
+  const noMod = badgesFrom({ userBadges: [{ type: 'image', badgeSceneType: 1, url: 'https://p16/mod.png' }], isModerator: false });
+  assert.deepEqual(noMod.others, ['https://p16/mod.png']);
+});
+
+test('badges: several unknown TikTok badges are all kept, without repeats and https only', () => {
+  const b = badgesFrom({ userBadges: [
+    { type: 'image', badgeSceneType: 3, url: 'https://p16/a.png' },
+    { type: 'image', badgeSceneType: 3, url: 'https://p16/a.png' },
+    { type: 'image', url: 'https://p16/b.png' },
+    { type: 'image', badgeSceneType: 99, url: 'http://inseguro/c.png' },
+    { type: 'image', badgeSceneType: 99, url: 'https://p16/c.png' },
+  ] });
+  assert.deepEqual(b.others, ['https://p16/a.png', 'https://p16/b.png', 'https://p16/c.png']);
 });
 
 test('a chat message keeps everything, commands and @mentions included, with its stickers', () => {

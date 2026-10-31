@@ -170,7 +170,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
           ) : (
             <p className="text-[11px] text-gray-500">Inicia sesión para ver tu enlace.</p>
           )}
-          <p className="text-[10px] text-gray-500 mt-1">Se adapta al tamaño de la fuente de navegador: 960 × 480 para horizontal y 540 × 960 para OBS vertical. Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
+          <p className="text-[10px] text-gray-500 mt-1">Horizontal: fuente de navegador de 960 × 480, como siempre. Para OBS vertical, usa una fuente vertical (por ejemplo, 540 × 960): el chat la ocupa completa. Ya tienes este overlay si usabas el de chat: el enlace es el mismo.</p>
         </div>
 
         <div className="mb-5">

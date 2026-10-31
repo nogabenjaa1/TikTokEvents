@@ -295,8 +295,9 @@ export function ChatVisual({ items, pinned, settings: rawSettings, viewerCount, 
   // Casi sin margen a los lados (pedido explícito: se veía espacio perdido
   // entre la burbuja y la orilla del overlay).
   return (
-    // Ocupa toda la fuente de navegador, del tamaño que tenga (ver
-    // CHAT_OVERLAY_SIZE): en OBS vertical la letra queda del tamaño elegido.
+    // Ocupa todo su contenedor: en OBS, 960 x 480 en una fuente horizontal o
+    // toda la fuente en una vertical (ver chatFrameSize y ChatOverlayFrame en
+    // app/OverlayModeView.jsx); en las vistas previas, el tamaño de referencia.
     <div className="px-1.5 py-3 flex flex-col gap-2 font-sans overflow-hidden" {...overlayRootProps(customize, { width: '100%', height: '100%', fontSize: `${settings.fontSize}px` })}>
       {settings.showViewerCount && (
         <div className="flex items-center justify-between flex-shrink-0 text-[12px] px-1">

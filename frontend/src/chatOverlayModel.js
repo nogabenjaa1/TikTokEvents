@@ -3,14 +3,26 @@
 // backend/lib/chatOverlay.js) y qué mensajes se ven en un momento dado.
 
 export const CHAT_DEFAULT_SETTINGS = {
-  fadeSeconds: 30, newestOnTop: false, maxMessages: 12, fontSize: 16,
+  fadeSeconds: 30, newestOnTop: false, maxMessages: 12, fontSize: 24,
   showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showPinned: true, showViewerCount: true,
 };
 
-// Tamaño del overlay: horizontal (pedido explícito), con el mismo ancho que
-// los banners horizontales (960, ver NATURAL_SIZE en OverlayPreviewBox.jsx) y
-// proporción 2:1.
+// Tamaño del overlay: horizontal (con el ancho de los banners horizontales),
+// 960 x 480, y vertical, 540 x 960, la medida que se recomienda para OBS
+// vertical. Ver chatFrameSize.
 export const CHAT_OVERLAY_SIZE = { w: 960, h: 480 };
+export const CHAT_OVERLAY_SIZE_VERTICAL = { w: 540, h: 960 };
+
+// El tamaño del overlay en OBS según la fuente de navegador. Antes medía
+// siempre 960 x 480: en un lienzo vertical, OBS lo achicaba hasta que la letra
+// no se leía. Ahora, en una fuente VERTICAL (más alta que ancha) ocupa toda la
+// fuente. En una horizontal sigue midiendo 960 x 480 arriba a la izquierda,
+// exactamente como antes: así no cambia nada para quien ya lo tiene puesto
+// (por ejemplo, en una fuente de 1920 x 1080 usando solo esa esquina).
+// Devuelve el tamaño fijo, o null para ocupar toda la fuente.
+export function chatFrameSize(width, height) {
+  return height > width ? null : CHAT_OVERLAY_SIZE;
+}
 
 // Lo que dura la animación de desvanecido, después de vencer el tiempo.
 export const CHAT_FADE_OUT_MS = 700;
@@ -27,4 +39,27 @@ export function visibleChatItems(items, settings, now) {
     return fadeMs <= 0 || now - (item.at || now) < fadeMs + CHAT_FADE_OUT_MS;
   });
   return shown.slice(-Math.max(1, settings.maxMessages || CHAT_DEFAULT_SETTINGS.maxMessages));
+}
+
+// Las insignias de un usuario como íconos, en un orden fijo: rol (moderador),
+// membresía (club de fans, con su nivel), reconocimientos (top gifter,
+// donador, suscriptor) y al final las imágenes de TikTok que no son ninguno de
+// esos (`others`, ver badgesFrom en backend/lib/chatOverlay.js). Solo lo que
+// TikTok manda: sin datos no hay insignia. Solo el club de fans lleva número
+// (pedido explícito); el resto es solo el ícono, con su nombre para lectores
+// de pantalla. Un mensaje de antes de `others` (solo `images`) muestra esas
+// imágenes tal cual: no se sabe cuál es el moderador, y repetirlo sería peor.
+export function chatBadgeIcons(badges) {
+  if (!badges) return [];
+  if (!Array.isArray(badges.others) && badges.images?.length) {
+    return badges.images.map((url) => ({ kind: 'image', url, label: 'Insignia' }));
+  }
+  const icons = [];
+  if (badges.moderator) icons.push({ kind: 'moderator', label: 'Moderador' });
+  if (badges.fanLevel > 0) icons.push({ kind: 'member', level: badges.fanLevel, label: `Miembro nivel ${badges.fanLevel}` });
+  if (badges.topGifterRank) icons.push({ kind: 'topGifter', rank: badges.topGifterRank, label: `Top ${badges.topGifterRank} en regalos` });
+  if (badges.gifterLevel > 0) icons.push({ kind: 'gifter', label: `Donador nivel ${badges.gifterLevel}` });
+  if (badges.subscriber) icons.push({ kind: 'subscriber', label: 'Suscriptor' });
+  for (const url of badges.others || []) icons.push({ kind: 'image', url, label: 'Insignia' });
+  return icons;
 }

@@ -30,6 +30,8 @@ export function chatPreviewItems(now = Date.now()) {
     { id: 'p2', at: now - 6000, kind: 'follow', user: user(2) },
     { id: 'p3', at: now - 4000, kind: 'gift', user: user(3, { topGifterRank: 1 }), gift: { name: 'Rosa', icon: '', count: 7, coins: 7 } },
     { id: 'p4', at: now - 2000, kind: 'chat', user: user(4, { moderator: true }), text: '!play despacito', emotes: [] },
+    // Varias insignias y un mensaje largo: así se ve cuando baja de línea.
+    { id: 'p4b', at: now - 1500, kind: 'chat', user: user(7, { fanLevel: 25, gifterLevel: 30, subscriber: true, topGifterRank: 2 }), text: 'Un mensaje largo se ve completo: sigue en las líneas de abajo, alineado con su comienzo.', emotes: [] },
     { id: 'p5', at: now - 1000, kind: 'share', user: user(5) },
     // Un sticker mandado solo: un mensaje más, como en TikTok.
     { id: 'p6', at: now - 500, kind: 'chat', user: user(6, { fanLevel: 3 }), text: '', parts: [{ type: 'emote', url: MOCK_STICKER }] },

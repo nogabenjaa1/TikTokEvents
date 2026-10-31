@@ -167,6 +167,11 @@ input[type=range]::-moz-range-thumb {
 .tkc-chat-bubble { background: rgba(14, 14, 20, 0.78); }
 .themed-app .tkc-chat-text { color: #f4f4f6 !important; }
 .themed-app .tkc-chat-muted { color: rgba(244, 244, 246, 0.72) !important; }
+/* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):
+   foto e insignias en la línea del texto, centradas en ella; el nombre es
+   texto normal, así puede bajar de línea si es larguísimo. */
+.tkc-chat-head-inline > * { display: inline-flex; vertical-align: middle; margin-right: 0.3em; }
+.tkc-chat-head-inline > :last-child { display: inline; vertical-align: baseline; margin-right: 0; }
 
 /* Todos los overlays (juegos, Colores, Top Tap-Tap, Top Gifter, Extensible,
    Alertas, Objetivo, Chat, Cola de Spotify) se componen sobre la escena real

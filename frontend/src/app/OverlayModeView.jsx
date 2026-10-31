@@ -1,12 +1,34 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, GiftTickerOverlay, VersusOverlay } from '../Overlay';
 import DiceOverlay from '../DiceOverlay';
 import { accentStyleVars } from '../ThemeContext';
 import { getOverlayScreen } from '../auth';
+import { chatFrameSize } from '../chatOverlayModel';
 
 // Lo que se ve cuando la página se abre como fuente de navegador de OBS (?overlay=true&screen=...): la pantalla
 // elegida con el estado que llega por el socket. Esa URL ya está pegada en OBS de streamers reales: no
 // cambiar cómo se elige la pantalla ni qué recibe cada una.
+// El chat en OBS: 960 x 480 en una fuente horizontal (como siempre) o toda la
+// fuente en una vertical (ver chatFrameSize). Si se cambia el tamaño de la
+// fuente en OBS, se vuelve a decidir.
+function ChatOverlayFrame({ socket, viewerCount, overlayTheme, customize }) {
+  const [frame, setFrame] = useState(() => chatFrameSize(window.innerWidth, window.innerHeight));
+  useEffect(() => {
+    const onResize = () => setFrame(chatFrameSize(window.innerWidth, window.innerHeight));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return (
+    <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+      {/* Con tamaño fijo se comporta como el de antes: si la fuente es más
+          angosta que 960, se encoge a su ancho (minWidth 0 + overflow). */}
+      <div className="flex overflow-hidden" style={frame ? { width: frame.w, height: frame.h, minWidth: 0 } : { width: '100%', height: '100%' }}>
+        <ChatOverlay socket={socket} viewerCount={viewerCount} customize={customize} />
+      </div>
+    </div>
+  );
+}
+
 export default function OverlayModeView({
   socket, state, zubState, elimState, rouletteState, activeApp, prize, overlayTheme, overlayCustomization,
   diceState, tapTapState, gifterState, spotifyQueueState, extensibleState, versusState, goalState, viewerCount,
@@ -110,11 +132,7 @@ export default function OverlayModeView({
     );
   }
   if (screen === 'chat') {
-    return (
-      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
-        <ChatOverlay socket={socket} viewerCount={viewerCount} customize={overlayCustomization.chat} />
-      </div>
-    );
+    return <ChatOverlayFrame socket={socket} viewerCount={viewerCount} overlayTheme={overlayTheme} customize={overlayCustomization.chat} />;
   }
   return <Overlay state={state} zubState={zubState} elimState={elimState} rouletteState={rouletteState} activeApp={activeApp} prize={prize} theme={overlayTheme} customization={overlayCustomization} />;
 }

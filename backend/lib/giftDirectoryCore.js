@@ -59,7 +59,9 @@ function createGiftDirectory({ listRows, upsertRow, log = console }) {
         if (!gift) return false;
         const previous = cache.get(gift.id);
         if (!previous && cache.size >= MAX_GIFTS) return false;
-        const merged = { id: gift.id, name: gift.name, coins: gift.coins, icon: gift.icon || previous?.icon || '' };
+        // Un evento sin valor (0) no borra el que ya se conocía: antes lo pisaba
+        // y el regalo quedaba "gratis" en el catálogo de todas las licencias.
+        const merged = { id: gift.id, name: gift.name, coins: gift.coins || previous?.coins || 0, icon: gift.icon || previous?.icon || '' };
         if (previous && previous.name === merged.name && previous.coins === merged.coins && previous.icon === merged.icon) return false;
         cache.set(gift.id, merged);
         Promise.resolve()
@@ -72,7 +74,14 @@ function createGiftDirectory({ listRows, upsertRow, log = console }) {
         return [...cache.values()];
     }
 
-    return { load, record, list };
+    // Lo que vale una unidad del regalo con ese id (el id llega como número o
+    // texto según el esquema), o 0 si no se conoce: quien lo use no debe
+    // inventar un valor. Solo lo ya cargado (ver load).
+    function coinsFor(id) {
+        return cache.get(Number(id))?.coins || 0;
+    }
+
+    return { load, record, list, coinsFor };
 }
 
 module.exports = { createGiftDirectory, sanitizeGift, MAX_GIFTS };

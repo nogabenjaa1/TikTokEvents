@@ -58,3 +58,47 @@ test('tamaño en OBS: en una fuente horizontal, 960 x 480 como siempre; en una v
   assert.equal(chatFrameSize(540, 960), null);
   assert.equal(chatFrameSize(1080, 1920), null);
 });
+
+// ── Destacados: club de fans de nivel alto y Superfan (ver chatHighlight) ──
+import { chatHighlight, formatCoins, visibleChatItems as visibleItems, CHAT_DEFAULT_SETTINGS as DEFAULTS, chatBadgeIcons as iconsOf } from './chatOverlayModel.js';
+
+test('destacado: el borde especial es solo para nivel de club de fans MAYOR a 20', () => {
+  assert.equal(chatHighlight({ fanLevel: 20 }), null, 'el nivel 20 no lo activa');
+  assert.equal(chatHighlight({ fanLevel: 21 }), 'elite');
+  assert.equal(chatHighlight({ fanLevel: 50 }), 'elite');
+  assert.equal(chatHighlight({ fanLevel: 0 }), null);
+  assert.equal(chatHighlight(null), null);
+});
+
+test('destacado: Superfan solo, y con nivel alto los dos beneficios juntos', () => {
+  assert.equal(chatHighlight({ subscriber: true, fanLevel: 5 }), 'superfan');
+  assert.equal(chatHighlight({ subscriber: true, fanLevel: 20 }), 'superfan');
+  assert.equal(chatHighlight({ subscriber: true, fanLevel: 21 }), 'both');
+});
+
+test('insignias: Superfan con su nombre, y el miembro de nivel alto con su variante', () => {
+  const both = iconsOf({ others: [], subscriber: true, fanLevel: 21 });
+  const member = both.find((i) => i.kind === 'member');
+  assert.equal(member.elite, true);
+  assert.equal(member.level, 21);
+  const superfan = both.find((i) => i.kind === 'subscriber');
+  assert.equal(superfan.label, 'Superfan');
+  assert.equal(iconsOf({ others: [], fanLevel: 20 }).find((i) => i.kind === 'member').elite, false, 'nivel 20: insignia común');
+  assert.deepEqual(both.map((i) => i.kind), ['member', 'subscriber'], 'las dos se conservan');
+});
+
+test('monedas: con separador de miles, y nada si no se sabe el valor', () => {
+  assert.equal(formatCoins(6), '6');
+  assert.equal(formatCoins(104997), '104,997');
+  assert.equal(formatCoins(null), null);
+  assert.equal(formatCoins(0), null);
+});
+
+test('suscripciones y cofres se pueden ocultar desde los ajustes', () => {
+  const items = [{ id: 1, kind: 'subscribe', at: 1 }, { id: 2, kind: 'chest', at: 1 }, { id: 3, kind: 'chat', at: 1 }];
+  const settings = { ...DEFAULTS, fadeSeconds: 0 };
+  assert.deepEqual(visibleItems(items, settings, 2).map((i) => i.id), [1, 2, 3]);
+  assert.deepEqual(visibleItems(items, { ...settings, showSubscribes: false, showChests: false }, 2).map((i) => i.id), [3]);
+  assert.equal(DEFAULTS.showSubscribes, true);
+  assert.equal(DEFAULTS.showChests, true);
+});

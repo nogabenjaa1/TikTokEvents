@@ -85,10 +85,16 @@ module.exports = {
             giftName: event.giftName, giftId: event.giftId, icon: data.giftPictureUrl,
             count: event.repeatCount, coins: event.totalCoins,
         });
-        // Al overlay de chat, con las insignias de quien lo manda.
+        // Al overlay de chat, con las insignias de quien lo manda y lo que vale.
+        // El valor de una unidad sale del regalo (diamondCount); si no vino, del
+        // directorio de regalos vistos (por id, nunca el id como valor). Si
+        // tampoco se sabe, el chat lo muestra sin valor. Solo afecta al chat:
+        // los juegos siguen contando como siempre.
+        if (!(event.diamondCount > 0)) giftDirectory.load();
         this.pushChatItem(giftItem({
             username: event.username, nickname: event.nickname, avatar: event.avatar,
-            giftName: event.giftName, icon: data.giftPictureUrl, count: event.repeatCount, coins: event.totalCoins,
+            giftName: event.giftName, icon: data.giftPictureUrl, count: event.repeatCount,
+            unitCoins: event.diamondCount > 0 ? event.diamondCount : giftDirectory.coinsFor(event.giftId),
             badgesSource: data,
         }));
 

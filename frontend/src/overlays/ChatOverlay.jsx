@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, rowBorder } from '../overlayCustomization';
-import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, chatBadgeIcons, visibleChatItems } from '../chatOverlayModel';
+import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, chatBadgeIcons, chatHighlight, formatCoins, visibleChatItems } from '../chatOverlayModel';
 
 // CHAT EN VIVO (pestaña Chat de Eventos). Pedido explícito: que se vea y se
 // comporte como el chat de Social Stream Ninja -- lo más nuevo ARRIBA y lo
@@ -47,7 +47,60 @@ const BADGE_PATHS = {
 const BADGE_COLORS = { moderator: '#34d399', member: '#fb7185', gifter: '#38bdf8', subscriber: '#e879f9' };
 const TOP_GIFTER_COLORS = { 1: '#facc15', 2: '#d1d5db', 3: '#d97706' };
 
+// Insignia de Superfan (diseño propio): un escudo con degradado violeta, rosa y
+// dorado y un destello blanco, con un brillo que la cruza cada pocos segundos
+// (solo sobre su forma, ver .tkc-svg-shine en index.css). Más ancha que las
+// otras para que se reconozca de un vistazo.
+const SUPERFAN_SHIELD = 'M12 1.5l8.5 3.2v6.1c0 5.3-3.6 9.9-8.5 11.7C7.1 20.7 3.5 16.1 3.5 10.8V4.7L12 1.5z';
+const SUPERFAN_SPARK = 'M12 6.2l1.45 3.6 3.75.45-2.85 2.5.85 3.75L12 14.6l-3.2 1.9.85-3.75-2.85-2.5 3.75-.45L12 6.2z';
+function SuperfanBadge({ label }) {
+  const id = useId().replace(/:/g, '');
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex flex-shrink-0 leading-none">
+      <svg viewBox="0 0 24 24" className="w-[1.2em] h-[1.2em]" aria-hidden="true">
+        <defs>
+          <linearGradient id={`sf-g-${id}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#a855f7" />
+            <stop offset="0.55" stopColor="#ec4899" />
+            <stop offset="1" stopColor="#f59e0b" />
+          </linearGradient>
+          <clipPath id={`sf-c-${id}`}><path d={SUPERFAN_SHIELD} /></clipPath>
+        </defs>
+        <path d={SUPERFAN_SHIELD} fill={`url(#sf-g-${id})`} stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
+        <path d={SUPERFAN_SPARK} fill="#fff" />
+        <g clipPath={`url(#sf-c-${id})`}><rect className="tkc-svg-shine" x="-12" y="-4" width="8" height="32" fill="rgba(255,255,255,0.75)" /></g>
+      </svg>
+    </span>
+  );
+}
+
+// Miembro del club de fans de nivel alto (más de 20): el corazón con
+// degradado rojo y rosa y el mismo brillo, para distinguirlo de los niveles
+// comunes. El número es su nivel, del mismo tono.
+function EliteMemberBadge({ icon }) {
+  const id = useId().replace(/:/g, '');
+  const heart = BADGE_PATHS.member;
+  return (
+    <span role="img" aria-label={icon.label} title={icon.label} className="inline-flex items-center gap-[0.08em] flex-shrink-0 leading-none" style={{ color: '#ff5c8a' }}>
+      <svg viewBox="0 0 24 24" className="w-[1.1em] h-[1.1em]" aria-hidden="true">
+        <defs>
+          <linearGradient id={`fm-g-${id}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ff1f4b" />
+            <stop offset="1" stopColor="#ff8fbf" />
+          </linearGradient>
+          <clipPath id={`fm-c-${id}`}><path d={heart} /></clipPath>
+        </defs>
+        <path d={heart} fill={`url(#fm-g-${id})`} stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
+        <g clipPath={`url(#fm-c-${id})`}><rect className="tkc-svg-shine" x="-12" y="-4" width="8" height="32" fill="rgba(255,255,255,0.75)" /></g>
+      </svg>
+      <span className="text-[0.72em] font-black tabular-nums" aria-hidden="true">{icon.level}</span>
+    </span>
+  );
+}
+
 function BadgeIcon({ icon }) {
+  if (icon.kind === 'subscriber') return <SuperfanBadge label={icon.label} />;
+  if (icon.kind === 'member' && icon.elite) return <EliteMemberBadge icon={icon} />;
   if (icon.kind === 'image') {
     return <img alt={icon.label} title={icon.label} src={icon.url} className="h-[1.05em] w-auto max-w-[2.6em] object-contain flex-shrink-0" />;
   }
@@ -158,6 +211,26 @@ function ChatLine({ user, settings, nameStyle, children }) {
   );
 }
 
+// Moneda de TikTok (pedido explícito: el emoji, no la palabra "monedas").
+function Coins({ value }) {
+  const text = formatCoins(value);
+  if (!text) return null;
+  return <span className="font-black text-amber-300 whitespace-nowrap"> · <span role="img" aria-label="monedas">🪙</span> {text}</span>;
+}
+
+function ChestIcon() {
+  return <svg viewBox="0 0 24 24" className="w-[1.1em] h-[1.1em] flex-shrink-0" fill="currentColor" aria-hidden="true"><path d="M4 9.5C4 6.5 6.5 4 9.5 4h5C17.5 4 20 6.5 20 9.5V10H4v-.5zM3 11.5h7.2v2.2a1.8 1.8 0 003.6 0v-2.2H21V19a1 1 0 01-1 1H4a1 1 0 01-1-1v-7.5zm8.2 0h1.6v2.2a.8.8 0 01-1.6 0v-2.2z" /></svg>;
+}
+
+// Lo que dice una suscripción, con lo que TikTok manda y nada más.
+function subscribeText(sub = {}) {
+  if (sub.superfanJoin) return 'se hizo Superfan';
+  const parts = [sub.renewal ? 'renovó su suscripción' : 'se suscribió'];
+  if (sub.months > 0) parts.push(`${sub.months} ${sub.months === 1 ? 'mes' : 'meses'}`);
+  if (sub.auto) parts.push('renovación automática');
+  return parts.join(' · ');
+}
+
 function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass, rowBorderStyle }) {
   const [fadeDelayMs] = useState(() => {
     const fadeMs = (settings.fadeSeconds || 0) * 1000;
@@ -175,24 +248,51 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
     message = <><span className="text-sky-400 inline-block align-[-0.15em] mr-[0.25em]"><ShareIcon /></span><span className="tkc-chat-muted">compartió el LIVE</span></>;
   } else if (item.kind === 'gift') {
     accent = '#f59e0b';
+    // Cantidad y valor total en monedas (ver giftItem en el backend): "×6 · 🪙 6".
+    // Si no se sabe cuánto vale, solo el regalo y la cantidad.
     message = (
       <>
         envió <span className="font-black text-amber-300">{item.gift?.name || 'un regalo'}</span>
         {item.gift?.icon && <img alt="" src={item.gift.icon} className="inline-block w-[1.4em] h-[1.4em] object-contain align-middle mx-[0.15em]" />}
         {item.gift?.count > 1 && <span className="font-black text-amber-300"> ×{item.gift.count}</span>}
+        <Coins value={item.gift?.coins} />
+      </>
+    );
+  } else if (item.kind === 'subscribe') {
+    accent = '#a855f7';
+    message = <span className="tkc-chat-muted">{subscribeText(item.subscribe)}</span>;
+  } else if (item.kind === 'chest') {
+    accent = '#facc15';
+    const chest = item.chest || {};
+    message = (
+      <>
+        <span className="text-yellow-300 inline-block align-[-0.15em] mr-[0.25em]"><ChestIcon /></span>
+        <span className="tkc-chat-muted">{item.user ? (chest.superfanBox ? 'colocó un cofre de Superfans' : 'colocó un cofre') : (chest.superfanBox ? 'Apareció un cofre de Superfans' : 'Apareció un cofre')}</span>
+        <Coins value={chest.coins} />
+        {chest.people > 0 && <span className="tkc-chat-muted"> · para {chest.people.toLocaleString('es-MX')} {chest.superfanBox ? 'Superfans' : (chest.people === 1 ? 'persona' : 'personas')}</span>}
       </>
     );
   } else {
     message = <MessageParts item={item} />;
   }
 
+  // Borde que gira con brillo para los miembros de nivel alto del club de fans
+  // (y combinado si además son Superfan), solo en sus mensajes de chat: en
+  // los eventos (regalos, seguidores...) ya hay una marca de color a la
+  // izquierda. Las insignias se ven en todos.
+  const highlight = item.kind === 'chat' && settings.showBadges !== false ? chatHighlight(item.user?.badges) : null;
+  const glow = highlight === 'elite' || highlight === 'both';
+
   return (
-    <div data-chat-row={item.id} style={fadeStyle} className="flex-shrink-0">
+    <div data-chat-row={item.id} data-highlight={highlight || undefined} style={fadeStyle} className="flex-shrink-0">
       <div
-        className={`${animClass} ${bubbleClass} ${CHAT_LINE} rounded-2xl pl-[0.6em] pr-[0.6em] py-[0.4em]`}
+        className={`${animClass} ${bubbleClass} ${CHAT_LINE} rounded-2xl pl-[0.6em] pr-[0.6em] py-[0.4em] ${glow ? `tkc-chat-glow tkc-chat-glow-${highlight}` : ''}`}
         style={{ ...rowBg, border: rowBorderStyle, ...(accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
       >
-        <ChatLine user={item.user} settings={settings} nameStyle={nameStyle}>{message}</ChatLine>
+        {glow && <span className="tkc-chat-glow-ring" aria-hidden="true" />}
+        {item.user
+          ? <ChatLine user={item.user} settings={settings} nameStyle={nameStyle}>{message}</ChatLine>
+          : <div className="tkc-chat-text min-w-0 break-words [overflow-wrap:anywhere]">{message}</div>}
       </div>
     </div>
   );

@@ -24,6 +24,9 @@ const CHAT_SETTINGS_DEFAULTS = Object.freeze({
     showFollows: true,
     showGifts: true,
     showShares: true,
+    // Suscripciones (y quien se hace Superfan) y cofres: visibles por defecto.
+    showSubscribes: true,
+    showChests: true,
     showPinned: true,
     showViewerCount: true,
 });
@@ -35,7 +38,7 @@ const FONT_SIZE_MAX = 48;
 const CHAT_RECENT_MAX = MAX_MESSAGES_MAX;
 const BADGE_IMAGES_MAX = 4;
 
-const BOOLEAN_SETTINGS = ['newestOnTop', 'showAvatars', 'showBadges', 'showFollows', 'showGifts', 'showShares', 'showPinned', 'showViewerCount'];
+const BOOLEAN_SETTINGS = ['newestOnTop', 'showAvatars', 'showBadges', 'showFollows', 'showGifts', 'showShares', 'showSubscribes', 'showChests', 'showPinned', 'showViewerCount'];
 
 function clampInt(value, min, max, fallback) {
     // null/'' no son números: Number(null) daría 0 y se tomaría como válido.
@@ -95,13 +98,25 @@ function levelFromBadges(raw, sceneType) {
 // reconocimientos, o un rol del que no hay datos para su ícono): mostrar todas
 // repetía el moderador o el club de fans. `images` (todas) se mantiene por
 // compatibilidad.
+// Tipos de insignia (BadgeSceneType en el esquema de TikTok).
+const SCENE = { ADMIN: 1, SUBSCRIBER: 4, NEW_SUBSCRIBER: 7 };
+
 function badgesFrom(data = {}) {
     const raw = Array.isArray(data.userBadges) ? data.userBadges : [];
     const identity = data.userIdentity || {};
     const topGifterRank = clampInt(data.topGifterRank, 0, 3, 0);
+    // El tipo de TODAS las insignias del usuario (la librería lo copia de cada
+    // una, ver userSceneTypes en getUserAttributes). Hace falta porque con el
+    // esquema actual (v3) la librería busca las insignias en campos que ya no
+    // existen (`badges`, `imageBadges`) y solo conserva las que traen nivel:
+    // su isModerator e isSubscriber quedaban en false aunque la persona fuera
+    // moderadora o Superfan. Comprobado decodificando mensajes con el esquema
+    // real (ver chat-events.test.js).
+    const sceneTypes = Array.isArray(data.userSceneTypes) ? data.userSceneTypes.map(Number) : [];
     const roles = {
-        moderator: Boolean(data.isModerator || identity.isModeratorOfAnchor),
-        subscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor),
+        moderator: Boolean(data.isModerator || identity.isModeratorOfAnchor || sceneTypes.includes(SCENE.ADMIN)),
+        // Superfan (antes "suscriptor" en TikTok).
+        subscriber: Boolean(data.isSubscriber || identity.isSubscriberOfAnchor || sceneTypes.includes(SCENE.SUBSCRIBER) || sceneTypes.includes(SCENE.NEW_SUBSCRIBER)),
         topGifterRank: topGifterRank || null,
         fanLevel: clampInt(data.teamMemberLevel || data.user?.fansClubInfo?.fansLevel || levelFromBadges(raw, 10), 0, 99, 0),
         gifterLevel: clampInt(data.gifterLevel || levelFromBadges(raw, 8), 0, 99, 0),
@@ -217,17 +232,97 @@ function shareItem(data) {
 }
 
 // Un regalo ya cerrado (una racha x7 es UN evento, ver dispatchGiftEvent).
-function giftItem({ username, nickname, avatar, giftName, icon, count, coins, badgesSource }) {
+// `unitCoins`: lo que vale UNA unidad (diamondCount del regalo de TikTok, o el
+// directorio de regalos si no vino; nunca el id). `coins` es el total de lo
+// enviado. Si no se sabe cuánto vale, los dos quedan en null: el overlay
+// muestra el regalo sin valor en vez de un 0 inventado.
+const MAX_COINS = 99999999;
+function giftItem({ username, nickname, avatar, giftName, icon, count, unitCoins, badgesSource }) {
     const user = userFrom({ ...(badgesSource || {}), uniqueId: username, nickname, profilePictureUrl: avatar });
     if (!user.uniqueId) return null;
+    const amount = clampInt(count, 1, 999999, 1);
+    const unit = clampInt(unitCoins, 0, MAX_COINS, 0);
     return {
         kind: 'gift',
         user,
         gift: {
             name: text(giftName, 60),
             icon: image(icon),
-            count: clampInt(count, 1, 999999, 1),
-            coins: clampInt(coins, 0, 99999999, 0),
+            count: amount,
+            unitCoins: unit > 0 ? unit : null,
+            coins: unit > 0 ? Math.min(MAX_COINS, unit * amount) : null,
+        },
+    };
+}
+
+// ── Suscripciones ──
+// WebcastSubNotifyMessage (la librería no lo emite como evento propio: llega
+// por 'decodedData', ver lib/tenant/connection.js). Lo que trae, según el
+// esquema real: subMonth (meses de suscripción, en texto), oldSubscribeStatus
+// (0 primera vez, 1 renovación), subscribeType (0 una vez, 1 automática) y
+// messageType; solo 0 (SUB_SUCCESS) es "alguien se suscribió", los demás son
+// avisos de metas o recordatorios para el streamer.
+const SUB_MESSAGE = { SUCCESS: 0 };
+const SUB_STATUS = { RESUB: 1 };
+const SUB_TYPE = { AUTO: 1 };
+function subscribeItem(data = {}) {
+    if (Number(data.messageType) !== SUB_MESSAGE.SUCCESS) return null;
+    const user = userFrom(data);
+    if (!user.uniqueId) return null;
+    return {
+        kind: 'subscribe',
+        user,
+        subscribe: {
+            renewal: Number(data.oldSubscribeStatus) === SUB_STATUS.RESUB,
+            months: clampInt(data.subMonth, 0, 600, 0),
+            auto: Number(data.subscribeType) === SUB_TYPE.AUTO,
+            superfanJoin: false,
+        },
+    };
+}
+
+// Alguien se hizo Superfan: un WebcastBarrageMessage (aviso en pantalla) con
+// la clave ttlive_superfan_commentnotif_superfanjoined. La librería emite
+// 'superFanJoin' buscándola en `displayType`, pero el esquema actual no tiene
+// ese campo: la clave va en Text.key (del contenido, del contenido común o del
+// texto del mensaje, que la librería copia a la raíz). Por eso se escucha
+// 'barrage' y se reconoce aquí. Nunca visto en un LIVE real.
+const SUPERFAN_JOINED_KEY = 'ttlive_superfan_commentnotif_superfanjoined';
+function superFanJoinItem(data = {}) {
+    const keys = [data.content?.key, data.commonBarrageContent?.key, data.key, data.content?.displayType, data.displayType]
+        .filter((v) => typeof v === 'string').map((v) => v.toLowerCase());
+    if (!keys.some((key) => key.includes(SUPERFAN_JOINED_KEY))) return null;
+    const user = userFrom(data);
+    if (!user.uniqueId) return null;
+    return { kind: 'subscribe', user, subscribe: { renewal: false, months: 0, auto: false, superfanJoin: true } };
+}
+
+// ── Cofres ──
+// WebcastEnvelopeMessage ('envelope'): un cofre que alguien coloca en el LIVE.
+// No es un regalo (llega por otro mensaje). De envelopeInfo: sendUserName y
+// sendUserAvatar (quien lo colocó; no viene su @usuario), diamondCount
+// (monedas del cofre), peopleCount (para cuántas personas), businessType 19
+// (cofre de Superfans, con superFanCount) y envelopeId. display 1 = aparece,
+// 2 = se quita (ese no es un cofre nuevo).
+const ENVELOPE_DISPLAY = { NEW: 1 };
+const ENVELOPE_SUPERFAN_BOX = 19;
+function chestItem(data = {}) {
+    if (Number(data.display) !== ENVELOPE_DISPLAY.NEW) return null;
+    const info = data.envelopeInfo;
+    if (!info || typeof info !== 'object') return null;
+    const name = text(info.sendUserName, 60);
+    const avatarList = info.sendUserAvatar?.urlList;
+    const superfanBox = Number(info.businessType) === ENVELOPE_SUPERFAN_BOX;
+    const coins = clampInt(info.diamondCount, 0, MAX_COINS, 0);
+    const people = clampInt(superfanBox ? (info.superFanCount || info.peopleCount) : info.peopleCount, 0, 999999, 0);
+    return {
+        kind: 'chest',
+        user: name ? { uniqueId: name, nickname: name, avatar: image(Array.isArray(avatarList) ? avatarList[0] : ''), badges: badgesFrom({}) } : null,
+        chest: {
+            id: text(info.envelopeId, 40),
+            coins: coins > 0 ? coins : null,
+            people: people > 0 ? people : null,
+            superfanBox,
         },
     };
 }
@@ -276,6 +371,9 @@ module.exports = {
     followItem,
     shareItem,
     giftItem,
+    subscribeItem,
+    superFanJoinItem,
+    chestItem,
     isShareSocial,
     pinnedFromRoomPin,
     commentParts,

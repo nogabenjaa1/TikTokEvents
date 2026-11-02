@@ -297,6 +297,18 @@ module.exports = {
             // Mensaje anclado por el streamer o un moderador (overlay de chat).
             this.tiktokConnection.on('roomPin', (data) => this.handleRoomPinEvent(data));
             this.tiktokConnection.on('emote', (data) => this.handleEmoteEvent(data));
+            // Suscripciones: la librería no emite un evento propio para
+            // WebcastSubNotifyMessage (su clase legacy no lo despacha); llega en
+            // 'decodedData', que trae cada mensaje ya simplificado.
+            this.tiktokConnection.on('decodedData', (method, data) => {
+                if (method === 'WebcastSubNotifyMessage') this.handleSubscribeEvent(data);
+            });
+            // Quien se hace Superfan: la librería tiene 'superFanJoin', pero no lo
+            // reconoce con el esquema actual; se mira el 'barrage' (ver
+            // superFanJoinItem en lib/chatOverlay.js).
+            this.tiktokConnection.on('barrage', (data) => this.handleBarrageEvent(data));
+            // Cofres (también el de Superfans). No son regalos.
+            this.tiktokConnection.on('envelope', (data) => this.handleEnvelopeEvent(data));
             // 'roomUser' (estadísticas de espectadores, para el overlay de
             // chat) -- ver handleRoomUserEvent y el comentario grande en
             // server.js sobre por qué antes nunca se escuchaba esto.

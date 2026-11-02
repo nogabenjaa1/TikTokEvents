@@ -16,7 +16,17 @@ const {
     chatMessageItem,
     followItem,
     giftItem,
+    subscribeItem,
+    superFanJoinItem,
+    chestItem,
 } = require('../chatOverlay');
+
+// Una misma suscripción puede llegar dos veces: como WebcastSubNotifyMessage y
+// como el aviso "se hizo Superfan" (barrage). Si de la misma persona llega la
+// otra dentro de este tiempo, no se repite en el chat.
+const SUBSCRIBE_DEDUP_MS = 2 * 60 * 1000;
+// Cofres que ya se mostraron (TikTok puede volver a mandar el mismo).
+const SEEN_CHESTS_MAX = 200;
 
 module.exports = {
     get chatRoom() {
@@ -29,6 +39,46 @@ module.exports = {
         this.chatPinned = null;
         this.chatItemCounter = 0;
         this.chatPinTimer = null;
+        this.chatRecentSubscribers = new Map();
+        this.chatSeenChests = new Set();
+    },
+
+    // ── Suscripciones, Superfans y cofres (ver lib/chatOverlay.js) ──
+    // Las tres líneas de registro permiten confirmar en Render el formato real
+    // la primera vez que lleguen (nunca se vieron en un LIVE real).
+    handleSubscribeEvent(data) {
+        const item = subscribeItem(data);
+        console.log(`[${this.logId}] [CHAT] Suscripción — messageType=${data?.messageType} subMonth=${data?.subMonth} status=${data?.oldSubscribeStatus} type=${data?.subscribeType} → ${item ? 'mostrada' : 'ignorada'}`);
+        this.pushSubscribeItem(item);
+    },
+
+    handleBarrageEvent(data) {
+        const item = superFanJoinItem(data);
+        if (!item) return;
+        console.log(`[${this.logId}] [CHAT] Superfan nuevo (barrage) — @${item.user.uniqueId}`);
+        this.pushSubscribeItem(item);
+    },
+
+    pushSubscribeItem(item) {
+        if (!item) return;
+        const now = Date.now();
+        for (const [user, at] of this.chatRecentSubscribers) if (now - at > SUBSCRIBE_DEDUP_MS) this.chatRecentSubscribers.delete(user);
+        if (this.chatRecentSubscribers.has(item.user.uniqueId)) return;
+        this.chatRecentSubscribers.set(item.user.uniqueId, now);
+        this.pushChatItem(item);
+    },
+
+    handleEnvelopeEvent(data) {
+        const item = chestItem(data);
+        const info = data?.envelopeInfo || {};
+        console.log(`[${this.logId}] [CHAT] Cofre — display=${data?.display} businessType=${info.businessType} monedas=${info.diamondCount} personas=${info.peopleCount} → ${item ? 'mostrado' : 'ignorado'}`);
+        if (!item) return;
+        if (item.chest.id) {
+            if (this.chatSeenChests.has(item.chest.id)) return;
+            this.chatSeenChests.add(item.chest.id);
+            if (this.chatSeenChests.size > SEEN_CHESTS_MAX) this.chatSeenChests.delete(this.chatSeenChests.values().next().value);
+        }
+        this.pushChatItem(item);
     },
 
     // Un evento nuevo del chat (ya armado por lib/chatOverlay.js). Lo más
@@ -125,7 +175,14 @@ module.exports = {
             const regular = { uniqueId: 'fan_de_siempre', nickname: 'Fan de siempre con nombre largo', teamMemberLevel: 25, gifterLevel: 30, isSubscriber: true, topGifterRank: 2 };
             this.pushChatItem(chatMessageItem(regular, { rawComment: 'Un mensaje largo se ve completo: sigue en las líneas de abajo, alineado con su comienzo, sin cortarse ni perder nada de lo que escribió la persona.' }));
             this.pushChatItem(followItem({ uniqueId: 'nuevo_seguidor', nickname: 'Nuevo seguidor' }));
-            this.pushChatItem(giftItem({ username: 'fan_top', nickname: 'Fan top', giftName: 'Rosa', count: 5, coins: 5, badgesSource: { topGifterRank: 1 } }));
+            this.pushChatItem(giftItem({ username: 'fan_top', nickname: 'Fan top', giftName: 'Rosa', count: 5, unitCoins: 1, badgesSource: { topGifterRank: 1 } }));
+            // Un miembro de nivel alto que además es Superfan (borde y efectos
+            // especiales), una suscripción y un cofre, con los mismos datos que
+            // mandaría TikTok.
+            const vip = { uniqueId: 'superfan_vip', nickname: 'Superfan VIP', teamMemberLevel: 27, userSceneTypes: [4, 10] };
+            this.pushChatItem(chatMessageItem(vip, { rawComment: 'Así se ven los miembros de nivel alto que además son Superfan.' }));
+            this.pushChatItem(subscribeItem({ ...vip, uniqueId: 'nueva_superfan', nickname: 'Nueva Superfan', teamMemberLevel: 3, messageType: 0, subMonth: '1', oldSubscribeStatus: 0 }));
+            this.pushChatItem(chestItem({ display: 1, envelopeInfo: { envelopeId: '', sendUserName: 'Fan del cofre', diamondCount: 1000, peopleCount: 50 } }));
         });
 
         socket.on('clear_chat_overlay', () => {

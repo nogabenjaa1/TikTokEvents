@@ -412,6 +412,16 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 
 **El chat se lee desde OBS vertical.** En una fuente de navegador vertical (más alta que ancha) el overlay de chat la ocupa completa; antes medía siempre 960 × 480 y OBS lo achicaba en un lienzo vertical. En una horizontal sigue midiendo 960 × 480 arriba a la izquierda, exactamente como antes, para no cambiar lo que ya tiene puesto cada quien (`chatFrameSize`). La vista previa de Eventos › Chat tiene las dos formas (960 × 480 y 540 × 960). Letra de 24 px por defecto (12 a 48). Cada mensaje es una sola línea de lectura: `[foto] [insignias] [nombre]: [mensaje]`. La foto, las insignias y el nombre nunca se parten: si caben en menos del 42% del ancho, el mensaje va al lado y sus líneas siguientes se alinean con su comienzo; si no, la fila pasa a texto corrido y el mensaje sigue justo después del nombre, a todo el ancho. Nunca se corta ni se trunca nada. Las insignias son íconos del tamaño de la letra, con su color fijo y su nombre para lectores de pantalla, en este orden: moderador, miembro (corazón con su nivel, el único con número), top gifter (corona dorada, plateada o bronce), donador, suscriptor y las demás imágenes de TikTok que no son ninguno de esos (`chatBadgeIcons`; el servidor manda aparte esas otras en `badges.others`, así un rol no aparece dos veces).
 
+**Destacados y eventos del chat.**
+- **Nivel alto del club de fans (más de 20; el 20 no):** sus mensajes de chat llevan un borde de 2 px con un degradado rojo y rosa que gira, y un tono claro que da la vuelta como brillo (`.tkc-chat-glow-elite`). Su insignia de miembro pasa a un corazón con degradado y brillo.
+- **Superfan:** insignia propia (escudo violeta, rosa y dorado con un destello), con un brillo que cruza solo su forma (`.tkc-svg-shine`), y sin borde: así el borde sigue diciendo "nivel alto".
+- **Las dos cosas:** el borde combina rojo y rosa con el violeta y el dorado de Superfan (`.tkc-chat-glow-both`) y las dos insignias se ven.
+- **Rendimiento:** el borde es un solo elemento enmascarado que solo repinta el borde. Con "menos movimiento" en el sistema queda quieto.
+- **Eventos con su color a la izquierda:**
+  - Suscripción (violeta): "se suscribió", "renovó su suscripción", los meses y la renovación automática, o "se hizo Superfan", solo con lo que manda TikTok.
+  - Cofre (amarillo): quién lo colocó, sus monedas y para cuántas personas.
+- **Regalos:** llevan su valor total con 🪙 ("×6 · 🪙 6"). Sin valor conocido no se muestra ninguno.
+
 **Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).
 
 ## Dashboard y Eventos: estado, configuración y cambios en vivo

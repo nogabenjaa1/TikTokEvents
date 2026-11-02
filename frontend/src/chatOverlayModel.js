@@ -4,7 +4,7 @@
 
 export const CHAT_DEFAULT_SETTINGS = {
   fadeSeconds: 30, newestOnTop: false, maxMessages: 12, fontSize: 24,
-  showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showPinned: true, showViewerCount: true,
+  showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showSubscribes: true, showChests: true, showPinned: true, showViewerCount: true,
 };
 
 // Tamaño del overlay: horizontal (con el ancho de los banners horizontales),
@@ -27,7 +27,7 @@ export function chatFrameSize(width, height) {
 // Lo que dura la animación de desvanecido, después de vencer el tiempo.
 export const CHAT_FADE_OUT_MS = 700;
 
-const KIND_SETTING = { follow: 'showFollows', gift: 'showGifts', share: 'showShares' };
+const KIND_SETTING = { follow: 'showFollows', gift: 'showGifts', share: 'showShares', subscribe: 'showSubscribes', chest: 'showChests' };
 
 // Lo que se ve ahora: filtra por tipo y por tiempo, y corta al máximo
 // (quedan los más recientes). Lo vencido se queda mientras se desvanece.
@@ -56,10 +56,35 @@ export function chatBadgeIcons(badges) {
   }
   const icons = [];
   if (badges.moderator) icons.push({ kind: 'moderator', label: 'Moderador' });
-  if (badges.fanLevel > 0) icons.push({ kind: 'member', level: badges.fanLevel, label: `Miembro nivel ${badges.fanLevel}` });
+  if (badges.fanLevel > 0) icons.push({ kind: 'member', level: badges.fanLevel, elite: isEliteFan(badges), label: `Miembro nivel ${badges.fanLevel}` });
   if (badges.topGifterRank) icons.push({ kind: 'topGifter', rank: badges.topGifterRank, label: `Top ${badges.topGifterRank} en regalos` });
   if (badges.gifterLevel > 0) icons.push({ kind: 'gifter', label: `Donador nivel ${badges.gifterLevel}` });
-  if (badges.subscriber) icons.push({ kind: 'subscriber', label: 'Suscriptor' });
+  // Superfan: así llama TikTok hoy a quien está suscrito.
+  if (badges.subscriber) icons.push({ kind: 'subscriber', label: 'Superfan' });
   for (const url of badges.others || []) icons.push({ kind: 'image', url, label: 'Insignia' });
   return icons;
+}
+
+// Nivel del club de fans a partir del cual un miembro se destaca (pedido
+// explícito: MAYOR a 20; el 20 todavía no).
+export const ELITE_FAN_LEVEL = 20;
+const isEliteFan = (badges) => (badges?.fanLevel || 0) > ELITE_FAN_LEVEL;
+
+// Cómo se destaca el mensaje de alguien: 'elite' (club de fans de nivel alto:
+// borde rojizo que gira con brillo), 'superfan' (solo su insignia con brillo,
+// sin borde: así el borde sigue diciendo "nivel alto"), 'both' (el borde
+// combina los colores de los dos y las dos insignias se ven) o null.
+export function chatHighlight(badges) {
+  const elite = isEliteFan(badges);
+  const superfan = Boolean(badges?.subscriber);
+  if (elite && superfan) return 'both';
+  if (elite) return 'elite';
+  if (superfan) return 'superfan';
+  return null;
+}
+
+// Monedas con separador de miles, o null si no se conoce el valor (el chat no
+// muestra un 0 inventado).
+export function formatCoins(value) {
+  return Number.isFinite(value) && value > 0 ? Math.round(value).toLocaleString('es-MX') : null;
 }

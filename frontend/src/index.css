@@ -167,6 +167,39 @@ input[type=range]::-moz-range-thumb {
 .tkc-chat-bubble { background: rgba(14, 14, 20, 0.78); }
 .themed-app .tkc-chat-text { color: #f4f4f6 !important; }
 .themed-app .tkc-chat-muted { color: rgba(244, 244, 246, 0.72) !important; }
+/* Mensaje de un miembro de nivel alto del club de fans (más de 20) y, con
+   "both", que además es Superfan (ver ChatRow en overlays/ChatOverlay.jsx):
+   un borde de 2px con un degradado que gira; el tono claro del degradado es
+   el brillo que da la vuelta. Solo se repinta el borde (máscara sobre un
+   único elemento): el texto y el fondo no se tocan, y no hay capas grandes
+   que cargar a la GPU de OBS. Sin @property (navegador viejo), el borde queda
+   quieto pero se ve igual. */
+@property --tkc-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.tkc-chat-glow { position: relative; isolation: isolate; }
+.tkc-chat-glow-elite {
+  --tkc-glow-colors: #ff1f4b, #ff5c8a 16%, #ffe1ea 24%, #ff5c8a 32%, #c2185b 55%, #ff2d6f 78%, #ff8fbf 90%, #ff1f4b;
+  box-shadow: 0 0 14px -4px rgba(255, 40, 90, 0.6) !important;
+}
+.tkc-chat-glow-both {
+  --tkc-glow-colors: #ff1f4b, #ff5c8a 14%, #ffe1ea 21%, #ff5c8a 28%, #a855f7 45%, #f59e0b 60%, #fff3d6 67%, #f59e0b 74%, #ff5c8a 88%, #ff1f4b;
+  box-shadow: 0 0 14px -4px rgba(214, 70, 200, 0.6) !important;
+}
+.tkc-chat-glow-ring {
+  position: absolute; inset: -1px; z-index: 1; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--tkc-glow-angle), var(--tkc-glow-colors));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: tkc-glow-spin 4.5s linear infinite;
+}
+@keyframes tkc-glow-spin { to { --tkc-glow-angle: 360deg; } }
+/* Brillo de las insignias Superfan y de miembro de nivel alto: una franja que
+   cruza solo la forma de la insignia (recortada en el SVG) cada 3,6 s. */
+.tkc-svg-shine { transform: translateX(0); animation: tkc-svg-shine 3.6s ease-in-out infinite; }
+@keyframes tkc-svg-shine { 0%, 58% { transform: translateX(0); } 88%, 100% { transform: translateX(36px); } }
+@media (prefers-reduced-motion: reduce) {
+  .tkc-chat-glow-ring, .tkc-svg-shine { animation: none; }
+}
 /* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):
    foto e insignias en la línea del texto, centradas en ella; el nombre es
    texto normal, así puede bajar de línea si es larguísimo. */

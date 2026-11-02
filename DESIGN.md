@@ -418,7 +418,8 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 - **Moderador:** insignia propia de la misma familia: un hexágono con degradado verde y turquesa, el mismo contorno blanco fino y una llave inglesa blanca. Sin brillo, que queda para Superfan y los niveles altos.
 - **Donador:** su nivel no se dibuja como insignia (decisión del dueño del producto) ni se reemplaza por otra. El dato se sigue recibiendo.
 - **Las dos cosas:** el borde combina rojo y rosa con el violeta y el dorado de Superfan (`.tkc-chat-glow-both`) y las dos insignias se ven.
-- **Rendimiento:** el borde es un solo elemento enmascarado que solo repinta el borde. Con "menos movimiento" en el sistema queda quieto.
+- **Rendimiento:** el borde es un solo elemento enmascarado que solo repinta el borde.
+- **Siempre en movimiento:** los brillos del borde y de las insignias no se apagan con "menos movimiento" (en Windows sale de "Efectos de animación"): como el resto del overlay, son lo que ve la audiencia. La vista previa del panel también los reproduce, aunque la Regla del Menos Movimiento acorte las demás animaciones de `.themed-panel`.
 - **Eventos con su color a la izquierda:**
   - Suscripción (violeta): "se suscribió", "renovó su suscripción", los meses y la renovación automática, o "se hizo Superfan", solo con lo que manda TikTok.
   - Cofre (amarillo): quién lo colocó, sus monedas y para cuántas personas.

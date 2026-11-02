@@ -208,15 +208,21 @@ input[type=range]::-moz-range-thumb {
   animation: tkc-glow-spin 4.5s linear infinite;
 }
 @keyframes tkc-glow-spin { to { --tkc-glow-angle: 360deg; } }
-/* Brillo de las insignias Superfan y de miembro de nivel alto: una franja que
-   cruza solo la forma de la insignia (recortada en el SVG) cada 3,6 s. */
-/* Brillo de las insignias: una franja inclinada, blanca al centro, que cruza
-   la forma. Mismo ciclo de 3,6 s, pero el cruce dura más (40% del ciclo en vez
-   de 30%), para que se vea el recorrido. */
+/* Brillo de las insignias Superfan y de miembro de nivel alto: una franja
+   inclinada, blanca al centro, que cruza solo la forma de la insignia
+   (recortada en el SVG). Ciclo de 3,6 s; el cruce ocupa el 40%, para que se vea
+   el recorrido. */
 .tkc-svg-shine { transform: translateX(0); animation: tkc-svg-shine 3.6s ease-in-out infinite; }
 @keyframes tkc-svg-shine { 0%, 50% { transform: translateX(0); } 90%, 100% { transform: translateX(50px); } }
+/* Estos brillos NO se apagan con "menos movimiento": como el resto de los
+   overlays de OBS, son parte de lo que ve la audiencia, no de la interfaz de
+   quien transmite (y en Windows esa preferencia sale de "Efectos de animación",
+   que mucha gente tiene apagado sin saberlo). Por lo mismo, la vista previa
+   del panel los reproduce aunque la regla de accesibilidad de .themed-panel
+   (más abajo) acorte todas las demás animaciones: es lo que va a salir al aire. */
 @media (prefers-reduced-motion: reduce) {
-  .tkc-chat-glow-ring, .tkc-chat-glow-halo, .tkc-svg-shine { animation: none; }
+  .themed-panel .tkc-chat-glow-ring, .themed-panel .tkc-chat-glow-halo { animation-duration: 4.5s !important; animation-iteration-count: infinite !important; }
+  .themed-panel .tkc-svg-shine { animation-duration: 3.6s !important; animation-iteration-count: infinite !important; }
 }
 /* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):
    foto e insignias en la línea del texto, centradas en ella; el nombre es

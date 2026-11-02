@@ -217,8 +217,11 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
         <div className="mb-5">
           <SectionLabel>Qué se ve</SectionLabel>
           <Toggle label="Seguidores nuevos" hint="“Usuario te siguió”" checked={settings.showFollows} onChange={(v) => update({ showFollows: v })} />
-          <Toggle label="Regalos" hint="Con el ícono del regalo y la cantidad del combo" checked={settings.showGifts} onChange={(v) => update({ showGifts: v })} />
+          <Toggle label="Regalos" hint="Con el ícono del regalo, la cantidad del combo y su valor en monedas" checked={settings.showGifts} onChange={(v) => update({ showGifts: v })} />
           <Toggle label="Compartidos" hint="“Usuario compartió el LIVE”" checked={settings.showShares} onChange={(v) => update({ showShares: v })} />
+          <Toggle label="Suscripciones" hint="“Usuario se suscribió” o “se hizo Superfan”" checked={settings.showSubscribes !== false} onChange={(v) => update({ showSubscribes: v })} />
+          <Toggle label="Cofres" hint="Quién colocó el cofre, sus monedas y para cuántas personas" checked={settings.showChests !== false} onChange={(v) => update({ showChests: v })} />
+          <Toggle label="Subidas de nivel del club" hint="“Usuario subió al nivel 5 del club de fans”" checked={settings.showLevelUps !== false} onChange={(v) => update({ showLevelUps: v })} />
           <Toggle label="Mensaje anclado" hint="El que anclas tú o un moderador, fijo arriba" checked={settings.showPinned} onChange={(v) => update({ showPinned: v })} />
           <Toggle label="Fotos de perfil" checked={settings.showAvatars} onChange={(v) => update({ showAvatars: v })} />
           <Toggle label="Insignias" hint="Las de TikTok: club de fans, moderador, top gifter..." checked={settings.showBadges} onChange={(v) => update({ showBadges: v })} />

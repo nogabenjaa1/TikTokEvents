@@ -28,11 +28,21 @@ export function chatPreviewItems(now = Date.now()) {
   return [
     { id: 'p1', at: now - 8000, kind: 'chat', user: user(1, { fanLevel: 12 }), text: 'jajaja qué bueno el directo', emotes: [] },
     { id: 'p2', at: now - 6000, kind: 'follow', user: user(2) },
-    { id: 'p3', at: now - 4000, kind: 'gift', user: user(3, { topGifterRank: 1 }), gift: { name: 'Rosa', icon: '', count: 7, coins: 7 } },
+    { id: 'p3', at: now - 4000, kind: 'gift', user: user(3, { topGifterRank: 1 }), gift: { name: 'Rosa', icon: '', count: 7, unitCoins: 1, coins: 7 } },
     { id: 'p4', at: now - 2000, kind: 'chat', user: user(4, { moderator: true }), text: '!play despacito', emotes: [] },
     // Varias insignias y un mensaje largo: así se ve cuando baja de línea.
     { id: 'p4b', at: now - 1500, kind: 'chat', user: user(7, { fanLevel: 25, gifterLevel: 30, subscriber: true, topGifterRank: 2 }), text: 'Un mensaje largo se ve completo: sigue en las líneas de abajo, alineado con su comienzo.', emotes: [] },
     { id: 'p5', at: now - 1000, kind: 'share', user: user(5) },
+    // Nivel 20 (común), nivel 21 (borde especial), Superfan y los dos juntos.
+    { id: 'p7', at: now - 900, kind: 'chat', user: user(8, { fanLevel: 20 }), text: 'nivel 20: insignia común', emotes: [] },
+    { id: 'p8', at: now - 800, kind: 'chat', user: user(9, { fanLevel: 21 }), text: 'nivel 21: borde y brillo', emotes: [] },
+    { id: 'p9', at: now - 700, kind: 'chat', user: user(10, { subscriber: true }), text: 'soy Superfan', emotes: [] },
+    { id: 'p10', at: now - 600, kind: 'chat', user: user(11, { subscriber: true, fanLevel: 30 }), text: 'nivel 30 y Superfan', emotes: [] },
+    { id: 'p11', at: now - 550, kind: 'subscribe', user: user(12), subscribe: { renewal: true, months: 3, auto: false, superfanJoin: false } },
+    { id: 'p12', at: now - 520, kind: 'chest', user: user(13), chest: { id: 'c1', coins: 1000, people: 50, superfanBox: false } },
+    // Subidas de nivel del club: una común y una a 21 (las dos con borde).
+    { id: 'p13', at: now - 510, kind: 'levelup', user: user(14, { fanLevel: 6 }), levelUp: { level: 6, previous: 5 } },
+    { id: 'p14', at: now - 505, kind: 'levelup', user: user(15, { fanLevel: 21, moderator: true }), levelUp: { level: 21, previous: 20 } },
     // Un sticker mandado solo: un mensaje más, como en TikTok.
     { id: 'p6', at: now - 500, kind: 'chat', user: user(6, { fanLevel: 3 }), text: '', parts: [{ type: 'emote', url: MOCK_STICKER }] },
   ];

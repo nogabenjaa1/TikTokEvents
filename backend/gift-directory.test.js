@@ -82,3 +82,16 @@ test('the directory is bounded so it cannot grow without limit', () => {
   assert.equal(directory.record({ id: MAX_GIFTS + 1, name: 'De más', coins: 1 }), false);
   assert.equal(directory.record({ id: 1, name: 'Regalo 1', coins: 2 }), true, 'known gifts can still be updated');
 });
+
+test('a later event without coins (0) never erases the known value, and the value can be looked up by id', async () => {
+  const saved = [];
+  const directory = createGiftDirectory({ listRows: async () => [], upsertRow: async (gift) => { saved.push(gift); }, log: silent });
+  directory.record({ id: 5655, name: 'Rose', coins: 1, icon: 'https://x/rose.png' });
+  directory.record({ id: 5655, name: 'Rose', coins: 0 });
+  await flush();
+  assert.equal(directory.list()[0].coins, 1, 'el 0 no pisa el valor conocido');
+  assert.equal(saved.length, 1, 'no hubo nada que guardar');
+  assert.equal(directory.coinsFor(5655), 1);
+  assert.equal(directory.coinsFor('5655'), 1, 'el id llega como texto en el esquema actual');
+  assert.equal(directory.coinsFor(999), 0, 'desconocido: 0 (quien llama no inventa un valor)');
+});

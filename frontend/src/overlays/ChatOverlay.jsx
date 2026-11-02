@@ -50,9 +50,10 @@ function ShineBand({ id, clip }) {
       <defs>
         <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset="0.35" stopColor="#fff" stopOpacity="0.55" />
-          <stop offset="0.5" stopColor="#fff" stopOpacity="1" />
-          <stop offset="0.65" stopColor="#fff" stopOpacity="0.55" />
+          <stop offset="0.25" stopColor="#fff" stopOpacity="0.5" />
+          <stop offset="0.4" stopColor="#fff" stopOpacity="1" />
+          <stop offset="0.6" stopColor="#fff" stopOpacity="1" />
+          <stop offset="0.75" stopColor="#fff" stopOpacity="0.5" />
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
       </defs>
@@ -92,7 +93,7 @@ function SuperfanBadge({ label }) {
   );
 }
 
-// Miembro del club de fans de nivel alto (más de 20): el corazón con
+// Miembro del club de fans de nivel alto (20 o más): el corazón con
 // degradado rojo y rosa y el mismo brillo, para distinguirlo de los niveles
 // comunes. El número es su nivel, del mismo tono.
 function EliteMemberBadge({ icon }) {
@@ -323,13 +324,13 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
     message = <MessageParts item={item} />;
   }
 
-  // Borde que gira con brillo para los miembros de nivel alto del club de fans
-  // (y combinado si además son Superfan): en sus mensajes de chat y en la
-  // subida de nivel que los lleva a más de 20 (ver chatItemHighlight). En los
-  // demás eventos (regalos, seguidores...) ya hay una marca de color a la
+  // Borde que gira con brillo: mensajes de nivel 20 o más del club de fans,
+  // de Superfans (con su propio color) o de los dos (combinado), y las
+  // subidas de nivel y suscripciones (ver chatItemHighlight). En los demás
+  // eventos (regalos, seguidores...) ya hay una marca de color a la
   // izquierda. Las insignias se ven en todos.
   const highlight = chatItemHighlight(item, settings);
-  const glow = highlight === 'elite' || highlight === 'both';
+  const glow = Boolean(highlight);
 
   return (
     <div data-chat-row={item.id} data-highlight={highlight || undefined} style={fadeStyle} className="flex-shrink-0">

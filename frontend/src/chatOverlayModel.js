@@ -67,14 +67,14 @@ export function chatBadgeIcons(badges) {
 }
 
 // Nivel del club de fans a partir del cual un miembro se destaca (pedido
-// explícito: MAYOR a 20; el 20 todavía no).
+// explícito: el 20 ya cuenta; el 19 no).
 export const ELITE_FAN_LEVEL = 20;
-const isEliteFan = (badges) => (badges?.fanLevel || 0) > ELITE_FAN_LEVEL;
+const isEliteFan = (badges) => (badges?.fanLevel || 0) >= ELITE_FAN_LEVEL;
 
-// Cómo se destaca el mensaje de alguien: 'elite' (club de fans de nivel alto:
-// borde rojizo que gira con brillo), 'superfan' (solo su insignia con brillo,
-// sin borde: así el borde sigue diciendo "nivel alto"), 'both' (el borde
-// combina los colores de los dos y las dos insignias se ven) o null.
+// Cómo se destaca el mensaje de alguien, con el borde que gira con brillo:
+// 'elite' (club de fans de nivel 20 o más: rojo y rosa), 'superfan' (su
+// propio borde violeta y dorado), 'both' (los dos colores en un solo borde, y
+// las dos insignias se ven) o null. Cada condición basta sola.
 export function chatHighlight(badges) {
   const elite = isEliteFan(badges);
   const superfan = Boolean(badges?.subscriber);
@@ -91,24 +91,26 @@ export function formatCoins(value) {
 }
 
 // Destacado de una fila del chat (ver chatHighlight). Un mensaje de chat usa
-// las insignias de quien escribe. Una subida de nivel del club se destaca
-// (borde y brillo de nivel alto, combinado si es Superfan) solo si el nivel
-// NUEVO es mayor a 20; una subida común no lleva borde. Los demás eventos
-// conservan su marca de color. Con las insignias apagadas, nada.
+// las insignias de quien escribe. Los eventos que celebran algo del club o de
+// Superfan siempre llevan el borde, sin importar el nivel:
+// - subida de nivel del club: el de nivel alto (combinado si es Superfan);
+// - suscripción, renovación o "se hizo Superfan": el de Superfan (combinado
+//   si además es de nivel 20 o más).
+// Los demás eventos conservan su marca de color. Con las insignias apagadas,
+// nada.
 export function chatItemHighlight(item, settings = {}) {
   if (!item || settings.showBadges === false) return null;
-  if (item.kind === 'chat') return chatHighlight(item.user?.badges);
-  if (item.kind === 'levelup') {
-    if (!((item.levelUp?.level || 0) > ELITE_FAN_LEVEL)) return null;
-    return item.user?.badges?.subscriber ? 'both' : 'elite';
-  }
+  const badges = item.user?.badges;
+  if (item.kind === 'chat') return chatHighlight(badges);
+  if (item.kind === 'levelup') return badges?.subscriber ? 'both' : 'elite';
+  if (item.kind === 'subscribe') return isEliteFan(badges) ? 'both' : 'superfan';
   return null;
 }
 
 // Lo que dice una subida de nivel del club de fans: solo el nivel al que llegó
 // (pedido explícito: sin el anterior, aunque se conozca; ese solo se usa para
-// no repetir una subida, ver handleFansLevelUp en el backend). Al pasar de 20,
-// "alcanzó" (es un logro).
+// no repetir una subida, ver handleFansLevelUp en el backend). Desde el 20,
+// "alcanzó" (es un logro: el mismo nivel que activa el borde de nivel alto).
 export function levelUpText({ level } = {}) {
-  return level > ELITE_FAN_LEVEL ? `alcanzó el nivel ${level} del club de fans` : `subió al nivel ${level} del club de fans`;
+  return level >= ELITE_FAN_LEVEL ? `alcanzó el nivel ${level} del club de fans` : `subió al nivel ${level} del club de fans`;
 }

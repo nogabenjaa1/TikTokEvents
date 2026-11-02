@@ -167,52 +167,65 @@ input[type=range]::-moz-range-thumb {
 .tkc-chat-bubble { background: rgba(14, 14, 20, 0.78); }
 .themed-app .tkc-chat-text { color: #f4f4f6 !important; }
 .themed-app .tkc-chat-muted { color: rgba(244, 244, 246, 0.72) !important; }
-/* Mensaje de un miembro de nivel alto del club de fans (más de 20) y, con
-   "both", que además es Superfan (ver ChatRow en overlays/ChatOverlay.jsx):
-   un borde de 2px con un degradado que gira; el tono claro del degradado es
-   el brillo que da la vuelta. Solo se repinta el borde (máscara sobre un
+/* Mensaje destacado (ver chatItemHighlight en chatOverlayModel.js): nivel 20 o
+   más del club de fans ("elite"), Superfan ("superfan"), los dos ("both"),
+   subidas de nivel y suscripciones: un borde de 3px con un degradado que
+   gira; el pico blanco del degradado es el brillo que da la vuelta. Solo se repinta el borde (máscara sobre un
    único elemento): el texto y el fondo no se tocan, y no hay capas grandes
    que cargar a la GPU de OBS. Sin @property (navegador viejo), el borde queda
    quieto pero se ve igual. */
 @property --tkc-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+/* Ritmo de los dos brillos, en un solo lugar: los usa también la regla de
+   "menos movimiento" de la vista previa (más abajo). */
+:root { --tkc-glow-dur: 3.8s; --tkc-shine-dur: 3s; }
 .tkc-chat-glow { position: relative; isolation: isolate; }
-/* El brillo es un pico BLANCO (no un rosa claro) sobre una base más profunda,
-   para que contraste y se reconozca aunque el chat se esté moviendo; lo
-   acompaña un halo (.tkc-chat-glow-halo) que recorre el borde con él. Misma
-   velocidad de siempre: lo que sube es la intensidad, no el ritmo. */
+/* El brillo es un pico BLANCO con un tramo sólido, sobre una base profunda
+   (más oscura cuanto más lejos del pico), para que contraste y se reconozca
+   aunque el chat se esté moviendo; lo acompaña un halo (.tkc-chat-glow-halo)
+   que recorre el borde con él. */
 .tkc-chat-glow-elite {
-  --tkc-glow-colors: #9f1239, #e11d48 20%, #ff4d7d 33%, #ffd1de 40%, #ffffff 44%, #ffd1de 48%, #ff4d7d 55%, #e11d48 68%, #c2185b 84%, #9f1239;
+  --tkc-glow-colors: #6d0b27, #9f1239 16%, #e11d48 30%, #ff6b93 37%, #ffffff 42% 46%, #ff6b93 51%, #e11d48 58%, #9f1239 72%, #881337 86%, #6d0b27;
   box-shadow: 0 0 14px -4px rgba(255, 40, 90, 0.6) !important;
 }
+/* Superfan: su propio borde, violeta con un toque dorado (los colores de su
+   insignia), con el mismo pico blanco. */
+.tkc-chat-glow-superfan {
+  --tkc-glow-colors: #3b0764, #6b21a8 16%, #9333ea 30%, #d8a4ff 37%, #ffffff 42% 46%, #d8a4ff 51%, #9333ea 58%, #6b21a8 70%, #b45309 84%, #3b0764;
+  box-shadow: 0 0 14px -4px rgba(168, 85, 247, 0.6) !important;
+}
 .tkc-chat-glow-both {
-  --tkc-glow-colors: #9f1239, #e11d48 18%, #ff4d7d 32%, #ffd1de 40%, #ffffff 44%, #ffd1de 48%, #ff4d7d 54%, #a855f7 68%, #f59e0b 82%, #c2185b 92%, #9f1239;
+  --tkc-glow-colors: #6d0b27, #be123c 16%, #ff4d7d 30%, #ffb3c8 37%, #ffffff 42% 46%, #e9b5ff 51%, #a855f7 58%, #7e22ce 68%, #d97706 82%, #9f1239 92%, #6d0b27;
   box-shadow: 0 0 14px -4px rgba(214, 70, 200, 0.6) !important;
 }
+/* 3px de borde, por DENTRO del contorno de la fila: las filas llegan justo al
+   borde de la lista, que recorta lo que sale (por fuera, los lados se verían
+   más delgados). Es una capa absoluta, así que no cambia el tamaño de la fila
+   ni empuja el texto (su relleno es más ancho que el borde). */
 .tkc-chat-glow-ring {
-  position: absolute; inset: -1px; z-index: 1; border-radius: inherit; padding: 2px; pointer-events: none;
+  position: absolute; inset: 0; z-index: 1; border-radius: inherit; padding: 3px; pointer-events: none;
   background: conic-gradient(from var(--tkc-glow-angle), var(--tkc-glow-colors));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: tkc-glow-spin 4.5s linear infinite;
+  animation: tkc-glow-spin var(--tkc-glow-dur) linear infinite;
 }
 /* El halo: solo el tramo del brillo (en el mismo ángulo que el pico blanco
    del borde), difuminado y un poco más ancho que el borde, girando a la par. */
 .tkc-chat-glow-halo {
-  position: absolute; inset: -4px; z-index: 2; border-radius: inherit; padding: 6px; pointer-events: none;
-  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 36%, rgba(255, 255, 255, 0.55) 41%, rgba(255, 255, 255, 0.95) 44%, rgba(255, 255, 255, 0.55) 47%, transparent 52% 100%);
+  position: absolute; inset: -3px; z-index: 2; border-radius: inherit; padding: 6px; pointer-events: none;
+  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 35%, rgba(255, 255, 255, 0.7) 40%, #fff 43% 45%, rgba(255, 255, 255, 0.7) 48%, transparent 53% 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   filter: blur(3px);
-  animation: tkc-glow-spin 4.5s linear infinite;
+  animation: tkc-glow-spin var(--tkc-glow-dur) linear infinite;
 }
 @keyframes tkc-glow-spin { to { --tkc-glow-angle: 360deg; } }
 /* Brillo de las insignias Superfan y de miembro de nivel alto: una franja
    inclinada, blanca al centro, que cruza solo la forma de la insignia
-   (recortada en el SVG). Ciclo de 3,6 s; el cruce ocupa el 40%, para que se vea
-   el recorrido. */
-.tkc-svg-shine { transform: translateX(0); animation: tkc-svg-shine 3.6s ease-in-out infinite; }
+   (recortada en el SVG). Ciclo de 3 s; el cruce dura 1,2 s (el 40%), lo
+   bastante rápido para notarse de un vistazo y lento para seguir el recorrido. */
+.tkc-svg-shine { transform: translateX(0); animation: tkc-svg-shine var(--tkc-shine-dur) ease-in-out infinite; }
 @keyframes tkc-svg-shine { 0%, 50% { transform: translateX(0); } 90%, 100% { transform: translateX(50px); } }
 /* Estos brillos NO se apagan con "menos movimiento": como el resto de los
    overlays de OBS, son parte de lo que ve la audiencia, no de la interfaz de
@@ -221,8 +234,8 @@ input[type=range]::-moz-range-thumb {
    del panel los reproduce aunque la regla de accesibilidad de .themed-panel
    (más abajo) acorte todas las demás animaciones: es lo que va a salir al aire. */
 @media (prefers-reduced-motion: reduce) {
-  .themed-panel .tkc-chat-glow-ring, .themed-panel .tkc-chat-glow-halo { animation-duration: 4.5s !important; animation-iteration-count: infinite !important; }
-  .themed-panel .tkc-svg-shine { animation-duration: 3.6s !important; animation-iteration-count: infinite !important; }
+  .themed-panel .tkc-chat-glow-ring, .themed-panel .tkc-chat-glow-halo { animation-duration: var(--tkc-glow-dur) !important; animation-iteration-count: infinite !important; }
+  .themed-panel .tkc-svg-shine { animation-duration: var(--tkc-shine-dur) !important; animation-iteration-count: infinite !important; }
 }
 /* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):
    foto e insignias en la línea del texto, centradas en ella; el nombre es

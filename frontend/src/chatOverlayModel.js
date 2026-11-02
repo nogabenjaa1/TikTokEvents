@@ -105,11 +105,10 @@ export function chatItemHighlight(item, settings = {}) {
   return null;
 }
 
-// Lo que dice una subida de nivel del club de fans, con lo que se sabe. Al
-// pasar de 20, "alcanzó" (es un logro); el anterior va solo si se conoce.
-export function levelUpText({ level, previous } = {}) {
-  if (level > ELITE_FAN_LEVEL) {
-    return previous ? `alcanzó el nivel ${level} del club de fans (antes, ${previous})` : `alcanzó el nivel ${level} del club de fans`;
-  }
-  return previous ? `subió del nivel ${previous} al ${level} del club de fans` : `subió al nivel ${level} del club de fans`;
+// Lo que dice una subida de nivel del club de fans: solo el nivel al que llegó
+// (pedido explícito: sin el anterior, aunque se conozca; ese solo se usa para
+// no repetir una subida, ver handleFansLevelUp en el backend). Al pasar de 20,
+// "alcanzó" (es un logro).
+export function levelUpText({ level } = {}) {
+  return level > ELITE_FAN_LEVEL ? `alcanzó el nivel ${level} del club de fans` : `subió al nivel ${level} del club de fans`;
 }

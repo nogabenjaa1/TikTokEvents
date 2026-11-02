@@ -125,11 +125,12 @@ test('destacado de un mensaje: chat con nivel alto, y subida de nivel solo si el
   assert.equal(chatItemHighlight(chat({ fanLevel: 25 }), { showBadges: false }), null, 'con las insignias apagadas tampoco');
 });
 
-test('texto de la subida: con el anterior si se sabe, y "alcanzó" al pasar de 20', () => {
-  assert.equal(levelUpText({ level: 5, previous: null }), 'subió al nivel 5 del club de fans');
-  assert.equal(levelUpText({ level: 12, previous: 11 }), 'subió del nivel 11 al 12 del club de fans');
-  assert.equal(levelUpText({ level: 21, previous: null }), 'alcanzó el nivel 21 del club de fans');
-  assert.equal(levelUpText({ level: 21, previous: 20 }), 'alcanzó el nivel 21 del club de fans (antes, 20)');
+test('texto de la subida: solo el nivel al que llegó, nunca el anterior', () => {
+  assert.equal(levelUpText({ level: 6, previous: null }), 'subió al nivel 6 del club de fans');
+  assert.equal(levelUpText({ level: 6, previous: 5 }), 'subió al nivel 6 del club de fans', 'aunque se sepa el anterior, no se muestra');
+  assert.equal(levelUpText({ level: 20, previous: 19 }), 'subió al nivel 20 del club de fans');
+  assert.equal(levelUpText({ level: 21, previous: 20 }), 'alcanzó el nivel 21 del club de fans', 'al pasar de 20, "alcanzó"');
+  assert.doesNotMatch(levelUpText({ level: 21, previous: 20 }), /antes|del nivel \d+ al/);
 });
 
 test('las subidas de nivel se pueden ocultar desde los ajustes', () => {

@@ -41,6 +41,30 @@ const BADGE_PATHS = {
 const BADGE_COLORS = { member: '#fb7185' };
 const TOP_GIFTER_COLORS = { 1: '#facc15', 2: '#d1d5db', 3: '#d97706' };
 
+// El brillo de una insignia: una franja inclinada que cruza solo su forma
+// (recortada con `clip`), blanca al centro y que se desvanece a los lados, para
+// que contraste con el degradado de la insignia (ver .tkc-svg-shine).
+function ShineBand({ id, clip }) {
+  return (
+    <>
+      <defs>
+        <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0.35" stopColor="#fff" stopOpacity="0.55" />
+          <stop offset="0.5" stopColor="#fff" stopOpacity="1" />
+          <stop offset="0.65" stopColor="#fff" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <g clipPath={`url(#${clip})`}>
+        <g transform="skewX(-18)">
+          <rect className="tkc-svg-shine" x="-14" y="-4" width="11" height="32" fill={`url(#${id}-shine)`} />
+        </g>
+      </g>
+    </>
+  );
+}
+
 // Insignia de Superfan (diseño propio): un escudo con degradado violeta, rosa y
 // dorado y un destello blanco, con un brillo que la cruza cada pocos segundos
 // (solo sobre su forma, ver .tkc-svg-shine en index.css). Más ancha que las
@@ -62,7 +86,7 @@ function SuperfanBadge({ label }) {
         </defs>
         <path d={SUPERFAN_SHIELD} fill={`url(#sf-g-${id})`} stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
         <path d={SUPERFAN_SPARK} fill="#fff" />
-        <g clipPath={`url(#sf-c-${id})`}><rect className="tkc-svg-shine" x="-12" y="-4" width="8" height="32" fill="rgba(255,255,255,0.75)" /></g>
+        <ShineBand id={`sf-${id}`} clip={`sf-c-${id}`} />
       </svg>
     </span>
   );
@@ -85,7 +109,7 @@ function EliteMemberBadge({ icon }) {
           <clipPath id={`fm-c-${id}`}><path d={heart} /></clipPath>
         </defs>
         <path d={heart} fill={`url(#fm-g-${id})`} stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
-        <g clipPath={`url(#fm-c-${id})`}><rect className="tkc-svg-shine" x="-12" y="-4" width="8" height="32" fill="rgba(255,255,255,0.75)" /></g>
+        <ShineBand id={`fm-${id}`} clip={`fm-c-${id}`} />
       </svg>
       <span className="text-[0.72em] font-black tabular-nums" aria-hidden="true">{icon.level}</span>
     </span>
@@ -314,6 +338,7 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
         style={{ ...rowBg, border: rowBorderStyle, ...(accent && !glow ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
       >
         {glow && <span className="tkc-chat-glow-ring" aria-hidden="true" />}
+        {glow && <span className="tkc-chat-glow-halo" aria-hidden="true" />}
         {item.user
           ? <ChatLine user={item.user} settings={settings} nameStyle={nameStyle}>{message}</ChatLine>
           : <div className="tkc-chat-text min-w-0 break-words [overflow-wrap:anywhere]">{message}</div>}

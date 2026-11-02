@@ -176,12 +176,16 @@ input[type=range]::-moz-range-thumb {
    quieto pero se ve igual. */
 @property --tkc-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .tkc-chat-glow { position: relative; isolation: isolate; }
+/* El brillo es un pico BLANCO (no un rosa claro) sobre una base más profunda,
+   para que contraste y se reconozca aunque el chat se esté moviendo; lo
+   acompaña un halo (.tkc-chat-glow-halo) que recorre el borde con él. Misma
+   velocidad de siempre: lo que sube es la intensidad, no el ritmo. */
 .tkc-chat-glow-elite {
-  --tkc-glow-colors: #ff1f4b, #ff5c8a 16%, #ffe1ea 24%, #ff5c8a 32%, #c2185b 55%, #ff2d6f 78%, #ff8fbf 90%, #ff1f4b;
+  --tkc-glow-colors: #9f1239, #e11d48 20%, #ff4d7d 33%, #ffd1de 40%, #ffffff 44%, #ffd1de 48%, #ff4d7d 55%, #e11d48 68%, #c2185b 84%, #9f1239;
   box-shadow: 0 0 14px -4px rgba(255, 40, 90, 0.6) !important;
 }
 .tkc-chat-glow-both {
-  --tkc-glow-colors: #ff1f4b, #ff5c8a 14%, #ffe1ea 21%, #ff5c8a 28%, #a855f7 45%, #f59e0b 60%, #fff3d6 67%, #f59e0b 74%, #ff5c8a 88%, #ff1f4b;
+  --tkc-glow-colors: #9f1239, #e11d48 18%, #ff4d7d 32%, #ffd1de 40%, #ffffff 44%, #ffd1de 48%, #ff4d7d 54%, #a855f7 68%, #f59e0b 82%, #c2185b 92%, #9f1239;
   box-shadow: 0 0 14px -4px rgba(214, 70, 200, 0.6) !important;
 }
 .tkc-chat-glow-ring {
@@ -192,13 +196,27 @@ input[type=range]::-moz-range-thumb {
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   animation: tkc-glow-spin 4.5s linear infinite;
 }
+/* El halo: solo el tramo del brillo (en el mismo ángulo que el pico blanco
+   del borde), difuminado y un poco más ancho que el borde, girando a la par. */
+.tkc-chat-glow-halo {
+  position: absolute; inset: -4px; z-index: 2; border-radius: inherit; padding: 6px; pointer-events: none;
+  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 36%, rgba(255, 255, 255, 0.55) 41%, rgba(255, 255, 255, 0.95) 44%, rgba(255, 255, 255, 0.55) 47%, transparent 52% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  filter: blur(3px);
+  animation: tkc-glow-spin 4.5s linear infinite;
+}
 @keyframes tkc-glow-spin { to { --tkc-glow-angle: 360deg; } }
 /* Brillo de las insignias Superfan y de miembro de nivel alto: una franja que
    cruza solo la forma de la insignia (recortada en el SVG) cada 3,6 s. */
+/* Brillo de las insignias: una franja inclinada, blanca al centro, que cruza
+   la forma. Mismo ciclo de 3,6 s, pero el cruce dura más (40% del ciclo en vez
+   de 30%), para que se vea el recorrido. */
 .tkc-svg-shine { transform: translateX(0); animation: tkc-svg-shine 3.6s ease-in-out infinite; }
-@keyframes tkc-svg-shine { 0%, 58% { transform: translateX(0); } 88%, 100% { transform: translateX(36px); } }
+@keyframes tkc-svg-shine { 0%, 50% { transform: translateX(0); } 90%, 100% { transform: translateX(50px); } }
 @media (prefers-reduced-motion: reduce) {
-  .tkc-chat-glow-ring, .tkc-svg-shine { animation: none; }
+  .tkc-chat-glow-ring, .tkc-chat-glow-halo, .tkc-svg-shine { animation: none; }
 }
 /* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):
    foto e insignias en la línea del texto, centradas en ella; el nombre es

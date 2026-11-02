@@ -27,6 +27,8 @@ const CHAT_SETTINGS_DEFAULTS = Object.freeze({
     // Suscripciones (y quien se hace Superfan) y cofres: visibles por defecto.
     showSubscribes: true,
     showChests: true,
+    // Subidas de nivel del club de fans: visibles por defecto.
+    showLevelUps: true,
     showPinned: true,
     showViewerCount: true,
 });
@@ -38,7 +40,7 @@ const FONT_SIZE_MAX = 48;
 const CHAT_RECENT_MAX = MAX_MESSAGES_MAX;
 const BADGE_IMAGES_MAX = 4;
 
-const BOOLEAN_SETTINGS = ['newestOnTop', 'showAvatars', 'showBadges', 'showFollows', 'showGifts', 'showShares', 'showSubscribes', 'showChests', 'showPinned', 'showViewerCount'];
+const BOOLEAN_SETTINGS = ['newestOnTop', 'showAvatars', 'showBadges', 'showFollows', 'showGifts', 'showShares', 'showSubscribes', 'showChests', 'showLevelUps', 'showPinned', 'showViewerCount'];
 
 function clampInt(value, min, max, fallback) {
     // null/'' no son números: Number(null) daría 0 y se tomaría como válido.
@@ -297,6 +299,32 @@ function superFanJoinItem(data = {}) {
     return { kind: 'subscribe', user, subscribe: { renewal: false, months: 0, auto: false, superfanJoin: true } };
 }
 
+// ── Subidas de nivel del club de fans ──
+// TikTok avisa con un WebcastBarrageMessage de msgType FANS_LEVEL_UPGRADE (10)
+// y fansLevelParam.currentGrade, el nivel NUEVO. No se confunde con
+// FANS_LEVEL_ENTRANCE (11, un miembro que entra a la sala), USER_UPGRADE (8,
+// nivel de gifter) ni con unirse al club o a los Superfans. El nivel anterior
+// no viene en el mensaje (y la insignia del mismo mensaje puede estar ya
+// actualizada o no): solo se muestra si quien llama lo sabe de antes
+// (`previous`, ver handleBarrageEvent) y es menor. Nunca visto en un LIVE real.
+const BARRAGE_FANS_LEVEL_UPGRADE = 10;
+function fansLevelUpItem(data = {}, { previous = 0 } = {}) {
+    if (Number(data.msgType) !== BARRAGE_FANS_LEVEL_UPGRADE) return null;
+    const level = clampInt(data.fansLevelParam?.currentGrade, 0, 99, 0);
+    if (level <= 0) return null;
+    let user = userFrom(data);
+    if (!user.uniqueId) {
+        // Sin el usuario arriba: el que viene dentro de fansLevelParam (sin simplificar).
+        const raw = data.fansLevelParam?.user || {};
+        user = userFrom({ uniqueId: raw.displayId, nickname: raw.nickname, profilePictureUrl: raw.avatarThumb?.urlList?.[0] });
+    }
+    if (!user.uniqueId) return null;
+    // La insignia del evento muestra el nivel nuevo (es lo que acaba de confirmar TikTok).
+    user.badges = { ...user.badges, fanLevel: Math.max(user.badges.fanLevel, level) };
+    const before = clampInt(previous, 0, 99, 0);
+    return { kind: 'levelup', user, levelUp: { level, previous: before > 0 && before < level ? before : null } };
+}
+
 // ── Cofres ──
 // WebcastEnvelopeMessage ('envelope'): un cofre que alguien coloca en el LIVE.
 // No es un regalo (llega por otro mensaje). De envelopeInfo: sendUserName y
@@ -374,6 +402,7 @@ module.exports = {
     subscribeItem,
     superFanJoinItem,
     chestItem,
+    fansLevelUpItem,
     isShareSocial,
     pinnedFromRoomPin,
     commentParts,

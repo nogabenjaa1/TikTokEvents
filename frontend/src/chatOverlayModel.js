@@ -4,7 +4,7 @@
 
 export const CHAT_DEFAULT_SETTINGS = {
   fadeSeconds: 30, newestOnTop: false, maxMessages: 12, fontSize: 24,
-  showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showSubscribes: true, showChests: true, showPinned: true, showViewerCount: true,
+  showAvatars: true, showBadges: true, showFollows: true, showGifts: true, showShares: true, showSubscribes: true, showChests: true, showLevelUps: true, showPinned: true, showViewerCount: true,
 };
 
 // Tamaño del overlay: horizontal (con el ancho de los banners horizontales),
@@ -27,7 +27,7 @@ export function chatFrameSize(width, height) {
 // Lo que dura la animación de desvanecido, después de vencer el tiempo.
 export const CHAT_FADE_OUT_MS = 700;
 
-const KIND_SETTING = { follow: 'showFollows', gift: 'showGifts', share: 'showShares', subscribe: 'showSubscribes', chest: 'showChests' };
+const KIND_SETTING = { follow: 'showFollows', gift: 'showGifts', share: 'showShares', subscribe: 'showSubscribes', chest: 'showChests', levelup: 'showLevelUps' };
 
 // Lo que se ve ahora: filtra por tipo y por tiempo, y corta al máximo
 // (quedan los más recientes). Lo vencido se queda mientras se desvanece.
@@ -43,7 +43,7 @@ export function visibleChatItems(items, settings, now) {
 
 // Las insignias de un usuario como íconos, en un orden fijo: rol (moderador),
 // membresía (club de fans, con su nivel), reconocimientos (top gifter,
-// donador, suscriptor) y al final las imágenes de TikTok que no son ninguno de
+// Superfan) y al final las imágenes de TikTok que no son ninguno de
 // esos (`others`, ver badgesFrom en backend/lib/chatOverlay.js). Solo lo que
 // TikTok manda: sin datos no hay insignia. Solo el club de fans lleva número
 // (pedido explícito); el resto es solo el ícono, con su nombre para lectores
@@ -58,7 +58,8 @@ export function chatBadgeIcons(badges) {
   if (badges.moderator) icons.push({ kind: 'moderator', label: 'Moderador' });
   if (badges.fanLevel > 0) icons.push({ kind: 'member', level: badges.fanLevel, elite: isEliteFan(badges), label: `Miembro nivel ${badges.fanLevel}` });
   if (badges.topGifterRank) icons.push({ kind: 'topGifter', rank: badges.topGifterRank, label: `Top ${badges.topGifterRank} en regalos` });
-  if (badges.gifterLevel > 0) icons.push({ kind: 'gifter', label: `Donador nivel ${badges.gifterLevel}` });
+  // El nivel de donador (gifterLevel) ya no se dibuja (pedido explícito), ni
+  // se reemplaza por otra insignia; el dato se sigue recibiendo igual.
   // Superfan: así llama TikTok hoy a quien está suscrito.
   if (badges.subscriber) icons.push({ kind: 'subscriber', label: 'Superfan' });
   for (const url of badges.others || []) icons.push({ kind: 'image', url, label: 'Insignia' });
@@ -87,4 +88,28 @@ export function chatHighlight(badges) {
 // muestra un 0 inventado).
 export function formatCoins(value) {
   return Number.isFinite(value) && value > 0 ? Math.round(value).toLocaleString('es-MX') : null;
+}
+
+// Destacado de una fila del chat (ver chatHighlight). Un mensaje de chat usa
+// las insignias de quien escribe. Una subida de nivel del club se destaca
+// (borde y brillo de nivel alto, combinado si es Superfan) solo si el nivel
+// NUEVO es mayor a 20; una subida común no lleva borde. Los demás eventos
+// conservan su marca de color. Con las insignias apagadas, nada.
+export function chatItemHighlight(item, settings = {}) {
+  if (!item || settings.showBadges === false) return null;
+  if (item.kind === 'chat') return chatHighlight(item.user?.badges);
+  if (item.kind === 'levelup') {
+    if (!((item.levelUp?.level || 0) > ELITE_FAN_LEVEL)) return null;
+    return item.user?.badges?.subscriber ? 'both' : 'elite';
+  }
+  return null;
+}
+
+// Lo que dice una subida de nivel del club de fans, con lo que se sabe. Al
+// pasar de 20, "alcanzó" (es un logro); el anterior va solo si se conoce.
+export function levelUpText({ level, previous } = {}) {
+  if (level > ELITE_FAN_LEVEL) {
+    return previous ? `alcanzó el nivel ${level} del club de fans (antes, ${previous})` : `alcanzó el nivel ${level} del club de fans`;
+  }
+  return previous ? `subió del nivel ${previous} al ${level} del club de fans` : `subió al nivel ${level} del club de fans`;
 }

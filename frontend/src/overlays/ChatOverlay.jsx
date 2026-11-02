@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { getUsernameOverride, resolveBackgroundStyle, overlayRootProps, labelProps, rowBorder } from '../overlayCustomization';
-import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, chatBadgeIcons, chatHighlight, formatCoins, visibleChatItems } from '../chatOverlayModel';
+import { CHAT_DEFAULT_SETTINGS, CHAT_FADE_OUT_MS as FADE_OUT_MS, chatBadgeIcons, chatItemHighlight, formatCoins, levelUpText, visibleChatItems } from '../chatOverlayModel';
 
 // CHAT EN VIVO (pestaña Chat de Eventos). Pedido explícito: que se vea y se
 // comporte como el chat de Social Stream Ninja -- lo más nuevo ARRIBA y lo
@@ -33,18 +33,12 @@ function PinIcon() {
 // color de siempre (fijo, no el del tema: así se reconocen de un vistazo).
 // Solo el de miembro lleva número: su nivel.
 const BADGE_PATHS = {
-  // Escudo con palomita.
-  moderator: 'M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3zm-1.2 13.6l5.6-5.6-1.4-1.4-4.2 4.2-2-2-1.4 1.4 3.4 3.4z',
   // Corazón (club de fans).
   member: 'M12 21s-7.5-4.6-9.6-9.2C1 8.6 3 5 6.6 5c2 0 3.4 1.1 4.4 2.5C12 6.1 13.4 5 15.4 5 19 5 21 8.6 19.6 11.8 17.5 16.4 12 21 12 21z',
   // Corona.
   topGifter: 'M3 7l4.5 4L12 4l4.5 7L21 7l-2 11H5L3 7zm2 13h14v2H5v-2z',
-  // Diamante (donador).
-  gifter: 'M7 3h10l4 6-9 12L3 9l4-6zm1.2 2L6 8.3h3.3L10.6 5H8.2zm5.2 0l1.3 3.3H18L15.8 5h-2.4zM6.4 10.3l4.4 6V10.3H6.4zm6.8 0v6l4.4-6h-4.4z',
-  // Estrella (suscriptor).
-  subscriber: 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9L12 2.5z',
 };
-const BADGE_COLORS = { moderator: '#34d399', member: '#fb7185', gifter: '#38bdf8', subscriber: '#e879f9' };
+const BADGE_COLORS = { member: '#fb7185' };
 const TOP_GIFTER_COLORS = { 1: '#facc15', 2: '#d1d5db', 3: '#d97706' };
 
 // Insignia de Superfan (diseño propio): un escudo con degradado violeta, rosa y
@@ -98,7 +92,32 @@ function EliteMemberBadge({ icon }) {
   );
 }
 
+// Insignia de moderador (diseño propio, de la misma familia que la de
+// Superfan): un hexágono con degradado verde y turquesa, el contorno blanco
+// fino y una llave inglesa blanca, la herramienta de quien cuida el chat. Sin
+// brillo: ese queda para Superfan y los niveles altos.
+const MODERATOR_HEXAGON = 'M12 1.6l8.8 5.1v10.6L12 22.4l-8.8-5.1V6.7L12 1.6z';
+const MODERATOR_WRENCH = 'M15.2 6.6a3.4 3.4 0 00-4.3 4.25l-4.25 4.25a1.25 1.25 0 001.77 1.77l4.25-4.25a3.4 3.4 0 004.25-4.3l-1.95 1.95-1.7-.35-.35-1.7 1.95-1.95a3.36 3.36 0 00-.37.35z';
+function ModeratorBadge({ label }) {
+  const id = useId().replace(/:/g, '');
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex flex-shrink-0 leading-none">
+      <svg viewBox="0 0 24 24" className="w-[1.15em] h-[1.15em]" aria-hidden="true">
+        <defs>
+          <linearGradient id={`md-g-${id}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#34d399" />
+            <stop offset="1" stopColor="#0891b2" />
+          </linearGradient>
+        </defs>
+        <path d={MODERATOR_HEXAGON} fill={`url(#md-g-${id})`} stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
+        <path d={MODERATOR_WRENCH} fill="#fff" />
+      </svg>
+    </span>
+  );
+}
+
 function BadgeIcon({ icon }) {
+  if (icon.kind === 'moderator') return <ModeratorBadge label={icon.label} />;
   if (icon.kind === 'subscriber') return <SuperfanBadge label={icon.label} />;
   if (icon.kind === 'member' && icon.elite) return <EliteMemberBadge icon={icon} />;
   if (icon.kind === 'image') {
@@ -258,6 +277,10 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
         <Coins value={item.gift?.coins} />
       </>
     );
+  } else if (item.kind === 'levelup') {
+    // Subida de nivel del club de fans (ver fansLevelUpItem en el backend).
+    accent = '#ff5c8a';
+    message = <><span className="inline-block align-[-0.15em] mr-[0.25em]" style={{ color: '#ff5c8a' }}><HeartIcon /></span><span className="tkc-chat-muted">{levelUpText(item.levelUp)}</span></>;
   } else if (item.kind === 'subscribe') {
     accent = '#a855f7';
     message = <span className="tkc-chat-muted">{subscribeText(item.subscribe)}</span>;
@@ -277,17 +300,18 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
   }
 
   // Borde que gira con brillo para los miembros de nivel alto del club de fans
-  // (y combinado si además son Superfan), solo en sus mensajes de chat: en
-  // los eventos (regalos, seguidores...) ya hay una marca de color a la
+  // (y combinado si además son Superfan): en sus mensajes de chat y en la
+  // subida de nivel que los lleva a más de 20 (ver chatItemHighlight). En los
+  // demás eventos (regalos, seguidores...) ya hay una marca de color a la
   // izquierda. Las insignias se ven en todos.
-  const highlight = item.kind === 'chat' && settings.showBadges !== false ? chatHighlight(item.user?.badges) : null;
+  const highlight = chatItemHighlight(item, settings);
   const glow = highlight === 'elite' || highlight === 'both';
 
   return (
     <div data-chat-row={item.id} data-highlight={highlight || undefined} style={fadeStyle} className="flex-shrink-0">
       <div
         className={`${animClass} ${bubbleClass} ${CHAT_LINE} rounded-2xl pl-[0.6em] pr-[0.6em] py-[0.4em] ${glow ? `tkc-chat-glow tkc-chat-glow-${highlight}` : ''}`}
-        style={{ ...rowBg, border: rowBorderStyle, ...(accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
+        style={{ ...rowBg, border: rowBorderStyle, ...(accent && !glow ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
       >
         {glow && <span className="tkc-chat-glow-ring" aria-hidden="true" />}
         {item.user

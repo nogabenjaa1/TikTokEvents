@@ -19,6 +19,7 @@ const {
     subscribeItem,
     superFanJoinItem,
     chestItem,
+    fansLevelUpItem,
 } = require('../chatOverlay');
 
 // Una misma suscripción puede llegar dos veces: como WebcastSubNotifyMessage y
@@ -27,6 +28,9 @@ const {
 const SUBSCRIBE_DEDUP_MS = 2 * 60 * 1000;
 // Cofres que ya se mostraron (TikTok puede volver a mandar el mismo).
 const SEEN_CHESTS_MAX = 200;
+// Nivel del club de fans visto por persona en este LIVE (para mostrar el
+// anterior en una subida y no repetirla). Acotado.
+const FAN_LEVELS_MAX = 5000;
 
 module.exports = {
     get chatRoom() {
@@ -41,6 +45,18 @@ module.exports = {
         this.chatPinTimer = null;
         this.chatRecentSubscribers = new Map();
         this.chatSeenChests = new Set();
+        this.chatFanLevels = new Map();
+    },
+
+    // El nivel del club de fans que el chat ya vio de cada persona (de sus
+    // insignias en mensajes y eventos, o de una subida).
+    noteChatFanLevel(item) {
+        const uid = item?.user?.uniqueId;
+        const level = item?.user?.badges?.fanLevel || 0;
+        if (!uid || level <= 0) return;
+        if ((this.chatFanLevels.get(uid) || 0) >= level) return;
+        if (!this.chatFanLevels.has(uid) && this.chatFanLevels.size >= FAN_LEVELS_MAX) this.chatFanLevels.delete(this.chatFanLevels.keys().next().value);
+        this.chatFanLevels.set(uid, level);
     },
 
     // ── Suscripciones, Superfans y cofres (ver lib/chatOverlay.js) ──
@@ -54,9 +70,24 @@ module.exports = {
 
     handleBarrageEvent(data) {
         const item = superFanJoinItem(data);
-        if (!item) return;
-        console.log(`[${this.logId}] [CHAT] Superfan nuevo (barrage) — @${item.user.uniqueId}`);
-        this.pushSubscribeItem(item);
+        if (item) {
+            console.log(`[${this.logId}] [CHAT] Superfan nuevo (barrage) — @${item.user.uniqueId}`);
+            this.pushSubscribeItem(item);
+            return;
+        }
+        this.handleFansLevelUp(data);
+    },
+
+    // Subida de nivel del club de fans. Una misma subida (o una vieja que llega
+    // tarde) no se repite: solo se muestra si el nivel es MAYOR que el último
+    // que el chat sabe de esa persona. Ese último también es el "anterior".
+    handleFansLevelUp(data) {
+        const probe = fansLevelUpItem(data);
+        if (!probe) return;
+        const known = this.chatFanLevels.get(probe.user.uniqueId) || 0;
+        console.log(`[${this.logId}] [CHAT] Subida de nivel del club — @${probe.user.uniqueId} nivel=${probe.levelUp.level} conocido=${known || '-'} → ${probe.levelUp.level > known ? 'mostrada' : 'repetida'}`);
+        if (probe.levelUp.level <= known) return;
+        this.pushChatItem(fansLevelUpItem(data, { previous: known }));
     },
 
     pushSubscribeItem(item) {
@@ -85,6 +116,7 @@ module.exports = {
     // reciente queda al final de `chatRecent`; el overlay decide el orden.
     pushChatItem(item) {
         if (!item) return null;
+        this.noteChatFanLevel(item);
         const entry = { id: ++this.chatItemCounter, at: Date.now(), ...item };
         this.chatRecent.push(entry);
         if (this.chatRecent.length > CHAT_RECENT_MAX) this.chatRecent.splice(0, this.chatRecent.length - CHAT_RECENT_MAX);
@@ -183,6 +215,9 @@ module.exports = {
             this.pushChatItem(chatMessageItem(vip, { rawComment: 'Así se ven los miembros de nivel alto que además son Superfan.' }));
             this.pushChatItem(subscribeItem({ ...vip, uniqueId: 'nueva_superfan', nickname: 'Nueva Superfan', teamMemberLevel: 3, messageType: 0, subMonth: '1', oldSubscribeStatus: 0 }));
             this.pushChatItem(chestItem({ display: 1, envelopeInfo: { envelopeId: '', sendUserName: 'Fan del cofre', diamondCount: 1000, peopleCount: 50 } }));
+            // Subidas de nivel del club: una común (5 → 6) y una a más de 20.
+            this.pushChatItem(fansLevelUpItem({ msgType: 10, uniqueId: 'fan_que_sube', nickname: 'Fan que sube', fansLevelParam: { currentGrade: 6 } }, { previous: 5 }));
+            this.pushChatItem(fansLevelUpItem({ msgType: 10, uniqueId: 'fan_de_nivel_alto', nickname: 'Fan de nivel alto', userSceneTypes: [4], fansLevelParam: { currentGrade: 21 } }, { previous: 20 }));
         });
 
         socket.on('clear_chat_overlay', () => {

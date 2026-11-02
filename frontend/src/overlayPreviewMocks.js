@@ -40,6 +40,9 @@ export function chatPreviewItems(now = Date.now()) {
     { id: 'p10', at: now - 600, kind: 'chat', user: user(11, { subscriber: true, fanLevel: 30 }), text: 'nivel 30 y Superfan', emotes: [] },
     { id: 'p11', at: now - 550, kind: 'subscribe', user: user(12), subscribe: { renewal: true, months: 3, auto: false, superfanJoin: false } },
     { id: 'p12', at: now - 520, kind: 'chest', user: user(13), chest: { id: 'c1', coins: 1000, people: 50, superfanBox: false } },
+    // Subidas de nivel del club: una común y una a más de 20 (con borde).
+    { id: 'p13', at: now - 510, kind: 'levelup', user: user(14, { fanLevel: 6 }), levelUp: { level: 6, previous: 5 } },
+    { id: 'p14', at: now - 505, kind: 'levelup', user: user(15, { fanLevel: 21, moderator: true }), levelUp: { level: 21, previous: 20 } },
     // Un sticker mandado solo: un mensaje más, como en TikTok.
     { id: 'p6', at: now - 500, kind: 'chat', user: user(6, { fanLevel: 3 }), text: '', parts: [{ type: 'emote', url: MOCK_STICKER }] },
   ];

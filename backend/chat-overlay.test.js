@@ -260,7 +260,7 @@ test('a pinned message is kept for overlays that open later, and an unpin or a n
   assert.equal(tenant.chatRecent.length, 0);
 });
 
-test('the panel test button shows its messages (one long with several badges, a high-level Superfan), a follow, a gift, a subscription and a chest, and cannot be spammed; overlays cannot use it', () => {
+test('the panel test button shows its messages (one long with several badges, a high-level Superfan), a follow, a gift, a subscription, a chest and two fan club level-ups, and cannot be spammed; overlays cannot use it', () => {
   const { tenant, emitted } = chatTenant();
   const overlay = fakeSocket({ authMethod: 'overlay', overlayScreen: 'chat' });
   tenant.registerChatOverlayHandlers(overlay);
@@ -270,7 +270,7 @@ test('the panel test button shows its messages (one long with several badges, a 
   tenant.registerChatOverlayHandlers(panel);
   panel.fire('chat_overlay_test');
   panel.fire('chat_overlay_test');
-  assert.deepEqual(emitted.filter((e) => e.name === 'chat_item').map((e) => e.payload.kind), ['chat', 'chat', 'follow', 'gift', 'chat', 'subscribe', 'chest']);
+  assert.deepEqual(emitted.filter((e) => e.name === 'chat_item').map((e) => e.payload.kind), ['chat', 'chat', 'follow', 'gift', 'chat', 'subscribe', 'chest', 'levelup', 'levelup']);
 });
 
 test('a read-only OBS overlay gets only the viewing part of the chat: it joins and receives, but has no controls', () => {

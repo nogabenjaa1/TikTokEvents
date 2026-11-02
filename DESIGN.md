@@ -415,11 +415,14 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 **Destacados y eventos del chat.**
 - **Nivel alto del club de fans (más de 20; el 20 no):** sus mensajes de chat llevan un borde de 2 px con un degradado rojo y rosa que gira, y un tono claro que da la vuelta como brillo (`.tkc-chat-glow-elite`). Su insignia de miembro pasa a un corazón con degradado y brillo.
 - **Superfan:** insignia propia (escudo violeta, rosa y dorado con un destello), con un brillo que cruza solo su forma (`.tkc-svg-shine`), y sin borde: así el borde sigue diciendo "nivel alto".
+- **Moderador:** insignia propia de la misma familia: un hexágono con degradado verde y turquesa, el mismo contorno blanco fino y una llave inglesa blanca. Sin brillo, que queda para Superfan y los niveles altos.
+- **Donador:** su nivel no se dibuja como insignia (decisión del dueño del producto) ni se reemplaza por otra. El dato se sigue recibiendo.
 - **Las dos cosas:** el borde combina rojo y rosa con el violeta y el dorado de Superfan (`.tkc-chat-glow-both`) y las dos insignias se ven.
 - **Rendimiento:** el borde es un solo elemento enmascarado que solo repinta el borde. Con "menos movimiento" en el sistema queda quieto.
 - **Eventos con su color a la izquierda:**
   - Suscripción (violeta): "se suscribió", "renovó su suscripción", los meses y la renovación automática, o "se hizo Superfan", solo con lo que manda TikTok.
   - Cofre (amarillo): quién lo colocó, sus monedas y para cuántas personas.
+  - Subida de nivel del club de fans (rosa): "subió al nivel 5", con el nivel anterior solo si el chat ya lo vio en este LIVE ("subió del nivel 11 al 12"). Al pasar de 20 dice "alcanzó el nivel 21" y lleva el mismo borde con brillo que los mensajes de nivel alto (combinado si es Superfan). Una misma subida no se repite.
 - **Regalos:** llevan su valor total con 🪙 ("×6 · 🪙 6"). Sin valor conocido no se muestra ninguno.
 
 **Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).

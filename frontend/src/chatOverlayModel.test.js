@@ -30,10 +30,9 @@ import { chatBadgeIcons } from './chatOverlayModel.js';
 
 test('insignias: íconos propios en un orden fijo, con el nivel solo en el de miembro', () => {
   const icons = chatBadgeIcons({ moderator: true, subscriber: true, topGifterRank: 2, fanLevel: 12, gifterLevel: 30, others: ['https://p16/otro.png'] });
-  assert.deepEqual(icons.map((i) => i.kind), ['moderator', 'member', 'topGifter', 'gifter', 'subscriber', 'image']);
+  assert.deepEqual(icons.map((i) => i.kind), ['moderator', 'member', 'topGifter', 'subscriber', 'image'], 'el donador (gifterLevel 30) ya no se dibuja');
   assert.equal(icons.find((i) => i.kind === 'member').level, 12);
   assert.equal(icons.find((i) => i.kind === 'topGifter').rank, 2);
-  assert.equal(icons.find((i) => i.kind === 'gifter').level, undefined, 'el donador no muestra número');
   assert.equal(icons.find((i) => i.kind === 'image').url, 'https://p16/otro.png');
   for (const icon of icons) assert.ok(icon.label, 'cada ícono tiene su nombre (lectores de pantalla)');
 });
@@ -101,4 +100,40 @@ test('suscripciones y cofres se pueden ocultar desde los ajustes', () => {
   assert.deepEqual(visibleItems(items, { ...settings, showSubscribes: false, showChests: false }, 2).map((i) => i.id), [3]);
   assert.equal(DEFAULTS.showSubscribes, true);
   assert.equal(DEFAULTS.showChests, true);
+});
+
+// ── Moderador, sin donador y subidas de nivel ──
+import { chatBadgeIcons as badgeIconsOf, chatItemHighlight, levelUpText } from './chatOverlayModel.js';
+
+test('insignias: el moderador tiene la suya y el donador ya no se dibuja', () => {
+  const icons = badgeIconsOf({ others: [], moderator: true, gifterLevel: 30, fanLevel: 3 });
+  assert.deepEqual(icons.map((i) => i.kind), ['moderator', 'member']);
+  assert.equal(icons[0].label, 'Moderador');
+  assert.equal(badgeIconsOf({ others: [], gifterLevel: 40 }).length, 0, 'solo donador: ninguna insignia, ni una de reemplazo');
+});
+
+test('destacado de un mensaje: chat con nivel alto, y subida de nivel solo si el nivel NUEVO es mayor a 20', () => {
+  const chat = (badges) => ({ kind: 'chat', user: { badges } });
+  const up = (level, badges = {}) => ({ kind: 'levelup', user: { badges: { fanLevel: level, ...badges } }, levelUp: { level, previous: null } });
+  assert.equal(chatItemHighlight(chat({ fanLevel: 25 })), 'elite', 'quien ya es de nivel alto conserva su borde');
+  assert.equal(chatItemHighlight(chat({ fanLevel: 25, subscriber: true })), 'both');
+  assert.equal(chatItemHighlight(up(20)), null, 'subir al 20 no lo activa');
+  assert.equal(chatItemHighlight(up(21)), 'elite');
+  assert.equal(chatItemHighlight(up(21, { subscriber: true })), 'both', 'Superfan que sube a más de 20');
+  assert.equal(chatItemHighlight(up(6, { subscriber: true })), null, 'subida común de un Superfan: sin borde');
+  assert.equal(chatItemHighlight({ kind: 'gift', user: { badges: { fanLevel: 30 } } }), null, 'los demás eventos conservan su marca de color');
+  assert.equal(chatItemHighlight(chat({ fanLevel: 25 }), { showBadges: false }), null, 'con las insignias apagadas tampoco');
+});
+
+test('texto de la subida: con el anterior si se sabe, y "alcanzó" al pasar de 20', () => {
+  assert.equal(levelUpText({ level: 5, previous: null }), 'subió al nivel 5 del club de fans');
+  assert.equal(levelUpText({ level: 12, previous: 11 }), 'subió del nivel 11 al 12 del club de fans');
+  assert.equal(levelUpText({ level: 21, previous: null }), 'alcanzó el nivel 21 del club de fans');
+  assert.equal(levelUpText({ level: 21, previous: 20 }), 'alcanzó el nivel 21 del club de fans (antes, 20)');
+});
+
+test('las subidas de nivel se pueden ocultar desde los ajustes', () => {
+  const items = [{ id: 1, kind: 'levelup', at: 1 }, { id: 2, kind: 'chat', at: 1 }];
+  assert.deepEqual(visibleItems(items, { ...DEFAULTS, fadeSeconds: 0, showLevelUps: false }, 2).map((i) => i.id), [2]);
+  assert.equal(DEFAULTS.showLevelUps, true);
 });

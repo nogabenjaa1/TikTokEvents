@@ -179,22 +179,27 @@ input[type=range]::-moz-range-thumb {
    "menos movimiento" de la vista previa (más abajo). */
 :root { --tkc-glow-dur: 3.8s; --tkc-shine-dur: 3s; }
 .tkc-chat-glow { position: relative; isolation: isolate; }
-/* El brillo es un pico BLANCO con un tramo sólido, sobre una base profunda
+/* El brillo es un pico con un tramo sólido, siempre en tonos rojizos y
+   púrpuras, nunca blanco (pedido del dueño: que se vea homogéneo): púrpura
+   sobre el rojo y rosa frambuesa sobre el violeta de Superfan, sobre una base profunda
    (más oscura cuanto más lejos del pico), para que contraste y se reconozca
    aunque el chat se esté moviendo; lo acompaña un halo (.tkc-chat-glow-halo)
    que recorre el borde con él. */
 .tkc-chat-glow-elite {
-  --tkc-glow-colors: #6d0b27, #9f1239 16%, #e11d48 30%, #ff6b93 37%, #ffffff 42% 46%, #ff6b93 51%, #e11d48 58%, #9f1239 72%, #881337 86%, #6d0b27;
+  --tkc-glow-colors: #6d0b27, #9f1239 16%, #e11d48 30%, #b0399f 36%, #b24dff 41% 47%, #b0399f 52%, #e11d48 58%, #9f1239 72%, #881337 86%, #6d0b27;
+  --tkc-glow-peak: 178, 77, 255;
   box-shadow: 0 0 14px -4px rgba(255, 40, 90, 0.6) !important;
 }
 /* Superfan: su propio borde, violeta con un toque dorado (los colores de su
-   insignia), con el mismo pico blanco. */
+   insignia), con un pico rosa frambuesa (un púrpura se perdería en el violeta). */
 .tkc-chat-glow-superfan {
-  --tkc-glow-colors: #3b0764, #6b21a8 16%, #9333ea 30%, #d8a4ff 37%, #ffffff 42% 46%, #d8a4ff 51%, #9333ea 58%, #6b21a8 70%, #b45309 84%, #3b0764;
+  --tkc-glow-colors: #3b0764, #6b21a8 16%, #9333ea 30%, #d0309b 36%, #ff3d8b 41% 47%, #d0309b 52%, #9333ea 58%, #6b21a8 70%, #b45309 84%, #3b0764;
+  --tkc-glow-peak: 255, 61, 139;
   box-shadow: 0 0 14px -4px rgba(168, 85, 247, 0.6) !important;
 }
 .tkc-chat-glow-both {
-  --tkc-glow-colors: #6d0b27, #be123c 16%, #ff4d7d 30%, #ffb3c8 37%, #ffffff 42% 46%, #e9b5ff 51%, #a855f7 58%, #7e22ce 68%, #d97706 82%, #9f1239 92%, #6d0b27;
+  --tkc-glow-colors: #6d0b27, #be123c 16%, #e11d48 30%, #b0399f 36%, #b24dff 41% 47%, #9d3cf0 52%, #7e22ce 64%, #d97706 80%, #9f1239 92%, #6d0b27;
+  --tkc-glow-peak: 178, 77, 255;
   box-shadow: 0 0 14px -4px rgba(214, 70, 200, 0.6) !important;
 }
 /* 3px de borde, por DENTRO del contorno de la fila: las filas llegan justo al
@@ -213,7 +218,7 @@ input[type=range]::-moz-range-thumb {
    del borde), difuminado y un poco más ancho que el borde, girando a la par. */
 .tkc-chat-glow-halo {
   position: absolute; inset: -3px; z-index: 2; border-radius: inherit; padding: 6px; pointer-events: none;
-  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 35%, rgba(255, 255, 255, 0.7) 40%, #fff 43% 45%, rgba(255, 255, 255, 0.7) 48%, transparent 53% 100%);
+  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 35%, rgba(var(--tkc-glow-peak, 178, 77, 255), 0.7) 40%, rgb(var(--tkc-glow-peak, 178, 77, 255)) 43% 45%, rgba(var(--tkc-glow-peak, 178, 77, 255), 0.7) 48%, transparent 53% 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);

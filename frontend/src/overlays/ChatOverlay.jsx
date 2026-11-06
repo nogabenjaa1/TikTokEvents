@@ -42,19 +42,23 @@ const BADGE_COLORS = { member: '#fb7185' };
 const TOP_GIFTER_COLORS = { 1: '#facc15', 2: '#d1d5db', 3: '#d97706' };
 
 // El brillo de una insignia: una franja inclinada que cruza solo su forma
-// (recortada con `clip`), blanca al centro y que se desvanece a los lados, para
-// que contraste con el degradado de la insignia (ver .tkc-svg-shine).
-function ShineBand({ id, clip }) {
+// (recortada con `clip`), sólida al centro y que se desvanece a los lados (ver
+// .tkc-svg-shine). Del mismo tono que el destello de su borde, nunca blanca
+// (pedido del dueño: brillo homogéneo, rojizo y púrpura): púrpura sobre el
+// corazón rojo y rosa frambuesa sobre el escudo violeta de Superfan.
+const SHINE_ELITE = '#b24dff';
+const SHINE_SUPERFAN = '#ff3d8b';
+function ShineBand({ id, clip, color }) {
   return (
     <>
       <defs>
         <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset="0.25" stopColor="#fff" stopOpacity="0.5" />
-          <stop offset="0.4" stopColor="#fff" stopOpacity="1" />
-          <stop offset="0.6" stopColor="#fff" stopOpacity="1" />
-          <stop offset="0.75" stopColor="#fff" stopOpacity="0.5" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0" stopColor={color} stopOpacity="0" />
+          <stop offset="0.25" stopColor={color} stopOpacity="0.5" />
+          <stop offset="0.4" stopColor={color} stopOpacity="1" />
+          <stop offset="0.6" stopColor={color} stopOpacity="1" />
+          <stop offset="0.75" stopColor={color} stopOpacity="0.5" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
       <g clipPath={`url(#${clip})`}>
@@ -87,7 +91,7 @@ function SuperfanBadge({ label }) {
         </defs>
         <path d={SUPERFAN_SHIELD} fill={`url(#sf-g-${id})`} stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
         <path d={SUPERFAN_SPARK} fill="#fff" />
-        <ShineBand id={`sf-${id}`} clip={`sf-c-${id}`} />
+        <ShineBand id={`sf-${id}`} clip={`sf-c-${id}`} color={SHINE_SUPERFAN} />
       </svg>
     </span>
   );
@@ -110,7 +114,7 @@ function EliteMemberBadge({ icon }) {
           <clipPath id={`fm-c-${id}`}><path d={heart} /></clipPath>
         </defs>
         <path d={heart} fill={`url(#fm-g-${id})`} stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
-        <ShineBand id={`fm-${id}`} clip={`fm-c-${id}`} />
+        <ShineBand id={`fm-${id}`} clip={`fm-c-${id}`} color={SHINE_ELITE} />
       </svg>
       <span className="text-[0.72em] font-black tabular-nums" aria-hidden="true">{icon.level}</span>
     </span>

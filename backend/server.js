@@ -157,13 +157,14 @@ function getStripeClient() {
     return new Stripe(secretKey);
 }
 
-// El formulario de Checkout (ui_mode 'form') es una vista previa de Stripe
-// que exige esta versión de la API con su bandera beta. Se pasa SOLO en las
-// llamadas de Checkout Sessions (opción por petición), no al crear el
-// cliente: el resto del backend (conciliación de pagos) sigue en la versión
-// estable del SDK. Lo usan el cobro (/api/payments/stripe/checkout-session)
-// y la verificación de tarjeta de la prueba gratis.
-const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-03-25.dahlia; custom_checkout_payment_form_preview=v1';
+// Versión de la API para el formulario de Checkout (ui_mode 'form'), la
+// misma que muestra el Dashboard de Stripe para esta integración. Desde
+// Endive el formulario ya no es vista previa: sin bandera beta. Se pasa
+// SOLO en las llamadas de Checkout Sessions (opción por petición), no al
+// crear el cliente: el resto del backend (clientes, conciliación de pagos)
+// sigue en la versión del SDK. Ojo con Endive: payment_method_types en una
+// Checkout Session devuelve 400 (va allowed_payment_method_types).
+const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-10-28.endive';
 const STRIPE_CHECKOUT_INTEGRATION_ID = 'custom_embedded_web_0001';
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
@@ -521,7 +522,10 @@ app.post('/api/free-trial/checkout-session', freeTrialLimiter, async (req, res) 
             ui_mode: 'form',
             mode: 'setup',
             currency: 'mxn',
-            payment_method_types: ['card'],
+            // Solo tarjeta a propósito: con Link o una billetera no siempre
+            // llega card.fingerprint, y sin él la misma tarjeta podría pedir
+            // varias pruebas gratis (ver /api/free-trial).
+            allowed_payment_method_types: ['card'],
             billing_address_collection: 'auto',
             phone_number_collection: { enabled: false },
             integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
@@ -2323,8 +2327,6 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             // Valores configurados en Checkout Studio de Stripe.
             ui_mode: 'form',
             billing_address_collection: 'auto',
-            phone_number_collection: { enabled: false },
-            automatic_tax: { enabled: false },
             submit_type: 'auto',
             // Nombre dentro del formulario de Stripe (opcional, como quedó en
             // Checkout Studio); el correo lo pide su sección de Contacto.
@@ -2423,16 +2425,35 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
     // webhook de MP -- Stripe reintenta si no contesta rápido.
     res.sendStatus(200);
 
-    if (event.type !== 'payment_intent.succeeded') return;
+    // Se aceptan los dos caminos para no depender de qué eventos se marquen
+    // en el destino del webhook: checkout.session.completed (el que el
+    // Dashboard recomienda; async_payment_succeeded es su versión para
+    // métodos que se confirman después) y payment_intent.succeeded. Los dos
+    // llevan la misma metadata y se aplican con el id del PaymentIntent, así
+    // que si llegan ambos el UNIQUE de stripe_payment_id deja uno solo.
+    let source = null;
+    let stripePaymentId = null;
+    if (event.type === 'payment_intent.succeeded') {
+        source = event.data.object;
+        stripePaymentId = source.id;
+    } else if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+        const session = event.data.object;
+        // Las sesiones de la prueba gratis (modo setup) no cobran nada, y una
+        // sesión completada con un pago aún pendiente se aplica cuando llegue
+        // async_payment_succeeded.
+        if (session.mode !== 'payment' || session.payment_status !== 'paid') return;
+        source = session;
+        stripePaymentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+    }
+    if (!source || !stripePaymentId) return;
 
     try {
-        const intent = event.data.object;
-        const licenseId = intent.metadata?.licenseId;
-        const planType = intent.metadata?.planType || undefined;
-        const diceTier = intent.metadata?.diceTier || undefined;
-        const spotifyAddon = intent.metadata?.spotifyAddon === 'true';
+        const licenseId = source.metadata?.licenseId;
+        const planType = source.metadata?.planType || undefined;
+        const diceTier = source.metadata?.diceTier || undefined;
+        const spotifyAddon = source.metadata?.spotifyAddon === 'true';
         if (!licenseId) return;
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId: intent.id });
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId });
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }

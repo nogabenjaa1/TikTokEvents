@@ -28,20 +28,18 @@ Vienen de Checkout Studio y ya están puestos tal cual.
 
 **Archivos:**
 - [backend/server.js](backend/server.js) (sesión)
-- [frontend/src/StripePaymentForm.jsx](frontend/src/StripePaymentForm.jsx) (apariencia y beta del navegador)
+- [frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js) (apariencia y carga de Stripe.js)
 
 | Parámetro | Valor |
 |-----------|-------|
 | ui_mode | `form` (el SDK `stripe` del backend es 22.6.2, ≥ 21) |
 | billing_address_collection | `auto` |
-| phone_number_collection | `{ enabled: false }` |
-| automatic_tax | `{ enabled: false }` |
 | submit_type | `auto` |
 | name_collection | `{ individual: { enabled: true, optional: true } }` |
 | saved_payment_method_options | `{ payment_method_save: 'enabled' }` |
 | integration_identifier | `custom_embedded_web_0001` |
-| Versión de API (solo en las llamadas de Checkout Sessions, cobro y verificación) | `2026-03-25.dahlia; custom_checkout_payment_form_preview=v1` |
-| Beta en el navegador | `custom_checkout_payment_form_1` |
+| Versión de API (solo en las llamadas de Checkout Sessions, cobro y verificación) | `2026-10-28.endive`, la que muestra el Dashboard. Sin bandera beta: el formulario ya no es vista previa |
+| Stripe.js | `js.stripe.com/dahlia` vía `@stripe/stripe-js` 9, igual que el código del Dashboard, sin `betas` |
 | Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio |
 
 Además, por cómo funciona el sitio:
@@ -62,7 +60,7 @@ Además, por cómo funciona el sitio:
 | ui_mode | `form` |
 | mode | `setup` (no cobra nada) |
 | currency | `mxn` |
-| payment_method_types | `['card']` (se queda así a propósito: con Link o una billetera no siempre llega el fingerprint de la tarjeta, y sin él la misma tarjeta podría pedir varias pruebas gratis) |
+| allowed_payment_method_types | `['card']` (en Endive `payment_method_types` da error 400; se queda solo tarjeta a propósito: con Link o una billetera no siempre llega el fingerprint de la tarjeta, y sin él la misma tarjeta podría pedir varias pruebas gratis) |
 | billing_address_collection | `auto` |
 | phone_number_collection | `{ enabled: false }` |
 | integration_identifier | `custom_embedded_web_0001` |
@@ -80,14 +78,14 @@ En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_meth
 0. **Comprueba que tu cuenta acepte el modo setup del formulario** antes de subir este cambio. El modo payment ya está comprobado. Cambia `TU_LLAVE` por tu llave secreta; si la respuesta trae `"id": "cs_..."`, funciona:
 
    ```bash
-   curl https://api.stripe.com/v1/checkout/sessions -u "TU_LLAVE:" -H "Stripe-Version: 2026-03-25.dahlia; custom_checkout_payment_form_preview=v1" -d ui_mode=form -d mode=setup -d currency=mxn -d "payment_method_types[]=card" -d integration_identifier=custom_embedded_web_0001 -d "return_url=https://benjaapis.dev/?s={CHECKOUT_SESSION_ID}"
+   curl https://api.stripe.com/v1/checkout/sessions -u "TU_LLAVE:" -H "Stripe-Version: 2026-10-28.endive" -d ui_mode=form -d mode=setup -d currency=mxn -d "allowed_payment_method_types[]=card" -d integration_identifier=custom_embedded_web_0001 -d "return_url=https://benjaapis.dev/?s={CHECKOUT_SESSION_ID}"
    ```
 
-1. **Beta del formulario de Checkout:** tu cuenta ya la tiene (el formulario carga en Membresía). Si algún día Stripe rechaza la sesión, el panel muestra "No se pudo iniciar el pago"; se resuelve con https://support.stripe.com.
+1. **Formulario de Checkout:** ya no es beta desde Endive. Si algún día Stripe rechaza la sesión, el panel muestra "No se pudo iniciar el pago" y el motivo queda en los logs de Render (`[Stripe] Error creando Checkout Session`).
 2. **Variables de entorno.** Son las mismas de antes:
    - Render (backend): `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`.
    - Vercel (frontend): `VITE_STRIPE_PUBLISHABLE_KEY`, con el prefijo `VITE_` porque la lee el navegador.
-3. **Webhook.** No hay que cambiarlo: sigue siendo `https://TU_BACKEND/api/payments/stripe/webhook` con el evento `payment_intent.succeeded`.
+3. **Webhook.** La dirección sigue siendo `https://TU_BACKEND/api/payments/stripe/webhook`. Marca al menos `checkout.session.completed` (el recomendado) o `payment_intent.succeeded`; el servidor acepta los dos, más `checkout.session.async_payment_succeeded`, y nunca aplica dos veces el mismo pago. `invoice.*` y `customer.subscription.*` no hacen falta: no hay suscripciones.
 4. **Prueba en modo de prueba** antes de usar llaves `sk_live_`/`pk_live_`. Usa estas tarjetas:
    - `4242 4242 4242 4242`: aprobada.
    - `4000 0025 0000 3155`: pide 3DS.
@@ -101,7 +99,7 @@ En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_meth
 2. El navegador carga Stripe.js (`js.stripe.com/dahlia`, nunca empaquetado) solo en ese momento y monta el formulario en `#checkout-form`.
 3. Al pagar, `actions.confirm()` resuelve el cobro en el navegador; si el banco pide 3DS, aparece en un modal de Stripe.
 4. `POST /api/payments/stripe/confirm` vuelve a pedir la sesión a Stripe, comprueba que sea de esa licencia y aplica la compra con el ID del PaymentIntent.
-5. Si el navegador se cierra antes, el webhook `payment_intent.succeeded` aplica la compra. Nunca se cobra ni se aplica dos veces: los pagos tienen un UNIQUE por ese ID.
+5. Si el navegador se cierra antes, el webhook (`checkout.session.completed` o `payment_intent.succeeded`) aplica la compra. Nunca se cobra ni se aplica dos veces: los pagos tienen un UNIQUE por el ID del PaymentIntent.
 
 Cambiaron `backend/server.js` (rutas de Stripe), `frontend/src/StripePaymentForm.jsx` y `frontend/src/CardVerifyForm.jsx`. Lo común quedó en `frontend/src/stripeCheckout.js`. Se quitaron las rutas viejas `/api/payments/stripe/intent` y `/api/free-trial/setup-intent`, y la dependencia `@stripe/react-stripe-js`, que ya no se usa.
 

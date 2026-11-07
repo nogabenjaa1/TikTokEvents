@@ -776,7 +776,9 @@ app.post('/api/licenses/:id/regenerate-key', auth.requireAuth, auth.requireAdmin
 app.get('/api/licenses/:id/key', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
-    if (row.is_admin) {
+    // La propia sí: el admin puede ver SU clave (para recuperarla si la
+    // perdió), nunca la de otra licencia admin.
+    if (row.is_admin && row.id !== req.license.id) {
         return res.status(403).json({ success: false, error: 'La clave de una licencia admin no se muestra aquí.' });
     }
     let key;
@@ -790,12 +792,32 @@ app.get('/api/licenses/:id/key', auth.requireAuth, auth.requireAdmin, adminLimit
         return res.status(404).json({
             success: false,
             legacy: true,
-            error: 'Esta clave es de antes de que se guardaran las claves y no se puede recuperar. Si la regeneras, el streamer tendrá que volver a copiar sus enlaces de overlay.',
+            error: 'Esta clave es de antes de que se guardaran las claves y no se puede recuperar. Regenérala: sus enlaces de overlay siguen funcionando.',
         });
     }
     audit(req, 'license.view_key', { id: row.id, label: row.username });
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, key });
+});
+
+// El admin regenera SU PROPIA clave (la de cualquier otra licencia admin sigue
+// fuera, ver regenerate-key): para quien la perdió y sigue con la sesión
+// abierta. La sesión de ESTA pestaña sigue valiendo (se le devuelve su mismo
+// session_id) y las demás se cierran, como al regenerar cualquier clave. Los
+// enlaces de overlay no cambian (ver overlay_key_hash). La clave nueva queda
+// cifrada, así que después también se puede ver con "Ver clave".
+app.post('/api/auth/regenerate-own-key', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = req.license;
+    const label = row.is_admin ? 'admin' : (PLAN_KEY_LABELS[row.license_type] || String(row.license_type).toLowerCase());
+    const key = auth.generateLabeledKey(row.username, label);
+    await db.setLicenseKey(row.id, storedKeyFields(key));
+    if (req.sessionId) await db.setSession(row.id, req.sessionId);
+    await kickOtherDevices(row.id, req.sessionId);
+    const updated = await db.findById(row.id);
+    console.log(`[Licencias] ${row.username} regeneró su propia clave.`);
+    audit(req, 'license.regenerate_own_key', { id: row.id, label: row.username });
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, key, license: sessionLicense(updated) });
 });
 
 app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {

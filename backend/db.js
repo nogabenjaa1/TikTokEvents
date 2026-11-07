@@ -487,6 +487,12 @@ const ready = pool.query(`
   // iniciar sesión. Las claves creadas antes de esta columna no se pueden
   // recuperar (de ellas solo existe el hash): quedan en NULL.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS key_encrypted TEXT`))
+  // El hash con el que se firman los enlaces de overlay (ver
+  // auth.overlayTokenFor). Mientras está vacío se usa key_hash; la primera vez
+  // que la clave cambia (regenerar, o una compra que la rota) se congela aquí el
+  // hash anterior, así los enlaces que ya están en OBS siguen funcionando con la
+  // clave nueva. Para invalidarlos está "Renovar enlaces" (overlay_epoch).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_key_hash TEXT`))
   // Analítica propia, sin cookies (ver lib/analytics.js): visitas por día y
   // página, de dónde llegan, y una huella diaria anónima por visitante (un
   // hash que cambia cada día; nunca la IP) solo para contar visitantes únicos.
@@ -531,7 +537,7 @@ async function insertLicense({ id, keyHash, keyPrefix, keyEncrypted = null, pend
 // el id, el plan y los ajustes siguen igual.
 async function setLicenseKey(id, { keyHash, keyPrefix, keyEncrypted = null }) {
     await ready;
-    await pool.query('UPDATE licenses SET key_hash = $1, key_prefix = $2, key_encrypted = $3, session_id = NULL, pending_key_reveal = NULL WHERE id = $4', [keyHash, keyPrefix, keyEncrypted, id]);
+    await pool.query('UPDATE licenses SET overlay_key_hash = COALESCE(overlay_key_hash, key_hash), key_hash = $1, key_prefix = $2, key_encrypted = $3, session_id = NULL, pending_key_reveal = NULL WHERE id = $4', [keyHash, keyPrefix, keyEncrypted, id]);
     return findById(id);
 }
 
@@ -565,6 +571,7 @@ const LICENSE_CORE_COLUMNS = [
     'last_active_at', 'session_id', 'multi_device',
     'trial_alias', 'trial_connected_username', 'dice_tier', 'pending_key_reveal',
     'dice_win_bonus_unlocked', 'trial_card_fingerprint', 'lifetime_at', 'spotify_addon', 'overlay_epoch',
+    'overlay_key_hash',
 ].join(', ');
 
 async function findByKeyHash(keyHash) {
@@ -1090,6 +1097,9 @@ async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddo
         sets.push(`spotify_addon = $${params.length}`);
     }
     if (keyHash !== undefined) {
+        // Dentro del UPDATE, key_hash todavía es el anterior: los enlaces de
+        // overlay quedan atados a él (ver overlay_key_hash).
+        sets.push('overlay_key_hash = COALESCE(overlay_key_hash, key_hash)');
         params.push(keyHash);
         sets.push(`key_hash = $${params.length}`);
         params.push(keyPrefix);

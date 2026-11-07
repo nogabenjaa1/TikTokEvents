@@ -60,6 +60,7 @@ const ACTION_LABELS = {
   'license.create': 'Creó una licencia',
   'license.regenerate_key': 'Regeneró la clave',
   'license.view_key': 'Vio la clave',
+  'license.regenerate_own_key': 'Regeneró su propia clave',
   'license.revoke': 'Revocó la licencia',
   'license.multi_device': 'Cambió multi-dispositivo',
   'license.win_bonus': 'Cambió el Win Bonus de Color Says',

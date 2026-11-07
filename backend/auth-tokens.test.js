@@ -99,7 +99,7 @@ test('a valid overlay token resolves to its license, and anything altered does n
     }
 });
 
-test('an overlay token stops working when the license is revoked or expired, or its key is regenerated', async () => {
+test('an overlay token stops working when the license is revoked or expired', async () => {
     const row = seed(makeRow({ id: 'lic-life', key_hash: 'k1' }));
     const token = auth.overlayTokenFor(row);
     assert.ok(await auth.resolveFromOverlayToken(token));
@@ -107,10 +107,27 @@ test('an overlay token stops working when the license is revoked or expired, or 
     assert.equal(await auth.resolveFromOverlayToken(token), null, 'revoked');
     rows.set(row.id, { ...row, expires_at: Date.now() - 1000 });
     assert.equal(await auth.resolveFromOverlayToken(token), null, 'expired');
-    rows.set(row.id, { ...row, key_hash: 'k2' });
-    assert.equal(await auth.resolveFromOverlayToken(token), null, 'key regenerated');
     rows.set(row.id, row);
     assert.ok(await auth.resolveFromOverlayToken(token), 'valid again once restored');
+});
+
+test('the overlay links survive a new key: the token stays tied to the first key hash, and only renewing the links changes it', async () => {
+    // What db.setLicenseKey / applyPurchase leave behind when the key changes: the old hash frozen in overlay_key_hash.
+    const row = seed(makeRow({ id: 'lic-keep', key_hash: 'k1' }));
+    const token = auth.overlayTokenFor(row);
+    const regenerated = { ...row, key_hash: 'k2', overlay_key_hash: 'k1' };
+    rows.set(row.id, regenerated);
+    assert.equal(auth.overlayTokenFor(regenerated), token, 'same link after regenerating the key');
+    assert.ok(await auth.resolveFromOverlayToken(token), 'and OBS keeps connecting with it');
+    const twice = { ...regenerated, key_hash: 'k3' };
+    rows.set(row.id, twice);
+    assert.equal(auth.overlayTokenFor(twice), token, 'and after regenerating it again');
+    const renewed = { ...twice, overlay_epoch: 1 };
+    rows.set(row.id, renewed);
+    assert.equal(await auth.resolveFromOverlayToken(token), null, 'renewing the links is what invalidates the old one');
+    assert.ok(await auth.resolveFromOverlayToken(auth.overlayTokenFor(renewed)));
+    // A license whose key never changed keeps the link it always had (no overlay_key_hash yet).
+    assert.equal(auth.overlayTokenFor({ ...row, overlay_key_hash: null }), token);
 });
 
 test('the socket handshake marks the kind of connection: session, overlay token, or the old raw key', async () => {

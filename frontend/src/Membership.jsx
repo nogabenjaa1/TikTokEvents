@@ -381,9 +381,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           la vieja deja de servir. */}
       {revealedKey && (
         <div className="theme-surface theme-surface-featured w-full max-w-3xl p-4 flex flex-col gap-2">
-          <p className="theme-label tkc-label">Tu clave cambió — actualiza tu overlay de OBS</p>
+          <p className="theme-label tkc-label">Tu clave cambió: guárdala</p>
           <p className="tkc-hint">
-            Tu plan nuevo necesitó una clave nueva. Cópiala y reemplaza la key en la URL del overlay que tengas guardada en OBS.
+            Tu plan nuevo viene con una clave nueva; entra con ella desde ahora. Tus enlaces de overlay siguen funcionando, salvo los muy antiguos que llevan la clave dentro: si alguno deja de conectar, cópialo de nuevo desde Overlays.
           </p>
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs break-all select-all">{revealedKey}</code>

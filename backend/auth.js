@@ -140,10 +140,10 @@ async function resolveFromRawKey(key) {
 // compartida). Si llevara la clave de licencia, ver el enlace sería poder
 // iniciar sesión como el streamer. Este token, en cambio, solo abre el socket
 // del overlay —que únicamente recibe— y no sirve para iniciar sesión. Se
-// deriva de la licencia y de su clave actual, así que regenerar la clave (o
-// una compra que la rota) invalida los enlaces anteriores. El streamer también
-// puede renovar SOLO sus enlaces de overlay sin tocar su clave: cada renovación
-// suma uno a `overlay_epoch` (ver /api/auth/rotate-overlay-key).
+// deriva de la licencia y del hash de su PRIMERA clave (overlay_key_hash, ver
+// db.js): regenerar la clave o una compra que la rota ya no rompe los enlaces
+// que están en OBS. Para invalidarlos, el streamer renueva SOLO sus enlaces:
+// cada renovación suma uno a `overlay_epoch` (ver /api/auth/rotate-overlay-key).
 const OVERLAY_TOKEN_PREFIX = 'ovl.';
 const OVERLAY_TOKEN_RE = /^ovl\.([\w-]{1,64})\.([A-Za-z0-9_-]{32})$/;
 
@@ -151,7 +151,8 @@ function overlayTokenFor(row) {
     // Época 0 (nunca renovado) no la incluye: así los enlaces que ya se copiaron a
     // OBS antes de existir la renovación siguen valiendo.
     const epoch = Number(row.overlay_epoch) || 0;
-    const material = epoch > 0 ? `overlay:${row.id}:${row.key_hash}:${epoch}` : `overlay:${row.id}:${row.key_hash}`;
+    const keyHash = row.overlay_key_hash || row.key_hash;
+    const material = epoch > 0 ? `overlay:${row.id}:${keyHash}:${epoch}` : `overlay:${row.id}:${keyHash}`;
     const mac = crypto.createHmac('sha256', KEY_HASH_SECRET).update(material).digest('base64url').slice(0, 32);
     return `${OVERLAY_TOKEN_PREFIX}${row.id}.${mac}`;
 }
@@ -174,7 +175,7 @@ async function requireAuth(req, res, next) {
     if (!token) return res.status(401).json({ success: false, error: 'No autenticado' });
 
     try {
-        const { row, reason } = await checkTokenStatus(token);
+        const { row, reason, sessionId } = await checkTokenStatus(token);
         if (!row) {
             // "session_replaced" cubre tanto un logout propio como que la
             // licencia se usó desde otro dispositivo — no sabemos cuál sin
@@ -186,6 +187,7 @@ async function requireAuth(req, res, next) {
         }
         req.license = row;
         req.isAdmin = !!row.is_admin;
+        req.sessionId = sessionId;
         next();
     } catch {
         res.status(401).json({ success: false, error: 'Token inválido' });

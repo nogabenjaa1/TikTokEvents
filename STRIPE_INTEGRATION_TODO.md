@@ -5,7 +5,7 @@ Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session 
 - **Cobro** de planes y addons: sesión en modo `payment`.
 - **Verificación de tarjeta de la prueba gratis**: sesión en modo `setup`, sin cobro.
 
-El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía ya no tiene campos propios de correo, nombre ni dirección; solo queda la casilla de la política de reembolsos, que hay que marcar para que aparezca el formulario. MercadoPago ya no se ofrece en Membresía.
+El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía ya no tiene campos propios de correo, nombre ni dirección; solo queda la casilla de la política de reembolsos, que hay que marcar para que aparezca el formulario. MercadoPago se quitó del sitio; los pagos viejos de MercadoPago se siguen viendo en Sistema y Estadísticas.
 
 ## Valores por reemplazar
 

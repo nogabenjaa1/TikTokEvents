@@ -30,7 +30,7 @@ const ytDlpWrap = new YTDlpWrap(YTDLP_BIN_PATH);
 // hardcodeado -- ese default ya había quedado expuesto en el historial de
 // ese OTRO repo antes de que lo tocáramos; acá, en un archivo nuevo, no hay
 // ninguna razón para repetir el mismo error. Falla claro si falta, mismo
-// criterio que getMpAccessToken() en server.js.
+// criterio que getStripeClient() en server.js.
 //
 // Varias proxies (pedido del dueño): YTDL_PROXY acepta una lista separada por
 // comas y cada intento usa una al azar, así la carga se reparte y un reintento

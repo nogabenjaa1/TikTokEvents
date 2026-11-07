@@ -59,7 +59,7 @@ function adminRoutes({ existing = {} } = {}) {
     console: { log: (...args) => events.logs.push(args.join(' ')) },
   });
   const run = (from, to) => vm.runInContext(source.slice(source.indexOf(from), source.indexOf(to)), context);
-  run('const VALID_LICENSE_TYPES', '// Formato de email valido'); // the license types, Color Says levels and key labels
+  run('const VALID_LICENSE_TYPES', '// No bloqueante a propósito: si todavía no se'); // the license types, Color Says levels and key labels
   run("app.post('/api/licenses', auth.requireAuth", "app.post('/api/licenses/:id/revoke'"); // create + regenerate
   run("app.delete('/api/licenses/:id', auth.requireAuth", '// PRECIOS DE LICENCIAS'); // delete + bulk delete
   const call = async (path, { body = {}, params = {}, license = { username: 'notbenjaa1' } } = {}) => {

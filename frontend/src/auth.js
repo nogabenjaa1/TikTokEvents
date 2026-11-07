@@ -144,9 +144,9 @@ export function authHeaders() {
 // Re-lee el estado de la licencia del backend y lo pisa sobre la sesión
 // guardada (mismo patrón que Login.jsx: token/licenseKey se conservan, el
 // resto viene de `license`). Se usa después de una compra — el webhook de
-// MercadoPago actualiza la licencia en la DB, pero el token/sesión local
+// Stripe actualiza la licencia en la DB, pero el token/sesión local
 // sigue teniendo los valores viejos hasta que se vuelve a pedir esto.
-// Si `data.newKey` viene presente (el webhook de MercadoPago rotó la key al
+// Si `data.newKey` viene presente (un pago rotó la key al
 // aplicar una compra, ver backend/server.js), se guarda como el nuevo
 // `licenseKey` de la sesión (así la URL del overlay se arma con la key
 // correcta de ahí en más) y se devuelve aparte en `revealedKey` para que el

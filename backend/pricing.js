@@ -1,9 +1,8 @@
 // ==========================================
-// PRECIOS: unica fuente de verdad para lo que se cobra por MercadoPago.
+// PRECIOS: unica fuente de verdad para lo que se cobra con Stripe.
 // El cliente manda SOLO que plan/addon quiere (planType/diceTier); el monto
 // se resuelve siempre aca -- nunca se confia en un precio que mande el front.
-// Montos en centavos de MXN (moneda de la cuenta de MercadoPago del dueño
-// del producto). El USD que se muestra en la UI es solo referencia visual,
+// Montos en centavos de MXN (la moneda en que se cobra). El USD que se muestra en la UI es solo referencia visual,
 // no se cobra en esa moneda.
 // ==========================================
 const db = require('./db');

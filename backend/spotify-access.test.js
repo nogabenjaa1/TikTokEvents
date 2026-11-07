@@ -385,7 +385,7 @@ test('the add-on price is separate from the plans: it adds to a purchase but can
 
 // ── Purchases (server.js helpers, run against stubs) ──
 function purchaseContext() {
-  const events = { payments: [], stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
+  const events = { stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const context = vm.createContext({
     pushLicenseState: () => {}, // avisar al panel del streamer tiene su propia prueba
@@ -398,7 +398,6 @@ function purchaseContext() {
       keyPrefix: (key) => key.slice(0, 4),
     },
     db: {
-      insertPaymentIfNew: async (row) => { events.payments.push(row); return events.fresh; },
       insertStripePaymentIfNew: async (row) => { events.stripePayments.push(row); return events.fresh; },
       findById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
       findCoreById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
@@ -408,47 +407,15 @@ function purchaseContext() {
       resolvePaymentFailureFor: async (...args) => { events.resolved.push(args); },
     },
     console: { log() {}, error: (...args) => events.logs.push(args.join(' ')) },
-    EMAIL_RE: /^\S+@\S+\.\S+$/,
     app: { get() {}, post: (path, ...h) => { context.__routes[`POST ${path}`] = h.at(-1); } },
     paymentLimiter: null, paymentStatusLimiter: null,
     __routes: {},
   });
   const run = (from, to) => vm.runInContext(source.slice(source.indexOf(from), source.indexOf(to)), context);
-  run('function buildExternalReference', '// Precios vigentes de los 3 planes');
-  run('function computeLicenseUpdateForPurchase', '// Interpreta el estado real de una orden');
-  run("app.post('/api/payments/charge'", "app.get('/api/payments/orders/:orderId/status'");
+  run('function purchaseItemsError', '// Precios vigentes de los 3 planes');
+  run('function computeLicenseUpdateForPurchase', '// PAGOS: Stripe (formulario de Checkout embebido)');
   return { context, events };
 }
-
-test('an MP order reference carries the add-on, and references created before the add-on existed still parse', () => {
-  const { context } = purchaseContext();
-  const built = context.buildExternalReference({ licenseId: 'aaaa-bbbb-cccc', planType: 'month', diceTier: undefined, spotifyAddon: true });
-  assert.match(built, /^aaaa-bbbb-cccc_month_none_sp_[0-9a-z]+$/);
-  assert.ok(!built.includes(':'), 'the Orders API rejects ":" in external_reference');
-  assert.deepEqual({ ...context.parseExternalReference(built) }, { licenseId: 'aaaa-bbbb-cccc', planType: 'month', diceTier: undefined, spotifyAddon: true });
-
-  const addonOnly = context.buildExternalReference({ licenseId: 'x-y', planType: undefined, diceTier: undefined, spotifyAddon: true });
-  assert.deepEqual({ ...context.parseExternalReference(addonOnly) }, { licenseId: 'x-y', planType: undefined, diceTier: undefined, spotifyAddon: true });
-
-  // The Orders API caps external_reference at 64 characters: check the worst case (real UUID, longest plan, tier and add-on).
-  const uuid = '123e4567-e89b-12d3-a456-426614174000';
-  for (const planType of ['lifetime', 'annual', 'month', undefined]) {
-    for (const diceTier of ['pro', 'vip', undefined]) {
-      for (const spotifyAddon of [true, false]) {
-        const ref = context.buildExternalReference({ licenseId: uuid, planType, diceTier, spotifyAddon });
-        assert.ok(ref.length <= 64, `${ref} has ${ref.length} characters`);
-        assert.deepEqual({ ...context.parseExternalReference(ref) }, { licenseId: uuid, planType, diceTier, spotifyAddon });
-      }
-    }
-  }
-  // Legacy reference that spelled the add-on out ("spotify") still parses.
-  assert.equal(context.parseExternalReference('aaaa-bbbb-cccc_month_none_spotify_1788000000000').spotifyAddon, true);
-
-  // Orders already in flight: the 4th segment was a timestamp, which must never switch the add-on on.
-  assert.deepEqual({ ...context.parseExternalReference('aaaa-bbbb-cccc_annual_pro_1788000000000') }, { licenseId: 'aaaa-bbbb-cccc', planType: 'annual', diceTier: 'pro', spotifyAddon: false });
-  assert.deepEqual({ ...context.parseExternalReference('aaaa-bbbb-cccc_none_vip_1788000000000') }, { licenseId: 'aaaa-bbbb-cccc', planType: undefined, diceTier: 'vip', spotifyAddon: false });
-  assert.equal(context.parseExternalReference(undefined).spotifyAddon, false);
-});
 
 test('purchase validation: the add-on follows its rules and can never be sent as a plan', () => {
   const { context } = purchaseContext();
@@ -473,7 +440,7 @@ test('purchase validation: the add-on follows its rules and can never be sent as
 });
 
 test('an approved add-on-only payment turns the add-on on without touching the plan or rotating the key', async () => {
-  for (const [apply, recorded, id] of [['applyApprovedPaymentIfNew', 'payments', 'mpPaymentId'], ['applyApprovedStripePaymentIfNew', 'stripePayments', 'stripePaymentId']]) {
+  for (const [apply, recorded, id] of [['applyApprovedStripePaymentIfNew', 'stripePayments', 'stripePaymentId']]) {
     const { context, events } = purchaseContext();
     dbStub.overrides = {};
     const result = await context[apply]({ licenseId: 'm1', spotifyAddon: true, [id]: 'pay-1' });
@@ -489,8 +456,8 @@ test('an approved add-on-only payment turns the add-on on without touching the p
 test('Monthly plus the add-on in one payment applies both, and the recorded amount is their sum', async () => {
   const { context, events } = purchaseContext();
   dbStub.overrides = {};
-  await context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, mpPaymentId: 'pay-2' });
-  assert.equal(events.payments[0].amountCents, 12600 + 18000);
+  await context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, stripePaymentId: 'pi_2' });
+  assert.equal(events.stripePayments[0].amountCents, 12600 + 18000);
   const update = events.applied[0][1];
   assert.equal(update.licenseType, 'month');
   assert.equal(update.spotifyAddon, true);
@@ -518,7 +485,7 @@ test('a payment whose license update fails is retried, and forgotten if it never
   let calls = 0;
   flaky.context.db.applyPurchase = async (...args) => { calls += 1; if (calls < 3) throw new Error('db down'); flaky.events.applied.push(args); };
   flaky.context.db.deletePaymentRecord = async () => { throw new Error('must not be called when a retry works'); };
-  const ok = await flaky.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-retry' });
+  const ok = await flaky.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_retry' });
   assert.equal(ok.applied, true);
   assert.equal(calls, 3);
   assert.equal(flaky.events.applied.length, 1);
@@ -529,9 +496,9 @@ test('a payment whose license update fails is retried, and forgotten if it never
   let attempts = 0;
   broken.context.db.applyPurchase = async () => { attempts += 1; throw new Error('db down'); };
   broken.context.db.deletePaymentRecord = async (...args) => { forgotten.push(args); };
-  await assert.rejects(() => broken.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-dead' }), /db down/);
+  await assert.rejects(() => broken.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_dead' }), /db down/);
   assert.equal(attempts, 3);
-  assert.deepEqual(forgotten, [['mp', 'pay-dead']]);
+  assert.deepEqual(forgotten, [['stripe', 'pi_dead']]);
   assert.ok(broken.events.logs.some((line) => line.includes('PAGO COBRADO SIN APLICAR')), 'the failure is loud in the logs');
 
   const stripe = purchaseContext();
@@ -544,15 +511,15 @@ test('a payment whose license update fails is retried, and forgotten if it never
 });
 
 test('a charged payment that cannot be applied is left as a pending note for the admin, with what is needed to apply it by hand', async () => {
-  const mp = purchaseContext();
-  mp.context.setTimeout = (fn) => { fn(); return 0; };
-  mp.context.db.applyPurchase = async () => { throw new Error('db down'); };
-  mp.context.db.deletePaymentRecord = async () => {};
-  await assert.rejects(() => mp.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, mpPaymentId: 'pay-dead' }), /db down/);
-  assert.equal(mp.events.failures.length, 1);
-  const note = mp.events.failures[0];
+  const combo = purchaseContext();
+  combo.context.setTimeout = (fn) => { fn(); return 0; };
+  combo.context.db.applyPurchase = async () => { throw new Error('db down'); };
+  combo.context.db.deletePaymentRecord = async () => {};
+  await assert.rejects(() => combo.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, stripePaymentId: 'pi_dead' }), /db down/);
+  assert.equal(combo.events.failures.length, 1);
+  const note = combo.events.failures[0];
   assert.deepEqual([note.provider, note.providerPaymentId, note.licenseId, note.planType, note.spotifyAddon, note.amountCents, note.reason, note.error],
-    ['mp', 'pay-dead', 'm1', 'month', true, 12600 + 18000, 'apply_failed', 'db down']);
+    ['stripe', 'pi_dead', 'm1', 'month', true, 12600 + 18000, 'apply_failed', 'db down']);
 
   const stripe = purchaseContext();
   stripe.context.setTimeout = (fn) => { fn(); return 0; };
@@ -562,15 +529,15 @@ test('a charged payment that cannot be applied is left as a pending note for the
   assert.deepEqual([stripe.events.failures[0].provider, stripe.events.failures[0].providerPaymentId, stripe.events.failures[0].reason], ['stripe', 'pi_dead', 'apply_failed']);
 
   const gone = purchaseContext();
-  assert.equal((await gone.context.applyApprovedPaymentIfNew({ licenseId: 'gone', planType: 'month', mpPaymentId: 'pay-orphan' })).applied, false);
+  assert.equal((await gone.context.applyApprovedStripePaymentIfNew({ licenseId: 'gone', planType: 'month', stripePaymentId: 'pi_orphan' })).applied, false);
   assert.deepEqual([gone.events.failures[0].reason, gone.events.failures[0].licenseId], ['license_missing', 'gone']);
 });
 
 test('a payment that finally applies closes its earlier pending note by itself, and a healthy one leaves none', async () => {
   const clean = purchaseContext();
-  assert.equal((await clean.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-fine' })).applied, true);
+  assert.equal((await clean.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_fine' })).applied, true);
   assert.deepEqual(clean.events.failures, []);
-  assert.deepEqual(clean.events.resolved, [['mp', 'pay-fine', 'automático']]);
+  assert.deepEqual(clean.events.resolved, [['stripe', 'pi_fine', 'automático']]);
 
   const retried = purchaseContext();
   assert.equal((await retried.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_again' })).applied, true);
@@ -578,7 +545,7 @@ test('a payment that finally applies closes its earlier pending note by itself, 
 
   const repeated = purchaseContext();
   repeated.events.fresh = false;
-  await repeated.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-dup' });
+  await repeated.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_dup' });
   assert.deepEqual([repeated.events.failures, repeated.events.resolved], [[], []], 'a duplicate notification touches nothing');
 });
 
@@ -588,7 +555,7 @@ test('a broken pending-payment log never changes what happens to the payment its
     const ok = purchaseContext();
     ok.context.db.upsertPaymentFailure = failing;
     ok.context.db.resolvePaymentFailureFor = failing;
-    assert.equal((await ok.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-ok' })).applied, true);
+    assert.equal((await ok.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_ok' })).applied, true);
     assert.equal(ok.events.applied.length, 1);
 
     const broken = purchaseContext();
@@ -596,48 +563,31 @@ test('a broken pending-payment log never changes what happens to the payment its
     broken.context.db.applyPurchase = async () => { throw new Error('db down'); };
     broken.context.db.deletePaymentRecord = async () => {};
     broken.context.db.upsertPaymentFailure = failing;
-    await assert.rejects(() => broken.context.applyApprovedPaymentIfNew({ licenseId: 'm1', planType: 'month', mpPaymentId: 'pay-bad' }), /db down/, 'the caller still sees the real error');
+    await assert.rejects(() => broken.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', stripePaymentId: 'pi_bad' }), /db down/, 'the caller still sees the real error');
   }
 });
 
 test('a payment already processed, or for a license that no longer exists, applies nothing', async () => {
   const seen = purchaseContext();
   seen.events.fresh = false;
-  const repeated = await seen.context.applyApprovedPaymentIfNew({ licenseId: 'm1', spotifyAddon: true, mpPaymentId: 'pay-3' });
+  const repeated = await seen.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', spotifyAddon: true, stripePaymentId: 'pi_3' });
   assert.deepEqual({ ...repeated }, { applied: false, alreadyProcessed: true });
   assert.equal(seen.events.applied.length, 0);
 
   const gone = purchaseContext();
-  assert.equal((await gone.context.applyApprovedPaymentIfNew({ licenseId: 'gone', spotifyAddon: true, mpPaymentId: 'pay-4' })).applied, false);
+  assert.equal((await gone.context.applyApprovedStripePaymentIfNew({ licenseId: 'gone', spotifyAddon: true, stripePaymentId: 'pi_4' })).applied, false);
   assert.equal(gone.events.applied.length, 0);
 
   const empty = purchaseContext();
-  assert.equal((await empty.context.applyApprovedPaymentIfNew({ licenseId: 'm1', mpPaymentId: 'pay-5' })).applied, false);
-  assert.equal(empty.events.payments.length, 0);
-});
-
-test('/api/payments/charge rejects an invalid add-on purchase before contacting MercadoPago', async () => {
-  const { context } = purchaseContext();
-  const charge = context.__routes['POST /api/payments/charge'];
-  global.fetch = async () => { throw new Error('must not reach MercadoPago'); };
-  const send = async (license, body) => {
-    const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(payload) { this.body = JSON.parse(JSON.stringify(payload)); } };
-    await charge({ license, body, headers: {} }, res);
-    return res;
-  };
-  const annual = await send(ANNUAL, { spotifyAddon: true, email: 'a@b.co', firstName: 'A', lastName: 'B', token: 't', payment_method_id: 'visa', policyAcceptedAt: new Date().toISOString() });
-  assert.equal(annual.statusCode, 400);
-  assert.equal(annual.body.error, 'Tu plan ya incluye Spotify.');
-  const asPlan = await send(MONTHLY, { planType: 'spotify_addon' });
-  assert.equal(asPlan.statusCode, 400);
-  assert.equal(asPlan.body.error, 'Plan invalido');
+  assert.equal((await empty.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', stripePaymentId: 'pi_5' })).applied, false);
+  assert.equal(empty.events.stripePayments.length, 0);
 });
 
 test('/api/pricing publishes the add-on price and the slot count, and keeps working if the slot query fails', async () => {
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const serve = async (slotHolders) => {
     let handler;
-    vm.runInNewContext(source.slice(source.indexOf("app.get('/api/pricing'"), source.indexOf("app.post('/api/payments/webhook'")), {
+    vm.runInNewContext(source.slice(source.indexOf("app.get('/api/pricing'"), source.indexOf('// Lo que cambia en la licencia al aplicar una compra')), {
       app: { get: (_path, h) => { handler = h; } },
       pricing, spotify,
       db: { getSharedSpotifySlotHolders: async () => { if (slotHolders instanceof Error) throw slotHolders; return slotHolders; } },

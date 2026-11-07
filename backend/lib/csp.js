@@ -1,8 +1,7 @@
 // Política de seguridad de contenido (CSP), en modo SOLO REPORTE: el navegador
 // no bloquea nada, solo avisa de lo que una política estricta habría bloqueado.
-// Se activó así a propósito: el sitio carga anuncios (AdSense y Adsterra), el
-// SDK de MercadoPago (que a su vez carga reCAPTCHA) y Stripe desde muchísimos
-// dominios, y una política mal armada rompería en silencio los anuncios o el
+// Se activó así a propósito: el sitio carga anuncios (AdSense y Adsterra) y
+// Stripe desde muchísimos dominios, y una política mal armada rompería en silencio los anuncios o el
 // cobro con tarjeta. Con los reportes a la vista (panel de Sistema > Errores)
 // se ve qué falta permitir y, cuando ya no salgan avisos, se pasa a bloquear.
 //
@@ -20,7 +19,6 @@ const SCRIPT_HOSTS = [
     'https://www.googletagservices.com', 'https://adservice.google.com', 'https://*.adtrafficquality.google',
     'https://fundingchoicesmessages.google.com', 'https://www.google.com', 'https://www.gstatic.com',
     'https://beastscarnival.com',
-    'https://sdk.mercadopago.com', 'https://*.mercadopago.com', 'https://*.mercadolibre.com', 'https://*.mlstatic.com',
     'https://js.stripe.com',
 ];
 

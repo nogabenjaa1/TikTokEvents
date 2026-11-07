@@ -5,7 +5,7 @@ Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session 
 - **Cobro** de planes y addons: sesión en modo `payment`.
 - **Verificación de tarjeta de la prueba gratis**: sesión en modo `setup`, sin cobro.
 
-MercadoPago no cambió.
+El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía ya no tiene campos propios de correo, nombre ni dirección; solo queda la casilla de la política de reembolsos, que hay que marcar para que aparezca el formulario. MercadoPago ya no se ofrece en Membresía.
 
 ## Valores por reemplazar
 
@@ -37,16 +37,18 @@ Vienen de Checkout Studio y ya están puestos tal cual.
 | phone_number_collection | `{ enabled: false }` |
 | automatic_tax | `{ enabled: false }` |
 | submit_type | `auto` |
+| name_collection | `{ individual: { enabled: true, optional: true } }` |
 | saved_payment_method_options | `{ payment_method_save: 'enabled' }` |
 | integration_identifier | `custom_embedded_web_0001` |
 | Versión de API (solo en las llamadas de Checkout Sessions, cobro y verificación) | `2026-03-25.dahlia; custom_checkout_payment_form_preview=v1` |
 | Beta en el navegador | `custom_checkout_payment_form_1` |
-| Apariencia | `flat`, etiquetas `auto`, inputs `condensed`, colores de Checkout Studio |
+| Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio |
 
 Además, por cómo funciona el sitio:
 
-- `payment_method_types: ['card']`: solo tarjeta, igual que antes. OXXO y SPEI dejarían el pago pendiente varios días.
-- `customer`: hay un cliente de Stripe por licencia, para que "guardar tarjeta" sirva en la siguiente compra de esa misma licencia. Se busca por la licencia y no por el correo, porque el correo lo escribe cualquiera sin verificarlo.
+- Sin `payment_method_types` en el cobro: los métodos salen de *Configuración → Métodos de pago* del Dashboard (tarjeta, Google Pay, Apple Pay y Link). **No actives OXXO ni SPEI ahí**: dejarían el pago pendiente varios días (el webhook lo aplicaría al confirmarse).
+- `customer`: hay un cliente de Stripe por licencia, para que "guardar tarjeta" sirva en la siguiente compra de esa misma licencia. Se busca por la licencia y no por el correo, porque el correo lo escribe cualquiera sin verificarlo. El cliente nuevo se crea sin correo: Checkout guarda en él el que se escriba en el formulario. Si la licencia ya compró antes, su correo aparece precargado y no se puede editar (así funciona Stripe).
+- Sin `payment_intent_data.receipt_email`: el recibo lo manda Stripe al correo del formulario si está activo *Configuración → Correos a clientes → Pagos correctos*.
 - `payment_intent_data.metadata`: con estos datos el webhook, la conciliación de Sistema y el registro de pagos siguen funcionando igual que antes.
 
 ## Verificación de tarjeta (prueba gratis)
@@ -60,7 +62,7 @@ Además, por cómo funciona el sitio:
 | ui_mode | `form` |
 | mode | `setup` (no cobra nada) |
 | currency | `mxn` |
-| payment_method_types | `['card']` |
+| payment_method_types | `['card']` (se queda así a propósito: con Link o una billetera no siempre llega el fingerprint de la tarjeta, y sin él la misma tarjeta podría pedir varias pruebas gratis) |
 | billing_address_collection | `auto` |
 | phone_number_collection | `{ enabled: false }` |
 | integration_identifier | `custom_embedded_web_0001` |
@@ -69,13 +71,19 @@ En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_meth
 
 ## Pasos pendientes
 
+**Google Pay, Apple Pay y Link:**
+
+- Actívalos en *Configuración → Métodos de pago* (modo de prueba y modo real por separado).
+- Registra `benjaapis.dev` (y `www.benjaapis.dev` si se usa) en *Configuración → Dominios de métodos de pago*. Sin esto no aparecen los botones de billetera en tu página.
+- La vista previa de Checkout Studio siempre dibuja los tres botones; en tu página cada uno aparece solo si el navegador puede usarlo: Google Pay en Chrome/Android con una tarjeta en Google Wallet, Apple Pay en Safari con Apple Pay configurado, Link siempre.
+
 0. **Comprueba que tu cuenta acepte el modo setup del formulario** antes de subir este cambio. El modo payment ya está comprobado. Cambia `TU_LLAVE` por tu llave secreta; si la respuesta trae `"id": "cs_..."`, funciona:
 
    ```bash
    curl https://api.stripe.com/v1/checkout/sessions -u "TU_LLAVE:" -H "Stripe-Version: 2026-03-25.dahlia; custom_checkout_payment_form_preview=v1" -d ui_mode=form -d mode=setup -d currency=mxn -d "payment_method_types[]=card" -d integration_identifier=custom_embedded_web_0001 -d "return_url=https://benjaapis.dev/?s={CHECKOUT_SESSION_ID}"
    ```
 
-1. **Pide a Stripe la beta del formulario de Checkout.** `ui_mode: 'form'` y `initCheckoutFormSdk` son una vista previa. Si tu cuenta no la tiene, Stripe rechaza la sesión y el panel muestra "No se pudo iniciar el pago". Se solicita en https://support.stripe.com. Mientras tanto, MercadoPago sigue disponible.
+1. **Beta del formulario de Checkout:** tu cuenta ya la tiene (el formulario carga en Membresía). Si algún día Stripe rechaza la sesión, el panel muestra "No se pudo iniciar el pago"; se resuelve con https://support.stripe.com.
 2. **Variables de entorno.** Son las mismas de antes:
    - Render (backend): `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`.
    - Vercel (frontend): `VITE_STRIPE_PUBLISHABLE_KEY`, con el prefijo `VITE_` porque la lee el navegador.

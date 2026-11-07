@@ -2257,7 +2257,12 @@ const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
 // de ESA licencia. A propósito no se busca por correo: el correo lo escribe
 // el comprador sin verificar, y con eso cualquiera podría ver/usar la
 // tarjeta guardada de otra persona.
-async function stripeCustomerForLicense(stripe, licenseId, { email, name }) {
+//
+// El cliente nuevo se crea SIN correo ni nombre: los pide el propio
+// formulario de Stripe. Según la API de Checkout, si el cliente no tiene
+// correo, Checkout guarda en él el que se escriba durante el pago; si ya
+// lo tiene (compras anteriores), lo muestra precargado y no se puede editar.
+async function stripeCustomerForLicense(stripe, licenseId) {
     try {
         const found = await stripe.customers.search({ query: `metadata['licenseId']:'${licenseId.replace(/'/g, '')}'`, limit: 1 });
         if (found.data[0]) return found.data[0].id;
@@ -2266,24 +2271,17 @@ async function stripeCustomerForLicense(stripe, licenseId, { email, name }) {
         // crea uno nuevo (solo se pierde mostrar la tarjeta guardada).
         console.error('[Stripe] No se pudo buscar el cliente de la licencia:', err.message);
     }
-    const customer = await stripe.customers.create({ email, name, metadata: { licenseId } });
+    const customer = await stripe.customers.create({ metadata: { licenseId } });
     return customer.id;
 }
 
 app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
+    // Correo y nombre ya no llegan desde la página: los pide el propio
+    // formulario de Stripe (sección Contacto y name_collection, abajo).
+    const { planType, diceTier, spotifyAddon, policyAcceptedAt } = req.body || {};
     const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
     if (itemsError) {
         return res.status(400).json({ success: false, error: itemsError });
-    }
-    const cleanEmail = typeof email === 'string' ? email.trim() : '';
-    if (!EMAIL_RE.test(cleanEmail)) {
-        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
-    }
-    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : '';
-    const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
-    if (!firstName || !lastName) {
-        return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
     }
     // Pedido explicito: evidencia real (con fecha) de que el comprador
     // aceptó la política de reembolsos ANTES de pagar -- se manda como
@@ -2320,7 +2318,7 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
 
     try {
         const stripe = getStripeClient();
-        const customer = await stripeCustomerForLicense(stripe, req.license.id, { email: cleanEmail, name: `${firstName} ${lastName}` });
+        const customer = await stripeCustomerForLicense(stripe, req.license.id);
         const session = await stripe.checkout.sessions.create({
             // Valores configurados en Checkout Studio de Stripe.
             ui_mode: 'form',
@@ -2328,6 +2326,9 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             phone_number_collection: { enabled: false },
             automatic_tax: { enabled: false },
             submit_type: 'auto',
+            // Nombre dentro del formulario de Stripe (opcional, como quedó en
+            // Checkout Studio); el correo lo pide su sección de Contacto.
+            name_collection: { individual: { enabled: true, optional: true } },
             saved_payment_method_options: { payment_method_save: 'enabled' },
             integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
             // Pago único: los planes se compran una vez (también el Mensual),
@@ -2336,10 +2337,11 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             mode: 'payment',
             line_items: lineItems,
             customer,
-            // Solo tarjeta a propósito -- mismo alcance que la opción de MP
-            // ("Credit/Debit Card"), sin métodos async (OXXO, SPEI) que
-            // dejarían el pago pendiente días.
-            payment_method_types: ['card'],
+            // Sin payment_method_types: los métodos salen de Configuración →
+            // Métodos de pago del Dashboard (tarjeta, Google Pay, Apple Pay y
+            // Link). Antes la lista fija ['card'] dejaba fuera a Link. Ojo:
+            // OXXO o SPEI, si se activan ahí, dejarían el pago pendiente días
+            // (el webhook lo aplicaría al confirmarse).
             // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
             // muestra en un modal), vuelve a Membresía con el aviso de pago
             // pendiente; el webhook aplica la compra igual y el panel se
@@ -2348,8 +2350,9 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             metadata,
             payment_intent_data: {
                 description: `BenjaApis - ${titleParts.join(' + ')}`,
-                // Recibo automático de Stripe al correo del comprador.
-                receipt_email: cleanEmail,
+                // Sin receipt_email: el correo se escribe en el formulario de
+                // Stripe, que manda el recibo si en el Dashboard está activo
+                // "Enviar correo a los clientes por pagos correctos".
                 metadata,
             },
         }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });

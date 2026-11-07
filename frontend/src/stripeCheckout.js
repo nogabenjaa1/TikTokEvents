@@ -26,9 +26,9 @@ export function getStripePromise() {
 
 // Apariencia configurada en Checkout Studio de Stripe.
 export const CHECKOUT_APPEARANCE = {
-  theme: 'flat',
+  theme: 'stripe',
   labels: 'auto',
-  inputs: 'condensed',
+  inputs: 'spaced',
   variables: {
     borderRadius: '4px',
     colorBackground: '#ffffff',

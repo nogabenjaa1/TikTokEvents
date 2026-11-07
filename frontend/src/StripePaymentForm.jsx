@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError } from './stripeCheckout';
-import { MERCADOPAGO_ENABLED } from './paymentProviders';
 
 const DECLINE_FALLBACK = 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
-// Solo sugiere MercadoPago si se ofrece (ver paymentProviders.js).
-const LOAD_ERROR = MERCADOPAGO_ENABLED
-  ? 'No se pudo cargar el formulario de pago. Intenta de nuevo o paga con MercadoPago.'
-  : 'No se pudo cargar el formulario de pago. Revisa tu conexión o si un bloqueador de anuncios lo está frenando, e intenta de nuevo.';
+const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Revisa tu conexión o si un bloqueador de anuncios lo está frenando, e intenta de nuevo.';
 const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos en cuanto se confirme.';
 
 // Cobro con el formulario de Checkout de Stripe (Checkout Session con
-// ui_mode 'form') -- segunda forma de pago junto a MercadoPagoCheckout.jsx
-// (MercadoPago), seleccionable desde Membership.jsx. Stripe dibuja el
-// formulario completo (tarjeta, botón de pagar, guardar tarjeta) dentro de
-// su propio iframe; acá solo se pide la sesión al backend, se monta y, al
-// confirmar, se le pide al backend que la verifique contra Stripe.
-export default function StripePaymentForm({ planType, diceTier, spotifyAddon, amount, email, firstName, lastName, policyAcceptedAt, onSuccess, onCancel }) {
+// ui_mode 'form'), el único medio de pago de Membership.jsx. Stripe dibuja
+// el formulario completo dentro de su propio iframe: Google Pay, Apple Pay y
+// Link arriba, correo, nombre, tarjeta, guardar tarjeta y el botón de pagar.
+// Acá solo se pide la sesión al backend, se monta y, al confirmar, se le
+// pide al backend que la verifique contra Stripe.
+export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
@@ -29,11 +25,9 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
 
   useEffect(() => {
-    // Una sola vez al montar -- este formulario solo se muestra una vez que
-    // email/nombre/apellido ya son válidos (ver Membership.jsx), así que no
-    // hace falta recrear la sesión si esos campos siguen editables mientras
-    // el formulario ya está en pantalla. El ref también evita una segunda
-    // sesión por el doble montaje del modo estricto de React.
+    // Una sola vez al montar -- este formulario solo se muestra una vez
+    // aceptada la política de reembolsos (ver Membership.jsx). El ref evita
+    // una segunda sesión por el doble montaje del modo estricto de React.
     if (startedRef.current) return;
     startedRef.current = true;
 
@@ -62,7 +56,7 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           // spotifyAddon solo viaja al comprar el complemento (ver Membership.jsx).
-          body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, email, firstName, lastName, policyAcceptedAt }),
+          body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, policyAcceptedAt }),
         });
         data = await res.json();
       } catch {
@@ -77,9 +71,9 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
       formRef.current = await mountCheckoutForm({
         clientSecret: data.clientSecret,
         container: containerRef.current,
-        // Sin defaultValues.email a propósito: la sesión ya trae el correo por
-        // su `customer` (ver /api/payments/stripe/checkout-session) y Stripe
-        // rechaza el formulario completo si se intenta poner otro
+        // Sin defaultValues.email a propósito: el correo lo escribe el
+        // comprador en el formulario, y si el cliente de la licencia ya tiene
+        // uno, Stripe rechaza el formulario completo al intentar poner otro
         // ("You cannot update the email because a customer_email or customer
         // with an email is already set") -- error real en producción.
         onReady: () => setLoading(false),
@@ -130,7 +124,7 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
 
   if (loadError) {
     return (
-      <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
+      <div className="theme-surface w-full max-w-3xl p-5 flex flex-col gap-3">
         <p className="theme-notice">{loadError}</p>
         <button type="button" onClick={onCancel} className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all">
           Volver
@@ -140,20 +134,17 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, am
   }
 
   return (
-    <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3">
+    <div className="theme-surface w-full max-w-3xl p-4 sm:p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <p className="theme-label text-xs uppercase tracking-widest font-semibold">Pago con tarjeta</p>
+        <p className="theme-label text-xs uppercase tracking-widest font-semibold">Pago seguro</p>
         <button type="button" onClick={onCancel} disabled={pending} className="text-[10px] text-gray-500 hover:text-gray-300 underline disabled:opacity-40">
           Cancelar
         </button>
       </div>
-      {amount != null && (
-        <p className="text-[10px] text-gray-500 text-center">Vas a pagar <strong>MX${Number(amount).toLocaleString('es-MX')}</strong></p>
-      )}
       {loading && <p className="text-[10px] text-gray-500 text-center">Cargando formulario seguro de Stripe...</p>}
       {/* Fondo blanco: el formulario usa la apariencia clara de Checkout
           Studio (colorBackground #ffffff) también en el tema oscuro. */}
-      <div ref={containerRef} id="checkout-form" className={loading ? 'hidden' : 'rounded bg-white p-3'} />
+      <div ref={containerRef} id="checkout-form" className={loading ? 'hidden' : 'rounded-lg bg-white p-4 sm:p-6'} />
       {pending && <p className="text-[10px] text-gray-500 text-center">Procesando pago...</p>}
       {submitError && <p className="theme-notice">{submitError}</p>}
       <p className="text-[10px] text-gray-500 text-center flex items-center justify-center gap-1">

@@ -293,13 +293,16 @@ function registerSystemRoutes(app, deps) {
             if (intent.status !== 'succeeded' || !intent.metadata?.licenseId) {
                 return res.status(409).json({ success: false, error: 'Ese cobro no está completado o no pertenece a una licencia de este sitio.' });
             }
-            if (!(await db.findById(intent.metadata.licenseId))) {
+            // Una compra sin cuenta (newLicenseAlias) todavía no tiene licencia:
+            // aplicarla es justamente crearla.
+            const newLicenseAlias = intent.metadata.newLicenseAlias || undefined;
+            if (!newLicenseAlias && !(await db.findById(intent.metadata.licenseId))) {
                 return res.status(409).json({ success: false, error: 'La licencia de este cobro ya no existe.' });
             }
             const result = await applyApprovedStripePaymentIfNew({
                 licenseId: intent.metadata.licenseId, planType: intent.metadata.planType || undefined,
                 diceTier: intent.metadata.diceTier || undefined, spotifyAddon: intent.metadata.spotifyAddon === 'true',
-                stripePaymentId: intent.id,
+                stripePaymentId: intent.id, ...(newLicenseAlias ? { newLicenseAlias } : {}),
             });
             audit(req, 'payment.apply_stripe', { id: intent.metadata.licenseId }, { paymentIntentId: intent.id, applied: !!result.applied, alreadyProcessed: !!result.alreadyProcessed });
             res.json({ success: true, applied: !!result.applied, alreadyProcessed: !!result.alreadyProcessed });

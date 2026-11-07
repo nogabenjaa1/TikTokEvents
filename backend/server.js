@@ -72,6 +72,7 @@ const multer = require('multer');
 
 const db = require('./db');
 const auth = require('./auth');
+const tokenCrypto = require('./tokenCrypto');
 const pricing = require('./pricing');
 const spotify = require('./spotify');
 const storage = require('./storage');
@@ -159,6 +160,27 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // venden: day/week las emite el admin) y la de la prueba gratis, que conserva
 // su etiqueta de siempre.
 const PLAN_KEY_LABELS = { trial: 'FREE7DAY', day: 'daily', week: 'weekly', month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
+
+// Lo que se guarda de una clave nueva: el hash (con el que se inicia sesión),
+// su prefijo visible y la clave cifrada para que el admin pueda volver a
+// mostrarla desde el panel de Licencias (ver db.getLicenseKey). Si el cifrado
+// falla (falta TOKEN_ENCRYPTION_KEY) la licencia se crea igual, solo que esa
+// clave no se podrá recuperar.
+function storedKeyFields(key) {
+    let keyEncrypted = null;
+    try {
+        keyEncrypted = tokenCrypto.encrypt(key);
+    } catch (err) {
+        console.error('[Licencias] No se pudo cifrar la clave; no se podrá volver a mostrar:', err.message);
+    }
+    return { keyHash: auth.hashKey(key), keyPrefix: auth.keyPrefix(key), keyEncrypted };
+}
+
+// El alias de una licencia nueva (prueba gratis o compra sin cuenta): letras,
+// números, "_" y "-", hasta 40. Vacío si no queda nada válido.
+function cleanLicenseAlias(raw) {
+    return typeof raw === 'string' ? raw.trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+}
 // No bloqueante a propósito: si todavía no se
 // configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
 // plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
@@ -536,8 +558,7 @@ app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
     try {
         row = await db.insertLicense({
             id: crypto.randomUUID(),
-            keyHash: auth.hashKey(key),
-            keyPrefix: auth.keyPrefix(key),
+            ...storedKeyFields(key),
             username: cleanAlias,
             licenseType: 'trial',
             isAdmin: false,
@@ -695,8 +716,7 @@ app.post('/api/licenses', auth.requireAuth, auth.requireAdmin, adminLimiter, asy
     const key = auth.generateLabeledKey(username.trim(), PLAN_KEY_LABELS[licenseType]);
     const row = await db.insertLicense({
         id: crypto.randomUUID(),
-        keyHash: auth.hashKey(key),
-        keyPrefix: auth.keyPrefix(key),
+        ...storedKeyFields(key),
         username: username.trim(),
         licenseType,
         isAdmin: false,
@@ -738,11 +758,44 @@ app.post('/api/licenses/:id/regenerate-key', auth.requireAuth, auth.requireAdmin
         return res.status(400).json({ success: false, error: 'La clave de una licencia admin se regenera con seed-admin.js' });
     }
     const key = auth.generateLabeledKey(row.username, PLAN_KEY_LABELS[row.license_type] || String(row.license_type).toLowerCase());
-    await db.setLicenseKey(row.id, { keyHash: auth.hashKey(key), keyPrefix: auth.keyPrefix(key) });
+    await db.setLicenseKey(row.id, storedKeyFields(key));
     console.log(`[Licencias] ${req.license.username} regeneró la clave de la licencia ${row.id} (@${row.username}).`);
     audit(req, 'license.regenerate_key', { id: row.id, label: row.username });
     pushLicenseState(row.id);
     res.json({ success: true, key, license: { id: row.id, username: row.username } });
+});
+
+// "Ver clave" del panel de Licencias: le devuelve al admin la clave original
+// de una licencia para que el streamer que la perdió la recupere sin
+// regenerarla (regenerar cambia la clave y con ella los enlaces de overlay,
+// que se derivan de la clave). Solo existe para las claves creadas o
+// regeneradas después de que se empezaran a guardar cifradas (ver
+// key_encrypted en db.js); de las anteriores solo queda el hash. Las
+// licencias admin quedan fuera a propósito: su clave no se muestra por aquí
+// (mismo criterio que regenerate-key). Cada consulta queda en el historial.
+app.get('/api/licenses/:id/key', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
+    const row = await db.findById(req.params.id);
+    if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
+    if (row.is_admin) {
+        return res.status(403).json({ success: false, error: 'La clave de una licencia admin no se muestra aquí.' });
+    }
+    let key;
+    try {
+        key = await db.getLicenseKey(row.id);
+    } catch (err) {
+        console.error(`[Licencias] No se pudo descifrar la clave de la licencia ${row.id}:`, err.message);
+        return res.status(500).json({ success: false, error: 'No se pudo leer la clave guardada.' });
+    }
+    if (!key) {
+        return res.status(404).json({
+            success: false,
+            legacy: true,
+            error: 'Esta clave es de antes de que se guardaran las claves y no se puede recuperar. Si la regeneras, el streamer tendrá que volver a copiar sus enlaces de overlay.',
+        });
+    }
+    audit(req, 'license.view_key', { id: row.id, label: row.username });
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, key });
 });
 
 app.post('/api/licenses/:id/revoke', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
@@ -1534,8 +1587,7 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
         update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingMs;
 
         const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
-        update.keyHash = auth.hashKey(newRawKey);
-        update.keyPrefix = auth.keyPrefix(newRawKey);
+        Object.assign(update, storedKeyFields(newRawKey));
         update.pendingKeyReveal = newRawKey;
     }
     if (diceTier) {
@@ -1611,7 +1663,7 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
 // UNIQUE de payments.stripe_payment_id (ver db.js) -- llamarla dos veces con el mismo
 // PaymentIntent (ej. /api/payments/stripe/confirm ya lo aplico y despues
 // llega el webhook) no aplica el cambio dos veces.
-async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId }) {
+async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId, newLicenseAlias }) {
     if (!licenseId || (!planType && !diceTier && !spotifyAddon)) {
         console.error('[Stripe] applyApprovedStripePaymentIfNew: faltan licenseId/planType/diceTier/spotifyAddon', { licenseId, planType, diceTier, spotifyAddon });
         return { applied: false };
@@ -1630,11 +1682,51 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
     });
     if (!isNew) return { applied: false, alreadyProcessed: true };
 
+    // Compra sin cuenta (ver /api/payments/stripe/guest-checkout-session): la
+    // licencia nace recién ahora, con el pago ya cobrado. Antes de pagar no
+    // existe nada, así que un pago cancelado o rechazado no deja ninguna
+    // licencia (ni prueba gratis) por el camino.
+    if (newLicenseAlias && planType && !(await db.findCoreById(licenseId))) {
+        return createPurchasedLicense({ licenseId, alias: newLicenseAlias, planType, stripePaymentId });
+    }
+
     return applyPaymentWithRetry({
         label: 'Stripe', licenseId, planType, diceTier, spotifyAddon,
         provider: 'stripe', providerPaymentId: String(stripePaymentId), amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         forget: () => db.deletePaymentRecord('stripe', stripePaymentId),
     });
+}
+
+// La licencia de una compra sin cuenta, con el id que se reservó al crear la
+// sesión de pago. La clave queda en pending_key_reveal hasta que el comprador
+// la reclame (ver /api/payments/stripe/guest-confirm) y cifrada para el panel
+// de Licencias. Si no se puede crear, se olvida el registro del pago para que
+// el siguiente aviso (o /guest-confirm) lo vuelva a intentar.
+async function createPurchasedLicense({ licenseId, alias, planType, stripePaymentId }) {
+    const key = auth.generateLabeledKey(alias, PLAN_KEY_LABELS[planType] || planType);
+    const createdAt = Date.now();
+    try {
+        await db.insertLicense({
+            id: licenseId,
+            ...storedKeyFields(key),
+            pendingKeyReveal: key,
+            username: alias,
+            licenseType: planType,
+            isAdmin: false,
+            createdAt,
+            expiresAt: auth.computeExpiresAt(planType),
+        });
+    } catch (err) {
+        console.error(`[Stripe] ⚠️ PAGO COBRADO SIN LICENCIA (${stripePaymentId}, @${alias}): no se pudo crear; se olvida el registro para que el próximo reintento la cree:`, err.message);
+        try {
+            await db.deletePaymentRecord('stripe', stripePaymentId);
+        } catch (forgetErr) {
+            console.error(`[Stripe] ⚠️ Y tampoco se pudo olvidar el registro del pago ${stripePaymentId}; crea la licencia a mano:`, forgetErr.message);
+        }
+        throw err;
+    }
+    console.log(`[Stripe] ✅ Licencia nueva por compra — ${licenseId} (@${alias}, ${planType})`);
+    return { applied: true, licenseId, created: true };
 }
 
 // ==========================================
@@ -1682,28 +1774,20 @@ async function stripeCustomerForLicense(stripe, licenseId) {
     return customer.id;
 }
 
-app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
-    // Correo y nombre ya no llegan desde la página: los pide el propio
-    // formulario de Stripe (sección Contacto y name_collection, abajo).
-    const { planType, diceTier, spotifyAddon, policyAcceptedAt } = req.body || {};
-    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
-    if (itemsError) {
-        return res.status(400).json({ success: false, error: itemsError });
-    }
-    // Pedido explicito: evidencia real (con fecha) de que el comprador
-    // aceptó la política de reembolsos ANTES de pagar -- se manda como
-    // metadata del pago, visible en el propio dashboard de Stripe si
-    // alguien abre una disputa. Se exige server-side (no solo ocultar el
-    // botón en el frontend) para que el registro exista siempre, sin
-    // depender de que nadie evite el check del lado del cliente.
-    if (typeof policyAcceptedAt !== 'string' || Number.isNaN(Date.parse(policyAcceptedAt))) {
-        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
-    }
+// Pedido explicito: evidencia real (con fecha) de que el comprador aceptó la
+// política de reembolsos ANTES de pagar -- se manda como metadata del pago,
+// visible en el propio dashboard de Stripe si alguien abre una disputa. Se
+// exige server-side (no solo ocultar el botón en el frontend) para que el
+// registro exista siempre.
+function validPolicyAcceptedAt(value) {
+    return typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
+}
 
-    // Un renglón por cosa comprada, con el precio vigente de pricing.js
-    // (override del admin incluido): el formulario muestra el desglose y la
-    // suma da exactamente computeAmountCents, lo mismo que se guarda como
-    // monto del pago.
+// La Checkout Session de una compra, con o sin cuenta. Un renglón por cosa
+// comprada, con el precio vigente de pricing.js (override del admin
+// incluido): el formulario muestra el desglose y la suma da exactamente
+// computeAmountCents, lo mismo que se guarda como monto del pago.
+async function createPurchaseCheckoutSession({ licenseId, planType, diceTier, spotifyAddon, policyAcceptedAt, extraMetadata = {}, returnUrl }) {
     const lineItem = (name, cents) => ({ quantity: 1, price_data: { currency: 'mxn', unit_amount: cents, product_data: { name } } });
     const lineItems = [];
     if (planType) lineItems.push(lineItem(`Plan ${PLAN_LABELS[planType]}`, pricing.getPlanPriceCents(planType)));
@@ -1714,57 +1798,158 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
     if (diceTier) titleParts.push(diceTier.toUpperCase());
     if (spotifyAddon) titleParts.push('Complemento Spotify');
     const metadata = {
-        licenseId: req.license.id,
+        licenseId,
         planType: planType || '',
         diceTier: diceTier || '',
         // Los metadata de Stripe son texto: 'true' enciende el
         // complemento al confirmar/recibir el webhook, vacío no.
         spotifyAddon: spotifyAddon ? 'true' : '',
         policyAcceptedAt,
+        ...extraMetadata,
     };
 
-    try {
-        const stripe = getStripeClient();
-        const customer = await stripeCustomerForLicense(stripe, req.license.id);
-        const session = await stripe.checkout.sessions.create({
-            // Valores configurados en Checkout Studio de Stripe.
-            ui_mode: 'form',
-            billing_address_collection: 'auto',
-            submit_type: 'auto',
-            // Nombre dentro del formulario de Stripe (opcional, como quedó en
-            // Checkout Studio); el correo lo pide su sección de Contacto.
-            name_collection: { individual: { enabled: true, optional: true } },
-            saved_payment_method_options: { payment_method_save: 'enabled' },
-            integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
-            // Pago único: los planes se compran una vez (también el Mensual),
-            // no son suscripciones -- por eso no va payment_method_collection,
-            // que solo aplica a mode 'subscription'.
-            mode: 'payment',
-            line_items: lineItems,
-            customer,
-            // Sin payment_method_types: los métodos salen de Configuración →
-            // Métodos de pago del Dashboard (tarjeta, Google Pay, Apple Pay y
-            // Link). Antes la lista fija ['card'] dejaba fuera a Link. Ojo:
-            // OXXO o SPEI, si se activan ahí, dejarían el pago pendiente días
-            // (el webhook lo aplicaría al confirmarse).
-            // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
-            // muestra en un modal), vuelve a Membresía con el aviso de pago
-            // pendiente; el webhook aplica la compra igual y el panel se
-            // entera por license_updated.
-            return_url: `${FRONTEND_URL}/?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
+    const stripe = getStripeClient();
+    const customer = await stripeCustomerForLicense(stripe, licenseId);
+    return stripe.checkout.sessions.create({
+        // Valores configurados en Checkout Studio de Stripe.
+        ui_mode: 'form',
+        billing_address_collection: 'auto',
+        submit_type: 'auto',
+        // Nombre dentro del formulario de Stripe (opcional, como quedó en
+        // Checkout Studio); el correo lo pide su sección de Contacto.
+        name_collection: { individual: { enabled: true, optional: true } },
+        saved_payment_method_options: { payment_method_save: 'enabled' },
+        integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
+        // Pago único: los planes se compran una vez (también el Mensual),
+        // no son suscripciones -- por eso no va payment_method_collection,
+        // que solo aplica a mode 'subscription'.
+        mode: 'payment',
+        line_items: lineItems,
+        customer,
+        // Sin payment_method_types: los métodos salen de Configuración →
+        // Métodos de pago del Dashboard (tarjeta, Google Pay, Apple Pay y
+        // Link). Ojo: OXXO o SPEI, si se activan ahí, dejarían el pago
+        // pendiente días (el webhook lo aplicaría al confirmarse).
+        // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
+        // muestra en un modal), vuelve a Membresía con el aviso de pago
+        // pendiente; el webhook aplica la compra igual.
+        return_url: returnUrl,
+        metadata,
+        payment_intent_data: {
+            description: `BenjaApis - ${titleParts.join(' + ')}`,
+            // Sin receipt_email: el correo se escribe en el formulario de
+            // Stripe, que manda el recibo si en el Dashboard está activo
+            // "Enviar correo a los clientes por pagos correctos".
             metadata,
-            payment_intent_data: {
-                description: `BenjaApis - ${titleParts.join(' + ')}`,
-                // Sin receipt_email: el correo se escribe en el formulario de
-                // Stripe, que manda el recibo si en el Dashboard está activo
-                // "Enviar correo a los clientes por pagos correctos".
-                metadata,
-            },
-        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        },
+    }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+}
+
+app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
+    // Correo y nombre ya no llegan desde la página: los pide el propio
+    // formulario de Stripe (sección Contacto y name_collection).
+    const { planType, diceTier, spotifyAddon, policyAcceptedAt } = req.body || {};
+    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
+    if (itemsError) {
+        return res.status(400).json({ success: false, error: itemsError });
+    }
+    if (!validPolicyAcceptedAt(policyAcceptedAt)) {
+        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
+    }
+    try {
+        const session = await createPurchaseCheckoutSession({
+            licenseId: req.license.id, planType, diceTier, spotifyAddon, policyAcceptedAt,
+            returnUrl: `${FRONTEND_URL}/?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
+        });
         res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id });
     } catch (err) {
         console.error('[Stripe] Error creando Checkout Session:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+const sha256Hex = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
+
+// Compra de un plan SIN cuenta (Membresía, con solo un alias). Antes se creaba
+// una prueba gratis al pulsar "Comprar" para tener una licencia a la que
+// cobrarle: si el pago no se hacía, quedaba una prueba de 7 días sin anuncios
+// ni tarjeta y sin que el comprador viera nunca su clave. Ahora no se crea
+// nada aquí: se reserva el id de la licencia, viaja en la metadata del pago
+// junto con el alias, y la licencia nace solo cuando Stripe confirma el cobro
+// (ver createPurchasedLicense). Solo planes: el complemento de Spotify y los
+// dados se compran con una licencia ya existente.
+//
+// `claimToken` es lo único que le permite al navegador que pagó recoger la
+// clave y entrar (ver /guest-confirm): Stripe guarda solo su hash.
+app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (req, res) => {
+    if (isBotSubmission(req.body)) return res.status(400).json({ success: false, error: 'No se pudo iniciar el pago.' });
+    const { alias, planType, policyAcceptedAt } = req.body || {};
+    const cleanAlias = cleanLicenseAlias(alias);
+    if (!cleanAlias) {
+        return res.status(400).json({ success: false, error: 'Elige un alias válido: letras, números, "_" o "-".' });
+    }
+    if (!pricing.isValidPlan(planType)) {
+        return res.status(400).json({ success: false, error: 'Plan invalido' });
+    }
+    if (!validPolicyAcceptedAt(policyAcceptedAt)) {
+        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
+    }
+    const licenseId = crypto.randomUUID();
+    const claimToken = crypto.randomBytes(24).toString('base64url');
+    try {
+        const session = await createPurchaseCheckoutSession({
+            licenseId, planType, policyAcceptedAt,
+            extraMetadata: { newLicenseAlias: cleanAlias, claimHash: sha256Hex(claimToken) },
+            returnUrl: `${FRONTEND_URL}/membership?payment=pending&guest_checkout={CHECKOUT_SESSION_ID}`,
+        });
+        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id, claimToken });
+    } catch (err) {
+        console.error('[Stripe] Error creando Checkout Session sin cuenta:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
+// El navegador que pagó sin cuenta recoge aquí su licencia: se vuelve a pedir
+// la sesión a Stripe (nunca se cree lo que diga el frontend), se comprueba el
+// claimToken contra el hash de la metadata y, si el cobro está hecho, se crea
+// la licencia (o se usa la que ya creó el webhook) y se entrega la clave y una
+// sesión. La clave se entrega mientras siga pendiente de mostrar; después,
+// quien la perdió la recupera con el admin (panel de Licencias, "Ver clave").
+app.post('/api/payments/stripe/guest-confirm', paymentStatusLimiter, async (req, res) => {
+    const { checkoutSessionId, claimToken } = req.body || {};
+    if (typeof checkoutSessionId !== 'string' || !/^cs_[A-Za-z0-9_]{8,200}$/.test(checkoutSessionId)
+        || typeof claimToken !== 'string' || !claimToken || claimToken.length > 100) {
+        return res.status(400).json({ success: false, error: 'Falta el id del pago' });
+    }
+    try {
+        const stripe = getStripeClient();
+        const session = await stripe.checkout.sessions.retrieve(checkoutSessionId, {}, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        const expected = Buffer.from(String(session.metadata?.claimHash || ''));
+        const given = Buffer.from(sha256Hex(claimToken));
+        const alias = session.metadata?.newLicenseAlias;
+        const licenseId = session.metadata?.licenseId;
+        if (!alias || !licenseId || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+            return res.status(404).json({ success: false, error: 'Pago no encontrado' });
+        }
+        const planType = session.metadata?.planType || undefined;
+        const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+        if (session.payment_status !== 'paid' || !paymentIntentId) {
+            return res.json({ success: true, status: 'pending' });
+        }
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, stripePaymentId: paymentIntentId, newLicenseAlias: alias });
+        const row = await db.findById(licenseId);
+        // El webhook pudo ganarle y estar creándola en este momento.
+        if (!row) return res.json({ success: true, status: 'pending' });
+        if (!row.pending_key_reveal) {
+            return res.status(409).json({ success: false, error: 'La clave de esta compra ya se entregó. Entra con ella en "¿Ya tienes una clave?" o escríbenos si la perdiste.' });
+        }
+        const sessionId = auth.generateSessionId();
+        await db.setSession(row.id, sessionId);
+        const token = auth.signSession(row, sessionId);
+        res.json({ success: true, status: 'approved', key: row.pending_key_reveal, token, license: sessionLicense(row) });
+    } catch (err) {
+        console.error('[Stripe] Error confirmando una compra sin cuenta:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo confirmar el pago. Intenta de nuevo en un momento.' });
     }
 });
 
@@ -1856,7 +2041,8 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
         const diceTier = source.metadata?.diceTier || undefined;
         const spotifyAddon = source.metadata?.spotifyAddon === 'true';
         if (!licenseId) return;
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId });
+        const newLicenseAlias = source.metadata?.newLicenseAlias || undefined;
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId, newLicenseAlias });
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }

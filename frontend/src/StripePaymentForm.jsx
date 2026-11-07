@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
 import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError, EXPRESS_CHECKOUT_ALWAYS } from './stripeCheckout';
+import { savePendingGuestPurchase, clearPendingGuestPurchase, confirmGuestPurchase } from './guestPurchase';
 
 const DECLINE_FALLBACK = 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
 const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Revisa tu conexión o si un bloqueador de anuncios lo está frenando, e intenta de nuevo.';
 const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos en cuanto se confirme.';
+const GUEST_PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Cuando se confirme, vuelve a Membresía en este mismo navegador para recibir tu clave.';
 
 // Cobro con el formulario de Checkout de Stripe (Checkout Session con
 // ui_mode 'form'), el único medio de pago de Membership.jsx. Stripe dibuja
@@ -12,7 +14,11 @@ const PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Te avisamos 
 // Link arriba, correo, nombre, tarjeta, guardar tarjeta y el botón de pagar.
 // Acá solo se pide la sesión al backend, se monta y, al confirmar, se le
 // pide al backend que la verifique contra Stripe.
-export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, onSuccess, onCancel }) {
+// `guestAlias`: compra de un plan SIN cuenta. La sesión de pago se pide a la
+// ruta sin sesión y la licencia nace solo si el cobro se confirma; entonces
+// `onSuccess` recibe { key, token, license } para entrar con ella (ver
+// guestPurchase.js).
+export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, guestAlias, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
@@ -30,6 +36,19 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
     // una segunda sesión por el doble montaje del modo estricto de React.
     if (startedRef.current) return;
     startedRef.current = true;
+
+    const confirmGuest = async (checkoutSessionId, claimToken) => {
+      const result = await confirmGuestPurchase({ backendUrl: backendUrl(), checkoutSessionId, claimToken });
+      if (result.status === 'approved') {
+        clearPendingGuestPurchase();
+        onSuccessRef.current?.(result);
+        return;
+      }
+      if (result.status === 'gone') clearPendingGuestPurchase();
+      // Pendiente: el pago se guardó en este navegador, así que al volver a
+      // Membresía se recoge la clave en cuanto se confirme.
+      setSubmitError(result.status === 'pending' ? GUEST_PENDING_MESSAGE : result.error);
+    };
 
     const confirmWithBackend = async (checkoutSessionId) => {
       try {
@@ -52,12 +71,18 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
     (async () => {
       let data;
       try {
-        const res = await fetch(`${backendUrl()}/api/payments/stripe/checkout-session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          // spotifyAddon solo viaja al comprar el complemento (ver Membership.jsx).
-          body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, policyAcceptedAt }),
-        });
+        const res = guestAlias
+          ? await fetch(`${backendUrl()}/api/payments/stripe/guest-checkout-session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alias: guestAlias, planType, policyAcceptedAt }),
+          })
+          : await fetch(`${backendUrl()}/api/payments/stripe/checkout-session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            // spotifyAddon solo viaja al comprar el complemento (ver Membership.jsx).
+            body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, policyAcceptedAt }),
+          });
         data = await res.json();
       } catch {
         setLoadError('No se pudo conectar para iniciar el pago.');
@@ -66,6 +91,9 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
       if (!data.success) {
         setLoadError(data.error || 'No se pudo iniciar el pago.');
         return;
+      }
+      if (guestAlias) {
+        savePendingGuestPurchase({ checkoutSessionId: data.checkoutSessionId, claimToken: data.claimToken, alias: guestAlias, planType });
       }
 
       formRef.current = await mountCheckoutForm({
@@ -96,7 +124,8 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
             // Nunca se confía en que el frontend diga "pagado" -- el backend
             // vuelve a consultar la sesión contra la propia API de Stripe
             // antes de aplicar la compra (ver /api/payments/stripe/confirm).
-            await confirmWithBackend(data.checkoutSessionId);
+            if (guestAlias) await confirmGuest(data.checkoutSessionId, data.claimToken);
+            else await confirmWithBackend(data.checkoutSessionId);
           } catch (error) {
             setSubmitError(friendlyDeclineMessage(error, DECLINE_FALLBACK));
             reportStripeError('checkout', { message: error?.message || String(error) });

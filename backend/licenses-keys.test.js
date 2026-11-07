@@ -35,7 +35,7 @@ test('labeled keys are alias-tier-hash whatever the alias looks like', () => {
 
 function adminRoutes({ existing = {} } = {}) {
   const routes = {};
-  const events = { inserted: [], keySets: [], logs: [], audited: [], cleaned: [], revoked: [], deleted: [] };
+  const events = { inserted: [], keySets: [], logs: [], audited: [], cleaned: [], revoked: [], deleted: [], sessions: [], kicked: [] };
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const context = vm.createContext({
     app: {
@@ -49,6 +49,8 @@ function adminRoutes({ existing = {} } = {}) {
     // Plain data again, so deepEqual compares them across the vm boundary.
     audit: (req, action, target, details) => events.audited.push({ admin: req.license.username, action, target: { ...target }, details: details ? { ...details } : null }),
     cleanLicenseFiles: (licenseId) => events.cleaned.push(licenseId),
+    kickOtherDevices: async (id, sid) => { events.kicked.push([id, sid]); },
+    sessionLicense: (row) => ({ username: row.username, licenseType: row.license_type, isAdmin: !!row.is_admin }),
     db: {
       insertLicense: async (row) => {
         events.inserted.push(row);
@@ -59,6 +61,7 @@ function adminRoutes({ existing = {} } = {}) {
       setLicenseKey: async (id, keys) => { events.keySets.push([id, { ...keys }]); },
       revoke: async (id) => { events.revoked.push(id); },
       deleteLicense: async (id) => { events.deleted.push(id); },
+      setSession: async (id, sid) => { events.sessions.push([id, sid]); },
       getLicenseKey: async (id) => (existing[id]?.key_encrypted ? tokenCrypto.decrypt(existing[id].key_encrypted) : null),
     },
     console: { log: (...args) => events.logs.push(args.join(' ')), error: (...args) => events.logs.push(args.join(' ')) },
@@ -238,8 +241,33 @@ test('the admin can see the original key of a license, never an admin one, and e
   assert.equal(legacy.body.legacy, true, 'a key from before they were stored cannot be recovered');
 
   const admin = await look('boss');
-  assert.equal(admin.statusCode, 403);
+  assert.equal(admin.statusCode, 403, 'another admin license never shows its key');
   assert.ok(!JSON.stringify(admin.body).includes('XXXXXXXXXXXX'));
   assert.equal((await look('nobody')).statusCode, 404);
   assert.equal(events.audited.length, 1, 'refused looks are not written');
+});
+
+test('the admin can see their own key, and regenerate it keeping this session alive', async () => {
+  const mine = { id: 'boss', username: 'notbenjaa1', license_type: 'lifetime', is_admin: true, key_encrypted: tokenCrypto.encrypt('notbenjaa1-admin-MINEMINEMINE') };
+  const { call, events } = adminRoutes({ existing: { boss: mine } });
+  const json = () => ({ statusCode: 200, headers: {}, set(n, v) { this.headers[n] = v; }, status(code) { this.statusCode = code; return this; }, json(payload) { this.body = JSON.parse(JSON.stringify(payload)); } });
+
+  const view = json();
+  await call.routes['GET /api/licenses/:id/key']({ params: { id: 'boss' }, license: { id: 'boss', username: 'notbenjaa1' } }, view);
+  assert.equal(view.statusCode, 200);
+  assert.equal(view.body.key, 'notbenjaa1-admin-MINEMINEMINE');
+
+  const regen = json();
+  await call.routes['/api/auth/regenerate-own-key']({ license: { ...mine }, sessionId: 'sid-this-tab', isAdmin: true }, regen);
+  assert.equal(regen.statusCode, 200);
+  assert.match(regen.body.key, keyFormat('notbenjaa1', 'admin'));
+  const [setId, setKeys] = events.keySets[0];
+  assert.equal(setId, 'boss');
+  assert.equal(setKeys.keyHash, auth.hashKey(regen.body.key));
+  assert.equal(tokenCrypto.decrypt(setKeys.keyEncrypted), regen.body.key, 'stored encrypted, so "Ver clave" shows it later');
+  assert.deepEqual(events.sessions, [['boss', 'sid-this-tab']], 'this tab keeps its session');
+  assert.deepEqual(events.kicked, [['boss', 'sid-this-tab']], 'the other devices are logged out');
+  assert.equal(regen.headers['Cache-Control'], 'no-store');
+  assert.deepEqual(events.audited.map((a) => a.action), ['license.view_key', 'license.regenerate_own_key']);
+  assert.ok(!JSON.stringify(events.audited).includes(regen.body.key), 'the history never has the key');
 });

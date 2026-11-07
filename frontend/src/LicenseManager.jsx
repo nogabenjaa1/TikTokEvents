@@ -2,7 +2,7 @@ import { SkeletonRows } from './PanelHelp';
 import MorphButton from './MorphButton';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { backendUrl, authHeaders } from './auth';
+import { backendUrl, authHeaders, loadSession, saveSession } from './auth';
 import AdminStats from './AdminStats';
 
 // Tipos que el admin puede elegir a mano (crear o extender). Las pruebas
@@ -443,7 +443,7 @@ export default function LicenseManager({ onSessionInvalid }) {
   // conexión nueva, también las URLs de overlay de OBS (llevan la key cruda),
   // por eso se pide confirmación.
   const regenerateKey = async (lic) => {
-    if (!window.confirm(`¿Regenerar la clave de @${lic.username}? La clave actual deja de servir: tendrá que entrar con la nueva y volver a pegar la URL de sus overlays en OBS.`)) return;
+    if (!window.confirm(`¿Regenerar la clave de @${lic.username}? La clave actual deja de servir y tendrá que entrar con la nueva. Sus enlaces de overlay siguen funcionando.`)) return;
     try {
       const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/regenerate-key`, { method: 'POST', headers: authHeaders() });
       if (res.status === 401) { await handleUnauthorized(res); return; }
@@ -469,6 +469,28 @@ export default function LicenseManager({ onSessionInvalid }) {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'No se pudo leer la clave');
       setNewKey({ key: data.key, username: lic.username, viewed: true });
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
+  // Tu propia licencia (la admin con la que entraste): se puede ver su clave
+  // y regenerarla sin perder la sesión de esta pestaña ni los enlaces de
+  // overlay (ver POST /api/auth/regenerate-own-key).
+  const ownUsername = loadSession()?.username;
+  const ownLicense = useMemo(() => licenses.find(l => l.isAdmin && l.username === ownUsername) || null, [licenses, ownUsername]);
+
+  const regenerateOwnKey = async () => {
+    if (!window.confirm('¿Regenerar tu clave? La actual deja de servir y se cierran tus sesiones en otros dispositivos. Esta pestaña sigue abierta y tus enlaces de overlay siguen funcionando.')) return;
+    try {
+      const res = await fetch(`${backendUrl()}/api/auth/regenerate-own-key`, { method: 'POST', headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo regenerar tu clave');
+      // La sesión de esta pestaña sigue valiendo: solo se guarda la clave nueva
+      // para que el resto del panel la use.
+      saveSession({ ...loadSession(), licenseKey: data.key, ...data.license });
+      setNewKey({ key: data.key, username: data.license.username, own: true });
     } catch (err) {
       pushToast(err.message, 'error');
     }
@@ -509,7 +531,7 @@ export default function LicenseManager({ onSessionInvalid }) {
       {newKey && (
         <div ref={newKeyPanelRef} className="w-full max-w-lg theme-notice theme-notice-warning theme-notice-roomy tkc-rise">
           <p className="text-xs font-black uppercase tracking-widest mb-2">
-            {newKey.viewed ? 'Clave actual de la licencia' : 'Guarda esta clave ahora'}
+            {newKey.viewed ? 'Clave actual de la licencia' : newKey.own ? 'Tu clave nueva: cópiala ahora' : 'Guarda esta clave ahora'}
           </p>
           <p className="text-sm text-gray-300 mb-2">
             {newKey.viewed ? 'Clave' : newKey.regenerated ? 'Clave nueva' : 'Licencia'} para <strong className="text-white">@{newKey.username}</strong>:
@@ -518,7 +540,14 @@ export default function LicenseManager({ onSessionInvalid }) {
             <p className="text-[11px] text-gray-400 mb-2">Es la misma clave que ya tenía: sus enlaces de overlay siguen funcionando. Entrégala solo a quien es dueño de la licencia.</p>
           )}
           {newKey.regenerated && (
-            <p className="text-[11px] text-gray-400 mb-2">La clave anterior ya no sirve: hay que entregarle esta y volver a pegar la URL de sus overlays en OBS.</p>
+            <p className="text-[11px] text-gray-400 mb-2">La clave anterior ya no sirve: hay que entregarle esta. Sus enlaces de overlay siguen funcionando.</p>
+          )}
+          {newKey.own && (
+            <p className="text-[11px] text-gray-400 mb-2">
+              Tu sesión en esta pestaña sigue abierta; en otros dispositivos entra con esta clave. Tus enlaces de overlay siguen funcionando,
+              salvo los muy antiguos que llevan la clave dentro (si alguno deja de conectar, cópialo de nuevo desde Overlays).
+              Si vuelves a perderla, aquí mismo puedes verla con «Ver mi clave».
+            </p>
           )}
           <div className="flex items-center gap-2">
             <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{newKey.key}</code>
@@ -528,6 +557,17 @@ export default function LicenseManager({ onSessionInvalid }) {
           </div>
           <button onClick={() => setNewKey(null)} className="theme-link mt-1">Cerrar</button>
         </div>
+      )}
+
+      {ownLicense && (
+        <section className="theme-surface w-full max-w-lg p-4 flex flex-col gap-2" aria-labelledby="own-key-title">
+          <p id="own-key-title" className="theme-label tkc-label">Tu clave (@{ownLicense.username})</p>
+          <p className="tkc-hint">Si la perdiste, mírala aquí. Si es de antes de que se guardaran las claves, regenérala: no pierdes tu sesión ni tus enlaces de overlay.</p>
+          <div className="flex flex-wrap gap-4">
+            <button type="button" onClick={() => viewKey(ownLicense)} className="theme-link">Ver mi clave</button>
+            <button type="button" onClick={regenerateOwnKey} className="theme-link theme-link-warning">Regenerar mi clave</button>
+          </div>
+        </section>
       )}
 
       {/* Resumen del negocio: ingresos, licencias por plan, por vencer, conversión */}

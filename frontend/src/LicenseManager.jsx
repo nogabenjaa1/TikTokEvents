@@ -457,6 +457,23 @@ export default function LicenseManager({ onSessionInvalid }) {
     }
   };
 
+  // "Ver clave": la clave original de la licencia, para dársela otra vez a
+  // quien la perdió sin regenerarla (regenerar cambia también sus enlaces de
+  // overlay). Solo existe para las claves creadas o regeneradas desde que se
+  // guardan cifradas; las licencias admin no la muestran (ver
+  // GET /api/licenses/:id/key). Cada consulta queda en Sistema > Historial.
+  const viewKey = async (lic) => {
+    try {
+      const res = await fetch(`${backendUrl()}/api/licenses/${lic.id}/key`, { headers: authHeaders() });
+      if (res.status === 401) { await handleUnauthorized(res); return; }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo leer la clave');
+      setNewKey({ key: data.key, username: lic.username, viewed: true });
+    } catch (err) {
+      pushToast(err.message, 'error');
+    }
+  };
+
   const copyKey = () => {
     navigator.clipboard.writeText(newKey.key);
     setCopied(true);
@@ -491,10 +508,15 @@ export default function LicenseManager({ onSessionInvalid }) {
       {/* Modal simple: key nueva, se muestra UNA sola vez */}
       {newKey && (
         <div ref={newKeyPanelRef} className="w-full max-w-lg theme-notice theme-notice-warning theme-notice-roomy tkc-rise">
-          <p className="text-xs font-black uppercase tracking-widest mb-2">Guarda esta clave ahora — no se vuelve a mostrar</p>
-          <p className="text-sm text-gray-300 mb-2">
-            {newKey.regenerated ? 'Clave nueva' : 'Licencia'} para <strong className="text-white">@{newKey.username}</strong>:
+          <p className="text-xs font-black uppercase tracking-widest mb-2">
+            {newKey.viewed ? 'Clave actual de la licencia' : 'Guarda esta clave ahora'}
           </p>
+          <p className="text-sm text-gray-300 mb-2">
+            {newKey.viewed ? 'Clave' : newKey.regenerated ? 'Clave nueva' : 'Licencia'} para <strong className="text-white">@{newKey.username}</strong>:
+          </p>
+          {newKey.viewed && (
+            <p className="text-[11px] text-gray-400 mb-2">Es la misma clave que ya tenía: sus enlaces de overlay siguen funcionando. Entrégala solo a quien es dueño de la licencia.</p>
+          )}
           {newKey.regenerated && (
             <p className="text-[11px] text-gray-400 mb-2">La clave anterior ya no sirve: hay que entregarle esta y volver a pegar la URL de sus overlays en OBS.</p>
           )}
@@ -787,6 +809,9 @@ export default function LicenseManager({ onSessionInvalid }) {
                           Revocar acceso
                         </button>
                       )}
+                      <button type="button" onClick={() => viewKey(lic)} className="theme-link">
+                        Ver clave
+                      </button>
                       {!lic.revoked && (
                         <button type="button" onClick={() => regenerateKey(lic)} className="theme-link theme-link-warning">
                           Regenerar clave

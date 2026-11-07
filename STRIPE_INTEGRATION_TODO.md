@@ -101,6 +101,14 @@ En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_meth
 4. `POST /api/payments/stripe/confirm` vuelve a pedir la sesión a Stripe, comprueba que sea de esa licencia y aplica la compra con el ID del PaymentIntent.
 5. Si el navegador se cierra antes, el webhook (`checkout.session.completed` o `payment_intent.succeeded`) aplica la compra. Nunca se cobra ni se aplica dos veces: los pagos tienen un UNIQUE por el ID del PaymentIntent.
 
+### Compra sin cuenta (solo con un alias)
+
+- **No se crea nada al pulsar "Comprar".** `POST /api/payments/stripe/guest-checkout-session` reserva el ID de la licencia y lo manda en la metadata del pago, junto con el alias (`newLicenseAlias`) y el hash de un `claimToken`. El navegador guarda ese token.
+- **La licencia nace cuando Stripe confirma el cobro.** La crea `POST /api/payments/stripe/guest-confirm` (el navegador presenta su `claimToken`) o el webhook, lo que llegue primero; el otro no duplica nada.
+- **La clave se entrega una vez.** `/guest-confirm` la da mientras siga pendiente de mostrar. Si la pestaña se cerró, al volver a Membresía en el mismo navegador se recoge sola (dos días como máximo, ver `frontend/src/guestPurchase.js`).
+- **Si alguien la pierde,** el admin la recupera con "Ver clave" en el panel de Licencias.
+- **Antes**, "Comprar" creaba una prueba gratis para tener a qué cobrarle. Esa prueba quedaba activa aunque no se pagara, y el comprador nunca veía su clave.
+
 Cambiaron `backend/server.js` (rutas de Stripe), `frontend/src/StripePaymentForm.jsx` y `frontend/src/CardVerifyForm.jsx`. Lo común quedó en `frontend/src/stripeCheckout.js`. Se quitaron las rutas viejas `/api/payments/stripe/intent` y `/api/free-trial/setup-intent`, y la dependencia `@stripe/react-stripe-js`, que ya no se usa.
 
 ## Siguientes pasos

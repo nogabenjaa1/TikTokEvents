@@ -11,6 +11,9 @@ const crypto = require('node:crypto');
 // auth.js reads two secrets and the database when it loads: provide them first.
 process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.KEY_HASH_SECRET = 'test-key-hash-secret';
+// The admin's "Ver clave" keeps every new key encrypted with this one (see tokenCrypto.js).
+process.env.TOKEN_ENCRYPTION_KEY = 'ab'.repeat(32);
+const tokenCrypto = require('./tokenCrypto');
 const dbPath = require.resolve('./db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {} };
 const auth = require('./auth');
@@ -37,9 +40,10 @@ function adminRoutes({ existing = {} } = {}) {
   const context = vm.createContext({
     app: {
       post: (path, ...handlers) => { routes[path] = handlers.at(-1); },
+      get: (path, ...handlers) => { routes[`GET ${path}`] = handlers.at(-1); },
       delete: (path, ...handlers) => { routes[`DELETE ${path}`] = handlers.at(-1); },
     },
-    auth, crypto, adminLimiter: null,
+    auth, crypto, adminLimiter: null, tokenCrypto,
     pushLicenseState: () => {}, // avisar al panel del streamer tiene su propia prueba
     // The admin history and the storage cleanup are stubs here: each has its own tests.
     // Plain data again, so deepEqual compares them across the vm boundary.
@@ -55,8 +59,9 @@ function adminRoutes({ existing = {} } = {}) {
       setLicenseKey: async (id, keys) => { events.keySets.push([id, { ...keys }]); },
       revoke: async (id) => { events.revoked.push(id); },
       deleteLicense: async (id) => { events.deleted.push(id); },
+      getLicenseKey: async (id) => (existing[id]?.key_encrypted ? tokenCrypto.decrypt(existing[id].key_encrypted) : null),
     },
-    console: { log: (...args) => events.logs.push(args.join(' ')) },
+    console: { log: (...args) => events.logs.push(args.join(' ')), error: (...args) => events.logs.push(args.join(' ')) },
   });
   const run = (from, to) => vm.runInContext(source.slice(source.indexOf(from), source.indexOf(to)), context);
   run('const VALID_LICENSE_TYPES', '// No bloqueante a propósito: si todavía no se'); // the license types, Color Says levels and key labels
@@ -67,6 +72,7 @@ function adminRoutes({ existing = {} } = {}) {
     await routes[path]({ body, params, license }, res);
     return res;
   };
+  call.routes = routes;
   return { call, events };
 }
 
@@ -82,6 +88,7 @@ test('licenses created from the panel get an alias-tier-hash key, with the tier 
     assert.equal(row.keyPrefix, res.body.key.slice(0, 8));
     assert.equal(row.username, 'Novia'); // the name shown in the panel keeps what the admin typed
     assert.ok(!JSON.stringify(row).includes(res.body.key), 'the raw key never reaches the database');
+    assert.equal(tokenCrypto.decrypt(row.keyEncrypted), res.body.key, 'but it is kept encrypted, so the admin can show it again');
   }
 });
 
@@ -129,7 +136,9 @@ test('regenerating a key gives an alias-tier-hash key that replaces the old one'
   assert.equal(lifetime.statusCode, 200);
   assert.match(lifetime.body.key, keyFormat('novia', 'lifetime'));
   assert.deepEqual(lifetime.body.license, { id: 'lifetime', username: 'novia' });
-  assert.deepEqual(events.keySets[0], ['lifetime', { keyHash: auth.hashKey(lifetime.body.key), keyPrefix: lifetime.body.key.slice(0, 8) }]);
+  const [setId, setKeys] = events.keySets[0];
+  assert.deepEqual([setId, setKeys.keyHash, setKeys.keyPrefix], ['lifetime', auth.hashKey(lifetime.body.key), lifetime.body.key.slice(0, 8)]);
+  assert.equal(tokenCrypto.decrypt(setKeys.keyEncrypted), lifetime.body.key, 'the new key is kept encrypted too');
 
   assert.match((await call(path, { params: { id: 'month' } })).body.key, keyFormat('beto', 'monthly'));
   assert.match((await call(path, { params: { id: 'trial' } })).body.key, keyFormat('cleo', 'FREE7DAY'));
@@ -200,4 +209,37 @@ test('regenerating refuses the admin license and a license that does not exist, 
   const missing = await call('/api/licenses/:id/regenerate-key', { params: { id: 'nope' } });
   assert.equal(missing.statusCode, 404);
   assert.deepEqual(events.keySets, []);
+});
+
+test('the admin can see the original key of a license, never an admin one, and each look is written to the history', async () => {
+  const existing = {
+    beto: { id: 'beto', username: 'beto', license_type: 'month', is_admin: false, key_encrypted: tokenCrypto.encrypt('beto-monthly-AbCdEfGhIjKl') },
+    old: { id: 'old', username: 'cleo', license_type: 'annual', is_admin: false, key_encrypted: null },
+    boss: { id: 'boss', username: 'notbenjaa1', license_type: 'lifetime', is_admin: true, key_encrypted: tokenCrypto.encrypt('notbenjaa1-admin-XXXXXXXXXXXX') },
+  };
+  const { call, events } = adminRoutes({ existing });
+  const route = 'GET /api/licenses/:id/key';
+  const headers = {};
+  const look = async (id) => {
+    const res = { statusCode: 200, set(name, value) { headers[name] = value; }, status(code) { this.statusCode = code; return this; }, json(payload) { this.body = JSON.parse(JSON.stringify(payload)); } };
+    await call.routes[route]({ params: { id }, license: { username: 'notbenjaa1' } }, res);
+    return res;
+  };
+
+  const shown = await look('beto');
+  assert.equal(shown.statusCode, 200);
+  assert.equal(shown.body.key, 'beto-monthly-AbCdEfGhIjKl');
+  assert.equal(headers['Cache-Control'], 'no-store');
+  assert.deepEqual(events.audited.map((a) => [a.action, a.target.id]), [['license.view_key', 'beto']]);
+  assert.ok(!JSON.stringify(events.audited).includes('AbCdEfGhIjKl'), 'the history says who looked, never the key');
+
+  const legacy = await look('old');
+  assert.equal(legacy.statusCode, 404);
+  assert.equal(legacy.body.legacy, true, 'a key from before they were stored cannot be recovered');
+
+  const admin = await look('boss');
+  assert.equal(admin.statusCode, 403);
+  assert.ok(!JSON.stringify(admin.body).includes('XXXXXXXXXXXX'));
+  assert.equal((await look('nobody')).statusCode, 404);
+  assert.equal(events.audited.length, 1, 'refused looks are not written');
 });

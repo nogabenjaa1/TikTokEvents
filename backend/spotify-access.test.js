@@ -385,12 +385,14 @@ test('the add-on price is separate from the plans: it adds to a purchase but can
 
 // ── Purchases (server.js helpers, run against stubs) ──
 function purchaseContext() {
-  const events = { stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
+  const events = { created: [], forgotten: [], stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };
   const source = fs.readFileSync(require.resolve('./server'), 'utf8');
   const context = vm.createContext({
     pushLicenseState: () => {}, // avisar al panel del streamer tiene su propia prueba
     pricing, spotify, crypto: require('node:crypto'), Date,
     PLAN_KEY_LABELS: { month: 'monthly', annual: 'yearly', lifetime: 'lifetime' },
+    // The real one also encrypts the key for the admin's "Ver clave"; its own test lives in licenses-keys.test.js.
+    storedKeyFields: (key) => ({ keyHash: `hash(${key})`, keyPrefix: key.slice(0, 4), keyEncrypted: `enc(${key})` }),
     auth: {
       computeExpiresAt: (type) => (type === 'lifetime' ? null : 1000),
       generateLabeledKey: (alias, label) => `${alias}-${label}-KEY`,
@@ -402,6 +404,8 @@ function purchaseContext() {
       findById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
       findCoreById: async (id) => (id === 'gone' ? undefined : { id, username: 'ana', license_type: 'month', expires_at: null, dice_tier: 'regular' }),
       applyPurchase: async (...args) => { events.applied.push(args); },
+      insertLicense: async (row) => { events.created.push({ ...row }); },
+      deletePaymentRecord: async (...args) => { events.forgotten.push(args); },
       // The pending-payment notes for the admin (Sistema > Pagos); plain copies so deepEqual works across the vm.
       upsertPaymentFailure: async (row) => { events.failures.push({ ...row }); },
       resolvePaymentFailureFor: async (...args) => { events.resolved.push(args); },
@@ -750,4 +754,39 @@ test('the admin list shows the linked Spotify account, and who else uses the sam
   assert.equal(byName.cliente3.spotifySharedSlot, false);
   const text = JSON.stringify(licenses);
   assert.ok(!/access_token|refresh_token|owner-account|someone-else/.test(text), 'no tokens or internal Spotify ids in the admin payload');
+});
+
+test('a purchase without an account creates its license only once the charge is confirmed, with the alias and the plan bought', async () => {
+  // 'gone' is a license id the stub does not know: exactly the case of a guest purchase, whose license does not exist yet.
+  const fresh = purchaseContext();
+  const result = await fresh.context.applyApprovedStripePaymentIfNew({ licenseId: 'gone', planType: 'annual', stripePaymentId: 'pi_guest', newLicenseAlias: 'novia' });
+  assert.deepEqual({ ...result }, { applied: true, licenseId: 'gone', created: true });
+  assert.equal(fresh.events.created.length, 1);
+  const row = fresh.events.created[0];
+  assert.deepEqual([row.id, row.username, row.licenseType, row.isAdmin], ['gone', 'novia', 'annual', false]);
+  assert.equal(row.pendingKeyReveal, 'novia-yearly-KEY', 'the buyer collects this key with /guest-confirm');
+  assert.equal(row.keyHash, 'hash(novia-yearly-KEY)');
+  assert.equal(row.keyEncrypted, 'enc(novia-yearly-KEY)', 'and the admin can show it again later');
+  assert.equal(fresh.events.applied.length, 0, 'a new license is created, not updated');
+  assert.equal(fresh.events.stripePayments[0].amountCents, 108000);
+
+  // The webhook and /guest-confirm both arrive: only the first one creates anything.
+  const repeated = purchaseContext();
+  repeated.events.fresh = false;
+  const again = await repeated.context.applyApprovedStripePaymentIfNew({ licenseId: 'gone', planType: 'annual', stripePaymentId: 'pi_guest', newLicenseAlias: 'novia' });
+  assert.equal(again.alreadyProcessed, true);
+  assert.equal(repeated.events.created.length, 0);
+
+  // A license that already exists is never recreated: it gets the normal purchase.
+  const existing = purchaseContext();
+  await existing.context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'annual', stripePaymentId: 'pi_x', newLicenseAlias: 'novia' });
+  assert.equal(existing.events.created.length, 0);
+  assert.equal(existing.events.applied.length, 1);
+
+  // If the license cannot be created, the payment record is forgotten so the next notice tries again.
+  const broken = purchaseContext();
+  broken.context.db.insertLicense = async () => { throw new Error('db down'); };
+  await assert.rejects(() => broken.context.applyApprovedStripePaymentIfNew({ licenseId: 'gone', planType: 'month', stripePaymentId: 'pi_dead', newLicenseAlias: 'novia' }), /db down/);
+  assert.deepEqual(broken.events.forgotten, [['stripe', 'pi_dead']]);
+  assert.ok(broken.events.logs.some((line) => line.includes('PAGO COBRADO SIN LICENCIA')));
 });

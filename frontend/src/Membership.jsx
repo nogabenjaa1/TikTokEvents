@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
+import { backendUrl, refreshSession, requestFreeTrial, saveSession, loginWithKey } from './auth';
+import { loadPendingGuestPurchase, clearPendingGuestPurchase, confirmGuestPurchase } from './guestPurchase';
 import MorphButton from './MorphButton';
 import LegalLinks from './LegalLinks';
 import HoneypotField from './HoneypotField';
@@ -45,17 +46,18 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 
 // Pantalla de autoservicio de pago (formulario de Stripe embebido aquí; el
 // correo y el nombre los pide el propio formulario de Stripe).
-// Funciona con o sin sesión: sin sesión se ven los planes igual (precio
-// público) pero hace falta un alias antes de pagar — se usa para crear la
-// cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
-// Login.jsx.
+// Funciona con o sin sesión. Sin sesión va en dos pasos: 1) el alias, que
+// va en la clave (alias-plan-hash), y 2) la prueba gratis o la compra de un
+// plan. Comprar NO crea nada por adelantado: la licencia nace solo cuando
+// Stripe confirma el cobro (ver guestPurchase.js y
+// /api/payments/stripe/guest-checkout-session); antes se creaba una prueba
+// gratis al pulsar "Comprar", que quedaba activa aunque no se pagara.
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
 
 export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [alias, setAlias] = useState('');
-  const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   // Plan que se esta pagando ahora mismo con el formulario de Stripe
   // embebido -- null si no hay ningun pago en curso. El comprador nunca sale
   // de este sitio con este camino.
@@ -75,6 +77,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [banner, setBanner] = useState(() => new URLSearchParams(window.location.search).get('payment'));
   const [revealedKey, setRevealedKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  // Clave de una licencia recién comprada sin cuenta: se muestra arriba para
+  // que la guarde (es su única credencial).
+  const [newLicenseKey, setNewLicenseKey] = useState(null);
+  const [newKeyCopied, setNewKeyCopied] = useState(false);
+  // Una compra sin cuenta guardada en este navegador que todavía no se
+  // confirma (ver el efecto de recuperación más abajo).
+  const [guestClaimPending, setGuestClaimPending] = useState(false);
 
   // Prueba gratis (mudada entera desde Login.jsx -- pedido explícito: que
   // el streamer elija entre probar gratis o comprar todo en un solo lugar,
@@ -249,34 +258,58 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
     setTimeout(() => setKeyCopied(false), 2000);
   };
 
-  // Sin sesión, comprar crea la cuenta en el mismo paso (mismo endpoint que
-  // "prueba gratis" en Login.jsx) usando el alias como identidad — así la
-  // key resultante sigue el formato alias-TIER-hash desde el primer momento,
-  // sin un paso de registro separado.
-  const ensureSession = async () => {
-    if (session?.licenseKey !== undefined || loadSession()?.token) return true;
-    if (!requireAlias()) return false;
-    const { token, key, license } = await requestFreeTrial(alias.trim());
-    const created = { token, licenseKey: key, ...license };
-    saveSession(created);
-    onSessionUpdate?.(created);
-    return true;
+  // Sin sesión solo hace falta el alias: no se crea nada hasta que el pago se
+  // confirme (ver el comentario del componente).
+  const handleBuy = (planType) => {
+    if (!planType) return;
+    setError('');
+    if (!session && !requireAlias()) return;
+    setPayingPlan(planType);
   };
 
-  const handleBuy = async (planType) => {
-    if (loadingTarget || !planType) return;
-    setError('');
-    setLoadingTarget(planType);
-    try {
-      const ok = await ensureSession();
-      if (!ok) return;
-      setPayingPlan(planType);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoadingTarget(null);
-    }
+  // Compra sin cuenta aprobada: la licencia ya existe; se entra con ella y se
+  // muestra la clave para que la guarde.
+  const handleGuestPurchaseSuccess = ({ key, token, license }) => {
+    const created = { token, licenseKey: key, ...license };
+    saveSession(created);
+    setPayingPlan(null);
+    setPolicyAcceptedAt(null);
+    setGuestClaimPending(false);
+    setNewLicenseKey(key);
+    setBanner('created');
+    onSessionUpdate?.(created);
   };
+
+  const copyNewLicenseKey = () => {
+    navigator.clipboard.writeText(newLicenseKey);
+    setNewKeyCopied(true);
+    setTimeout(() => setNewKeyCopied(false), 2000);
+  };
+
+  // Una compra sin cuenta que se pagó pero cuya clave no se llegó a recoger
+  // (se cerró la pestaña o el banco sacó al comprador del sitio): al volver a
+  // Membresía en este navegador se reclama sola.
+  useEffect(() => {
+    if (session) return undefined;
+    const pending = loadPendingGuestPurchase();
+    if (!pending) return undefined;
+    let cancelled = false;
+    confirmGuestPurchase({ backendUrl: backendUrl(), checkoutSessionId: pending.checkoutSessionId, claimToken: pending.claimToken, attempts: 2 })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.status === 'approved') {
+          clearPendingGuestPurchase();
+          handleGuestPurchaseSuccess(result);
+        } else if (result.status === 'gone') {
+          clearPendingGuestPurchase();
+        } else {
+          setGuestClaimPending(true);
+        }
+      });
+    return () => { cancelled = true; };
+    // Solo al abrir la pantalla.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Se llama cuando /api/payments/charge confirma un pago aprobado -- mismo
   // flujo que ya usaba el banner de exito del redirect (refrescar la sesion
@@ -298,7 +331,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         <p className="text-sm text-gray-500">
           {session
             ? 'Revisa tu plan actual, mejóralo o renuévalo cuando quieras.'
-            : 'Prueba gratis 7 días o elige un plan. Tu clave es tu única credencial: guárdala en un lugar seguro.'}
+            : 'Primero elige tu alias; luego pruébalo gratis 7 días o compra un plan. Tu clave es tu única credencial: guárdala en un lugar seguro.'}
         </p>
         {/* El acceso con clave quedó al final de la pantalla (lo primero son
             los planes): este enlace lleva directo a él. */}
@@ -315,9 +348,31 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         <div role={banner === 'failure' ? 'alert' : 'status'} className={['w-full max-w-3xl theme-notice theme-notice-roomy',
           banner === 'success' ? 'theme-notice-success' : banner === 'pending' ? 'theme-notice-warning' : 'theme-notice-danger'].join(' ')}>
           {banner === 'success' && '¡PAGO APROBADO! TU LICENCIA YA SE ACTUALIZÓ.'}
+          {banner === 'created' && '¡PAGO APROBADO! TU LICENCIA YA ESTÁ LISTA. GUARDA TU CLAVE.'}
           {banner === 'pending' && 'TU PAGO ESTÁ PENDIENTE DE APROBACIÓN — SE APLICA SOLO APENAS SE CONFIRME.'}
           {banner === 'failure' && 'EL PAGO NO SE PUDO COMPLETAR. PUEDES INTENTAR DE NUEVO CUANDO QUIERAS.'}
         </div>
+      )}
+
+      {newLicenseKey && (
+        <div className="theme-surface theme-surface-featured w-full max-w-3xl p-4 flex flex-col gap-2">
+          <p className="theme-label tkc-label">Guarda tu clave ahora</p>
+          <p className="tkc-hint">
+            Es tu única credencial: con ella entras desde cualquier dispositivo. Cópiala y guárdala en un lugar seguro.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="theme-input flex-1 px-3 py-2 text-xs break-all select-all">{newLicenseKey}</code>
+            <button type="button" onClick={copyNewLicenseKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
+              <span key={newKeyCopied ? 'done' : 'idle'} className="tkc-pop">{newKeyCopied ? 'Copiado' : 'Copiar'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!session && guestClaimPending && (
+        <p role="status" className="w-full max-w-3xl theme-notice theme-notice-warning">
+          Tienes un pago pendiente de confirmación. En cuanto se confirme, vuelve a abrir Membresía en este navegador y aquí aparecerá tu clave.
+        </p>
       )}
 
       {/* Al comprar un plan, la key se rota para reflejar el nivel nuevo
@@ -360,9 +415,122 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         </div>
       )}
 
+      {/* Clave de la prueba gratis recién creada: va antes que todo lo demás
+          (es su única credencial y no se puede recuperar si se pierde antes
+          de guardarla). */}
+      {!session && trialResult && (
+        <div className="theme-surface theme-surface-featured w-full max-w-3xl p-5 flex flex-col gap-3">
+          <p role="status" className="theme-label tkc-label">Guarda tu clave ahora</p>
+          <p className="tkc-hint">
+            Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
+            plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{trialResult.key}</code>
+            <button type="button" onClick={copyTrialKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
+              <span key={trialCopied ? 'done' : 'idle'} className="tkc-pop">{trialCopied ? 'Copiado' : 'Copiar'}</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={continueAfterTrial}
+            className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
+          >
+            Continuar
+          </button>
+        </div>
+      )}
+
+      {/* Paso 1: el alias, separado de la prueba gratis y de la compra (antes
+          vivía dentro del bloque de la prueba gratis y "Comprar" lo marcaba
+          en rojo sin que se supiera que iba primero). Se usa para las dos
+          cosas y va dentro de la clave. */}
+      {!session && !trialResult && !payingPlan && (
+        <section className="theme-surface w-full max-w-3xl p-5 flex flex-col gap-1.5 relative" aria-labelledby="alias-title">
+          <HoneypotField />
+          <p className="theme-accent-text tkc-eyebrow">Paso 1</p>
+          <label id="alias-title" htmlFor="membership-alias" className="theme-label tkc-label block">Elige el alias de tu licencia</label>
+          <input
+            ref={aliasInputRef}
+            id="membership-alias"
+            value={alias}
+            onChange={e => { setAlias(e.target.value); if (aliasError) setAliasError(''); }}
+            placeholder="Por ejemplo: tu usuario de TikTok"
+            autoComplete="off"
+            style={aliasError ? { borderColor: '#ef4444' } : undefined}
+            className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
+              aliasError ? 'ring-2 ring-red-500/30' : ''].join(' ')}
+          />
+          {aliasError ? (
+            <p role="alert" className="text-xs font-bold text-red-500">{aliasError}</p>
+          ) : (
+            <p className="tkc-hint">Va dentro de tu clave (alias-plan-hash). Letras, números, "_" o "-". No se crea nada hasta que actives la prueba gratis o se apruebe tu pago.</p>
+          )}
+        </section>
+      )}
+
+      {/* Paso 2a: la prueba gratis, con sus dos vías. */}
+      {!session && !trialResult && !payingPlan && (
+        <section className="theme-surface w-full max-w-3xl p-5 flex flex-col gap-3" aria-labelledby="trial-title">
+          <div>
+            <p className="theme-accent-text tkc-eyebrow">Paso 2</p>
+            <h2 id="trial-title" className="theme-label tkc-label">Pruébalo gratis 7 días</h2>
+          </div>
+          {showCardForm ? (
+            <CardVerifyForm
+              alias={alias} setAlias={setAlias}
+              onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
+              onCancel={() => setShowCardForm(false)}
+            />
+          ) : showTrialAdForm ? (
+            <div className="flex flex-col gap-3">
+              <p className="tkc-hint">Ya viste los anuncios — confirma para activar tus 7 días con el alias «{alias.trim()}».</p>
+              {trialError && <p role="alert" className="theme-notice">{trialError}</p>}
+              <button
+                type="button"
+                onClick={submitTrial}
+                disabled={trialLoading || !alias.trim()}
+                className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {trialLoading ? 'CREANDO...' : 'Activar prueba gratis'}
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={!alias.trim()}
+                  onClick={() => { if (requireAlias()) setShowAdGate(true); }}
+                  className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
+                </button>
+                <button
+                  type="button"
+                  disabled={!alias.trim()}
+                  onClick={() => { if (requireAlias()) setShowCardForm(true); }}
+                  className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Verificar una tarjeta (sin cobro)
+                </button>
+              </div>
+              <p className="tkc-hint">{alias.trim() ? 'Elige una de las dos vías. La tarjeta no se cobra: solo se verifica.' : 'Primero escribe tu alias en el paso 1.'}</p>
+            </>
+          )}
+        </section>
+      )}
+
       {!payingPlan && (
       <section className="w-full max-w-3xl" aria-labelledby="plans-title">
-        <h2 id="plans-title" className="tkc-label theme-label mb-2">Elige tu plan</h2>
+        {session ? (
+          <h2 id="plans-title" className="tkc-label theme-label mb-2">Elige tu plan</h2>
+        ) : (
+          <div className="mb-2">
+            <h2 id="plans-title" className="tkc-label theme-label">O compra un plan</h2>
+            <p className="tkc-hint">{alias.trim() ? `Tu licencia se crea con el alias «${alias.trim()}» en cuanto se apruebe el pago.` : 'Primero escribe tu alias en el paso 1.'}</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {PLANS.map(plan => {
             const isCurrent = session?.licenseType === plan.id;
@@ -401,9 +569,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 {isCurrent ? (
                   <p className="theme-chip tkc-label text-center mt-3 py-2 rounded-full">Plan actual</p>
                 ) : rank > currentPlanRank ? (
-                  <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(plan.id)}
+                  <button type="button" disabled={!session && !alias.trim()} onClick={() => handleBuy(plan.id)}
                     className="theme-btn-primary theme-btn-md w-full mt-3 font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                    {loadingTarget === plan.id ? 'Cargando...' : buttonLabel}
+                    {buttonLabel}
                   </button>
                 ) : null}
               </div>
@@ -414,107 +582,6 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             9px y la hacían el doble de alta que las otras. Mismo texto. */}
         <p className="text-xs text-gray-500 mt-2 px-1">Lifetime: {LIFETIME_LEGEND}</p>
       </section>
-      )}
-
-      {/* Pedido explicito: un solo input de alias, compartido entre la
-          prueba gratis (las 3 vías) y la compra directa de un plan -- antes
-          había uno propio por vía, obligando a escribirlo hasta 2 veces si
-          el streamer cambiaba de idea entre probar gratis y comprar. Vive
-          acá junto a los planes (mudado entero desde Login.jsx) para que el
-          streamer elija todo en un solo lugar, en vez de repetido en cada
-          panel bloqueado (que ahora solo pide la clave si ya tienes una). */}
-      {!session && (
-        <div className="theme-surface w-full max-w-3xl p-5 flex flex-col gap-4">
-          {trialResult ? (
-            <div className="flex flex-col gap-3">
-              <p role="status" className="theme-label tkc-label">Guarda tu clave ahora</p>
-              <p className="tkc-hint">
-                Es tu única credencial — cópiala antes de continuar. Si más adelante pasas a un
-                plan pago, sigues usando esta misma clave (solo cambia el nivel, nunca el texto).
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="theme-input flex-1 px-3 py-2 text-xs text-green-300 break-all select-all">{trialResult.key}</code>
-                <button type="button" onClick={copyTrialKey} className="theme-btn-primary theme-btn-md font-bold whitespace-nowrap">
-                  <span key={trialCopied ? 'done' : 'idle'} className="tkc-pop">{trialCopied ? 'Copiado' : 'Copiar'}</span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={continueAfterTrial}
-                className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
-              >
-                Continuar
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="relative">
-                <HoneypotField />
-                <label htmlFor="membership-alias" className="theme-label tkc-label block mb-1.5">Elige un alias para tu licencia</label>
-                <input
-                  ref={aliasInputRef}
-                  id="membership-alias"
-                  value={alias}
-                  onChange={e => { setAlias(e.target.value); if (aliasError) setAliasError(''); }}
-                  placeholder="Elige un alias"
-                  style={aliasError ? { borderColor: '#ef4444' } : undefined}
-                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
-                    aliasError ? 'ring-2 ring-red-500/30' : ''].join(' ')}
-                />
-                {aliasError ? (
-                  <p role="alert" className="text-xs font-bold text-red-500 mt-1">{aliasError}</p>
-                ) : (
-                  <p className="tkc-hint mt-1">Lo usas tanto para la prueba gratis como para comprar un plan — va incluido en tu clave (alias-plan-hash).</p>
-                )}
-              </div>
-
-              {showCardForm ? (
-                <CardVerifyForm
-                  alias={alias} setAlias={setAlias}
-                  onResult={(result) => { setShowCardForm(false); setTrialResult(result); }}
-                  onCancel={() => setShowCardForm(false)}
-                />
-              ) : showTrialAdForm ? (
-                <div className="flex flex-col gap-3">
-                  <p className="theme-label tkc-label">Prueba gratis de 7 días</p>
-                  <p className="tkc-hint">Ya viste los anuncios — confirma con el alias de arriba para activar tus 7 días.</p>
-                  {trialError && <p role="alert" className="theme-notice">{trialError}</p>}
-                  <button
-                    type="button"
-                    onClick={submitTrial}
-                    disabled={trialLoading || !alias.trim()}
-                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {trialLoading ? 'CREANDO...' : 'Solicitar prueba gratis'}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <p className="theme-label tkc-label mb-0.5">
-                    ¿Prefieres probar primero? 7 días gratis
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { if (requireAlias()) setShowAdGate(true); }}
-                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
-                  >
-                    Ver {TRIAL_UNLOCK_AD_COUNT} anuncios
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (requireAlias()) setShowCardForm(true); }}
-                    className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all"
-                  >
-                    Verificar una tarjeta (sin cobro)
-                  </button>
-                  </div>
-                  <p className="tkc-hint">O elige un plan de arriba para comprar directo con el mismo alias.</p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
       )}
 
       {payingPlan && (
@@ -528,6 +595,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               <p className="text-sm font-black truncate">
                 {buyingAddon ? 'Complemento de Spotify (pago único)' : `Plan ${PLAN_LABELS[payingPlan] || payingPlan}`} · MX$ {payingAmountMxn?.toLocaleString('es-MX')}
               </p>
+              {!session && <p className="tkc-hint truncate">Alias: {alias.trim()}</p>}
             </div>
             <button type="button" onClick={() => setPayingPlan(null)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0">
               {buyingAddon ? 'Volver' : 'Cambiar plan'}
@@ -567,7 +635,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
               planType={buyingAddon ? undefined : payingPlan}
               spotifyAddon={buyingAddon}
               policyAcceptedAt={policyAcceptedAt}
-              onSuccess={handlePaymentSuccess}
+              guestAlias={session ? undefined : alias.trim()}
+              onSuccess={session ? handlePaymentSuccess : handleGuestPurchaseSuccess}
               onCancel={() => setPayingPlan(null)}
             />
           ) : (
@@ -600,9 +669,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             ) : session?.spotifyAddon ? (
               <p className="theme-chip tkc-label text-center px-3 py-2 rounded-full">Activo</p>
             ) : canBuyAddon ? (
-              <button type="button" disabled={!!loadingTarget} onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
-                className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                {loadingTarget === SPOTIFY_ADDON_ID ? 'Cargando...' : 'Comprar complemento'}
+              <button type="button" onClick={() => handleBuy(SPOTIFY_ADDON_ID)}
+                className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
+                Comprar complemento
               </button>
             ) : (
               <p className="tkc-hint max-w-[14rem]">Disponible con el plan Mensual (Anual y Lifetime lo incluyen).</p>

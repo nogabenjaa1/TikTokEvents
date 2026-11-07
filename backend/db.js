@@ -481,6 +481,12 @@ const ready = pool.query(`
   // Cada vez que el streamer renueva sus enlaces de overlay se suma uno: el token
   // del overlay lo incluye y los anteriores dejan de servir (ver auth.overlayTokenFor).
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_epoch INTEGER NOT NULL DEFAULT 0`))
+  // La clave en claro, cifrada con TOKEN_ENCRYPTION_KEY (ver tokenCrypto.js),
+  // para que el admin pueda volver a mostrársela a quien la perdió (panel de
+  // Licencias, "Ver clave"). key_hash sigue siendo lo único que se usa para
+  // iniciar sesión. Las claves creadas antes de esta columna no se pueden
+  // recuperar (de ellas solo existe el hash): quedan en NULL.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS key_encrypted TEXT`))
   // Analítica propia, sin cookies (ver lib/analytics.js): visitas por día y
   // página, de dónde llegan, y una huella diaria anónima por visitante (un
   // hash que cambia cada día; nunca la IP) solo para contar visitantes únicos.
@@ -509,12 +515,12 @@ const ready = pool.query(`
   `));
 ready.catch(err => console.error('[DB] No se pudo inicializar el schema de licencias en Supabase:', err.message));
 
-async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null, spotifyAddon = false }) {
+async function insertLicense({ id, keyHash, keyPrefix, keyEncrypted = null, pendingKeyReveal = null, username, licenseType, isAdmin, createdAt, expiresAt, mpPaymentId = null, trialAlias = null, diceTier = 'regular', trialCardFingerprint = null, spotifyAddon = false }) {
     await ready;
     await pool.query(`
-        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint, lifetime_at, spotify_addon)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12, $13, $14)
-    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint, licenseType === 'lifetime' ? createdAt : null, !!spotifyAddon]);
+        INSERT INTO licenses (id, key_hash, key_prefix, username, license_type, is_admin, revoked, created_at, expires_at, last_login_at, mp_payment_id, trial_alias, dice_tier, trial_card_fingerprint, lifetime_at, spotify_addon, key_encrypted, pending_key_reveal)
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, NULL, $9, $10, $11, $12, $13, $14, $15, $16)
+    `, [id, keyHash, keyPrefix, username, licenseType, !!isAdmin, createdAt, expiresAt, mpPaymentId, trialAlias, diceTier, trialCardFingerprint, licenseType === 'lifetime' ? createdAt : null, !!spotifyAddon, keyEncrypted, pendingKeyReveal]);
     return findById(id);
 }
 
@@ -523,9 +529,9 @@ async function insertLicense({ id, keyHash, keyPrefix, username, licenseType, is
 // OBS, que se autentican con la key cruda — y se cierran las sesiones abiertas
 // (session_id NULL) y cualquier key pendiente de mostrar. No toca nada más:
 // el id, el plan y los ajustes siguen igual.
-async function setLicenseKey(id, { keyHash, keyPrefix }) {
+async function setLicenseKey(id, { keyHash, keyPrefix, keyEncrypted = null }) {
     await ready;
-    await pool.query('UPDATE licenses SET key_hash = $1, key_prefix = $2, session_id = NULL, pending_key_reveal = NULL WHERE id = $3', [keyHash, keyPrefix, id]);
+    await pool.query('UPDATE licenses SET key_hash = $1, key_prefix = $2, key_encrypted = $3, session_id = NULL, pending_key_reveal = NULL WHERE id = $4', [keyHash, keyPrefix, keyEncrypted, id]);
     return findById(id);
 }
 
@@ -1060,7 +1066,7 @@ async function extendLicense(id, licenseType, expiresAt, diceTier) {
 // rota la key al mismo tiempo que se aplica la compra (ver generateLabeledKey
 // en auth.js) para que el streamer vea su plan nuevo reflejado en el
 // prefijo de la key, sin generar una licencia nueva ni tocar el id/sesión.
-async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddon, keyHash, keyPrefix, pendingKeyReveal } = {}) {
+async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddon, keyHash, keyPrefix, keyEncrypted = null, pendingKeyReveal } = {}) {
     await ready;
     const sets = ['revoked = FALSE'];
     const params = [];
@@ -1090,6 +1096,8 @@ async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddo
         sets.push(`key_prefix = $${params.length}`);
         params.push(pendingKeyReveal);
         sets.push(`pending_key_reveal = $${params.length}`);
+        params.push(keyEncrypted);
+        sets.push(`key_encrypted = $${params.length}`);
     }
     params.push(id);
     await pool.query(`UPDATE licenses SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
@@ -1101,6 +1109,15 @@ async function applyPurchase(id, { licenseType, expiresAt, diceTier, spotifyAddo
 // así no queda una key en texto plano dando vueltas en la DB más de lo
 // necesario. `findById` ya la había leído antes de llamar a esto si hace
 // falta mostrarla en la misma respuesta.
+// La clave en claro de una licencia para el panel de Licencias ("Ver clave"),
+// o null si se creó antes de que existiera key_encrypted (ver la columna).
+async function getLicenseKey(id) {
+    await ready;
+    const { rows } = await pool.query('SELECT key_encrypted FROM licenses WHERE id = $1', [id]);
+    if (!rows[0] || !rows[0].key_encrypted) return null;
+    return tokenCrypto.decrypt(rows[0].key_encrypted);
+}
+
 async function consumePendingKeyReveal(id) {
     await ready;
     await pool.query('UPDATE licenses SET pending_key_reveal = NULL WHERE id = $1', [id]);
@@ -1422,6 +1439,7 @@ async function listReferencedMediaPaths() {
 }
 
 module.exports = {
+    getLicenseKey,
     insertLicense, findByKeyHash, findById, findCoreById, findCoreByKeyHash, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setChatSettings, setEventSettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,

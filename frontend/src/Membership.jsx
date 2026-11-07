@@ -1,12 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { backendUrl, refreshSession, requestFreeTrial, saveSession, loadSession, loginWithKey } from './auth';
 import MorphButton from './MorphButton';
 import LegalLinks from './LegalLinks';
 import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
-import { saveMpCheckout } from './mpCheckoutHandoff';
-import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import StripePaymentForm from './StripePaymentForm';
 import CardVerifyForm from './CardVerifyForm';
 import RewardedAdGate from './RewardedAdGate';
@@ -27,15 +24,11 @@ const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
 // backend/pricing.js).
 const SPOTIFY_ADDON_ID = 'spotify_addon';
 const DEFAULT_SPOTIFY_ADDON_MXN = 180;
-// Chequeo minimo de formato -- solo para decidir cuando ya hay un correo
-// utilizable antes de abrir el formulario de pago (ver mas abajo); el
-// backend sigue siendo quien de verdad valida el formato antes de cobrar.
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // Referencia aproximada MXN por USD -- pedido explicito: que la
 // referencia en dolares que ve el streamer se recalcule sola en cuanto el
 // admin cambie el precio en MXN desde el panel, en vez de quedar como un
 // texto fijo desincronizado. Es solo informativa (MXN sigue siendo la
-// unica moneda que de verdad cobra MercadoPago, ver pricing.js) -- si el
+// única moneda que de verdad se cobra, ver pricing.js) -- si el
 // tipo de cambio real se mueve mucho, alcanza con ajustar este numero.
 const MXN_PER_USD = 18;
 
@@ -50,69 +43,18 @@ const DICE_TIER_LABELS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'A
 
 const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizaciones estándar. Funciones o servicios con costos operativos especiales —como IA, voces premium, servidores o integraciones de pago— podrán ofrecerse por separado.';
 
-// Pantalla de autoservicio de pago (Stripe embebido aquí; MercadoPago en su
-// propia pantalla, MercadoPagoCheckout.jsx).
+// Pantalla de autoservicio de pago (formulario de Stripe embebido aquí; el
+// correo y el nombre los pide el propio formulario de Stripe).
 // Funciona con o sin sesión: sin sesión se ven los planes igual (precio
 // público) pero hace falta un alias antes de pagar — se usa para crear la
 // cuenta en el mismo paso (ver handleBuy), igual que la prueba gratis de
-// Login.jsx. El formato final lo sigue validando el backend antes de
-// cobrar (ver /api/payments/charge); EMAIL_RE de acá solo decide cuándo ya
-// hay un correo usable para abrir el formulario de pago.
+// Login.jsx.
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
 
-// Recuerda correo/direccion de pago en este navegador (localStorage) para
-// que el streamer no los reescriba en cada compra -- son datos de
-// contacto/envio, no de la tarjeta, asi que no hay problema en guardarlos
-// tal cual del lado del cliente. Falla en silencio (modo privado, storage
-// bloqueado, etc.): en ese caso simplemente no se precarga nada.
-const BILLING_INFO_KEY = 'tte_billing_info';
-function loadBillingInfo() {
-  try {
-    const raw = localStorage.getItem(BILLING_INFO_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-function saveBillingInfo(info) {
-  try {
-    localStorage.setItem(BILLING_INFO_KEY, JSON.stringify(info));
-  } catch {
-    // localStorage no disponible -- se sigue funcionando, solo no se recuerda
-  }
-}
-
 export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [alias, setAlias] = useState('');
-  // Pedido explicito de MercadoPago (mitiga el rechazo "por motivos de
-  // seguridad" del motor antifraude): mandar SIEMPRE un email de pagador en
-  // la preferencia, aunque el streamer ya tenga sesion. Se precarga desde
-  // localStorage (ver loadBillingInfo) para no pedirlo de nuevo en cada
-  // compra en el mismo navegador.
-  const [email, setEmail] = useState(() => loadBillingInfo().email || '');
-  // Pedido explicito de MercadoPago (checklist de calidad, "Nombre/Apellido
-  // del comprador"): antes se sacaban partiendo el nombre del titular que
-  // ya pide el propio Card Payment Brick (formData.cardholderName), pero
-  // eso deja el resultado a como el streamer haya escrito ESE campo (a
-  // veces solo un nombre, sin apellido) -- pedirlos acá aparte, igual que
-  // el correo, asegura que los dos campos que MercadoPago quiere lleguen
-  // siempre completos.
-  const [firstName, setFirstName] = useState(() => loadBillingInfo().firstName || '');
-  const [lastName, setLastName] = useState(() => loadBillingInfo().lastName || '');
-  // Pedido explicito de MercadoPago (checklist de calidad de
-  // integracion, "Dirección del comprador"): opcional para el
-  // streamer -- solo se manda si completa las 3 partes juntas (ver
-  // MercadoPagoCheckout.jsx). Ayuda a bajar rechazos del motor antifraude.
-  // Tambien se precarga desde localStorage, mismo criterio que el email.
-  const [zipCode, setZipCode] = useState(() => loadBillingInfo().zipCode || '');
-  const [streetName, setStreetName] = useState(() => loadBillingInfo().streetName || '');
-  const [streetNumber, setStreetNumber] = useState(() => loadBillingInfo().streetNumber || '');
-
-  useEffect(() => {
-    saveBillingInfo({ email, firstName, lastName, zipCode, streetName, streetNumber });
-  }, [email, firstName, lastName, zipCode, streetName, streetNumber]);
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
   // Plan que se esta pagando ahora mismo con el formulario embebido (Card
   // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
@@ -121,28 +63,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // boton "Pagar" de MP nunca se habilita, reproducido en dos navegadores
   // distintos). El comprador nunca sale de este sitio con este camino.
   const [payingPlan, setPayingPlan] = useState(null);
-  // Pedido explicito: Stripe como forma de pago principal, MercadoPago como
-  // secundaria seleccionable -- 'stripe' por default, el streamer puede
-  // cambiar a MercadoPago antes de completar los datos de la tarjeta.
-  const [paymentProvider, setPaymentProvider] = useState('stripe');
   const [error, setError] = useState('');
-  // Validación de correo/nombre/apellido estilo "sitio moderno": el input
-  // se pone en rojo y el error aparece pegado a ÉL (no uno genérico al
-  // final) recién cuando el streamer ya lo tocó (onBlur) o intentó
-  // continuar sin llenarlo -- pedido explícito, reemplaza el texto fijo
-  // "Completa correo, nombre y apellido arriba..." que antes no decía CUÁL
-  // campo faltaba.
-  const [contactTouched, setContactTouched] = useState({ email: false, firstName: false, lastName: false });
-  const emailInputRef = useRef(null);
-  const firstNameInputRef = useRef(null);
-  const lastNameInputRef = useRef(null);
   // Pedido explicito: aceptación obligatoria de la política de reembolsos
   // antes de poder pagar -- no evita que alguien dispute con su banco (eso
-  // lo decide el banco, no acá), pero le da a Stripe/MercadoPago evidencia
+  // lo decide el banco, no acá), pero le da a Stripe evidencia
   // real (aceptación explícita, CON FECHA) para pelear y ganar la disputa
   // si llega. `policyAcceptedAt` (null = no aceptó todavía) es lo que de
-  // verdad viaja al backend (ver StripePaymentForm/MercadoPagoCheckout más
-  // abajo) -- se guarda el momento exacto del check, no `Date.now()` leído
+  // verdad viaja al backend (ver StripePaymentForm más abajo) -- se guarda el momento exacto del check, no `Date.now()` leído
   // de nuevo en cada render.
   const [policyAcceptedAt, setPolicyAcceptedAt] = useState(null);
   const [policyError, setPolicyError] = useState('');
@@ -310,27 +237,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const canBuyAddon = !!session && !spotifyIncluded && !session.spotifyAddon && session.licenseType === 'month';
   const spotifyStatusLabel = spotifyIncluded ? 'Incluido' : session?.spotifyAddon ? 'Complemento activo' : 'No incluido';
 
-  const emailValid = EMAIL_RE.test(email.trim());
-  const firstNameValid = !!firstName.trim();
-  const lastNameValid = !!lastName.trim();
-  const contactValid = emailValid && firstNameValid && lastNameValid;
-  const readyToPay = contactValid && !!policyAcceptedAt;
+  const readyToPay = !!policyAcceptedAt;
 
-  // Se llama al tocar el botón "Continuar con el pago" (visible mientras
-  // falte algo) -- marca los tres campos como "tocados" de una (para que
-  // se pinten en rojo aunque el streamer nunca haya llegado a enfocarlos)
-  // y lleva el foco directo al primero que falta, en ese orden (el
-  // checkbox de la política queda al final a propósito: si falta algo más
-  // arriba, tiene prioridad).
+  // Botón "Continuar con el pago" (visible mientras no se acepte la
+  // política): lleva el foco al checkbox y dice qué falta.
   const attemptContinue = () => {
-    setContactTouched({ email: true, firstName: true, lastName: true });
-    if (!emailValid) { emailInputRef.current?.focus(); return; }
-    if (!firstNameValid) { firstNameInputRef.current?.focus(); return; }
-    if (!lastNameValid) { lastNameInputRef.current?.focus(); return; }
-    if (!policyAcceptedAt) {
-      setPolicyError('Acepta la política de reembolsos para continuar.');
-      policyCheckboxRef.current?.focus();
-    }
+    setPolicyError('Acepta la política de reembolsos para continuar.');
+    policyCheckboxRef.current?.focus();
   };
 
   const copyRevealedKey = () => {
@@ -371,26 +284,6 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // Se llama cuando /api/payments/charge confirma un pago aprobado -- mismo
   // flujo que ya usaba el banner de exito del redirect (refrescar la sesion
   // y mostrar la clave rotada si el plan nuevo genero una).
-  // Pago con MercadoPago: el formulario de tarjeta vive en su propia
-  // pantalla (MercadoPagoCheckout.jsx, /membership/mercadopago). Aquí solo se
-  // deja lo que se compra y los datos de contacto ya llenados, y se navega.
-  const navigate = useNavigate();
-  const startMercadoPagoCheckout = () => {
-    saveMpCheckout({
-      planType: buyingAddon ? undefined : payingPlan,
-      spotifyAddon: buyingAddon || undefined,
-      amount: payingAmountMxn,
-      email: email.trim(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      zipCode: zipCode.trim(),
-      streetName: streetName.trim(),
-      streetNumber: streetNumber.trim(),
-      policyAcceptedAt,
-    });
-    navigate('/membership/mercadopago');
-  };
-
   const handlePaymentSuccess = async () => {
     setPayingPlan(null);
     setBanner('success');
@@ -644,103 +537,6 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             </button>
           </div>
 
-          {/* Pedido explicito: estos campos solo estorban para quien ya
-              tiene una licencia y solo entro a ver su plan (admin, key
-              paga, etc.) -- se piden apenas aca, una vez que ya eligio
-              un plan y esta por pagar. */}
-          {/* Correo global a propósito: es el mismo dato para cualquiera de
-              las dos formas de pago (a ese correo llegan los recibos, tanto
-              el automático de Stripe como el de MercadoPago) -- pedido
-              explícito de que este campo no se duplique por proveedor. */}
-          <div className="w-full max-w-3xl">
-            <label className="theme-label tkc-label block mb-1.5">Correo para el pago (obligatorio, ahí llega tu recibo)</label>
-            <input
-              ref={emailInputRef}
-              type="email" value={email}
-              onChange={e => setEmail(e.target.value)}
-              onBlur={() => setContactTouched(t => ({ ...t, email: true }))}
-              placeholder="tu@correo.com"
-              style={contactTouched.email && !emailValid ? { borderColor: '#ef4444' } : undefined}
-              className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
-                contactTouched.email && !emailValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
-            />
-            {contactTouched.email && !emailValid && (
-              <p className="text-xs font-bold text-red-500 mt-1">Ingresa un correo válido para continuar.</p>
-            )}
-          </div>
-
-          <div className="w-full max-w-3xl">
-            <label className="theme-label tkc-label block mb-1.5">Nombre y apellido (obligatorio para procesar el pago)</label>
-            <div className="flex gap-2 items-start">
-              <div className="flex-1 flex flex-col gap-1">
-                <input
-                  ref={firstNameInputRef}
-                  value={firstName} onChange={e => setFirstName(e.target.value)}
-                  onBlur={() => setContactTouched(t => ({ ...t, firstName: true }))}
-                  placeholder="Nombre"
-                  style={contactTouched.firstName && !firstNameValid ? { borderColor: '#ef4444' } : undefined}
-                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
-                    contactTouched.firstName && !firstNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
-                />
-                {contactTouched.firstName && !firstNameValid && (
-                  <p className="text-xs font-bold text-red-500">Ingresa tu nombre.</p>
-                )}
-              </div>
-              <div className="flex-1 flex flex-col gap-1">
-                <input
-                  ref={lastNameInputRef}
-                  value={lastName} onChange={e => setLastName(e.target.value)}
-                  onBlur={() => setContactTouched(t => ({ ...t, lastName: true }))}
-                  placeholder="Apellido"
-                  style={contactTouched.lastName && !lastNameValid ? { borderColor: '#ef4444' } : undefined}
-                  className={['theme-input w-full p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm',
-                    contactTouched.lastName && !lastNameValid ? 'ring-2 ring-red-500/30' : ''].join(' ')}
-                />
-                {contactTouched.lastName && !lastNameValid && (
-                  <p className="text-xs font-bold text-red-500">Ingresa tu apellido.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Selector de forma de pago -- solo cuando MercadoPago está
-              encendido (ver paymentProviders.js): hoy Stripe es el único
-              medio oficial y el selector ni se muestra. El correo/
-              nombre/apellido de arriba son compartidos por las dos; lo único
-              que cambia es el formulario de tarjeta de más abajo. */}
-          {MERCADOPAGO_ENABLED && <div className="w-full max-w-3xl">
-            <label className="theme-label tkc-label block mb-1.5">Método de pago</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button type="button" onClick={() => setPaymentProvider('stripe')}
-                className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
-                  paymentProvider === 'stripe' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
-                Tarjeta de crédito/débito (Stripe)
-              </button>
-              <button type="button" onClick={() => setPaymentProvider('mercadopago')}
-                className={['theme-surface p-3 text-xs font-bold text-left border-2 transition-all',
-                  paymentProvider === 'mercadopago' ? 'border-current' : 'border-transparent opacity-60 hover:opacity-100'].join(' ')}>
-                Tarjeta de crédito/débito (MercadoPago)
-              </button>
-            </div>
-          </div>}
-
-          {/* Dirección: solo la usa MercadoPago (ayuda a su motor
-              antifraude, ver MercadoPagoCheckout.jsx/server.js) -- no tiene
-              sentido pedirla si el streamer eligió Stripe. */}
-          {MERCADOPAGO_ENABLED && paymentProvider === 'mercadopago' && (
-            <div className="w-full max-w-3xl">
-              <label className="theme-label tkc-label block mb-1.5">Dirección (opcional, ayuda a reducir rechazos por seguridad)</label>
-              <div className="flex gap-2">
-                <input value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="C.P."
-                  className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-                <input value={streetName} onChange={e => setStreetName(e.target.value)} placeholder="Calle"
-                  className="theme-input flex-1 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-                <input value={streetNumber} onChange={e => setStreetNumber(e.target.value)} placeholder="Número"
-                  className="theme-input w-24 p-3 outline-none transition-all placeholder-gray-600 font-bold text-sm" />
-              </div>
-            </div>
-          )}
-
           {/* Pedido explicito: checkbox obligatorio antes de pagar --
               guarda `policyAcceptedAt` (fecha/hora exacta de la
               aceptación) para mandarlo con el pago como evidencia ante un
@@ -770,24 +566,13 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           </div>
 
           {readyToPay ? (
-            (!MERCADOPAGO_ENABLED || paymentProvider === 'stripe') ? (
-              <StripePaymentForm
-                planType={buyingAddon ? undefined : payingPlan}
-                spotifyAddon={buyingAddon}
-                amount={payingAmountMxn}
-                email={email.trim()}
-                firstName={firstName.trim()}
-                lastName={lastName.trim()}
-                policyAcceptedAt={policyAcceptedAt}
-                onSuccess={handlePaymentSuccess}
-                onCancel={() => setPayingPlan(null)}
-              />
-            ) : (
-              <button type="button" data-mp-checkout-cta="checkout-api" onClick={startMercadoPagoCheckout}
-                className="theme-btn-primary theme-btn-md w-full max-w-3xl font-black tracking-widest uppercase transition-all">
-                Pagar con Mercado Pago
-              </button>
-            )
+            <StripePaymentForm
+              planType={buyingAddon ? undefined : payingPlan}
+              spotifyAddon={buyingAddon}
+              policyAcceptedAt={policyAcceptedAt}
+              onSuccess={handlePaymentSuccess}
+              onCancel={() => setPayingPlan(null)}
+            />
           ) : (
             <button type="button" onClick={attemptContinue}
               className="theme-btn-primary theme-btn-md w-full max-w-3xl font-black tracking-widest uppercase transition-all">

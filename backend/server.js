@@ -157,13 +157,14 @@ function getStripeClient() {
     return new Stripe(secretKey);
 }
 
-// El formulario de Checkout (ui_mode 'form') es una vista previa de Stripe
-// que exige esta versión de la API con su bandera beta. Se pasa SOLO en las
-// llamadas de Checkout Sessions (opción por petición), no al crear el
-// cliente: el resto del backend (conciliación de pagos) sigue en la versión
-// estable del SDK. Lo usan el cobro (/api/payments/stripe/checkout-session)
-// y la verificación de tarjeta de la prueba gratis.
-const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-03-25.dahlia; custom_checkout_payment_form_preview=v1';
+// Versión de la API para el formulario de Checkout (ui_mode 'form'), la
+// misma que muestra el Dashboard de Stripe para esta integración. Desde
+// Endive el formulario ya no es vista previa: sin bandera beta. Se pasa
+// SOLO en las llamadas de Checkout Sessions (opción por petición), no al
+// crear el cliente: el resto del backend (clientes, conciliación de pagos)
+// sigue en la versión del SDK. Ojo con Endive: payment_method_types en una
+// Checkout Session devuelve 400 (va allowed_payment_method_types).
+const STRIPE_CHECKOUT_FORM_API_VERSION = '2026-10-28.endive';
 const STRIPE_CHECKOUT_INTEGRATION_ID = 'custom_embedded_web_0001';
 
 const VALID_LICENSE_TYPES = ['day', 'week', 'month', 'annual', 'lifetime'];
@@ -521,7 +522,10 @@ app.post('/api/free-trial/checkout-session', freeTrialLimiter, async (req, res) 
             ui_mode: 'form',
             mode: 'setup',
             currency: 'mxn',
-            payment_method_types: ['card'],
+            // Solo tarjeta a propósito: con Link o una billetera no siempre
+            // llega card.fingerprint, y sin él la misma tarjeta podría pedir
+            // varias pruebas gratis (ver /api/free-trial).
+            allowed_payment_method_types: ['card'],
             billing_address_collection: 'auto',
             phone_number_collection: { enabled: false },
             integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
@@ -2257,7 +2261,12 @@ const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
 // de ESA licencia. A propósito no se busca por correo: el correo lo escribe
 // el comprador sin verificar, y con eso cualquiera podría ver/usar la
 // tarjeta guardada de otra persona.
-async function stripeCustomerForLicense(stripe, licenseId, { email, name }) {
+//
+// El cliente nuevo se crea SIN correo ni nombre: los pide el propio
+// formulario de Stripe. Según la API de Checkout, si el cliente no tiene
+// correo, Checkout guarda en él el que se escriba durante el pago; si ya
+// lo tiene (compras anteriores), lo muestra precargado y no se puede editar.
+async function stripeCustomerForLicense(stripe, licenseId) {
     try {
         const found = await stripe.customers.search({ query: `metadata['licenseId']:'${licenseId.replace(/'/g, '')}'`, limit: 1 });
         if (found.data[0]) return found.data[0].id;
@@ -2266,24 +2275,17 @@ async function stripeCustomerForLicense(stripe, licenseId, { email, name }) {
         // crea uno nuevo (solo se pierde mostrar la tarjeta guardada).
         console.error('[Stripe] No se pudo buscar el cliente de la licencia:', err.message);
     }
-    const customer = await stripe.customers.create({ email, name, metadata: { licenseId } });
+    const customer = await stripe.customers.create({ metadata: { licenseId } });
     return customer.id;
 }
 
 app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, policyAcceptedAt } = req.body || {};
+    // Correo y nombre ya no llegan desde la página: los pide el propio
+    // formulario de Stripe (sección Contacto y name_collection, abajo).
+    const { planType, diceTier, spotifyAddon, policyAcceptedAt } = req.body || {};
     const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
     if (itemsError) {
         return res.status(400).json({ success: false, error: itemsError });
-    }
-    const cleanEmail = typeof email === 'string' ? email.trim() : '';
-    if (!EMAIL_RE.test(cleanEmail)) {
-        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
-    }
-    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : '';
-    const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
-    if (!firstName || !lastName) {
-        return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
     }
     // Pedido explicito: evidencia real (con fecha) de que el comprador
     // aceptó la política de reembolsos ANTES de pagar -- se manda como
@@ -2320,14 +2322,15 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
 
     try {
         const stripe = getStripeClient();
-        const customer = await stripeCustomerForLicense(stripe, req.license.id, { email: cleanEmail, name: `${firstName} ${lastName}` });
+        const customer = await stripeCustomerForLicense(stripe, req.license.id);
         const session = await stripe.checkout.sessions.create({
             // Valores configurados en Checkout Studio de Stripe.
             ui_mode: 'form',
             billing_address_collection: 'auto',
-            phone_number_collection: { enabled: false },
-            automatic_tax: { enabled: false },
             submit_type: 'auto',
+            // Nombre dentro del formulario de Stripe (opcional, como quedó en
+            // Checkout Studio); el correo lo pide su sección de Contacto.
+            name_collection: { individual: { enabled: true, optional: true } },
             saved_payment_method_options: { payment_method_save: 'enabled' },
             integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
             // Pago único: los planes se compran una vez (también el Mensual),
@@ -2336,10 +2339,11 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             mode: 'payment',
             line_items: lineItems,
             customer,
-            // Solo tarjeta a propósito -- mismo alcance que la opción de MP
-            // ("Credit/Debit Card"), sin métodos async (OXXO, SPEI) que
-            // dejarían el pago pendiente días.
-            payment_method_types: ['card'],
+            // Sin payment_method_types: los métodos salen de Configuración →
+            // Métodos de pago del Dashboard (tarjeta, Google Pay, Apple Pay y
+            // Link). Antes la lista fija ['card'] dejaba fuera a Link. Ojo:
+            // OXXO o SPEI, si se activan ahí, dejarían el pago pendiente días
+            // (el webhook lo aplicaría al confirmarse).
             // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
             // muestra en un modal), vuelve a Membresía con el aviso de pago
             // pendiente; el webhook aplica la compra igual y el panel se
@@ -2348,8 +2352,9 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
             metadata,
             payment_intent_data: {
                 description: `BenjaApis - ${titleParts.join(' + ')}`,
-                // Recibo automático de Stripe al correo del comprador.
-                receipt_email: cleanEmail,
+                // Sin receipt_email: el correo se escribe en el formulario de
+                // Stripe, que manda el recibo si en el Dashboard está activo
+                // "Enviar correo a los clientes por pagos correctos".
                 metadata,
             },
         }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
@@ -2420,16 +2425,35 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
     // webhook de MP -- Stripe reintenta si no contesta rápido.
     res.sendStatus(200);
 
-    if (event.type !== 'payment_intent.succeeded') return;
+    // Se aceptan los dos caminos para no depender de qué eventos se marquen
+    // en el destino del webhook: checkout.session.completed (el que el
+    // Dashboard recomienda; async_payment_succeeded es su versión para
+    // métodos que se confirman después) y payment_intent.succeeded. Los dos
+    // llevan la misma metadata y se aplican con el id del PaymentIntent, así
+    // que si llegan ambos el UNIQUE de stripe_payment_id deja uno solo.
+    let source = null;
+    let stripePaymentId = null;
+    if (event.type === 'payment_intent.succeeded') {
+        source = event.data.object;
+        stripePaymentId = source.id;
+    } else if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+        const session = event.data.object;
+        // Las sesiones de la prueba gratis (modo setup) no cobran nada, y una
+        // sesión completada con un pago aún pendiente se aplica cuando llegue
+        // async_payment_succeeded.
+        if (session.mode !== 'payment' || session.payment_status !== 'paid') return;
+        source = session;
+        stripePaymentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+    }
+    if (!source || !stripePaymentId) return;
 
     try {
-        const intent = event.data.object;
-        const licenseId = intent.metadata?.licenseId;
-        const planType = intent.metadata?.planType || undefined;
-        const diceTier = intent.metadata?.diceTier || undefined;
-        const spotifyAddon = intent.metadata?.spotifyAddon === 'true';
+        const licenseId = source.metadata?.licenseId;
+        const planType = source.metadata?.planType || undefined;
+        const diceTier = source.metadata?.diceTier || undefined;
+        const spotifyAddon = source.metadata?.spotifyAddon === 'true';
         if (!licenseId) return;
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId: intent.id });
+        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId });
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }

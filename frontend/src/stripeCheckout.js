@@ -10,15 +10,16 @@ import { backendUrl } from './auth';
 // Se crea una sola vez por carga de página (no cada vez que se monta un
 // formulario) -- no tiene sentido recargar Stripe.js en cada intento.
 // loadStripe inserta Stripe.js directo desde js.stripe.com (la versión
-// 'dahlia' que trae @stripe/stripe-js 9, la que tiene initCheckoutFormSdk)
-// y solo cuando se abre uno de estos formularios, no en cada página
-// (overlays incluidos). La bandera beta es la que exige el formulario.
+// 'dahlia' que trae @stripe/stripe-js 9, la que tiene initCheckoutFormSdk,
+// igual que el código que da el Dashboard) y solo cuando se abre uno de
+// estos formularios, no en cada página (overlays incluidos). Sin bandera
+// beta: el formulario ya no es vista previa.
 let stripePromise = null;
 export function getStripePromise() {
   if (!stripePromise) {
     const publicKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
     stripePromise = publicKey
-      ? loadStripe(publicKey, { betas: ['custom_checkout_payment_form_1'], locale: 'es' })
+      ? loadStripe(publicKey, { locale: 'es' })
       : Promise.resolve(null);
   }
   return stripePromise;
@@ -26,9 +27,9 @@ export function getStripePromise() {
 
 // Apariencia configurada en Checkout Studio de Stripe.
 export const CHECKOUT_APPEARANCE = {
-  theme: 'flat',
+  theme: 'stripe',
   labels: 'auto',
-  inputs: 'condensed',
+  inputs: 'spaced',
   variables: {
     borderRadius: '4px',
     colorBackground: '#ffffff',

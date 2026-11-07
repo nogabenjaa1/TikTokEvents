@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { backendUrl, authHeaders } from './auth';
-import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError } from './stripeCheckout';
+import { mountCheckoutForm, friendlyDeclineMessage, reportStripeError, EXPRESS_CHECKOUT_ALWAYS } from './stripeCheckout';
 
 const DECLINE_FALLBACK = 'El pago no pudo ser procesado. Intenta con otra tarjeta.';
 const LOAD_ERROR = 'No se pudo cargar el formulario de pago. Revisa tu conexión o si un bloqueador de anuncios lo está frenando, e intenta de nuevo.';
@@ -71,6 +71,7 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
       formRef.current = await mountCheckoutForm({
         clientSecret: data.clientSecret,
         container: containerRef.current,
+        formOptions: EXPRESS_CHECKOUT_ALWAYS,
         // Sin defaultValues.email a propósito: el correo lo escribe el
         // comprador en el formulario, y si el cliente de la licencia ya tiene
         // uno, Stripe rechaza el formulario completo al intentar poner otro

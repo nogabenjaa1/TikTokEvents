@@ -43,6 +43,15 @@ export const CHECKOUT_APPEARANCE = {
   },
 };
 
+// Botones de billetera del cobro. Con 'auto' (el default) Stripe solo muestra
+// Google Pay cuando SU cálculo dice que conviene a la conversión, aunque el
+// dominio esté registrado y el navegador tenga tarjeta: en el sitio real no
+// salía. Con 'always' sale siempre que el navegador pueda pagar con Google
+// Pay (Chrome o Android con una tarjeta en la cuenta de Google); igual con
+// Apple Pay en Safari. Solo para el cobro: la verificación de la prueba
+// gratis se queda en solo tarjeta.
+export const EXPRESS_CHECKOUT_ALWAYS = { expressCheckout: { paymentMethods: { googlePay: 'always', applePay: 'always' } } };
+
 export const LOAD_ERROR_MESSAGE = 'No se pudo cargar el formulario de Stripe. Intenta de nuevo en un momento.';
 
 // Stripe.js ya trae sus propios mensajes en español (locale 'es', arriba)
@@ -75,15 +84,16 @@ export function reportStripeError(context, error) {
 // `onConfirm(event, confirm)` se llama cuando el comprador aprieta el botón
 // del propio formulario; `confirm()` termina la operación en Stripe sin
 // sacarlo del sitio (redirect 'if_required': el 3DS va en un modal) y
-// devuelve { type: 'success' | 'error', ... }. Devuelve el formulario (para
-// destroy()) o lanza si Stripe.js no se pudo iniciar.
-export async function mountCheckoutForm({ clientSecret, container, onReady, onLoadError, onConfirm }) {
+// devuelve { type: 'success' | 'error', ... }. `formOptions` se suma a las
+// opciones de createForm (ver EXPRESS_CHECKOUT_ALWAYS). Devuelve el
+// formulario (para destroy()) o lanza si Stripe.js no se pudo iniciar.
+export async function mountCheckoutForm({ clientSecret, container, onReady, onLoadError, onConfirm, formOptions = {} }) {
   const stripe = await getStripePromise();
   if (!stripe || typeof stripe.initCheckoutFormSdk !== 'function' || !container) {
     throw new Error('Stripe.js no disponible');
   }
   const checkout = stripe.initCheckoutFormSdk({ clientSecret, appearance: CHECKOUT_APPEARANCE });
-  const form = checkout.createForm({ layout: 'expanded' });
+  const form = checkout.createForm({ layout: 'expanded', ...formOptions });
   form.on('ready', () => onReady?.());
   form.on('loaderror', (event) => onLoadError?.(event?.error || { message: 'loaderror' }));
   form.mount(container);

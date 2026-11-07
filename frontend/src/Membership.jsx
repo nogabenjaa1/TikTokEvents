@@ -56,12 +56,9 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [alias, setAlias] = useState('');
   const [loadingTarget, setLoadingTarget] = useState(null); // null | planId
-  // Plan que se esta pagando ahora mismo con el formulario embebido (Card
-  // Payment Brick) -- null si no hay ningun pago en curso. Reemplaza al
-  // redirect a mercadopago.com.mx/checkout/ mientras esa pagina hosteada
-  // tenga el bug confirmado del challenge-orchestrator (ver el chat: el
-  // boton "Pagar" de MP nunca se habilita, reproducido en dos navegadores
-  // distintos). El comprador nunca sale de este sitio con este camino.
+  // Plan que se esta pagando ahora mismo con el formulario de Stripe
+  // embebido -- null si no hay ningun pago en curso. El comprador nunca sale
+  // de este sitio con este camino.
   const [payingPlan, setPayingPlan] = useState(null);
   const [error, setError] = useState('');
   // Pedido explicito: aceptación obligatoria de la política de reembolsos

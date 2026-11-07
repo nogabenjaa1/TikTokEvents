@@ -66,7 +66,6 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const compression = require('compression');
 
-const { WebhookSignatureValidator, InvalidWebhookSignatureError } = require('mercadopago');
 const Stripe = require('stripe');
 
 const multer = require('multer');
@@ -122,35 +121,15 @@ const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .filter(Boolean);
 const CORS_ORIGIN = CORS_ORIGINS.length === 1 ? CORS_ORIGINS[0] : CORS_ORIGINS;
 
-// URL propia (no las de MercadoPago) -- la usan los redirects de Spotify
+// URL propia del frontend -- la usan los redirects de Spotify
 // para volver al dominio correcto (Vercel en producción) despues de
 // conectar/desconectar una cuenta.
 const FRONTEND_URL = (process.env.FRONTEND_URL || CORS_ORIGINS[0] || 'http://localhost:5173').replace(/\/$/, '');
 
-// Se crea perezosamente (no al levantar el server) para que el resto de la
-// app siga funcionando aunque todavía no se haya cargado MP_ACCESS_TOKEN —
-// solo las rutas de pago fallan hasta que se configure.
-// Interruptor MP_TEST_MODE (pedido explícito, para probar compras con
-// las tarjetas de prueba de MP sin arriesgar el Access Token real): en vez
-// de pisar MP_ACCESS_TOKEN con el de prueba en Render (fácil de olvidar
-// devolver, y ahí sí se dejaría de cobrar en producción sin que nadie se
-// dé cuenta), esto solo cambia CUÁL variable se lee -- MP_ACCESS_TOKEN de
-// producción queda intacto todo el tiempo, listo para volver apagando el
-// flag.
-function getMpAccessToken() {
-    const testMode = process.env.MP_TEST_MODE === 'true';
-    const envVar = testMode ? 'MP_ACCESS_TOKEN_TEST' : 'MP_ACCESS_TOKEN';
-    const accessToken = process.env[envVar];
-    if (!accessToken) throw new Error(`Falta ${envVar} en las variables de entorno`);
-    return accessToken;
-}
-
-// Mismo criterio perezoso que getMpAccessToken: no revienta el arranque del
-// server si todavia no se configuro STRIPE_SECRET_KEY -- solo fallan las
-// rutas de pago con Stripe hasta que se agregue. A diferencia de MP, la
-// propia llave de Stripe ya indica si es de prueba o en vivo por su
-// prefijo (sk_test_/sk_live_), asi que no hace falta un flag aparte tipo
-// MP_TEST_MODE.
+// Se crea perezosamente: no revienta el arranque del server si todavia no
+// se configuro STRIPE_SECRET_KEY -- solo fallan las rutas de pago hasta que
+// se agregue. La propia llave indica si es de prueba o en vivo por su
+// prefijo (sk_test_/sk_live_).
 function getStripeClient() {
     const secretKey = process.env.STRIPE_SECRET_KEY;
     if (!secretKey) throw new Error('Falta STRIPE_SECRET_KEY en las variables de entorno');
@@ -180,45 +159,7 @@ const VALID_DICE_TIERS = ['regular', 'pro', 'vip', 'admin'];
 // venden: day/week las emite el admin) y la de la prueba gratis, que conserva
 // su etiqueta de siempre.
 const PLAN_KEY_LABELS = { trial: 'FREE7DAY', day: 'daily', week: 'weekly', month: 'monthly', annual: 'yearly', lifetime: 'lifetime' };
-// Formato de email valido para el cobro directo (charge).
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// MercadoPago.js (antes el Card Payment Brick, hoy el CardForm) a veces devuelve un payment_method_id mas
-// especifico que la marca generica (ej. "debmaster" para debito
-// Mastercard de ciertos bancos/fintechs como Nubank) aunque el logo
-// mostrado sea el generico -- bug real encontrado en produccion: la
-// Orders API (a diferencia de la vieja Payments API) solo acepta
-// amex/master/visa en payment_method.id, y rechaza cualquier otra cosa
-// con "value must be one of amex, master, visa". Se normaliza por
-// substring en vez de una lista fija de valores conocidos, para cubrir
-// variantes que no hemos visto todavia sin tener que ir agregandolas a
-// mano cada vez que aparece una nueva.
-// Bug de seguridad real encontrado y corregido: los logs de
-// /api/payments/charge (tanto el de exito como el de error) mandaban el
-// JSON crudo de la respuesta de MercadoPago tal cual a Render, que
-// incluye transactions.payments[].payment_method.token -- el token de
-// tarjeta tokenizado (de un solo uso, pero igual un dato sensible que no
-// deberia quedar en texto plano en logs). Se redacta antes de loguear.
-function redactOrderTokens(orderResult) {
-    try {
-        const clone = JSON.parse(JSON.stringify(orderResult));
-        clone?.transactions?.payments?.forEach((p) => {
-            if (p?.payment_method?.token) p.payment_method.token = '[REDACTADO]';
-        });
-        return clone;
-    } catch {
-        return orderResult;
-    }
-}
-function normalizeCardBrand(paymentMethodId) {
-    const raw = String(paymentMethodId || '').toLowerCase();
-    if (raw.includes('amex')) return 'amex';
-    if (raw.includes('master')) return 'master';
-    if (raw.includes('visa')) return 'visa';
-    return paymentMethodId;
-}
-
-// No bloqueante a propósito (igual que MP_ACCESS_TOKEN): si todavía no se
+// No bloqueante a propósito: si todavía no se
 // configuró SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY, el resto de la
 // plataforma sigue funcionando igual — solo fallan las rutas de Alertas.
 storage.ensureBucket().catch((err) => console.error('[Storage] No se pudo verificar el bucket de alertas al arrancar:', err.message));
@@ -276,7 +217,7 @@ app.use((req, res, next) => {
 // Content-Security-Policy en modo SOLO REPORTE (ver lib/csp.js): el navegador no
 // bloquea nada, solo avisa de lo que una política estricta habría bloqueado, y
 // esos avisos llegan a Sistema > Errores. Se hace así a propósito: el sitio carga
-// Google AdSense, Adsterra y el SDK de MercadoPago (que a su vez carga reCAPTCHA)
+// Google AdSense, Adsterra y Stripe
 // desde muchísimos dominios de terceros, y una política mal armada rompería en
 // silencio los anuncios (ingresos) o el cobro con tarjeta. Cuando los reportes
 // dejen de mostrar avisos se pasa a bloquear (quitando reportOnly). Sin
@@ -396,11 +337,10 @@ const spotifyAppLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standar
 // TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
 const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
-// Mas generoso: el frontend hace polling corto de esto mientras el
-// comprador completa el challenge 3DS en su banco (ver
-// /api/payments/orders/:orderId/status).
+// Mas generoso: lo usa /api/payments/stripe/confirm, que el formulario
+// llama justo después de cada pago.
 const paymentStatusLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
-// Más generoso que el resto: a este lo llama MercadoPago server-to-server,
+// Más generoso que el resto: a este lo llama Stripe server-to-server,
 // no un usuario individual — un rate limit por IP demasiado estricto acá
 // terminaría bloqueando notificaciones legítimas de pagos de otros streamers.
 const webhookLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
@@ -669,8 +609,8 @@ app.post('/api/auth/rotate-overlay-key', auth.requireAuth, rotateOverlayLimiter,
 // otro dispositivo se detectan acá sin necesitar ninguna otra infraestructura.
 app.get('/api/auth/verify', auth.requireAuth, generalLimiter, async (req, res) => {
     const row = req.license;
-    // De un solo uso: si el webhook de MercadoPago rotó la key (compra de un
-    // plan pago, ver /api/payments/webhook), acá es donde el frontend la ve
+    // De un solo uso: si un pago rotó la key (compra de un plan pago, ver
+    // applyPaymentWithRetry), acá es donde el frontend la ve
     // por primera y única vez — se borra de la DB apenas se lee.
     if (row.pending_key_reveal) await db.consumePendingKeyReveal(row.id);
     res.json({
@@ -843,7 +783,7 @@ app.post('/api/licenses/:id/win-bonus', auth.requireAuth, auth.requireAdmin, adm
 
 // Complemento de Spotify a mano (ver spotify.js, "Quién puede usarlo"): para
 // un pago hecho por fuera de la plataforma o para quitarlo tras un reembolso
-// — las compras normales lo encienden solas (ver applyApprovedPaymentIfNew).
+// — las compras normales lo encienden solas (ver computeLicenseUpdateForPurchase).
 app.post('/api/licenses/:id/spotify-addon', auth.requireAuth, auth.requireAdmin, adminLimiter, async (req, res) => {
     const row = await db.findById(req.params.id);
     if (!row) return res.status(404).json({ success: false, error: 'Licencia no encontrada' });
@@ -1535,68 +1475,12 @@ app.delete('/api/goal/audio', auth.requireAuth, generalLimiter, async (req, res)
 });
 
 // ==========================================
-// PAGOS: MercadoPago Checkout API + Orders API — autoservicio total. El
-// monto SIEMPRE se calcula acá desde pricing.js a partir de planType/
-// diceTier; nunca se confía en un precio que mande el cliente. Body de
-// /api/payments/charge (mas abajo): { planType?: 'month'|'annual'|
-// 'lifetime', diceTier?: 'pro'|'vip' } — al menos uno de los dos (compra
-// de "solo addon" sin renovar el plan, o renovación de plan sin tocar el
-// addon, son ambas válidas).
+// PAGOS -- autoservicio total con Stripe (rutas más abajo). El monto SIEMPRE
+// se calcula acá desde pricing.js a partir de planType/diceTier/
+// spotifyAddon; nunca se confía en un precio que mande el cliente.
 // ==========================================
 
-// Pedido explicito de MercadoPago (soporte, ver "reintentos clonados" en
-// su guía de reducción de high_risk): dos pagos consecutivos con el mismo
-// payer + mismos items + mismo monto disparan su motor antifraude, aunque
-// la integración esté completa. En vez de dejar que el streamer reintente
-// de una con los datos idénticos (que MP va a rechazar igual, pero ahora
-// sumando una marca antifraude más a la cuenta), se frena ACÁ antes de
-// llamar a MP: mismo licencia+plan+addon+monto dentro de una ventana
-// corta devuelve un error claro sin gastar otro intento real. En memoria
-// nada más (no hace falta persistencia -- si el proceso reinicia, el
-// peor caso es dejar pasar un reintento, no un problema real) con
-// limpieza perezosa para no crecer sin límite.
-const RECENT_CHARGE_COOLDOWN_MS = 3 * 60 * 1000;
-const recentChargeAttempts = new Map(); // `${licenseId}:${planType}:${diceTier}:${amountCents}` -> timestamp
-setInterval(() => {
-    const cutoff = Date.now() - RECENT_CHARGE_COOLDOWN_MS;
-    for (const [key, ts] of recentChargeAttempts) {
-        if (ts < cutoff) recentChargeAttempts.delete(key);
-    }
-}, RECENT_CHARGE_COOLDOWN_MS).unref();
-
-// external_reference de una orden de MercadoPago: qué se compró y para quién,
-// para que el webhook y el polling de status puedan aplicar el pago sin
-// depender del navegador. Formato:
-//   `${licenseId}_${planType|none}_${diceTier|none}_${spotify|none}_${timestamp}`
-// Sin ':' (la Orders API no lo acepta) y con '_' de separador porque
-// licenseId es un UUID que ya trae '-'. El complemento de Spotify se agregó
-// en el 4º lugar: las órdenes de antes (que en esa posición traen el
-// timestamp) se leen igual, como "sin complemento" — el único valor que lo
-// enciende es la palabra exacta `spotify`.
-// Límite de la Orders API: 64 caracteres. El peor caso es UUID (36) + 'lifetime'
-// (8) + 'none' (4) + 'sp' (2) + timestamp en base 36 (8) + 4 '_' = 62. Con
-// 'spotify' y el timestamp en decimal (13) llegaba a 71 y MP rechazaba el pago.
-function buildExternalReference({ licenseId, planType, diceTier, spotifyAddon }) {
-    const maxLength = 64;
-    const reference = `${licenseId}_${planType || 'none'}_${diceTier || 'none'}_${spotifyAddon ? 'sp' : 'none'}_${Date.now().toString(36)}`;
-    if (reference.length > maxLength) {
-        throw new Error(`external_reference de ${reference.length} caracteres (máximo ${maxLength})`);
-    }
-    return reference;
-}
-
-function parseExternalReference(reference) {
-    const [licenseId, planTypeRaw, diceTierRaw, spotifyRaw] = String(reference || '').split('_');
-    return {
-        licenseId,
-        planType: planTypeRaw && planTypeRaw !== 'none' ? planTypeRaw : undefined,
-        diceTier: diceTierRaw && diceTierRaw !== 'none' ? diceTierRaw : undefined,
-        // 'spotify' es el formato anterior (pagos ya creados con esa referencia).
-        spotifyAddon: spotifyRaw === 'sp' || spotifyRaw === 'spotify',
-    };
-}
-
-// Validación común del cuerpo de compra (MercadoPago y Stripe): devuelve el
+// Validación del cuerpo de compra: devuelve el
 // mensaje de rechazo o null. `spotifyAddon` tiene que ser un booleano; si es
 // true se aplican las reglas de spotify.addonPurchaseError sobre la licencia
 // que paga.
@@ -1632,127 +1516,9 @@ app.get('/api/pricing', async (req, res) => {
     });
 });
 
-// Lo que llega en una notificación sin firma válida lo puede haber mandado
-// cualquiera: antes de imprimirlo en el registro se deja solo lo que tienen los
-// ids y nombres de verdad (nada de saltos de línea que falsifiquen renglones).
-function logSafe(value) {
-    return String(value ?? '').replace(/[^\w.:@-]/g, '').slice(0, 64);
-}
-
-// Notificación server-to-server de MercadoPago. Sin auth de sesión (MP no
-// tiene el JWT de la app) — la validación es la firma HMAC del header
-// x-signature contra MP_WEBHOOK_SECRET, documentada acá:
-// https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
-app.post('/api/payments/webhook', webhookLimiter, async (req, res) => {
-    // Esta integración cobra EXCLUSIVAMENTE vía la Orders API (Checkout API
-    // orientado a Orders, ver /api/payments/charge) -- ya no existe ningún
-    // camino que cree una Preference/Checkout Pro ni un pago suelto con la
-    // Payments API, así que el único tópico que se procesa es 'order'.
-    //
-    // Pero QUÉ tópicos le manda MercadoPago a esta URL no lo decide el código
-    // sino el dashboard ("Tus integraciones" > Webhooks > Eventos): quitar la
-    // lógica de la Payments API no le quita la suscripción, y mientras 'Pagos'
-    // (o cualquier otro evento) siga marcado seguirán llegando notificaciones
-    // 'payment' -- con IDs solo numéricos, a diferencia de los de 'order'
-    // ("ORD01..."). Antes la firma se validaba PRIMERO, para cualquier tópico:
-    // una notificación de un tópico que ni usamos, o firmada con el secreto de
-    // otra aplicación o del modo de prueba, terminaba en un
-    // "Webhook con firma inválida" que parecía un fallo de los pagos y no lo
-    // era (MercadoPago además la reintenta mientras no reciba un 200). Ahora el
-    // tópico se mira antes: lo que no es 'order' se da por recibido (200) sin
-    // validar ni procesar nada, porque no dispara ningún efecto; la firma se
-    // sigue exigiendo, sin excepción, a lo único que sí compra algo.
-    const topic = req.query.type || req.body?.type;
-    if (topic !== 'order') {
-        console.log(`[MP] Notificación de tópico "${logSafe(topic) || 'desconocido'}" ignorada — esta integración solo procesa 'order' (Orders API).`);
-        return res.sendStatus(200);
-    }
-
-    const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
-    const xSignature = req.headers['x-signature'];
-    const xRequestId = req.headers['x-request-id'];
-    const dataId = req.query['data.id'] || req.query['id'];
-
-    if (!secret || !dataId) {
-        return res.sendStatus(400);
-    }
-
-    // Validador OFICIAL del SDK (mercadopago >= 3.x lo trae de fábrica) en
-    // vez del HMAC armado a mano que había acá antes -- mismo algoritmo
-    // (verificado byte a byte contra la implementación manual), pero de
-    // paso da un motivo puntual de rechazo (SignatureFailureReason) en vez
-    // de un genérico "no coincide", que ayuda muchísimo a diagnosticar la
-    // próxima vez que esto falle (secreto vencido vs. header ausente vs.
-    // timestamp fuera de rango, etc.).
-    //
-    // OJO: MercadoPago documenta que si data.id es alfanumerico (como los
-    // ID de 'order', ej. "ORD01M29...") hay que pasarlo en MINUSCULAS al
-    // armar el manifest de la firma -- los ID de 'payment' son siempre
-    // numericos asi que ahi nunca importo, pero para 'order' rompia la
-    // validacion 100% de las veces (confirmado en logs de produccion: TODAS
-    // las notificaciones de tipo order daban SignatureMismatch). El SDK NO
-    // lo hace por su cuenta, hay que bajarlo a minuscula ANTES de llamar a
-    // validate() -- pero solo para la firma: el dataId ORIGINAL (con su
-    // mayuscula real) es el que hay que usar despues para el GET a MP.
-    try {
-        WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId: String(dataId).toLowerCase(), secret });
-    } catch (err) {
-        const reason = err instanceof InvalidWebhookSignatureError ? err.reason : err.message;
-        // Nada de esto está autenticado (la firma justo falló): se limpia antes
-        // de imprimirlo. `live_mode: false` = notificación del modo de prueba
-        // (puede venir firmada con otro secreto); `application_id`/`user_id`
-        // distintos a los propios = otra aplicación apuntando a esta URL. Con
-        // eso se ve de dónde viene en vez de adivinarlo.
-        console.error('[MP] Webhook con firma inválida — descartado', {
-            reason, topic: 'order', dataId: logSafe(dataId), xRequestId: logSafe(xRequestId), secretLength: secret.length,
-            action: logSafe(req.body?.action), liveMode: logSafe(req.body?.live_mode),
-            applicationId: logSafe(req.body?.application_id), userId: logSafe(req.body?.user_id),
-        });
-        return res.sendStatus(401);
-    }
-
-    // Se responde 200 apenas la firma es válida: MercadoPago reintenta la
-    // notificación si no contesta rápido, y lo que sigue (consultar el pago
-    // real contra la API de MP + escribir en la DB) puede tardar un poco.
-    res.sendStatus(200);
-
-    try {
-        // No se confia en el body de la notificacion -- se pide el estado
-        // real con un GET.
-        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${dataId}`, {
-            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
-        });
-        const order = await orderRes.json();
-        if (!orderRes.ok) {
-            console.error('[MP] Webhook de order: no se pudo consultar la orden', dataId, orderRes.status);
-            return;
-        }
-        const { orderPayment, approved } = evaluateOrderStatus(order);
-        if (!approved) return;
-        // Formato y separador de external_reference: ver buildExternalReference.
-        const { licenseId, planType, diceTier, spotifyAddon } = parseExternalReference(order.external_reference);
-        await applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, mpPaymentId: orderPayment?.id || order.id });
-    } catch (err) {
-        console.error('[MP] Error procesando webhook:', err.message);
-    }
-});
-
-// Aplica una compra ya APROBADA por MercadoPago a la licencia
-// correspondiente -- tres llamadores: el webhook de tópico 'order' y el
-// polling de /api/payments/orders/:orderId/status (post-challenge 3DS)
-// parsean licenseId/planType/diceTier de external_reference (separador
-// '_', ver donde se arma en /api/payments/charge), mientras que
-// /api/payments/charge ya conoce esos valores de su propio request y no
-// necesita parsear nada. Idempotente via el UNIQUE de payments.
-// mp_payment_id (ver insertPaymentIfNew): llamarla dos veces con el
-// mismo pago (ej. el webhook de 'order' llega DESPUES de que
-// /api/payments/charge ya lo aplico al toque) no aplica el cambio dos
-// veces.
-// Extraido de applyApprovedPaymentIfNew para que Stripe pueda reusar
-// EXACTAMENTE la misma logica de rotacion de key / calculo de expiracion /
-// upgrade de dice_tier sin duplicarla -- es la parte mas delicada de todo
-// el flujo de pagos, asi que un solo lugar que la calcule para ambos
-// proveedores.
+// Lo que cambia en la licencia al aplicar una compra: rotación de key,
+// cálculo de expiración y upgrade de dice_tier. Es la parte más delicada de
+// todo el flujo de pagos, así que se calcula en un solo lugar.
 function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon }) {
     const update = {};
     if (planType) {
@@ -1785,8 +1551,8 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
 
 // Aplica el efecto de un pago YA registrado sobre la licencia. Si la DB falla
 // en ese momento se reintenta (3 veces); si sigue fallando se OLVIDA el registro
-// del pago (`forget`) para que el siguiente reintento (sondeo de la orden,
-// /confirm de Stripe) lo aplique, en vez de dejarlo como "ya procesado" con el
+// del pago (`forget`) para que el siguiente reintento (/confirm o el
+// webhook de Stripe) lo aplique, en vez de dejarlo como "ya procesado" con el
 // cliente cobrado y sin plan. Devuelve como antes; relanza el error si no pudo.
 async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget, provider, providerPaymentId, amountCents }) {
     // Cuando un pago cobrado no se puede aplicar, además de la línea del registro
@@ -1841,38 +1607,8 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
     throw lastError;
 }
 
-async function applyApprovedPaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, mpPaymentId }) {
-    if (!licenseId || (!planType && !diceTier && !spotifyAddon)) {
-        console.error('[MP] applyApprovedPaymentIfNew: faltan licenseId/planType/diceTier/spotifyAddon', { licenseId, planType, diceTier, spotifyAddon });
-        return { applied: false };
-    }
-
-    // El UNIQUE sobre mp_payment_id hace esto idempotente: si ya vimos este
-    // pago (reintento de webhook, o el cobro directo ya lo aplico antes),
-    // insertPaymentIfNew devuelve false y no se vuelve a aplicar nada.
-    const isNew = await db.insertPaymentIfNew({
-        id: crypto.randomUUID(),
-        licenseId,
-        mpPaymentId: String(mpPaymentId),
-        planType: planType || null,
-        diceTier: diceTier || null,
-        spotifyAddon: !!spotifyAddon,
-        amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
-        status: 'approved',
-        createdAt: Date.now(),
-    });
-    if (!isNew) return { applied: false, alreadyProcessed: true };
-
-    return applyPaymentWithRetry({
-        label: 'MP', licenseId, planType, diceTier, spotifyAddon,
-        provider: 'mp', providerPaymentId: String(mpPaymentId), amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
-        forget: () => db.deletePaymentRecord('mp', mpPaymentId),
-    });
-}
-
-// Mismo patron que applyApprovedPaymentIfNew de arriba, pero para Stripe:
-// idempotente via el UNIQUE de payments.stripe_payment_id (columna
-// paralela a mp_payment_id, ver db.js) -- llamarla dos veces con el mismo
+// Registra y aplica un pago de Stripe ya aprobado: idempotente via el
+// UNIQUE de payments.stripe_payment_id (ver db.js) -- llamarla dos veces con el mismo
 // PaymentIntent (ej. /api/payments/stripe/confirm ya lo aplico y despues
 // llega el webhook) no aplica el cambio dos veces.
 async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId }) {
@@ -1901,342 +1637,9 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
     });
 }
 
-// Interpreta el estado real de una orden de la Orders API -- compartido
-// entre el cobro directo y el polling de status despues de un challenge
-// 3DS (ver mas abajo), asi ambos caminos coinciden en como distinguir
-// aprobado / rechazado / pendiente-async / pendiente-challenge.
-function evaluateOrderStatus(order) {
-    const orderPayment = order?.transactions?.payments?.[0];
-    const approved = order.status === 'processed' && (orderPayment?.status === 'processed' || orderPayment?.status === 'approved');
-    const challengeUrl = orderPayment?.payment_method?.transaction_security?.url;
-    const isChallenge = !approved && orderPayment?.status_detail === 'pending_challenge' && !!challengeUrl;
-    // "processing"/"action_required" son estados async reales de la Orders
-    // API (ver doc oficial) -- se traducen a 'pending' para que el frontend
-    // (que ya sabe mostrar "pago pendiente", ver MercadoPagoCheckout.jsx) no los
-    // confunda con un rechazo.
-    const isPending = !approved && !isChallenge && (order.status === 'processing' || order.status === 'action_required');
-    return { orderPayment, approved, isChallenge, challengeUrl, isPending };
-}
-
 // ==========================================
-// COBRO DIRECTO (Checkout API + CardForm de MercadoPago.js) -- unico camino de
-// cobro de la plataforma (el checkout hosteado de MercadoPago via
-// Preference API tenia un bug confirmado del lado de ellos --
-// challenge-orchestrator nunca resolvia por un CORS mal configurado en
-// mercadolibre.com/jms/lgz/background/automation, asi que el boton
-// "Pagar" de SU pagina nunca se habilitaba -- reproducido en dos
-// navegadores distintos, con y sin cuenta de MP -- asi que se elimino ese
-// endpoint en vez de mantenerlo muerto). Aca el comprador nunca sale de
-// este sitio: el CardForm (pantalla MercadoPagoCheckout.jsx, en
-// /membership/mercadopago) tokeniza la tarjeta en un iframe de
-// MercadoPago -- a este endpoint solo llega el token,
-// nunca el numero de tarjeta real.
-app.post('/api/payments/charge', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { planType, diceTier, spotifyAddon, email, firstName: rawFirstName, lastName: rawLastName, zipCode, streetName, streetNumber, token, payment_method_id: paymentMethodId, identificationType, identificationNumber, deviceId, policyAcceptedAt } = req.body || {};
-    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
-    if (itemsError) {
-        return res.status(400).json({ success: false, error: itemsError });
-    }
-    const cleanEmail = typeof email === 'string' ? email.trim() : '';
-    if (!EMAIL_RE.test(cleanEmail)) {
-        return res.status(400).json({ success: false, error: 'Ingresa un correo valido para continuar con el pago' });
-    }
-    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : '';
-    const lastName = typeof rawLastName === 'string' ? rawLastName.trim() : '';
-    if (!firstName || !lastName) {
-        return res.status(400).json({ success: false, error: 'Ingresa tu nombre y apellido para continuar con el pago' });
-    }
-    if (!token || typeof token !== 'string') {
-        return res.status(400).json({ success: false, error: 'Falta el token de la tarjeta' });
-    }
-    if (!paymentMethodId || typeof paymentMethodId !== 'string') {
-        return res.status(400).json({ success: false, error: 'Falta el medio de pago' });
-    }
-    // Pedido explicito: evidencia real (con fecha) de que el comprador
-    // aceptó la política de reembolsos ANTES de pagar -- se exige
-    // server-side (no solo ocultar el botón en el frontend) para que el
-    // registro exista siempre. Va pegado al `description` de la orden (ver
-    // más abajo) en vez de additional_info -- ese campo tiene un schema
-    // estricto del lado de MP (confirmado en vivo: rechaza cualquier clave
-    // que no reconozca), mientras que description es texto libre.
-    if (typeof policyAcceptedAt !== 'string' || Number.isNaN(Date.parse(policyAcceptedAt))) {
-        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
-    }
-
-    // El monto SIEMPRE se calcula aca desde pricing.js, nunca se confia en
-    // un transaction_amount que pueda venir del formData del Brick.
-    const amountCents = pricing.computeAmountCents({ planType, diceTier, spotifyAddon });
-
-    // Pedido explicito de MercadoPago: frena reintentos idénticos (mismo
-    // payer + mismos items + mismo monto) antes de gastar otro intento
-    // real contra su antifraude -- ver el comentario de
-    // recentChargeAttempts más arriba.
-    const chargeAttemptKey = `${req.license.id}:${planType || ''}:${diceTier || ''}:${spotifyAddon ? 'spotify' : ''}:${amountCents}`;
-    const lastAttemptAt = recentChargeAttempts.get(chargeAttemptKey);
-    if (lastAttemptAt && Date.now() - lastAttemptAt < RECENT_CHARGE_COOLDOWN_MS) {
-        return res.status(429).json({
-            success: false,
-            error: 'Ya intentaste este mismo pago hace muy poco. Por seguridad, MercadoPago rechaza reintentos idénticos muy seguidos — espera unos minutos o prueba pagando con Stripe.',
-        });
-    }
-    recentChargeAttempts.set(chargeAttemptKey, Date.now());
-
-    // Sin ':' a proposito -- la Orders API (a diferencia de Preference) NO
-    // acepta ese caracter en external_reference (confirmado probando:
-    // "'$.external_reference' - does not match pattern"). Se usa '_' como
-    // separador (no '-') porque licenseId es un UUID que YA trae '-'
-    // adentro -- con '_' el webhook de notificaciones tipo "order" (ver mas
-    // abajo) puede hacer external_reference.split('_') y recuperar
-    // licenseId/planType/diceTier sin ambiguedad. Esto importa porque esta
-    // cuenta usa capture_mode "automatic_async" por default: la mayoria de
-    // los pagos se resuelven al toque (este mismo endpoint ya aplica el
-    // plan en ese caso), pero cuando MP tarda mas en confirmar, el UNICO
-    // aviso de que se aprobo llega despues via ese webhook, no en esta
-    // respuesta.
-    const externalReference = buildExternalReference({ licenseId: req.license.id, planType, diceTier, spotifyAddon });
-    const titleParts = [];
-    if (planType) titleParts.push({ month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' }[planType]);
-    if (diceTier) titleParts.push(diceTier.toUpperCase());
-    if (spotifyAddon) titleParts.push('Complemento Spotify');
-
-    // El prefijo "deb" (debmaster/debvisa) indica una tarjeta de DEBITO.
-    // Confirmado en logs de produccion, en ese orden:
-    // 1) mandando siempre credit_card + id normalizado a la marca generica
-    //    ('master') -> 422 generico "Unprocessable Entity" para una
-    //    tarjeta de debito real (Nubank).
-    // 2) corrigiendo el type a 'debit_card' pero SIN dejar de normalizar
-    //    el id a 'master' -> 400 "value must be one of 'debmaster',
-    //    'debvisa'" -- para debito el id CORRECTO es justamente el que
-    //    normalizeCardBrand le sacaba el prefijo. O sea: normalizar la
-    //    marca solo aplica a credito; a debito hay que dejar el id
-    //    original tal cual vino del Brick.
-    const isDebit = String(paymentMethodId || '').toLowerCase().startsWith('deb');
-    const cardType = isDebit ? 'debit_card' : 'credit_card';
-    const normalizedPaymentMethodId = isDebit ? paymentMethodId : normalizeCardBrand(paymentMethodId);
-    if (normalizedPaymentMethodId !== paymentMethodId) {
-        console.log(`[MP] payment_method_id normalizado: "${paymentMethodId}" -> "${normalizedPaymentMethodId}"`);
-    }
-    // Opcional: se manda solo si vienen las 3 partes juntas.
-    const address = (zipCode && streetName && streetNumber)
-        ? { zip_code: String(zipCode).trim(), street_name: String(streetName).trim(), street_number: String(streetNumber).trim() }
-        : undefined;
-
-    // Diagnostico temporal: la respuesta de la Orders API nunca hace eco
-    // de additional_info/payer (ni aprobado ni rechazado), asi que no hay
-    // forma de confirmar desde ahi si de verdad llegan completos. Ya no
-    // aplica a firstName/lastName (validados arriba, siempre llegan si el
-    // request pasa de ahi) pero sigue siendo util para deviceId/address.
-    console.log('[MP] Datos del comprador para esta orden:', {
-        hasAddress: !!address,
-        hasDeviceId: !!deviceId,
-    });
-
-    try {
-        const amountStr = (amountCents / 100).toFixed(2);
-        const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${getMpAccessToken()}`,
-                'X-Idempotency-Key': crypto.randomUUID(),
-                // Pedido explicito de MercadoPago (checklist de calidad,
-                // "Identificador del dispositivo"): sin este header el
-                // motor antifraude tiene mucha menos señal y rechaza mucho
-                // mas seguido por "high_risk" (confirmado: TODOS los cobros
-                // reales hasta ahora venian sin esto y caian en high_risk).
-                // Puede faltar (bloqueador de anuncios, script que no
-                // cargo a tiempo) -- en ese caso simplemente no se manda,
-                // MP sigue evaluando con el resto de la señal disponible.
-                ...(deviceId ? { 'X-meli-session-id': String(deviceId) } : {}),
-            },
-            body: JSON.stringify({
-                type: 'online',
-                processing_mode: 'automatic',
-                total_amount: amountStr,
-                external_reference: externalReference,
-                description: `BenjaApis - ${titleParts.join(' + ')} | Política de reembolsos aceptada: ${policyAcceptedAt}`,
-                // Pedido explicito de MercadoPago (checklist de calidad,
-                // "Precio unitario del producto" / "Cantidad de productos" /
-                // "Nombre del producto" / "Categoría del producto"): un solo
-                // item que representa la compra completa (plan y/o addon
-                // juntos, si se compran a la vez) -- unit_price = el mismo
-                // monto que ya se cobra en total_amount/transactions, asi
-                // que la suma siempre cuadra sin tener que descomponer el
-                // precio de pricing.js en partes. "services" porque esto es
-                // una suscripcion digital, no un producto fisico.
-                items: [{
-                    // Checklist de calidad, "ID del item": en la Orders API
-                    // ese dato va en external_code (no en `id`). Código
-                    // estable de lo que se compra (ej. "month",
-                    // "spotify_addon", "month+spotify_addon").
-                    external_code: [planType, diceTier, spotifyAddon ? 'spotify_addon' : null].filter(Boolean).join('+'),
-                    title: titleParts.join(' + ') || 'BenjaApis',
-                    description: `Suscripción BenjaApis - ${titleParts.join(' + ')}`,
-                    category_id: 'services',
-                    quantity: 1,
-                    unit_price: amountStr,
-                }],
-                payer: {
-                    email: cleanEmail,
-                    first_name: firstName,
-                    last_name: lastName,
-                    address,
-                    identification: (identificationType && identificationNumber)
-                        ? { type: identificationType, number: identificationNumber }
-                        : undefined,
-                },
-                // Pedido explicito de MercadoPago (checklist de calidad,
-                // "Fecha de registro del pagador"): la fecha en que se creo
-                // la licencia es lo mas parecido que tenemos a "cuando se
-                // registro en el sitio". OJO: a diferencia de la vieja
-                // Payments API (que anida esto en additional_info.payer.
-                // registration_date), la Orders API usa una clave PLANA con
-                // el punto literal adentro del nombre -- probado en vivo
-                // contra el sandbox: additional_info:{payer:{...}} lo
-                // rechaza con "additionalProperties 'payer' not allowed",
-                // additional_info:{"payer.registration_date":...} sí lo
-                // acepta.
-                additional_info: {
-                    'payer.registration_date': new Date(req.license.created_at).toISOString(),
-                },
-                transactions: {
-                    payments: [{
-                        amount: amountStr,
-                        payment_method: {
-                            id: normalizedPaymentMethodId,
-                            type: cardType,
-                            token,
-                            // Siempre 1, decidido acá: el formulario no
-                            // ofrece meses (checklist de calidad, "Maximo
-                            // de cuotas") y el select de cuotas que exige el
-                            // CardForm de MercadoPago.js va oculto -- su
-                            // valor nunca se toma del navegador.
-                            installments: 1,
-                            // Pedido explicito de MercadoPago (checklist
-                            // de calidad, "Descripción-Resumen de
-                            // tarjeta") -- confirmado que la Orders API
-                            // acepta este campo acá adentro de
-                            // payment_method (no a nivel order).
-                            statement_descriptor: 'TIKTOKEVENTS',
-                        },
-                    }],
-                },
-                // Pedido explicito de MercadoPago (checklist de calidad,
-                // "Protocolo de seguridad 3DS"): sin esto la Orders API
-                // nunca ofrece un challenge 3DS -- solo puede aprobar o
-                // rechazar de una, y confirmado en logs de produccion que
-                // ante cualquier señal de riesgo elegia rechazar (high_risk)
-                // en vez de pedir una segunda verificacion con el banco.
-                // "on_fraud_risk" deja que MP decida caso por caso si pedir
-                // el challenge; "required" en liability_shift es el unico
-                // valor que acepta la API y traslada la responsabilidad del
-                // fraude a la red de la tarjeta cuando el challenge se
-                // completa bien. Si toca challenge, la orden vuelve con
-                // status "action_required"/"pending_challenge" (ver mas
-                // abajo) en vez de aprobada o rechazada de una.
-                config: {
-                    online: {
-                        transaction_security: {
-                            validation: 'on_fraud_risk',
-                            liability_shift: 'required',
-                        },
-                    },
-                },
-            }),
-        });
-        const result = await mpRes.json();
-
-        if (!mpRes.ok) {
-            console.error('[MP] Error creando pago directo (Orders API):', mpRes.status, JSON.stringify(redactOrderTokens(result)));
-            const detail = result?.errors?.[0]?.details?.[0] || result?.errors?.[0]?.message;
-            res.status(502).json({ success: false, error: detail ? `No se pudo procesar el pago (${detail}).` : 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
-            return;
-        }
-
-        // Diagnostico temporal: primera vez que se usa la Orders API en esta
-        // integracion -- se deja el resultado crudo logueado para terminar
-        // de confirmar el shape real contra pagos de verdad (aprobados y
-        // rechazados) antes de simplificar este log.
-        console.log('[MP] Resultado crudo de POST /v1/orders:', JSON.stringify(redactOrderTokens(result)));
-
-        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(result);
-        // Si la confirmacion final llega despues (async o post-challenge),
-        // la aplica el webhook de tipo "order" de mas abajo (o el polling
-        // de /api/payments/orders/:orderId/status), no esta respuesta.
-        if (approved) {
-            await applyApprovedPaymentIfNew({
-                licenseId: req.license.id,
-                planType,
-                diceTier,
-                spotifyAddon,
-                mpPaymentId: orderPayment?.id || result.id,
-            });
-        }
-
-        res.json({
-            success: true,
-            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || result.status || 'unknown'),
-            statusDetail: orderPayment?.status_detail || result.status_detail,
-            paymentId: orderPayment?.id || result.id,
-            orderId: result.id,
-            challengeUrl: isChallenge ? challengeUrl : undefined,
-        });
-    } catch (err) {
-        console.error('[MP] Error creando pago directo:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo procesar el pago. Intenta de nuevo en un momento.' });
-    }
-});
-
-// El frontend llama esto en loop corto (ver MercadoPagoCheckout.jsx) mientras
-// el comprador completa el challenge 3DS en el iframe de su banco -- el
-// propio doc de MercadoPago aclara que el evento del iframe solo avisa que
-// el challenge termino, no que el pago ya tiene status final, asi que hay
-// que volver a consultar la orden para saberlo de verdad. Nunca se confia
-// en el orderId a ciegas: se verifica que la orden sea de ESTA licencia
-// (mismo external_reference que arma /api/payments/charge) antes de
-// devolver nada.
-app.get('/api/payments/orders/:orderId/status', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
-    const { orderId } = req.params;
-    // Solo IDs de orden de la Orders API ("ORD01..." en vivo, "ORDTST01..." en
-    // pruebas): el valor va dentro de la URL que se pide con el Access Token,
-    // y Express decodifica %2F, así que sin esto se podría hacer que el
-    // servidor consulte otra ruta de api.mercadopago.com.
-    if (typeof orderId !== 'string' || !/^ORD[A-Z0-9]{1,60}$/.test(orderId)) {
-        return res.status(404).json({ success: false, error: 'Orden no encontrada' });
-    }
-    try {
-        const orderRes = await fetch(`https://api.mercadopago.com/v1/orders/${orderId}`, {
-            headers: { Authorization: `Bearer ${getMpAccessToken()}` },
-        });
-        const order = await orderRes.json();
-        if (!orderRes.ok) {
-            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
-        }
-        const { licenseId: ownerLicenseId, planType, diceTier, spotifyAddon } = parseExternalReference(order.external_reference);
-        if (ownerLicenseId !== req.license.id) {
-            return res.status(404).json({ success: false, error: 'Orden no encontrada' });
-        }
-
-        const { orderPayment, approved, isChallenge, challengeUrl, isPending } = evaluateOrderStatus(order);
-        if (approved) {
-            await applyApprovedPaymentIfNew({ licenseId: ownerLicenseId, planType, diceTier, spotifyAddon, mpPaymentId: orderPayment?.id || order.id });
-        }
-        res.json({
-            success: true,
-            status: approved ? 'approved' : isChallenge ? 'challenge_required' : isPending ? 'pending' : (orderPayment?.status || order.status || 'unknown'),
-            statusDetail: orderPayment?.status_detail || order.status_detail,
-            challengeUrl: isChallenge ? challengeUrl : undefined,
-        });
-    } catch (err) {
-        console.error('[MP] Error consultando status de orden:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo consultar el estado del pago.' });
-    }
-});
-
-// ==========================================
-// PAGOS: Stripe (formulario de Checkout embebido) -- segunda forma de pago,
-// seleccionable junto a MercadoPago desde Membership.jsx. Mismo principio
-// que el cobro de MP: el monto SIEMPRE se calcula acá desde pricing.js,
+// PAGOS: Stripe (formulario de Checkout embebido), el único medio de pago
+// de Membership.jsx. El monto SIEMPRE se calcula acá desde pricing.js,
 // nunca se confía en nada que mande el cliente. Tres pasos -- 1) se crea
 // una Checkout Session (ui_mode 'form') server-side (acá abajo,
 // /checkout-session), 2) el frontend monta el formulario de Stripe con su
@@ -2369,7 +1772,7 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
 // StripePaymentForm.jsx) -- nunca se aplica la compra por lo que diga el
 // frontend: se vuelve a pedir la sesión a la propia API de Stripe y se
 // verifica que su metadata.licenseId sea el de ESTA sesión de la app antes
-// de aplicar nada (mismo criterio que el polling de status de MP). El
+// de aplicar nada (mismo criterio que el webhook). El
 // webhook de más abajo es la red de respaldo si el navegador se cierra
 // justo acá.
 app.post('/api/payments/stripe/confirm', auth.requireAuth, paymentStatusLimiter, async (req, res) => {
@@ -2421,8 +1824,8 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
         return res.sendStatus(401);
     }
 
-    // Se responde 200 apenas la firma es válida, mismo criterio que el
-    // webhook de MP -- Stripe reintenta si no contesta rápido.
+    // Se responde 200 apenas la firma es válida, porque
+    // Stripe reintenta si no contesta rápido.
     res.sendStatus(200);
 
     // Se aceptan los dos caminos para no depender de qué eventos se marquen

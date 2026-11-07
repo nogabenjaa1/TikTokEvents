@@ -5,7 +5,7 @@ const path = require('node:path');
 const helmet = require('helmet');
 const { cspHeaderValue, helmetDirectives, DIRECTIVES, SCRIPT_HOSTS } = require('./lib/csp');
 
-// The site loads ads (AdSense, Adsterra) and the MercadoPago / Stripe card forms from third-party hosts, so the
+// The site loads ads (AdSense, Adsterra) and the Stripe card form from third-party hosts, so the
 // policy ships in REPORT-ONLY mode first: nothing is blocked, the browser only reports what it would have blocked.
 
 const directive = (name) => DIRECTIVES[name] || [];
@@ -17,7 +17,7 @@ test('scripts only run from this site and the known ad and payment hosts, never 
     assert.ok(!scripts.includes(forbidden), `script-src must not allow ${forbidden}`);
   }
   assert.ok(SCRIPT_HOSTS.every((host) => /^https:\/\/(\*\.)?[a-z0-9.-]+$/.test(host)), 'every script host is an https origin without a path');
-  for (const needed of ['https://pagead2.googlesyndication.com', 'https://sdk.mercadopago.com', 'https://js.stripe.com', 'https://beastscarnival.com']) {
+  for (const needed of ['https://pagead2.googlesyndication.com', 'https://js.stripe.com', 'https://beastscarnival.com']) {
     assert.ok(scripts.includes(needed), `${needed} would break ads or payments if it were missing`);
   }
   assert.deepEqual(directive('object-src'), ["'none'"]);
@@ -130,9 +130,9 @@ test('the page shell has no inline scripts or event-handler attributes, so the s
 test('every external script the site loads comes from a host the policy allows', () => {
   const urls = [];
   for (const [, source] of read('frontend', 'index.html').replace(/<!--[\s\S]*?-->/g, '').matchAll(/<script\b[^>]*\bsrc="(https:\/\/[^"]+)"/gi)) urls.push(source);
-  for (const file of [['frontend', 'src', 'mercadopagoSdk.js'], ['frontend', 'src', 'adConfig.js']]) {
+  for (const file of [['frontend', 'src', 'adConfig.js']]) {
     for (const [, source] of read(...file).matchAll(/(?:_SRC|_HOST)\s*=\s*'(https:\/\/[^']+)'/g)) urls.push(source);
   }
-  assert.ok(urls.length >= 4, `found ${urls.length} external script addresses`);
+  assert.ok(urls.length >= 3, `found ${urls.length} external script addresses`);
   for (const url of urls) assert.ok(allowedScriptHost(url), `${url} is not in script-src: the site would report it (and break when the policy is enforced)`);
 });

@@ -28,7 +28,6 @@ import OverlayModeView from './app/OverlayModeView';
 import useGiftCatalog from './app/useGiftCatalog';
 import useSectionRouting from './app/useSectionRouting';
 import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
-import { MERCADOPAGO_ENABLED } from './paymentProviders';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
 import { createSettingsSync, overlayEchoPlan } from './settingsSync';
@@ -47,7 +46,6 @@ const Downloader = lazyPanel(() => import('./Downloader'));
 const LicenseManager = lazyPanel(() => import('./LicenseManager'));
 const AdminSystem = lazyPanel(() => import('./AdminSystem'));
 const Membership = lazyPanel(() => import('./Membership'));
-const MercadoPagoCheckout = lazyPanel(() => import('./MercadoPagoCheckout'));
 const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
 const OverlayLink = lazyPanel(() => import('./OverlayLink'));
 
@@ -368,12 +366,6 @@ export default function App() {
   const [serverRestarted, setServerRestarted]  = useState(false);
   const bootIdRef = useRef(null);
   useSectionRouting({ overlayMode, sidebarMode, setSidebarMode, eventsTab, setEventsTab });
-  // Con MercadoPago apagado (Stripe es el único medio de pago oficial, ver
-  // paymentProviders.js), un enlace viejo a /membership/mercadopago lleva a
-  // Membresía en lugar de a una pantalla de pago que ya no se ofrece.
-  useEffect(() => {
-    if (!MERCADOPAGO_ENABLED && sidebarMode === 'mpcheckout') setSidebarMode('membership');
-  }, [sidebarMode]);
 
   // Control remoto del TTS para el shortcut del Dashboard (ver
   // TtsChat.jsx/Dashboard.jsx) -- `ttsEnabled` es solo para MOSTRAR el
@@ -1078,9 +1070,7 @@ export default function App() {
       <AudioUnlockBanner enabled={soundEnabled && !!session} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <AppSidebar
-        /* La pantalla de pago de MercadoPago es parte de Membresía: la barra
-           lateral la marca como tal. */
-        sidebarMode={sidebarMode === 'mpcheckout' ? 'membership' : sidebarMode} onNavigate={setSidebarMode} session={session}
+        sidebarMode={sidebarMode} onNavigate={setSidebarMode} session={session}
         gameRunning={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
         onEnter={() => goToEventTab('king')} onLogout={logout}
       />
@@ -1150,12 +1140,6 @@ export default function App() {
         {sidebarMode === 'membership' && (
           <Membership session={session} onSessionUpdate={setSession} onNavigate={setSidebarMode} />
         )}
-        {/* Pago con tarjeta de MercadoPago, en su propia dirección
-            (/membership/mercadopago): se llega desde el botón "Pagar con
-            Mercado Pago" de Membresía, que ya pidió sesión y datos. Con
-            MercadoPago apagado (ver paymentProviders.js) esa dirección
-            muestra Membresía (ver el efecto que corrige sidebarMode). */}
-        {sidebarMode === 'mpcheckout' && MERCADOPAGO_ENABLED && <MercadoPagoCheckout />}
         {sidebarMode === 'legal' && <LegalNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'privacy' && <PrivacyNotice onNavigate={setSidebarMode} />}
         {sidebarMode === 'cookies' && <CookiesNotice onNavigate={setSidebarMode} />}

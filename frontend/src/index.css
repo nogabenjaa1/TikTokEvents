@@ -196,17 +196,21 @@ input[type=range]::-moz-range-thumb {
    ninguna personalización. "both" mezcla el morado y el frambuesa. */
 .tkc-chat-premium-tint {
   position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: rgba(var(--tkc-premium-rgb), 0.15);
+  /* Más fuerte a la izquierda (donde están la foto, las insignias y el
+     nombre) y más suave hacia el texto. Al 15% parejo apenas se notaba en el
+     stream sobre fondos de color de Personalizar (un morado tenue sobre
+     turquesa casi se cancela). */
+  background: linear-gradient(90deg, rgba(var(--tkc-premium-rgb), 0.42), rgba(var(--tkc-premium-rgb), 0.26));
   box-shadow: inset 0 0 0 max(1px, 0.045em) rgba(var(--tkc-premium-rgb), 0.9);
 }
-.tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.16), rgba(255, 61, 139, 0.14)); }
+.tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.42), rgba(255, 61, 139, 0.3)); }
 /* El destello al llegar: una franja suave que cruza la fila una vez y se va. */
 .tkc-chat-premium-sweep {
   position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none;
 }
 .tkc-chat-premium-sweep::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
-  background: linear-gradient(100deg, transparent, rgba(var(--tkc-premium-rgb), 0.45) 50%, transparent);
+  background: linear-gradient(100deg, transparent, rgba(var(--tkc-premium-rgb), 0.6) 50%, transparent);
   transform: translateX(-110%);
   animation: tkc-premium-sweep var(--tkc-premium-sweep-dur) cubic-bezier(0.45, 0, 0.25, 1) 0.15s 1 both;
 }

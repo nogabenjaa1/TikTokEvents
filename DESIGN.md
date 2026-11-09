@@ -415,7 +415,7 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 **Destacados y eventos del chat.**
 - **Mensaje premium (opción "D", pedido del dueño):** el borde de 3 px que giraba apenas se notaba en el stream (una línea fina en movimiento es lo primero que se pierde al comprimir el video) y, con varios en pantalla, hacía ruido. Ahora la fila lleva cuatro cosas, todas en tonos rojizos y púrpuras, nunca blanco:
   - un fondo teñido del color de su distintivo al 15 % (`.tkc-chat-premium-tint`, una capa entre el fondo de la burbuja y el texto, así funciona con cualquier fondo de Personalizar);
-  - el borde de 1 px de la fila, quieto, en ese color al 55 % (el borde se conserva: decisión del dueño);
+  - un borde quieto en ese color: el de 1 px de la fila al 90 % más un trazo interior que crece con la letra (0,045em). Con solo 1 px al 55 % se perdía en el overlay real con letra grande (el borde se conserva: decisión del dueño);
   - el nombre en un tono claro de ese color (`.tkc-chat-name-premium`), por encima del color de nombres de Personalizar;
   - un destello que cruza la fila **una sola vez, al llegar** el mensaje (`.tkc-chat-premium-sweep`, 1,4 s); después la fila queda quieta.
   Cada condición basta sola para llevarlo:

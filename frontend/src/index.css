@@ -181,34 +181,30 @@ input[type=range]::-moz-range-thumb {
    alto, rosa frambuesa sobre Superfan. Las insignias no se tocan (tienen su
    propio brillo, .tkc-svg-shine). */
 :root { --tkc-shine-dur: 3s; --tkc-premium-sweep-dur: 1.4s; }
-.tkc-chat-glow { position: relative; isolation: isolate; --tkc-premium-base: #1a1322; }
-.tkc-chat-glow-elite { --tkc-premium-rgb: 178, 77, 255; --tkc-premium-name: #d9b8ff; }
-.tkc-chat-glow-superfan { --tkc-premium-rgb: 255, 61, 139; --tkc-premium-name: #ffb3cf; }
-.tkc-chat-glow-both { --tkc-premium-rgb: 208, 70, 200; --tkc-premium-name: #ecc0ff; }
-/* El borde: el de 1px de cualquier fila, de su color y casi opaco, más un
-   trazo interior en la capa del tinte que crece con la letra (0,045em: ~1px
-   a 24px). Solo con el de 1px al 55% se perdía en el overlay real: con letra
-   grande la fila es alta y una línea fina a media opacidad no se ve contra el
-   tinte, menos aún con el video comprimido. */
-.tkc-chat-glow { border-color: rgb(var(--tkc-premium-rgb)) !important; }
-/* El tinte va en una capa debajo del texto y encima del fondo de la burbuja
-   (el que sea: oscuro, degradado, transparente...), así no se pierde con
-   ninguna personalización. "both" mezcla el morado y el frambuesa. */
+.tkc-chat-glow { position: relative; isolation: isolate; border-color: transparent !important; }
+/* Colores de la maqueta D que eligió el dueño: tinte al 14% (frambuesa al 12%)
+   y borde al 45% sobre el oscuro de la maqueta (#14101c). */
+.tkc-chat-glow-elite { --tkc-premium-rgb: 178, 77, 255; --tkc-premium-tint: 0.14; --tkc-premium-name: #d9b8ff; }
+.tkc-chat-glow-superfan { --tkc-premium-rgb: 255, 61, 139; --tkc-premium-tint: 0.12; --tkc-premium-name: #ffb3cf; }
+.tkc-chat-glow-both { --tkc-premium-rgb: 208, 70, 200; --tkc-premium-tint: 0.13; --tkc-premium-name: #ecc0ff; }
+/* El fondo y el borde de la fila premium van en una capa propia, debajo del
+   texto, que tapa por completo el fondo y el borde de la burbuja (inset:-1px:
+   el borde de 1px de toda fila). Su base es OPACA, así que la fila se ve
+   idéntica a la maqueta D con cualquier fondo de Personalizar (oscuro,
+   degradado de cualquier color, arcoíris, transparente) y sobre cualquier
+   escena de OBS (pedido del dueño). Un tinte solo translúcido se mezclaba con
+   lo de atrás: sobre turquesa casi desaparecía. Es la única excepción del
+   chat a la Regla del Transparente Completo: el destacado es contenido. El
+   texto del chat ya es claro siempre (.tkc-chat-text).
+   El borde crece con la letra en la misma proporción que en la maqueta (1px
+   con letra de 14px = 0,07em): con 1px fijo, a la letra grande del overlay
+   se perdía. */
 .tkc-chat-premium-tint {
-  position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  /* Más fuerte a la izquierda (donde están la foto, las insignias y el
-     nombre) y más suave hacia el texto, sobre una base oscura OPACA: así la
-     fila premium se ve idéntica con cualquier fondo de Personalizar (oscuro,
-     degradado de cualquier color, arcoíris, transparente) y sobre cualquier
-     escena de OBS (pedido del dueño). Un tinte solo translúcido se mezclaba
-     con lo de atrás: al 15% sobre turquesa casi se cancelaba. Es la única
-     excepción a la Regla del Transparente Completo en el chat: el destacado
-     es contenido, como la barra de progreso. El texto del chat ya es claro
-     siempre (.tkc-chat-text). */
-  background: linear-gradient(90deg, rgba(var(--tkc-premium-rgb), 0.42), rgba(var(--tkc-premium-rgb), 0.26)), var(--tkc-premium-base);
-  box-shadow: inset 0 0 0 max(1px, 0.045em) rgba(var(--tkc-premium-rgb), 0.9);
+  position: absolute; inset: -1px; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(rgba(var(--tkc-premium-rgb), var(--tkc-premium-tint)), rgba(var(--tkc-premium-rgb), var(--tkc-premium-tint))), #14101c;
+  box-shadow: inset 0 0 0 max(1px, 0.07em) rgba(var(--tkc-premium-rgb), 0.45);
 }
-.tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.42), rgba(255, 61, 139, 0.3)), var(--tkc-premium-base); }
+.tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.14), rgba(255, 61, 139, 0.12)), #14101c; }
 /* Con fondo transparente el overlay le pone sombra al texto (para leerse sobre
    el video); la fila premium ya trae su propio fondo, así que se ve igual sin ella. */
 [data-ovl-bg="transparent"] .tkc-chat-glow { text-shadow: none; }

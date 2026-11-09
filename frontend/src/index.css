@@ -169,63 +169,44 @@ input[type=range]::-moz-range-thumb {
 .themed-app .tkc-chat-muted { color: rgba(244, 244, 246, 0.72) !important; }
 /* Mensaje destacado (ver chatItemHighlight en chatOverlayModel.js): nivel 20 o
    más del club de fans ("elite"), Superfan ("superfan"), los dos ("both"),
-   subidas de nivel y suscripciones: un borde de 3px con un degradado que
-   gira; el pico blanco del degradado es el brillo que da la vuelta. Solo se repinta el borde (máscara sobre un
-   único elemento): el texto y el fondo no se tocan, y no hay capas grandes
-   que cargar a la GPU de OBS. Sin @property (navegador viejo), el borde queda
-   quieto pero se ve igual. */
-@property --tkc-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-/* Ritmo de los dos brillos, en un solo lugar: los usa también la regla de
-   "menos movimiento" de la vista previa (más abajo). */
-:root { --tkc-glow-dur: 3.8s; --tkc-shine-dur: 3s; }
+   subidas de nivel y suscripciones. Antes era un borde de 3px que giraba sin
+   parar: apenas se notaba en el stream (una línea fina en movimiento es lo
+   primero que se pierde al comprimir el video) y con varios en pantalla hacía
+   ruido. Ahora (pedido del dueño, opción "D"):
+   - un fondo teñido del color de su distintivo, que sí sobrevive al stream;
+   - un borde fino y quieto del mismo color (el borde se conserva, pedido del dueño);
+   - el nombre en un tono claro de ese color;
+   - un destello que cruza la fila UNA sola vez, al llegar el mensaje.
+   Siempre en tonos rojizos y púrpuras, nunca blanco: morado sobre el nivel
+   alto, rosa frambuesa sobre Superfan. Las insignias no se tocan (tienen su
+   propio brillo, .tkc-svg-shine). */
+:root { --tkc-shine-dur: 3s; --tkc-premium-sweep-dur: 1.4s; }
 .tkc-chat-glow { position: relative; isolation: isolate; }
-/* El brillo es un pico con un tramo sólido, siempre en tonos rojizos y
-   púrpuras, nunca blanco (pedido del dueño: que se vea homogéneo): púrpura
-   sobre el rojo y rosa frambuesa sobre el violeta de Superfan, sobre una base profunda
-   (más oscura cuanto más lejos del pico), para que contraste y se reconozca
-   aunque el chat se esté moviendo; lo acompaña un halo (.tkc-chat-glow-halo)
-   que recorre el borde con él. */
-.tkc-chat-glow-elite {
-  --tkc-glow-colors: #6d0b27, #9f1239 16%, #e11d48 30%, #b0399f 36%, #b24dff 41% 47%, #b0399f 52%, #e11d48 58%, #9f1239 72%, #881337 86%, #6d0b27;
-  --tkc-glow-peak: 178, 77, 255;
-  box-shadow: 0 0 14px -4px rgba(255, 40, 90, 0.6) !important;
+.tkc-chat-glow-elite { --tkc-premium-rgb: 178, 77, 255; --tkc-premium-name: #d9b8ff; }
+.tkc-chat-glow-superfan { --tkc-premium-rgb: 255, 61, 139; --tkc-premium-name: #ffb3cf; }
+.tkc-chat-glow-both { --tkc-premium-rgb: 208, 70, 200; --tkc-premium-name: #ecc0ff; }
+/* El borde: el mismo de 1px de cualquier fila, solo que de su color. */
+.tkc-chat-glow { border-color: rgba(var(--tkc-premium-rgb), 0.55) !important; }
+/* El tinte va en una capa debajo del texto y encima del fondo de la burbuja
+   (el que sea: oscuro, degradado, transparente...), así no se pierde con
+   ninguna personalización. "both" mezcla el morado y el frambuesa. */
+.tkc-chat-premium-tint {
+  position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: rgba(var(--tkc-premium-rgb), 0.15);
 }
-/* Superfan: su propio borde, violeta con un toque dorado (los colores de su
-   insignia), con un pico rosa frambuesa (un púrpura se perdería en el violeta). */
-.tkc-chat-glow-superfan {
-  --tkc-glow-colors: #3b0764, #6b21a8 16%, #9333ea 30%, #d0309b 36%, #ff3d8b 41% 47%, #d0309b 52%, #9333ea 58%, #6b21a8 70%, #b45309 84%, #3b0764;
-  --tkc-glow-peak: 255, 61, 139;
-  box-shadow: 0 0 14px -4px rgba(168, 85, 247, 0.6) !important;
+.tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.16), rgba(255, 61, 139, 0.14)); }
+/* El destello al llegar: una franja suave que cruza la fila una vez y se va. */
+.tkc-chat-premium-sweep {
+  position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none;
 }
-.tkc-chat-glow-both {
-  --tkc-glow-colors: #6d0b27, #be123c 16%, #e11d48 30%, #b0399f 36%, #b24dff 41% 47%, #9d3cf0 52%, #7e22ce 64%, #d97706 80%, #9f1239 92%, #6d0b27;
-  --tkc-glow-peak: 178, 77, 255;
-  box-shadow: 0 0 14px -4px rgba(214, 70, 200, 0.6) !important;
+.tkc-chat-premium-sweep::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(var(--tkc-premium-rgb), 0.45) 50%, transparent);
+  transform: translateX(-110%);
+  animation: tkc-premium-sweep var(--tkc-premium-sweep-dur) cubic-bezier(0.45, 0, 0.25, 1) 0.15s 1 both;
 }
-/* 3px de borde, por DENTRO del contorno de la fila: las filas llegan justo al
-   borde de la lista, que recorta lo que sale (por fuera, los lados se verían
-   más delgados). Es una capa absoluta, así que no cambia el tamaño de la fila
-   ni empuja el texto (su relleno es más ancho que el borde). */
-.tkc-chat-glow-ring {
-  position: absolute; inset: 0; z-index: 1; border-radius: inherit; padding: 3px; pointer-events: none;
-  background: conic-gradient(from var(--tkc-glow-angle), var(--tkc-glow-colors));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: tkc-glow-spin var(--tkc-glow-dur) linear infinite;
-}
-/* El halo: solo el tramo del brillo (en el mismo ángulo que el pico blanco
-   del borde), difuminado y un poco más ancho que el borde, girando a la par. */
-.tkc-chat-glow-halo {
-  position: absolute; inset: -3px; z-index: 2; border-radius: inherit; padding: 6px; pointer-events: none;
-  background: conic-gradient(from var(--tkc-glow-angle), transparent 0 35%, rgba(var(--tkc-glow-peak, 178, 77, 255), 0.7) 40%, rgb(var(--tkc-glow-peak, 178, 77, 255)) 43% 45%, rgba(var(--tkc-glow-peak, 178, 77, 255), 0.7) 48%, transparent 53% 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  filter: blur(3px);
-  animation: tkc-glow-spin var(--tkc-glow-dur) linear infinite;
-}
-@keyframes tkc-glow-spin { to { --tkc-glow-angle: 360deg; } }
+@keyframes tkc-premium-sweep { from { transform: translateX(-110%); } to { transform: translateX(240%); } }
+.themed-app .tkc-chat-glow .tkc-chat-name-premium { color: var(--tkc-premium-name) !important; }
 /* Brillo de las insignias Superfan y de miembro de nivel alto: una franja
    inclinada, blanca al centro, que cruza solo la forma de la insignia
    (recortada en el SVG). Ciclo de 3 s; el cruce dura 1,2 s (el 40%), lo
@@ -239,7 +220,7 @@ input[type=range]::-moz-range-thumb {
    del panel los reproduce aunque la regla de accesibilidad de .themed-panel
    (más abajo) acorte todas las demás animaciones: es lo que va a salir al aire. */
 @media (prefers-reduced-motion: reduce) {
-  .themed-panel .tkc-chat-glow-ring, .themed-panel .tkc-chat-glow-halo { animation-duration: var(--tkc-glow-dur) !important; animation-iteration-count: infinite !important; }
+  .themed-panel .tkc-chat-premium-sweep::after { animation-duration: var(--tkc-premium-sweep-dur) !important; }
   .themed-panel .tkc-svg-shine { animation-duration: var(--tkc-shine-dur) !important; animation-iteration-count: infinite !important; }
 }
 /* Fila de chat en texto corrido (ver ChatLine en overlays/ChatOverlay.jsx):

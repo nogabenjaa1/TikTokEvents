@@ -185,14 +185,19 @@ input[type=range]::-moz-range-thumb {
 .tkc-chat-glow-elite { --tkc-premium-rgb: 178, 77, 255; --tkc-premium-name: #d9b8ff; }
 .tkc-chat-glow-superfan { --tkc-premium-rgb: 255, 61, 139; --tkc-premium-name: #ffb3cf; }
 .tkc-chat-glow-both { --tkc-premium-rgb: 208, 70, 200; --tkc-premium-name: #ecc0ff; }
-/* El borde: el mismo de 1px de cualquier fila, solo que de su color. */
-.tkc-chat-glow { border-color: rgba(var(--tkc-premium-rgb), 0.55) !important; }
+/* El borde: el de 1px de cualquier fila, de su color y casi opaco, más un
+   trazo interior en la capa del tinte que crece con la letra (0,045em: ~1px
+   a 24px). Solo con el de 1px al 55% se perdía en el overlay real: con letra
+   grande la fila es alta y una línea fina a media opacidad no se ve contra el
+   tinte, menos aún con el video comprimido. */
+.tkc-chat-glow { border-color: rgba(var(--tkc-premium-rgb), 0.9) !important; }
 /* El tinte va en una capa debajo del texto y encima del fondo de la burbuja
    (el que sea: oscuro, degradado, transparente...), así no se pierde con
    ninguna personalización. "both" mezcla el morado y el frambuesa. */
 .tkc-chat-premium-tint {
   position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
   background: rgba(var(--tkc-premium-rgb), 0.15);
+  box-shadow: inset 0 0 0 max(1px, 0.045em) rgba(var(--tkc-premium-rgb), 0.9);
 }
 .tkc-chat-glow-both .tkc-chat-premium-tint { background: linear-gradient(90deg, rgba(178, 77, 255, 0.16), rgba(255, 61, 139, 0.14)); }
 /* El destello al llegar: una franja suave que cruza la fila una vez y se va. */

@@ -414,8 +414,8 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 
 **Destacados y eventos del chat.**
 - **Mensaje premium (opción "D", pedido del dueño):** el borde de 3 px que giraba apenas se notaba en el stream (una línea fina en movimiento es lo primero que se pierde al comprimir el video) y, con varios en pantalla, hacía ruido. Ahora la fila lleva cuatro cosas, todas en tonos rojizos y púrpuras, nunca blanco:
-  - un fondo teñido del color de su distintivo, del 42 % a la izquierda (foto, insignias y nombre) al 26 % hacia el texto (`.tkc-chat-premium-tint`; al 15 % parejo apenas se notaba en el stream sobre fondos de color de Personalizar, una capa entre el fondo de la burbuja y el texto, así funciona con cualquier fondo de Personalizar);
-  - un borde quieto en ese color: el de 1 px de la fila al 90 % más un trazo interior que crece con la letra (0,045em). Con solo 1 px al 55 % se perdía en el overlay real con letra grande (el borde se conserva: decisión del dueño);
+  - un fondo propio: una base oscura opaca (`#1a1322`) con el tinte de su distintivo encima, del 42 % a la izquierda (foto, insignias y nombre) al 26 % hacia el texto (`.tkc-chat-premium-tint`). Por ser opaca, la fila premium se ve idéntica con cualquier fondo de Personalizar (oscuro, degradado de cualquier color, arcoíris, transparente) y sobre cualquier escena de OBS (pedido del dueño); un tinte solo translúcido se mezclaba con lo de atrás. Es la única excepción del chat a la Regla del Transparente Completo: el destacado es contenido;
+  - un borde quieto en ese color, opaco: el de 1 px de la fila más un trazo interior que crece con la letra (0,045em). Con solo 1 px al 55 % se perdía en el overlay real con letra grande (el borde se conserva: decisión del dueño);
   - el nombre en un tono claro de ese color (`.tkc-chat-name-premium`), por encima del color de nombres de Personalizar;
   - un destello que cruza la fila **una sola vez, al llegar** el mensaje (`.tkc-chat-premium-sweep`, 1,4 s); después la fila queda quieta.
   Cada condición basta sola para llevarlo:

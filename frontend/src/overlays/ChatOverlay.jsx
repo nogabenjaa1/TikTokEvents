@@ -328,13 +328,16 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
     message = <MessageParts item={item} />;
   }
 
-  // Borde que gira con brillo: mensajes de nivel 20 o más del club de fans,
-  // de Superfans (con su propio color) o de los dos (combinado), y las
-  // subidas de nivel y suscripciones (ver chatItemHighlight). En los demás
-  // eventos (regalos, seguidores...) ya hay una marca de color a la
-  // izquierda. Las insignias se ven en todos.
+  // Mensaje "premium": nivel 20 o más del club de fans, Superfans (con su
+  // propio color) o los dos, y las subidas de nivel y suscripciones (ver
+  // chatItemHighlight). Fondo teñido, borde fino de su color, nombre en ese
+  // tono y un destello que cruza la fila una vez al llegar (ver
+  // .tkc-chat-premium-* en index.css). En los demás eventos (regalos,
+  // seguidores...) ya hay una marca de color a la izquierda. Las insignias se
+  // ven igual en todos.
   const highlight = chatItemHighlight(item, settings);
   const glow = Boolean(highlight);
+  const lineNameStyle = glow ? { className: 'tkc-chat-name-premium', style: {} } : nameStyle;
 
   return (
     <div data-chat-row={item.id} data-highlight={highlight || undefined} style={fadeStyle} className="flex-shrink-0">
@@ -342,10 +345,10 @@ function ChatRow({ item, settings, now, rowBg, nameStyle, animClass, bubbleClass
         className={`${animClass} ${bubbleClass} ${CHAT_LINE} rounded-2xl pl-[0.6em] pr-[0.6em] py-[0.4em] ${glow ? `tkc-chat-glow tkc-chat-glow-${highlight}` : ''}`}
         style={{ ...rowBg, border: rowBorderStyle, ...(accent && !glow ? { boxShadow: `inset 3px 0 0 ${accent}` } : {}) }}
       >
-        {glow && <span className="tkc-chat-glow-ring" aria-hidden="true" />}
-        {glow && <span className="tkc-chat-glow-halo" aria-hidden="true" />}
+        {glow && <span className="tkc-chat-premium-tint" aria-hidden="true" />}
+        {glow && <span className="tkc-chat-premium-sweep" aria-hidden="true" />}
         {item.user
-          ? <ChatLine user={item.user} settings={settings} nameStyle={nameStyle}>{message}</ChatLine>
+          ? <ChatLine user={item.user} settings={settings} nameStyle={lineNameStyle}>{message}</ChatLine>
           : <div className="tkc-chat-text min-w-0 break-words [overflow-wrap:anywhere]">{message}</div>}
       </div>
     </div>

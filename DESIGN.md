@@ -413,20 +413,26 @@ Cada overlay se personaliza por separado. En la página de Overlays cada tarjeta
 **El chat se lee desde OBS vertical.** En una fuente de navegador vertical (más alta que ancha) el overlay de chat la ocupa completa; antes medía siempre 960 × 480 y OBS lo achicaba en un lienzo vertical. En una horizontal sigue midiendo 960 × 480 arriba a la izquierda, exactamente como antes, para no cambiar lo que ya tiene puesto cada quien (`chatFrameSize`). La vista previa de Eventos › Chat tiene las dos formas (960 × 480 y 540 × 960). Letra de 24 px por defecto (12 a 48). Cada mensaje es una sola línea de lectura: `[foto] [insignias] [nombre]: [mensaje]`. La foto, las insignias y el nombre nunca se parten: si caben en menos del 42% del ancho, el mensaje va al lado y sus líneas siguientes se alinean con su comienzo; si no, la fila pasa a texto corrido y el mensaje sigue justo después del nombre, a todo el ancho. Nunca se corta ni se trunca nada. Las insignias son íconos del tamaño de la letra, con su color fijo y su nombre para lectores de pantalla, en este orden: moderador, miembro (corazón con su nivel, el único con número), top gifter (corona dorada, plateada o bronce), Superfan y las demás imágenes de TikTok que no son ninguno de esos (`chatBadgeIcons`; el servidor manda aparte esas otras en `badges.others`, así un rol no aparece dos veces).
 
 **Destacados y eventos del chat.**
-- **El borde con brillo:** 3 px por dentro del contorno de la fila (una capa absoluta: no cambia el tamaño de la fila ni del overlay), con un degradado de base oscura que gira y un pico de luz que recorre todo el perímetro, siempre en tonos rojizos y púrpuras, nunca blanco, para que el brillo se vea homogéneo: púrpura sobre los bordes rojizos y rosa frambuesa sobre el violeta de Superfan. La franja que cruza las insignias usa el mismo tono que su borde, más un halo difuminado que lo acompaña. Una vuelta cada 3,8 s; la franja de las insignias cruza en 1,2 s, cada 3 s. Cada condición basta sola para llevarlo:
-  - **Nivel alto del club de fans (20 o más; el 19 no):** borde rojo y rosa (`.tkc-chat-glow-elite`). Su insignia de miembro pasa a un corazón con degradado y brillo.
-  - **Superfan:** su propio borde violeta con un toque dorado (`.tkc-chat-glow-superfan`), aunque no tenga nivel de club. Su insignia propia (escudo violeta, rosa y dorado con un destello) lleva un brillo que cruza solo su forma (`.tkc-svg-shine`).
-  - **Subidas de nivel del club:** siempre, con el borde de nivel alto.
-  - **Suscripciones** (nuevas, renovaciones y "se hizo Superfan"): siempre, con el borde de Superfan.
+- **Mensaje premium (opción "D", pedido del dueño):** el borde de 3 px que giraba apenas se notaba en el stream (una línea fina en movimiento es lo primero que se pierde al comprimir el video) y, con varios en pantalla, hacía ruido. Ahora la fila lleva cuatro cosas, todas en tonos rojizos y púrpuras, nunca blanco:
+  - un fondo teñido del color de su distintivo al 15 % (`.tkc-chat-premium-tint`, una capa entre el fondo de la burbuja y el texto, así funciona con cualquier fondo de Personalizar);
+  - el borde de 1 px de la fila, quieto, en ese color al 55 % (el borde se conserva: decisión del dueño);
+  - el nombre en un tono claro de ese color (`.tkc-chat-name-premium`), por encima del color de nombres de Personalizar;
+  - un destello que cruza la fila **una sola vez, al llegar** el mensaje (`.tkc-chat-premium-sweep`, 1,4 s); después la fila queda quieta.
+  Cada condición basta sola para llevarlo:
+  - **Nivel alto del club de fans (20 o más; el 19 no):** morado (`.tkc-chat-glow-elite`). Su insignia de miembro pasa a un corazón con degradado y brillo.
+  - **Superfan:** rosa frambuesa (`.tkc-chat-glow-superfan`), aunque no tenga nivel de club. Su insignia propia (escudo violeta, rosa y dorado con un destello) lleva un brillo que cruza solo su forma (`.tkc-svg-shine`).
+  - **Subidas de nivel del club:** siempre, en morado.
+  - **Suscripciones** (nuevas, renovaciones y "se hizo Superfan"): siempre, en frambuesa.
+- **Las insignias no cambian con el destacado** (decisión del dueño): conservan su dibujo y su franja de brillo (`#b24dff` en la de nivel alto, `#ff3d8b` en la de Superfan), que cruza en 1,2 s cada 3 s.
 - **Moderador:** insignia propia de la misma familia: un hexágono con degradado verde y turquesa, el mismo contorno blanco fino y una llave inglesa blanca. Sin brillo, que queda para Superfan y los niveles altos.
 - **Donador:** su nivel no se dibuja como insignia (decisión del dueño del producto) ni se reemplaza por otra. El dato se sigue recibiendo.
-- **Las dos cosas** (nivel 20 o más y Superfan, en mensajes y en estos eventos): un solo borde que combina rojo y rosa con el violeta y el dorado de Superfan (`.tkc-chat-glow-both`), y las dos insignias se ven.
-- **Rendimiento:** el borde es un solo elemento enmascarado que solo repinta el borde.
-- **Siempre en movimiento:** los brillos del borde y de las insignias no se apagan con "menos movimiento" (en Windows sale de "Efectos de animación"): como el resto del overlay, son lo que ve la audiencia. La vista previa del panel también los reproduce, aunque la Regla del Menos Movimiento acorte las demás animaciones de `.themed-panel`.
-- **Eventos con su color a la izquierda** (los que llevan el borde con brillo lo cambian por él):
+- **Las dos cosas** (nivel 20 o más y Superfan, en mensajes y en estos eventos): un tinte que va del morado al frambuesa (`.tkc-chat-glow-both`), y las dos insignias se ven.
+- **Rendimiento:** dos capas absolutas por fila destacada (tinte y destello); después del destello no se repinta nada.
+- **Siempre en movimiento:** el destello al llegar y los brillos de las insignias no se apagan con "menos movimiento" (en Windows sale de "Efectos de animación"): como el resto del overlay, son lo que ve la audiencia. La vista previa del panel también los reproduce, aunque la Regla del Menos Movimiento acorte las demás animaciones de `.themed-panel`.
+- **Eventos con su color a la izquierda** (los que llevan el destacado premium lo cambian por él):
   - Suscripción (violeta): "se suscribió", "renovó su suscripción", los meses y la renovación automática, o "se hizo Superfan", solo con lo que manda TikTok.
   - Cofre (amarillo): quién lo colocó, sus monedas y para cuántas personas.
-  - Subida de nivel del club de fans (rosa): solo el nivel al que llegó, "subió al nivel 6 del club de fans". El anterior nunca se muestra; internamente sirve para no repetir una subida. Desde el 20 dice "alcanzó el nivel 20 del club de fans". Todas llevan el borde con brillo de nivel alto (combinado si es Superfan).
+  - Subida de nivel del club de fans (rosa): solo el nivel al que llegó, "subió al nivel 6 del club de fans". El anterior nunca se muestra; internamente sirve para no repetir una subida. Desde el 20 dice "alcanzó el nivel 20 del club de fans". Todas llevan el destacado de nivel alto (combinado si es Superfan).
 - **Regalos:** llevan su valor total con 🪙 ("×6 · 🪙 6"). Sin valor conocido no se muestra ninguno.
 
 **Versus se adapta al ancho de la fuente.** Sus medidas son `cqw` (porcentaje del ancho disponible) con un piso y un techo (`clamp`), y su alto lo pone el contenido. Un overlay nuevo que deba verse bien en cualquier tamaño de fuente de OBS sigue el mismo patrón (`.tkc-vs` en `index.css`).

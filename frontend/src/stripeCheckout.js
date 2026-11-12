@@ -2,10 +2,9 @@ import { loadStripe } from '@stripe/stripe-js';
 import { backendUrl } from './auth';
 
 // Lo común del formulario de Checkout de Stripe (Checkout Session con
-// ui_mode 'form'), compartido por el cobro (StripePaymentForm.jsx) y la
-// verificación de tarjeta de la prueba gratis (CardVerifyForm.jsx), para
-// que las dos usen la misma versión de Stripe.js, la misma apariencia y el
-// mismo manejo de errores.
+// ui_mode 'form'): la versión de Stripe.js, la apariencia y el manejo de
+// errores del cobro (StripePaymentForm.jsx: pagos únicos, suscripciones y la
+// prueba de 14 días).
 
 // Se crea una sola vez por carga de página (no cada vez que se monta un
 // formulario) -- no tiene sentido recargar Stripe.js en cada intento.

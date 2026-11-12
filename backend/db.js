@@ -493,6 +493,37 @@ const ready = pool.query(`
   // hash anterior, así los enlaces que ya están en OBS siguen funcionando con la
   // clave nueva. Para invalidarlos está "Renovar enlaces" (overlay_epoch).
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_key_hash TEXT`))
+  // Suscripciones (Mensual y Anual se cobran solos cada periodo) y la prueba de
+  // 14 días con tarjeta (ver lib/stripeBilling.js). stripe_subscription_id es
+  // la suscripción VIGENTE de la licencia (al cambiar de plan se reemplaza);
+  // subscription_status refleja el de Stripe (trialing, active, past_due,
+  // canceled...); subscription_plan es el plan que se cobra (month/annual, o
+  // lifetime en su prueba); subscription_cancel_at, cuándo termina si se
+  // canceló. La prueba de Lifetime no es suscripción: guarda la tarjeta y
+  // lifetime_trial_charge_at dice cuándo cobrar el pago único (con el monto
+  // que se le mostró al empezar, lifetime_trial_amount_cents).
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_status TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_plan TEXT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_cancel_at BIGINT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_charge_at BIGINT`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_amount_cents INTEGER`))
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_payment_method TEXT`))
+  .then(() => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_stripe_subscription
+    ON licenses(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL
+  `))
+  // Una prueba de 14 días por tarjeta física (huella estable de Stripe), sea
+  // de Mensual, Anual o Lifetime. Separada de trial_card_fingerprint, que era
+  // la de la prueba de 7 días (ya retirada).
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS trial_fingerprints (
+      fingerprint TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL,
+      used_at BIGINT NOT NULL
+    )
+  `))
   // Analítica propia, sin cookies (ver lib/analytics.js): visitas por día y
   // página, de dónde llegan, y una huella diaria anónima por visitante (un
   // hash que cambia cada día; nunca la IP) solo para contar visitantes únicos.
@@ -572,6 +603,8 @@ const LICENSE_CORE_COLUMNS = [
     'trial_alias', 'trial_connected_username', 'dice_tier', 'pending_key_reveal',
     'dice_win_bonus_unlocked', 'trial_card_fingerprint', 'lifetime_at', 'spotify_addon', 'overlay_epoch',
     'overlay_key_hash',
+    'stripe_subscription_id', 'stripe_customer_id', 'subscription_status', 'subscription_plan', 'subscription_cancel_at',
+    'lifetime_trial_charge_at', 'lifetime_trial_amount_cents', 'lifetime_trial_payment_method',
 ].join(', ');
 
 async function findByKeyHash(keyHash) {
@@ -1128,6 +1161,63 @@ async function getLicenseKey(id) {
     return tokenCrypto.decrypt(rows[0].key_encrypted);
 }
 
+// Estado de cobro de una licencia (suscripción o prueba de Lifetime). Solo
+// toca lo que venga definido; `licenseType` cambia también lifetime_at (ver
+// lifetimeAtSql), igual que applyPurchase. `revoked` nunca se toca aquí.
+async function applyBillingState(id, fields = {}) {
+    await ready;
+    const columns = {
+        expiresAt: 'expires_at', stripeSubscriptionId: 'stripe_subscription_id', stripeCustomerId: 'stripe_customer_id',
+        subscriptionStatus: 'subscription_status', subscriptionPlan: 'subscription_plan', subscriptionCancelAt: 'subscription_cancel_at',
+        lifetimeTrialChargeAt: 'lifetime_trial_charge_at', lifetimeTrialAmountCents: 'lifetime_trial_amount_cents',
+        lifetimeTrialPaymentMethod: 'lifetime_trial_payment_method',
+    };
+    const sets = [];
+    const params = [];
+    if (fields.licenseType !== undefined) {
+        params.push(fields.licenseType);
+        const typeParam = `$${params.length}`;
+        params.push(Date.now());
+        sets.push(`lifetime_at = ${lifetimeAtSql(typeParam, `$${params.length}`)}`);
+        sets.push(`license_type = ${typeParam}`);
+    }
+    for (const [key, column] of Object.entries(columns)) {
+        if (fields[key] === undefined) continue;
+        params.push(fields[key]);
+        sets.push(`${column} = $${params.length}`);
+    }
+    if (!sets.length) return findById(id);
+    params.push(id);
+    await pool.query(`UPDATE licenses SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    return findById(id);
+}
+
+async function findByStripeSubscriptionId(subscriptionId) {
+    await ready;
+    const { rows } = await pool.query(`SELECT ${LICENSE_CORE_COLUMNS} FROM licenses WHERE stripe_subscription_id = $1`, [subscriptionId]);
+    return rows[0];
+}
+
+// Reserva la prueba de 14 días de una tarjeta para una licencia. Devuelve true
+// si la tarjeta no tenía prueba o ya era de ESTA licencia (un reintento del
+// mismo pago), false si la usó otra licencia.
+async function claimTrialFingerprint(fingerprint, licenseId) {
+    await ready;
+    await pool.query('INSERT INTO trial_fingerprints (fingerprint, license_id, used_at) VALUES ($1, $2, $3) ON CONFLICT (fingerprint) DO NOTHING', [fingerprint, licenseId, Date.now()]);
+    const { rows } = await pool.query('SELECT license_id FROM trial_fingerprints WHERE fingerprint = $1', [fingerprint]);
+    return rows[0]?.license_id === licenseId;
+}
+
+// Pruebas de Lifetime cuyo cobro ya toca (ver lib/stripeBilling.js).
+async function listDueLifetimeTrials(now) {
+    await ready;
+    const { rows } = await pool.query(
+        `SELECT ${LICENSE_CORE_COLUMNS} FROM licenses WHERE lifetime_trial_charge_at IS NOT NULL AND lifetime_trial_charge_at <= $1 AND revoked = FALSE`,
+        [now],
+    );
+    return rows;
+}
+
 async function consumePendingKeyReveal(id) {
     await ready;
     await pool.query('UPDATE licenses SET pending_key_reveal = NULL WHERE id = $1', [id]);
@@ -1449,6 +1539,7 @@ async function listReferencedMediaPaths() {
 }
 
 module.exports = {
+    applyBillingState, findByStripeSubscriptionId, claimTrialFingerprint, listDueLifetimeTrials,
     getLicenseKey,
     insertLicense, findByKeyHash, findById, findCoreById, findCoreByKeyHash, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,

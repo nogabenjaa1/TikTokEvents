@@ -73,6 +73,7 @@ const multer = require('multer');
 const db = require('./db');
 const auth = require('./auth');
 const tokenCrypto = require('./tokenCrypto');
+const { createStripeBilling, TRIAL_DAYS: BILLING_TRIAL_DAYS } = require('./lib/stripeBilling');
 const pricing = require('./pricing');
 const spotify = require('./spotify');
 const storage = require('./storage');
@@ -354,10 +355,6 @@ const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardH
 // verificar las credenciales (ver /api/spotify/app): presupuesto aparte y
 // bajo, para que no sirva de trampolín contra su API.
 const spotifyAppLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
-// Estricto a propósito: es la única barrera contra scripts pidiendo
-// pruebas gratis en cadena (la barrera real es el bloqueo por usuario de
-// TikTok conectado, ver tenant.js, pero esto frena el ruido de red).
-const freeTrialLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false });
 const paymentLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 // Mas generoso: lo usa /api/payments/stripe/confirm, que el formulario
 // llama justo después de cada pago.
@@ -409,6 +406,16 @@ function sessionLicense(row) {
         diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         spotifyAddon: !!row.spotify_addon,
         overlayKey: auth.overlayTokenFor(row),
+        // Suscripción o prueba de 14 días (ver lib/stripeBilling.js): Membresía
+        // dice cuándo se cobra o se renueva y ofrece gestionarla.
+        billing: row.subscription_plan ? {
+            plan: row.subscription_plan,
+            status: row.subscription_status || null,
+            cancelAt: row.subscription_cancel_at ? Number(row.subscription_cancel_at) : null,
+            lifetimeChargeAt: row.lifetime_trial_charge_at ? Number(row.lifetime_trial_charge_at) : null,
+            lifetimeAmountCents: row.lifetime_trial_amount_cents || null,
+            hasSubscription: !!row.stripe_subscription_id,
+        } : null,
     };
 }
 
@@ -461,127 +468,6 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
     const token = auth.signSession(row, sessionId);
     res.json({ success: true, token, license: sessionLicense(row) });
-});
-
-// Crea la Checkout Session (modo 'setup', mismo formulario de Checkout que
-// el cobro) con la que CardVerifyForm.jsx verifica una tarjeta -- pre-login
-// a propósito (todavía no existe ninguna licencia/sesión en este punto, es
-// lo que este mismo flujo está por crear). Sin auth.requireAuth, pero sí
-// con freeTrialLimiter (mismo presupuesto que /api/free-trial, ver el
-// comentario ahí abajo: las dos rutas son dos pasos de un mismo flujo).
-// "Setup" (no "payment") porque nunca se cobra nada -- el objetivo es solo
-// que Stripe autentique que la tarjeta es real (puede pedir 3DS).
-//
-// Pedido explícito del dueño: que la verificación use la misma
-// implementación que el cobro, aceptando que el modo setup de Checkout
-// muestra su texto de autorización de cobros futuros (el SetupIntent
-// suelto de antes lo evitaba con usage 'on_session'; Checkout no permite
-// quitarlo). La tarjeta igual nunca se cobra ni se guarda en un cliente.
-app.post('/api/free-trial/checkout-session', freeTrialLimiter, async (req, res) => {
-    try {
-        const stripe = getStripeClient();
-        const session = await stripe.checkout.sessions.create({
-            ui_mode: 'form',
-            mode: 'setup',
-            currency: 'mxn',
-            // Solo tarjeta a propósito: con Link o una billetera no siempre
-            // llega card.fingerprint, y sin él la misma tarjeta podría pedir
-            // varias pruebas gratis (ver /api/free-trial).
-            allowed_payment_method_types: ['card'],
-            billing_address_collection: 'auto',
-            phone_number_collection: { enabled: false },
-            integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
-            // Solo si el banco exige salir del sitio (raro: el 3DS va en un
-            // modal). La prueba se vuelve a pedir desde Membresía; la
-            // tarjeta no quedó usada porque la licencia no llegó a crearse.
-            return_url: `${FRONTEND_URL}/?trial_checkout={CHECKOUT_SESSION_ID}`,
-            setup_intent_data: { description: 'BenjaApis - verificación de tarjeta para la prueba gratis (sin cobro)' },
-        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
-        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id });
-    } catch (err) {
-        console.error('[Stripe] Error creando Checkout Session para prueba gratis:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo iniciar la verificación de tarjeta. Intenta de nuevo en un momento.' });
-    }
-});
-
-// ==========================================
-// PRUEBA GRATIS: 7 días de acceso completo, autoservicio, sin tarjeta.
-// El alias es texto libre (no se pide ni se valida un usuario de TikTok
-// acá) — el usuario de TikTok real recién se conoce y se bloquea cuando
-// esta licencia se conecta por primera vez a un LIVE (ver
-// db.claimTrialConnection y tenant.js). Se loguea de una: devuelve token
-// + license igual que /api/auth/login, así queda con acceso completo sin
-// tener que copiar/pegar la key generada.
-// ==========================================
-app.post('/api/free-trial', freeTrialLimiter, async (req, res) => {
-    if (isBotSubmission(req.body)) return res.status(400).json({ success: false, error: 'No se pudo crear la prueba gratis' });
-    const { alias, checkoutSessionId } = req.body || {};
-    if (!alias || typeof alias !== 'string' || !alias.trim()) {
-        return res.status(400).json({ success: false, error: 'Falta un alias' });
-    }
-    const cleanAlias = alias.trim().slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!cleanAlias) {
-        return res.status(400).json({ success: false, error: 'Alias inválido — usa letras, números, "_" o "-"' });
-    }
-
-    // Vía alternativa al anuncio: en vez de mirar un video, verificar una
-    // tarjeta real con Stripe. A propósito NO se cobra nada -- la sesión en
-    // modo setup autentica la tarjeta (puede pedir 3DS, mucho más fuerte
-    // que un simple chequeo de Luhn) sin capturar ningún monto. Pedido
-    // explícito: se guarda el fingerprint estable de la tarjeta
-    // (trial_card_fingerprint, UNIQUE parcial en licenses, ver db.js) para
-    // que la misma tarjeta física no pueda reclamar una segunda prueba
-    // gratis con otro alias.
-    let trialCardFingerprint = null;
-    if (checkoutSessionId !== undefined) {
-        if (typeof checkoutSessionId !== 'string' || !checkoutSessionId.trim()) {
-            return res.status(400).json({ success: false, error: 'Verificación de tarjeta inválida' });
-        }
-        try {
-            const stripe = getStripeClient();
-            // Nunca se cree lo que diga el frontend: se pide la sesión a
-            // Stripe y se exige que sea de verificación y esté completa.
-            const session = await stripe.checkout.sessions.retrieve(checkoutSessionId.trim(), { expand: ['setup_intent.payment_method'] }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
-            const intent = session.setup_intent;
-            if (session.mode !== 'setup' || session.status !== 'complete' || intent?.status !== 'succeeded') {
-                return res.status(400).json({ success: false, error: 'La tarjeta no pasó la verificación de seguridad. Verifica los datos e intenta de nuevo.' });
-            }
-            trialCardFingerprint = intent.payment_method?.card?.fingerprint || null;
-        } catch (err) {
-            console.error('[Stripe] Error verificando la sesión de la prueba gratis:', err.message);
-            return res.status(400).json({ success: false, error: 'No se pudo verificar la tarjeta. Intenta de nuevo.' });
-        }
-    }
-
-    const key = `${cleanAlias.toLowerCase()}-FREE7DAY-${crypto.randomBytes(9).toString('base64url')}`;
-    let row;
-    try {
-        row = await db.insertLicense({
-            id: crypto.randomUUID(),
-            ...storedKeyFields(key),
-            username: cleanAlias,
-            licenseType: 'trial',
-            isAdmin: false,
-            createdAt: Date.now(),
-            expiresAt: auth.computeExpiresAt('trial'),
-            trialAlias: cleanAlias,
-            trialCardFingerprint,
-        });
-    } catch (err) {
-        // El UNIQUE parcial de trial_card_fingerprint es quien de verdad
-        // impide dos pruebas con la misma tarjeta -- acá solo se traduce
-        // ese rechazo a un mensaje claro (mismo patrón que
-        // idx_licenses_trial_connected en tenant.js).
-        if (err.code === '23505' && err.constraint === 'idx_licenses_trial_card_fingerprint') {
-            return res.status(400).json({ success: false, error: 'Esta tarjeta ya se usó para una prueba gratis.' });
-        }
-        throw err;
-    }
-
-    const sessionId = auth.generateSessionId();
-    await db.setSession(row.id, sessionId);
-    const token = auth.signSession(row, sessionId);
-    res.json({ success: true, key, token, license: sessionLicense(row) });
 });
 
 // Logout explícito: mata la sesión server-side de inmediato (no hace falta
@@ -1594,7 +1480,7 @@ app.get('/api/pricing', async (req, res) => {
 // Lo que cambia en la licencia al aplicar una compra: rotación de key,
 // cálculo de expiración y upgrade de dice_tier. Es la parte más delicada de
 // todo el flujo de pagos, así que se calcula en un solo lugar.
-function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon }) {
+function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon }, { rotateKey = true } = {}) {
     const update = {};
     if (planType) {
         update.licenseType = planType;
@@ -1608,9 +1494,13 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
         const baseExpiresAt = auth.computeExpiresAt(planType);
         update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingMs;
 
-        const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
-        Object.assign(update, storedKeyFields(newRawKey));
-        update.pendingKeyReveal = newRawKey;
+        // El cobro al final de una prueba (Lifetime) no cambia la clave: el
+        // streamer ya la usa desde hace 14 días.
+        if (rotateKey) {
+            const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
+            Object.assign(update, storedKeyFields(newRawKey));
+            update.pendingKeyReveal = newRawKey;
+        }
     }
     if (diceTier) {
         const currentRank = pricing.DICE_TIER_RANK[license.dice_tier] ?? 0;
@@ -1628,7 +1518,7 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
 // del pago (`forget`) para que el siguiente reintento (/confirm o el
 // webhook de Stripe) lo aplique, en vez de dejarlo como "ya procesado" con el
 // cliente cobrado y sin plan. Devuelve como antes; relanza el error si no pudo.
-async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget, provider, providerPaymentId, amountCents }) {
+async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spotifyAddon, forget, provider, providerPaymentId, amountCents, rotateKey = true }) {
     // Cuando un pago cobrado no se puede aplicar, además de la línea del registro
     // queda una fila en payment_failures: se ve en Sistema > Pagos y se aplica con
     // un botón (antes solo constaba en el registro del servidor).
@@ -1654,7 +1544,7 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
                 noteFailure('license_missing', 'La licencia no existe');
                 return { applied: false };
             }
-            const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon });
+            const update = computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyAddon }, { rotateKey });
             if (Object.keys(update).length > 0) {
                 await db.applyPurchase(licenseId, update);
                 console.log(`[${label}] ✅ Pago aplicado — licencia ${licenseId}:`, update);
@@ -1685,7 +1575,7 @@ async function applyPaymentWithRetry({ label, licenseId, planType, diceTier, spo
 // UNIQUE de payments.stripe_payment_id (ver db.js) -- llamarla dos veces con el mismo
 // PaymentIntent (ej. /api/payments/stripe/confirm ya lo aplico y despues
 // llega el webhook) no aplica el cambio dos veces.
-async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId, newLicenseAlias }) {
+async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId, newLicenseAlias, rotateKey = true }) {
     if (!licenseId || (!planType && !diceTier && !spotifyAddon)) {
         console.error('[Stripe] applyApprovedStripePaymentIfNew: faltan licenseId/planType/diceTier/spotifyAddon', { licenseId, planType, diceTier, spotifyAddon });
         return { applied: false };
@@ -1712,11 +1602,29 @@ async function applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, 
         return createPurchasedLicense({ licenseId, alias: newLicenseAlias, planType, stripePaymentId });
     }
 
-    return applyPaymentWithRetry({
-        label: 'Stripe', licenseId, planType, diceTier, spotifyAddon,
+    const result = await applyPaymentWithRetry({
+        label: 'Stripe', licenseId, planType, diceTier, spotifyAddon, rotateKey,
         provider: 'stripe', providerPaymentId: String(stripePaymentId), amountCents: pricing.computeAmountCents({ planType, diceTier, spotifyAddon }),
         forget: () => db.deletePaymentRecord('stripe', stripePaymentId),
     });
+    // Lifetime reemplaza a la suscripción y a cualquier prueba en curso: ya no
+    // se cobra nada más.
+    if (result?.applied && planType === 'lifetime') await endRecurringBillingForLifetime(licenseId);
+    return result;
+}
+
+async function endRecurringBillingForLifetime(licenseId) {
+    try {
+        const license = await db.findCoreById(licenseId);
+        if (!license) return;
+        if (license.stripe_subscription_id) await billing.cancelPreviousSubscription(getStripeClient(), license, null);
+        await db.applyBillingState(licenseId, {
+            stripeSubscriptionId: null, subscriptionStatus: null, subscriptionPlan: 'lifetime', subscriptionCancelAt: null,
+            lifetimeTrialChargeAt: null, lifetimeTrialPaymentMethod: null,
+        });
+    } catch (err) {
+        console.error(`[Stripe] No se pudo cerrar el cobro recurrente de la licencia ${licenseId} al pasar a Lifetime:`, err.message);
+    }
 }
 
 // La licencia de una compra sin cuenta, con el id que se reservó al crear la
@@ -1773,6 +1681,11 @@ async function createPurchasedLicense({ licenseId, alias, planType, stripePaymen
 
 const PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime' };
 
+const billing = createStripeBilling({
+    db, auth, pricing, getStripeClient, apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION, storedKeyFields,
+    planKeyLabels: PLAN_KEY_LABELS, pushLicenseState, applyApprovedStripePaymentIfNew,
+});
+
 // Un cliente de Stripe por licencia (buscado por su metadata, sin columna
 // nueva en la DB) para que "guardar tarjeta" sirva en la siguiente compra
 // de ESA licencia. A propósito no se busca por correo: el correo lo escribe
@@ -1805,11 +1718,93 @@ function validPolicyAcceptedAt(value) {
     return typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
 }
 
-// La Checkout Session de una compra, con o sin cuenta. Un renglón por cosa
-// comprada, con el precio vigente de pricing.js (override del admin
-// incluido): el formulario muestra el desglose y la suma da exactamente
-// computeAmountCents, lo mismo que se guarda como monto del pago.
-async function createPurchaseCheckoutSession({ licenseId, planType, diceTier, spotifyAddon, policyAcceptedAt, extraMetadata = {}, returnUrl }) {
+// La Checkout Session de una compra, con o sin cuenta (ver lib/stripeBilling.js):
+// - Mensual y Anual: suscripción (mode 'subscription'), con o sin 14 días gratis.
+// - Lifetime con prueba: modo 'setup' (solo guarda la tarjeta; el pago único
+//   se cobra al día 14).
+// - Lifetime al momento, complemento de Spotify y dados: pago único, como siempre.
+// El precio sale siempre de pricing.js (override del admin incluido). Una
+// suscripción conserva el precio con el que empezó: si después cambias el
+// precio en el panel, aplica a las suscripciones nuevas.
+async function createPurchaseCheckoutSession({ licenseId, license = null, planType, diceTier, spotifyAddon, trial = false, policyAcceptedAt, extraMetadata = {}, returnUrl }) {
+    const stripe = getStripeClient();
+    const customer = await stripeCustomerForLicense(stripe, licenseId);
+    const common = {
+        // Valores configurados en Checkout Studio de Stripe.
+        ui_mode: 'form',
+        billing_address_collection: 'auto',
+        // Nombre dentro del formulario de Stripe (opcional, como quedó en
+        // Checkout Studio); el correo lo pide su sección de Contacto.
+        name_collection: { individual: { enabled: true, optional: true } },
+        integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
+        customer,
+        // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
+        // muestra en un modal), vuelve a Membresía; el webhook aplica igual.
+        return_url: returnUrl,
+    };
+    const metadata = {
+        licenseId,
+        planType: planType || '',
+        diceTier: diceTier || '',
+        // Los metadata de Stripe son texto: 'true' enciende el
+        // complemento al confirmar/recibir el webhook, vacío no.
+        spotifyAddon: spotifyAddon ? 'true' : '',
+        trial: trial ? '1' : '',
+        policyAcceptedAt,
+        ...extraMetadata,
+    };
+    // Mejora de plan con tiempo pagado de sobra: se cobra al momento y esos
+    // días se suman al plan nuevo (ver billing.fulfillSubscriptionSession,
+    // que corre la siguiente renovación de Stripe esos mismos días).
+    const bonusMs = billing.SUBSCRIPTION_PLANS.includes(planType) && !trial ? billing.remainingPaidMs(license) : 0;
+    if (bonusMs > 0) metadata.bonusMs = String(bonusMs);
+
+    if (billing.SUBSCRIPTION_PLANS.includes(planType)) {
+        const subscriptionData = { description: `BenjaApis - Plan ${PLAN_LABELS[planType]}`, metadata };
+        if (trial) {
+            subscriptionData.trial_period_days = BILLING_TRIAL_DAYS;
+            // Sin tarjeta al final de la prueba, la suscripción se cierra sola.
+            subscriptionData.trial_settings = { end_behavior: { missing_payment_method: 'cancel' } };
+        }
+        return stripe.checkout.sessions.create({
+            ...common,
+            mode: 'subscription',
+            line_items: [{
+                quantity: 1,
+                price_data: {
+                    currency: 'mxn',
+                    unit_amount: pricing.getPlanPriceCents(planType),
+                    recurring: { interval: planType === 'annual' ? 'year' : 'month' },
+                    product_data: { name: `Plan ${PLAN_LABELS[planType]}` },
+                },
+            }],
+            // La prueba siempre con tarjeta (es la que se cobra al terminar y la
+            // que tiene la huella para no repetir la prueba): sin Link.
+            ...(trial ? { allowed_payment_method_types: ['card'] } : {}),
+            payment_method_collection: 'always',
+            metadata,
+            subscription_data: subscriptionData,
+        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+    }
+
+    if (planType === 'lifetime' && trial) {
+        const amountCents = pricing.getPlanPriceCents('lifetime');
+        const trialMetadata = { ...metadata, lifetimeTrial: '1', amountCents: String(amountCents) };
+        return stripe.checkout.sessions.create({
+            ...common,
+            mode: 'setup',
+            currency: 'mxn',
+            allowed_payment_method_types: ['card'],
+            metadata: trialMetadata,
+            setup_intent_data: {
+                description: `BenjaApis - Prueba de Lifetime: ${BILLING_TRIAL_DAYS} días gratis y luego MX$${(amountCents / 100).toLocaleString('es-MX')} una sola vez`,
+                metadata: trialMetadata,
+            },
+        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+    }
+
+    // Un renglón por cosa comprada: el formulario muestra el desglose y la suma
+    // da exactamente computeAmountCents, lo mismo que se guarda como monto.
     const lineItem = (name, cents) => ({ quantity: 1, price_data: { currency: 'mxn', unit_amount: cents, product_data: { name } } });
     const lineItems = [];
     if (planType) lineItems.push(lineItem(`Plan ${PLAN_LABELS[planType]}`, pricing.getPlanPriceCents(planType)));
@@ -1819,43 +1814,16 @@ async function createPurchaseCheckoutSession({ licenseId, planType, diceTier, sp
     if (planType) titleParts.push(PLAN_LABELS[planType]);
     if (diceTier) titleParts.push(diceTier.toUpperCase());
     if (spotifyAddon) titleParts.push('Complemento Spotify');
-    const metadata = {
-        licenseId,
-        planType: planType || '',
-        diceTier: diceTier || '',
-        // Los metadata de Stripe son texto: 'true' enciende el
-        // complemento al confirmar/recibir el webhook, vacío no.
-        spotifyAddon: spotifyAddon ? 'true' : '',
-        policyAcceptedAt,
-        ...extraMetadata,
-    };
-
-    const stripe = getStripeClient();
-    const customer = await stripeCustomerForLicense(stripe, licenseId);
     return stripe.checkout.sessions.create({
-        // Valores configurados en Checkout Studio de Stripe.
-        ui_mode: 'form',
-        billing_address_collection: 'auto',
+        ...common,
         submit_type: 'auto',
-        // Nombre dentro del formulario de Stripe (opcional, como quedó en
-        // Checkout Studio); el correo lo pide su sección de Contacto.
-        name_collection: { individual: { enabled: true, optional: true } },
         saved_payment_method_options: { payment_method_save: 'enabled' },
-        integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
-        // Pago único: los planes se compran una vez (también el Mensual),
-        // no son suscripciones -- por eso no va payment_method_collection,
-        // que solo aplica a mode 'subscription'.
         mode: 'payment',
         line_items: lineItems,
-        customer,
         // Sin payment_method_types: los métodos salen de Configuración →
         // Métodos de pago del Dashboard (tarjeta, Google Pay, Apple Pay y
         // Link). Ojo: OXXO o SPEI, si se activan ahí, dejarían el pago
         // pendiente días (el webhook lo aplicaría al confirmarse).
-        // Si el banco exige salir del sitio (raro con tarjeta: el 3DS se
-        // muestra en un modal), vuelve a Membresía con el aviso de pago
-        // pendiente; el webhook aplica la compra igual.
-        return_url: returnUrl,
         metadata,
         payment_intent_data: {
             description: `BenjaApis - ${titleParts.join(' + ')}`,
@@ -1867,11 +1835,35 @@ async function createPurchaseCheckoutSession({ licenseId, planType, diceTier, sp
     }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
 }
 
+// Lo que se puede comprar en una sola sesión: Mensual y Anual son suscripciones,
+// así que van solos (el complemento o los dados se compran aparte); la prueba
+// de 14 días es solo para un plan, y solo para quien no tiene un plan pagado
+// vigente (una licencia que ya paga no pasa a "prueba").
+function checkoutItemsError(license, { planType, diceTier, spotifyAddon, trial }) {
+    if (trial !== undefined && typeof trial !== 'boolean') return 'Prueba invalida';
+    if (billing.SUBSCRIPTION_PLANS.includes(planType) && (diceTier || spotifyAddon)) {
+        return 'El plan se compra solo; el complemento y los dados, aparte.';
+    }
+    if (trial) {
+        if (!pricing.isValidPlan(planType) || diceTier || spotifyAddon) return 'La prueba gratis es solo para un plan.';
+        const paidActive = license && ['month', 'annual', 'lifetime'].includes(license.license_type) && !license.revoked
+            && (license.expires_at === null || Number(license.expires_at) > Date.now());
+        if (paidActive) return 'Tu licencia ya tiene un plan activo: la prueba gratis es para empezar.';
+    }
+    return null;
+}
+
+// Lo que se responde cuando una sesión de suscripción o de prueba no se aplicó.
+const BILLING_STATUS_ERRORS = {
+    trial_used: 'Esta tarjeta ya se usó en una prueba gratis. No se hizo ningún cobro; puedes comprar el plan directamente.',
+    invalid: 'Pago no encontrado',
+};
+
 app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
     // Correo y nombre ya no llegan desde la página: los pide el propio
     // formulario de Stripe (sección Contacto y name_collection).
-    const { planType, diceTier, spotifyAddon, policyAcceptedAt } = req.body || {};
-    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon });
+    const { planType, diceTier, spotifyAddon, trial, policyAcceptedAt } = req.body || {};
+    const itemsError = purchaseItemsError(req.license, { planType, diceTier, spotifyAddon }) || checkoutItemsError(req.license, { planType, diceTier, spotifyAddon, trial });
     if (itemsError) {
         return res.status(400).json({ success: false, error: itemsError });
     }
@@ -1880,7 +1872,7 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
     }
     try {
         const session = await createPurchaseCheckoutSession({
-            licenseId: req.license.id, planType, diceTier, spotifyAddon, policyAcceptedAt,
+            licenseId: req.license.id, license: req.license, planType, diceTier, spotifyAddon, trial: trial === true, policyAcceptedAt,
             returnUrl: `${FRONTEND_URL}/?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
         });
         res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id });
@@ -1892,20 +1884,18 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
 
 const sha256Hex = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 
-// Compra de un plan SIN cuenta (Membresía, con solo un alias). Antes se creaba
-// una prueba gratis al pulsar "Comprar" para tener una licencia a la que
-// cobrarle: si el pago no se hacía, quedaba una prueba de 7 días sin anuncios
-// ni tarjeta y sin que el comprador viera nunca su clave. Ahora no se crea
-// nada aquí: se reserva el id de la licencia, viaja en la metadata del pago
-// junto con el alias, y la licencia nace solo cuando Stripe confirma el cobro
-// (ver createPurchasedLicense). Solo planes: el complemento de Spotify y los
-// dados se compran con una licencia ya existente.
+// Compra de un plan SIN cuenta (Membresía, con solo un alias), al momento o
+// con prueba de 14 días. No se crea nada aquí: se reserva el id de la
+// licencia, viaja en la metadata del pago junto con el alias, y la licencia
+// nace solo cuando Stripe confirma el cobro o la tarjeta de la prueba (ver
+// createPurchasedLicense y lib/stripeBilling.js). Solo planes: el complemento
+// de Spotify y los dados se compran con una licencia ya existente.
 //
 // `claimToken` es lo único que le permite al navegador que pagó recoger la
 // clave y entrar (ver /guest-confirm): Stripe guarda solo su hash.
 app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (req, res) => {
     if (isBotSubmission(req.body)) return res.status(400).json({ success: false, error: 'No se pudo iniciar el pago.' });
-    const { alias, planType, policyAcceptedAt } = req.body || {};
+    const { alias, planType, trial, policyAcceptedAt } = req.body || {};
     const cleanAlias = cleanLicenseAlias(alias);
     if (!cleanAlias) {
         return res.status(400).json({ success: false, error: 'Elige un alias válido: letras, números, "_" o "-".' });
@@ -1913,6 +1903,8 @@ app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (r
     if (!pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan invalido' });
     }
+    const itemsError = checkoutItemsError(null, { planType, trial });
+    if (itemsError) return res.status(400).json({ success: false, error: itemsError });
     if (!validPolicyAcceptedAt(policyAcceptedAt)) {
         return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
@@ -1920,7 +1912,7 @@ app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (r
     const claimToken = crypto.randomBytes(24).toString('base64url');
     try {
         const session = await createPurchaseCheckoutSession({
-            licenseId, planType, policyAcceptedAt,
+            licenseId, planType, trial: trial === true, policyAcceptedAt,
             extraMetadata: { newLicenseAlias: cleanAlias, claimHash: sha256Hex(claimToken) },
             returnUrl: `${FRONTEND_URL}/membership?payment=pending&guest_checkout={CHECKOUT_SESSION_ID}`,
         });
@@ -1931,12 +1923,30 @@ app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (r
     }
 });
 
-// El navegador que pagó sin cuenta recoge aquí su licencia: se vuelve a pedir
-// la sesión a Stripe (nunca se cree lo que diga el frontend), se comprueba el
-// claimToken contra el hash de la metadata y, si el cobro está hecho, se crea
-// la licencia (o se usa la que ya creó el webhook) y se entrega la clave y una
-// sesión. La clave se entrega mientras siga pendiente de mostrar; después,
-// quien la perdió la recupera con el admin (panel de Licencias, "Ver clave").
+// Aplica una sesión de Checkout ya pedida a Stripe: pago único, suscripción o
+// prueba de Lifetime. Devuelve 'approved', 'pending', 'trial_used' o 'invalid'.
+async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
+    const fromBilling = await billing.fulfillBillingSession(session);
+    if (fromBilling) return fromBilling.status;
+    const meta = session.metadata || {};
+    const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+    if (session.mode !== 'payment' || session.payment_status !== 'paid' || !paymentIntentId) return 'pending';
+    // El id del PaymentIntent, igual que el webhook: así /confirm y
+    // payment_intent.succeeded se deduplican por el mismo UNIQUE.
+    await applyApprovedStripePaymentIfNew({
+        licenseId: meta.licenseId, planType: meta.planType || undefined, diceTier: meta.diceTier || undefined,
+        spotifyAddon: meta.spotifyAddon === 'true', stripePaymentId: paymentIntentId, newLicenseAlias,
+    });
+    return 'approved';
+}
+
+// El navegador que pagó (o empezó una prueba) sin cuenta recoge aquí su
+// licencia: se vuelve a pedir la sesión a Stripe (nunca se cree lo que diga
+// el frontend), se comprueba el claimToken contra el hash de la metadata y, si
+// el cobro o la tarjeta de la prueba están confirmados, se crea la licencia (o
+// se usa la que ya creó el webhook) y se entrega la clave y una sesión. La
+// clave se entrega mientras siga pendiente de mostrar; después, quien la perdió
+// la recupera con el admin (panel de Licencias, "Ver clave").
 app.post('/api/payments/stripe/guest-confirm', paymentStatusLimiter, async (req, res) => {
     const { checkoutSessionId, claimToken } = req.body || {};
     if (typeof checkoutSessionId !== 'string' || !/^cs_[A-Za-z0-9_]{8,200}$/.test(checkoutSessionId)
@@ -1953,12 +1963,9 @@ app.post('/api/payments/stripe/guest-confirm', paymentStatusLimiter, async (req,
         if (!alias || !licenseId || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
             return res.status(404).json({ success: false, error: 'Pago no encontrado' });
         }
-        const planType = session.metadata?.planType || undefined;
-        const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
-        if (session.payment_status !== 'paid' || !paymentIntentId) {
-            return res.json({ success: true, status: 'pending' });
-        }
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, stripePaymentId: paymentIntentId, newLicenseAlias: alias });
+        const status = await fulfillCheckoutSession(session, { newLicenseAlias: alias });
+        if (BILLING_STATUS_ERRORS[status]) return res.status(409).json({ success: false, status, error: BILLING_STATUS_ERRORS[status] });
+        if (status !== 'approved') return res.json({ success: true, status: 'pending' });
         const row = await db.findById(licenseId);
         // El webhook pudo ganarle y estar creándola en este momento.
         if (!row) return res.json({ success: true, status: 'pending' });
@@ -1993,25 +2000,55 @@ app.post('/api/payments/stripe/confirm', auth.requireAuth, paymentStatusLimiter,
         if (session.metadata?.licenseId !== req.license.id) {
             return res.status(404).json({ success: false, error: 'Pago no encontrado' });
         }
-        const planType = session.metadata?.planType || undefined;
-        const diceTier = session.metadata?.diceTier || undefined;
-        const spotifyAddon = session.metadata?.spotifyAddon === 'true';
-        const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
-        const paid = session.payment_status === 'paid' && !!paymentIntentId;
-        if (paid) {
-            // El id del PaymentIntent, igual que el webhook: así /confirm y
-            // payment_intent.succeeded se deduplican por el mismo UNIQUE.
-            await applyApprovedStripePaymentIfNew({ licenseId: req.license.id, planType, diceTier, spotifyAddon, stripePaymentId: paymentIntentId });
-        }
-        res.json({ success: true, status: paid ? 'approved' : 'pending' });
+        const status = await fulfillCheckoutSession(session);
+        if (BILLING_STATUS_ERRORS[status]) return res.status(409).json({ success: false, status, error: BILLING_STATUS_ERRORS[status] });
+        res.json({ success: true, status: status === 'approved' ? 'approved' : 'pending' });
     } catch (err) {
         console.error('[Stripe] Error confirmando Checkout Session:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo confirmar el pago. Intenta de nuevo en un momento.' });
     }
 });
 
+// El portal de Stripe para gestionar la suscripción: cambiar la tarjeta,
+// ver los recibos y cancelar (también durante la prueba, antes del primer
+// cobro). Hay que guardar su configuración una vez en el Dashboard de Stripe
+// (Configuración → Portal de clientes).
+app.post('/api/billing/portal', auth.requireAuth, paymentLimiter, async (req, res) => {
+    try {
+        const stripe = getStripeClient();
+        const customer = req.license.stripe_customer_id || await stripeCustomerForLicense(stripe, req.license.id);
+        const portal = await stripe.billingPortal.sessions.create({ customer, return_url: `${FRONTEND_URL}/membership` }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+        res.json({ success: true, url: portal.url });
+    } catch (err) {
+        console.error('[Stripe] No se pudo abrir el portal de clientes:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo abrir la gestión de tu suscripción. Intenta de nuevo en un momento.' });
+    }
+});
+
+// Cancelar la prueba de Lifetime antes del cobro: no se cobra nada y la
+// licencia termina el día que acababa la prueba.
+app.post('/api/billing/cancel-lifetime-trial', auth.requireAuth, paymentLimiter, async (req, res) => {
+    if (!req.license.lifetime_trial_charge_at) {
+        return res.status(400).json({ success: false, error: 'No tienes una prueba de Lifetime pendiente de cobro.' });
+    }
+    await db.applyBillingState(req.license.id, { lifetimeTrialChargeAt: null, subscriptionStatus: 'canceled', subscriptionCancelAt: Number(req.license.expires_at) || Date.now() });
+    console.log(`[Stripe] Prueba de Lifetime cancelada por el streamer (licencia ${req.license.id}).`);
+    pushLicenseState(req.license.id);
+    res.json({ success: true });
+});
+
+// El cobro del pago único al final de cada prueba de Lifetime (ver
+// lib/stripeBilling.js). Cada 10 minutos; el primero, al minuto de arrancar.
+const runLifetimeTrialCharges = () => {
+    if (!process.env.STRIPE_SECRET_KEY) return;
+    billing.chargeDueLifetimeTrials().catch((err) => console.error('[Stripe] Error cobrando pruebas de Lifetime:', err.message));
+};
+setTimeout(runLifetimeTrialCharges, 60 * 1000).unref();
+setInterval(runLifetimeTrialCharges, 10 * 60 * 1000).unref();
+
 // Notificación server-to-server de Stripe -- red de respaldo de /confirm
-// de arriba (ej. el streamer cierra la pestaña justo después de pagar).
+// de arriba (ej. el streamer cierra la pestaña justo después de pagar) y la
+// única fuente de las renovaciones y cancelaciones de las suscripciones.
 // El body llega CRUDO acá (ver el express.raw() montado antes del
 // express.json() global, arriba del todo del archivo) porque
 // stripe.webhooks.constructEvent() valida la firma sobre los bytes
@@ -2035,36 +2072,57 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
     // Stripe reintenta si no contesta rápido.
     res.sendStatus(200);
 
-    // Se aceptan los dos caminos para no depender de qué eventos se marquen
-    // en el destino del webhook: checkout.session.completed (el que el
-    // Dashboard recomienda; async_payment_succeeded es su versión para
-    // métodos que se confirman después) y payment_intent.succeeded. Los dos
-    // llevan la misma metadata y se aplican con el id del PaymentIntent, así
-    // que si llegan ambos el UNIQUE de stripe_payment_id deja uno solo.
-    let source = null;
-    let stripePaymentId = null;
-    if (event.type === 'payment_intent.succeeded') {
-        source = event.data.object;
-        stripePaymentId = source.id;
-    } else if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-        const session = event.data.object;
-        // Las sesiones de la prueba gratis (modo setup) no cobran nada, y una
-        // sesión completada con un pago aún pendiente se aplica cuando llegue
-        // async_payment_succeeded.
-        if (session.mode !== 'payment' || session.payment_status !== 'paid') return;
-        source = session;
-        stripePaymentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
-    }
-    if (!source || !stripePaymentId) return;
-
     try {
-        const licenseId = source.metadata?.licenseId;
-        const planType = source.metadata?.planType || undefined;
-        const diceTier = source.metadata?.diceTier || undefined;
-        const spotifyAddon = source.metadata?.spotifyAddon === 'true';
-        if (!licenseId) return;
-        const newLicenseAlias = source.metadata?.newLicenseAlias || undefined;
-        await applyApprovedStripePaymentIfNew({ licenseId, planType, diceTier, spotifyAddon, stripePaymentId, newLicenseAlias });
+        const object = event.data.object;
+        const stripe = getStripeClient();
+        const apiVersion = STRIPE_CHECKOUT_FORM_API_VERSION;
+
+        // Suscripciones: altas, renovaciones, pagos fallidos y cancelaciones.
+        // Se vuelve a pedir la suscripción a Stripe (con la versión de la API
+        // del código) en vez de usar el cuerpo del aviso.
+        if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+            const sub = await stripe.subscriptions.retrieve(object.id, {}, { apiVersion });
+            await billing.syncLicenseFromSubscription(sub);
+            return;
+        }
+        if (event.type === 'invoice.paid') {
+            const subId = billing.subscriptionId(object.subscription || object.parent?.subscription_details?.subscription);
+            if (!subId) return;
+            const sub = await stripe.subscriptions.retrieve(subId, {}, { apiVersion });
+            const result = await billing.syncLicenseFromSubscription(sub);
+            // El cobro queda en el historial de pagos (Sistema > Pagos, ingresos).
+            if (result.synced && Number(object.amount_paid) > 0) {
+                await db.insertStripePaymentIfNew({
+                    id: crypto.randomUUID(), licenseId: result.licenseId, stripePaymentId: String(object.id),
+                    planType: sub.metadata?.planType || null, diceTier: null, spotifyAddon: false,
+                    amountCents: Number(object.amount_paid), status: 'approved', createdAt: Date.now(),
+                });
+            }
+            return;
+        }
+
+        // Pagos únicos y sesiones de suscripción o de prueba. Se aceptan los
+        // dos caminos de los pagos únicos para no depender de qué eventos se
+        // marquen en el destino del webhook: checkout.session.completed (el que
+        // el Dashboard recomienda; async_payment_succeeded es su versión para
+        // métodos que se confirman después) y payment_intent.succeeded. Se
+        // aplican con el id del PaymentIntent, así que si llegan ambos el
+        // UNIQUE de stripe_payment_id deja uno solo.
+        if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+            if (!object.metadata?.licenseId) return; // p. ej. sesiones viejas de la prueba de 7 días
+            const session = await stripe.checkout.sessions.retrieve(object.id, {}, { apiVersion });
+            await fulfillCheckoutSession(session, { newLicenseAlias: session.metadata?.newLicenseAlias || undefined });
+            return;
+        }
+        if (event.type === 'payment_intent.succeeded') {
+            const meta = object.metadata || {};
+            // El cobro del final de la prueba de Lifetime ya se aplica al hacerse.
+            if (!meta.licenseId || meta.lifetimeTrial === '1') return;
+            await applyApprovedStripePaymentIfNew({
+                licenseId: meta.licenseId, planType: meta.planType || undefined, diceTier: meta.diceTier || undefined,
+                spotifyAddon: meta.spotifyAddon === 'true', stripePaymentId: object.id, newLicenseAlias: meta.newLicenseAlias || undefined,
+            });
+        }
     } catch (err) {
         console.error('[Stripe] Error procesando webhook:', err.message);
     }

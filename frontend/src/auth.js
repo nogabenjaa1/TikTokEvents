@@ -119,23 +119,6 @@ export async function loginWithKey(key) {
   return data; // { token, license }
 }
 
-// Prueba gratis de 7 días: solo pide un alias (texto libre, no se valida
-// contra TikTok) y devuelve sesión ya lista, igual que loginWithKey.
-// `checkoutSessionId` es opcional — la vía alternativa a ver anuncios (ver
-// CardVerifyForm.jsx): el backend lo verifica contra Stripe (sesión de
-// Checkout en modo setup ya completada, sin cobrar nada) antes de crear la
-// licencia, ver server.js.
-export async function requestFreeTrial(alias, checkoutSessionId) {
-  const res = await fetch(`${backendUrl()}/api/free-trial`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias, checkoutSessionId, website: botTrapValue() }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'No se pudo crear la prueba gratis');
-  return data; // { key, token, license }
-}
-
 export function authHeaders() {
   const session = loadSession();
   return session?.token ? { Authorization: `Bearer ${session.token}` } : {};

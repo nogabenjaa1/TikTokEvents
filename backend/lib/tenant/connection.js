@@ -14,6 +14,17 @@ const {
     RECONNECT_LOG_EVERY,
 } = require('../../lib/tenantHelpers');
 
+// ¿Es una prueba de 14 días con tarjeta? Se lee de la base en el momento: el
+// tipo guardado en el Tenant puede ser de antes de que empezara la prueba.
+async function isCardBackedTrial(licenseId) {
+    try {
+        const row = await db.findCoreById(licenseId);
+        return !!(row && (row.stripe_subscription_id || row.lifetime_trial_payment_method));
+    } catch {
+        return false;
+    }
+}
+
 module.exports = {
     // Un tenant se puede sacar de memoria cuando nadie lo usa: sin sockets
     // (ni panel ni overlays de OBS), sin nada activo ni conexión con TikTok
@@ -214,7 +225,11 @@ module.exports = {
         // (está usando SU propia prueba con otro usuario, no es abuso
         // cruzado); 'used-by-other' sí revoca: alguien más ya reclamó ese
         // mismo usuario de TikTok con otra prueba antes.
-        if (this.licenseType === 'trial') {
+        // La prueba de 14 días con tarjeta queda fuera: ya está limitada a una por
+        // tarjeta, y revocarla dejaría a Stripe cobrando una licencia revocada al
+        // terminar la prueba (ver lib/stripeBilling.js).
+        const cardTrial = this.licenseType === 'trial' ? await isCardBackedTrial(this.licenseId) : false;
+        if (this.licenseType === 'trial' && !cardTrial) {
             const claim = await db.claimTrialConnection(this.licenseId, username.toLowerCase());
             if (claim === 'locked-own') {
                 this.broadcast.emit('live_connection_error', {

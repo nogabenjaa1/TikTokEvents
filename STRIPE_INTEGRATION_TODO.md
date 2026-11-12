@@ -1,122 +1,93 @@
 # Stripe: formulario de Checkout embebido
 
-Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session con `ui_mode: 'form'`), con la misma versión, la misma apariencia y el mismo código de montaje ([frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js)):
+Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session con `ui_mode: 'form'`), con la misma versión, la misma apariencia y el mismo código de montaje ([frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js)). Hay tres tipos de sesión:
 
-- **Cobro** de planes y addons: sesión en modo `payment`.
-- **Verificación de tarjeta de la prueba gratis**: sesión en modo `setup`, sin cobro.
+- **Mensual y Anual:** suscripción (modo `subscription`). Stripe cobra solo cada mes o cada año. Se compran al momento o con 14 días gratis.
+- **Lifetime con prueba:** modo `setup`. Solo guarda la tarjeta; el pago único se cobra al día 14 desde el servidor.
+- **Lifetime al momento, complemento de Spotify y dados:** pago único (modo `payment`), como siempre.
 
-El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía ya no tiene campos propios de correo, nombre ni dirección; solo queda la casilla de la política de reembolsos, que hay que marcar para que aparezca el formulario. MercadoPago se quitó del sitio; los pagos viejos de MercadoPago se siguen viendo en Sistema y Estadísticas.
+El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía solo pide el alias (sin cuenta) y la casilla de la política de reembolsos. La prueba de 7 días (anuncios o verificar tarjeta) ya no existe; las licencias de esa prueba que sigan vigentes vencen solas.
 
 ## Valores por reemplazar
 
 No queda ningún valor de ejemplo en el código:
 
-- `mode` es `payment`, porque todos los planes (también el Mensual) y los addons se cobran una sola vez. No hay suscripciones, así que tampoco va `payment_method_collection`.
-- `line_items` no usa IDs de precio del Dashboard. Se arma en cada compra con `price_data` y los precios vigentes de `backend/pricing.js`, incluidos los que cambies desde el panel de admin. Hay un renglón por cada cosa comprada: plan, dados y complemento de Spotify.
+- `line_items` no usa IDs de precio del Dashboard. Se arma en cada compra con `price_data` y los precios vigentes de `backend/pricing.js`, incluidos los que cambies desde el panel de admin. En Mensual y Anual el `price_data` lleva `recurring` (mes o año).
+- **Una suscripción conserva el precio con el que empezó.** Si cambias el precio desde el panel, aplica a las suscripciones nuevas, no a las que ya existen.
 
 **Archivos:**
-- [backend/server.js](backend/server.js) (ruta `POST /api/payments/stripe/checkout-session`)
-
-| Campo | Valor actual | Qué hacer |
-|-------|--------------|-----------|
-| mode | `payment` | Nada. Solo cambia si algún día vendes planes recurrentes (`subscription`). |
-| line_items | `price_data` en MXN desde `pricing.js` | Nada. Los precios se cambian desde el panel de admin, no en Stripe. |
+- [backend/server.js](backend/server.js) (`createPurchaseCheckoutSession` y las rutas de pago)
+- [backend/lib/stripeBilling.js](backend/lib/stripeBilling.js) (suscripciones, pruebas y cobro de Lifetime)
 
 ## Parámetros configurados
 
 Vienen de Checkout Studio y ya están puestos tal cual.
 
-**Archivos:**
-- [backend/server.js](backend/server.js) (sesión)
-- [frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js) (apariencia y carga de Stripe.js)
-
-| Parámetro | Valor |
-|-----------|-------|
-| ui_mode | `form` (el SDK `stripe` del backend es 22.6.2, ≥ 21) |
-| billing_address_collection | `auto` |
-| submit_type | `auto` |
-| name_collection | `{ individual: { enabled: true, optional: true } }` |
-| saved_payment_method_options | `{ payment_method_save: 'enabled' }` |
-| integration_identifier | `custom_embedded_web_0001` |
-| Versión de API (solo en las llamadas de Checkout Sessions, cobro y verificación) | `2026-10-28.endive`, la que muestra el Dashboard. Sin bandera beta: el formulario ya no es vista previa |
-| Stripe.js | `js.stripe.com/dahlia` vía `@stripe/stripe-js` 9, igual que el código del Dashboard, sin `betas` |
-| Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio |
-
-Además, por cómo funciona el sitio:
-
-- Sin `payment_method_types` en el cobro: los métodos salen de *Configuración → Métodos de pago* del Dashboard (tarjeta, Google Pay, Apple Pay y Link). **No actives OXXO ni SPEI ahí**: dejarían el pago pendiente varios días (el webhook lo aplicaría al confirmarse).
-- `customer`: hay un cliente de Stripe por licencia, para que "guardar tarjeta" sirva en la siguiente compra de esa misma licencia. Se busca por la licencia y no por el correo, porque el correo lo escribe cualquiera sin verificarlo. El cliente nuevo se crea sin correo: Checkout guarda en él el que se escriba en el formulario. Si la licencia ya compró antes, su correo aparece precargado y no se puede editar (así funciona Stripe).
-- Sin `payment_intent_data.receipt_email`: el recibo lo manda Stripe al correo del formulario si está activo *Configuración → Correos a clientes → Pagos correctos*.
-- `payment_intent_data.metadata`: con estos datos el webhook, la conciliación de Sistema y el registro de pagos siguen funcionando igual que antes.
-
-## Verificación de tarjeta (prueba gratis)
-
-**Archivos:**
-- [backend/server.js](backend/server.js): `POST /api/free-trial/checkout-session` y `POST /api/free-trial`
-- [frontend/src/CardVerifyForm.jsx](frontend/src/CardVerifyForm.jsx)
-
 | Parámetro | Valor |
 |-----------|-------|
 | ui_mode | `form` |
-| mode | `setup` (no cobra nada) |
-| currency | `mxn` |
-| allowed_payment_method_types | `['card']` (en Endive `payment_method_types` da error 400; se queda solo tarjeta a propósito: con Link o una billetera no siempre llega el fingerprint de la tarjeta, y sin él la misma tarjeta podría pedir varias pruebas gratis) |
 | billing_address_collection | `auto` |
-| phone_number_collection | `{ enabled: false }` |
+| name_collection | `{ individual: { enabled: true, optional: true } }` |
 | integration_identifier | `custom_embedded_web_0001` |
+| submit_type, saved_payment_method_options | Solo en pago único (`auto`, `enabled`); en suscripción y en setup no aplican |
+| Versión de API (llamadas de Checkout Sessions, suscripciones, setup y cobros de Lifetime) | `2026-10-28.endive` |
+| Stripe.js | `js.stripe.com/dahlia` vía `@stripe/stripe-js` 9, sin `betas` |
+| Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio salvo `colorPrimary` `#7C3AED` (el morado de la marca, igual que el color de énfasis del portal de clientes) |
 
-En modo `setup` no aplican `submit_type`, `automatic_tax` ni `saved_payment_method_options`, y Stripe los rechaza. En el modo setup de Checkout, Stripe muestra su texto de autorización de cobros futuros, y no se puede quitar. Aun así, la tarjeta nunca se cobra ni se guarda en un cliente. El backend pide la sesión a Stripe, exige que esté completa y en modo `setup`, y guarda el fingerprint de la tarjeta para que no se use en dos pruebas gratis.
+Además, por cómo funciona el sitio:
+
+- **Sin `payment_method_types`:** los métodos salen de *Configuración → Métodos de pago* del Dashboard. **No actives OXXO ni SPEI ahí**: dejarían el pago pendiente varios días.
+- **La prueba de 14 días es solo con tarjeta** (`allowed_payment_method_types: ['card']`; Google Pay y Apple Pay cuentan como tarjeta). Así se tiene la huella de la tarjeta para dar una sola prueba por tarjeta.
+- **`customer`:** hay un cliente de Stripe por licencia, buscado por la licencia y no por el correo.
+- **Recibos:** los manda Stripe al correo del formulario si está activo *Configuración → Correos a clientes → Pagos correctos*. Para las suscripciones, activa también los correos de facturas y de renovación.
+
+## Suscripciones y prueba de 14 días
+
+- **Prueba de Mensual o Anual:** suscripción con `trial_period_days: 14` y `trial_settings.end_behavior.missing_payment_method: 'cancel'`. Al terminar, Stripe cobra la tarjeta (`invoice.paid`) y la licencia pasa al plan.
+- **Prueba de Lifetime:** modo `setup` con el monto en la metadata. El servidor revisa cada 10 minutos las pruebas que terminaron y cobra el pago único con la tarjeta guardada (`off_session`, con clave de idempotencia). Si la tarjeta falla, no se reintenta: la prueba vence sola.
+- **Una prueba por tarjeta** (tabla `trial_fingerprints`). Si la tarjeta ya tuvo prueba, la suscripción se cancela al instante sin cobrar nada y el comprador ve el aviso.
+- **Solo para empezar:** una licencia con un plan pagado vigente no puede iniciar una prueba.
+- **Durante la prueba la licencia es de tipo `trial`:** sin Spotify de la plataforma; con los anuncios de las licencias de prueba en el panel.
+- **Mejorar de plan (desde Membresía, con una ventana de confirmación):** se cobra al momento y se cancela la suscripción anterior sin más cobros. Los días pagados que le quedaban se suman al plan nuevo: el servidor corre la siguiente renovación de Stripe esos días (`trial_end` sin prorrateo), así no paga dos veces por el mismo tiempo. En Stripe esa suscripción aparece "en prueba" hasta esa fecha, aunque ya se cobró. Comprar Lifetime cancela la suscripción y cualquier prueba.
+- **Cancelar:** en Membresía, "Gestionar suscripción" abre el portal de clientes de Stripe (tarjeta, recibos y cancelar). La prueba de Lifetime tiene su propio "Cancelar prueba".
+- **Renovación que falla:** la licencia tiene 2 días de margen tras el fin del periodo mientras Stripe reintenta el cobro.
 
 ## Pasos pendientes
 
-**Google Pay, Apple Pay y Link:**
-
-- Actívalos en *Configuración → Métodos de pago* (modo de prueba y modo real por separado).
-- Registra `benjaapis.dev` (y `www.benjaapis.dev` si se usa) en *Configuración → Dominios de métodos de pago*. Sin esto no aparecen los botones de billetera en tu página.
-- La vista previa de Checkout Studio siempre dibuja los tres botones; en tu página cada uno aparece solo si el navegador puede usarlo: Google Pay en Chrome/Android con una tarjeta en Google Wallet, Apple Pay en Safari con Apple Pay configurado, Link siempre.
-
-0. **Comprueba que tu cuenta acepte el modo setup del formulario** antes de subir este cambio. El modo payment ya está comprobado. Cambia `TU_LLAVE` por tu llave secreta; si la respuesta trae `"id": "cs_..."`, funciona:
-
-   ```bash
-   curl https://api.stripe.com/v1/checkout/sessions -u "TU_LLAVE:" -H "Stripe-Version: 2026-10-28.endive" -d ui_mode=form -d mode=setup -d currency=mxn -d "allowed_payment_method_types[]=card" -d integration_identifier=custom_embedded_web_0001 -d "return_url=https://benjaapis.dev/?s={CHECKOUT_SESSION_ID}"
-   ```
-
-1. **Formulario de Checkout:** ya no es beta desde Endive. Si algún día Stripe rechaza la sesión, el panel muestra "No se pudo iniciar el pago" y el motivo queda en los logs de Render (`[Stripe] Error creando Checkout Session`).
-2. **Variables de entorno.** Son las mismas de antes:
-   - Render (backend): `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`.
-   - Vercel (frontend): `VITE_STRIPE_PUBLISHABLE_KEY`, con el prefijo `VITE_` porque la lee el navegador.
-3. **Webhook.** La dirección sigue siendo `https://TU_BACKEND/api/payments/stripe/webhook`. Marca al menos `checkout.session.completed` (el recomendado) o `payment_intent.succeeded`; el servidor acepta los dos, más `checkout.session.async_payment_succeeded`, y nunca aplica dos veces el mismo pago. `invoice.*` y `customer.subscription.*` no hacen falta: no hay suscripciones.
-4. **Prueba en modo de prueba** antes de usar llaves `sk_live_`/`pk_live_`. Usa estas tarjetas:
+1. **Portal de clientes:** en el Dashboard, *Configuración → Facturación → Portal de clientes*, activa "Cancelar suscripciones" y "Actualizar métodos de pago" y guarda (en modo de prueba y en modo real). Sin guardarlo una vez, "Gestionar suscripción" da error. **Deja apagado "Permitir que los clientes cambien de plan"**: los cambios de plan se hacen desde Membresía (el portal no conoce los planes y la licencia no se enteraría).
+2. **Webhook:** en el destino `https://TU_BACKEND/api/payments/stripe/webhook`, marca estos eventos (además de los que ya tenías):
+   - `checkout.session.completed`
+   - `invoice.paid`
+   - `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`
+   - `payment_intent.succeeded` (opcional)
+3. **Correos de Stripe:** en *Configuración → Correos a clientes*, activa los de pagos correctos, facturas, recordatorio antes de que termine la prueba y renovaciones.
+4. **Prueba en modo de prueba** antes de las llaves `sk_live_`/`pk_live_`:
    - `4242 4242 4242 4242`: aprobada.
    - `4000 0025 0000 3155`: pide 3DS.
    - `4000 0000 0000 9995`: rechazada por fondos insuficientes.
+   - Para ver el fin de una prueba sin esperar 14 días, en el Dashboard abre la suscripción y usa "Finalizar prueba ahora" (o un *Test clock*).
 
    En todas, cualquier fecha futura y cualquier CVC.
+5. **Variables de entorno:** las mismas de antes (`STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en Render; `VITE_STRIPE_PUBLISHABLE_KEY` en Vercel).
+
+**Google Pay, Apple Pay y Link:** actívalos en *Configuración → Métodos de pago* y registra `benjaapis.dev` en *Configuración → Dominios de métodos de pago*. En la prueba de 14 días no aparece Link (solo tarjeta).
 
 ## Cómo funciona
 
-1. Membresía → "Pagar" con Stripe → `POST /api/payments/stripe/checkout-session`. El backend valida la compra y la aceptación de la política de reembolsos, calcula los precios y crea la sesión.
-2. El navegador carga Stripe.js (`js.stripe.com/dahlia`, nunca empaquetado) solo en ese momento y monta el formulario en `#checkout-form`.
-3. Al pagar, `actions.confirm()` resuelve el cobro en el navegador; si el banco pide 3DS, aparece en un modal de Stripe.
-4. `POST /api/payments/stripe/confirm` vuelve a pedir la sesión a Stripe, comprueba que sea de esa licencia y aplica la compra con el ID del PaymentIntent.
-5. Si el navegador se cierra antes, el webhook (`checkout.session.completed` o `payment_intent.succeeded`) aplica la compra. Nunca se cobra ni se aplica dos veces: los pagos tienen un UNIQUE por el ID del PaymentIntent.
+1. Membresía → "Comprar" o "Probar 14 días gratis" → `POST /api/payments/stripe/checkout-session` (o `guest-checkout-session` sin cuenta). El backend valida la compra y la aceptación de la política, calcula los precios y crea la sesión.
+2. El navegador carga Stripe.js solo en ese momento y monta el formulario en `#checkout-form`.
+3. Al pagar, `actions.confirm()` resuelve el cobro o guarda la tarjeta en el navegador; si el banco pide 3DS, aparece en un modal de Stripe.
+4. `POST /api/payments/stripe/confirm` (o `guest-confirm`) vuelve a pedir la sesión a Stripe y la aplica: pago único, suscripción o prueba de Lifetime.
+5. El webhook es la red de respaldo y la única fuente de renovaciones, pagos fallidos y cancelaciones. Nunca se aplica dos veces lo mismo.
 
 ### Compra sin cuenta (solo con un alias)
 
-- **No se crea nada al pulsar "Comprar".** `POST /api/payments/stripe/guest-checkout-session` reserva el ID de la licencia y lo manda en la metadata del pago, junto con el alias (`newLicenseAlias`) y el hash de un `claimToken`. El navegador guarda ese token.
-- **La licencia nace cuando Stripe confirma el cobro.** La crea `POST /api/payments/stripe/guest-confirm` (el navegador presenta su `claimToken`) o el webhook, lo que llegue primero; el otro no duplica nada.
-- **La clave se entrega una vez.** `/guest-confirm` la da mientras siga pendiente de mostrar. Si la pestaña se cerró, al volver a Membresía en el mismo navegador se recoge sola (dos días como máximo, ver `frontend/src/guestPurchase.js`).
-- **Si alguien la pierde,** el admin la recupera con "Ver clave" en el panel de Licencias.
-- **Antes**, "Comprar" creaba una prueba gratis para tener a qué cobrarle. Esa prueba quedaba activa aunque no se pagara, y el comprador nunca veía su clave.
-
-Cambiaron `backend/server.js` (rutas de Stripe), `frontend/src/StripePaymentForm.jsx` y `frontend/src/CardVerifyForm.jsx`. Lo común quedó en `frontend/src/stripeCheckout.js`. Se quitaron las rutas viejas `/api/payments/stripe/intent` y `/api/free-trial/setup-intent`, y la dependencia `@stripe/react-stripe-js`, que ya no se usa.
-
-## Siguientes pasos
-
-- Si algún día hay planes recurrentes, cambia `mode` a `subscription`, agrega `payment_method_collection: 'always'` y escucha `invoice.paid` en el webhook.
-- Los cobros siguen apareciendo en Sistema > Pagos, igual que antes.
+- **No se crea nada al pulsar "Comprar" o "Probar".** Se reserva el ID de la licencia y viaja en la metadata, con el alias y el hash de un `claimToken` que guarda el navegador.
+- **La licencia nace cuando Stripe confirma el cobro o la tarjeta de la prueba.** La crea `guest-confirm` o el webhook, lo que llegue primero.
+- **La clave se entrega una vez.** Si la pestaña se cerró, al volver a Membresía en el mismo navegador se recoge sola (dos días como máximo, ver `frontend/src/guestPurchase.js`). Si alguien la pierde, el admin la recupera con "Ver clave" en Licencias.
 
 ## Recursos
 
 - https://support.stripe.com
-- https://docs.stripe.com/mcp
+- https://docs.stripe.com/billing/subscriptions/trials
+- https://docs.stripe.com/customer-management

@@ -18,7 +18,9 @@ const GUEST_PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Cuando
 // ruta sin sesión y la licencia nace solo si el cobro se confirma; entonces
 // `onSuccess` recibe { key, token, license } para entrar con ella (ver
 // guestPurchase.js).
-export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, guestAlias, onSuccess, onCancel }) {
+// `trial`: la prueba de 14 días del plan (suscripción con prueba o, en
+// Lifetime, guardar la tarjeta para cobrar al terminar).
+export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, trial = false, guestAlias, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
@@ -75,13 +77,13 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
           ? await fetch(`${backendUrl()}/api/payments/stripe/guest-checkout-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ alias: guestAlias, planType, policyAcceptedAt }),
+            body: JSON.stringify({ alias: guestAlias, planType, trial: trial || undefined, policyAcceptedAt }),
           })
           : await fetch(`${backendUrl()}/api/payments/stripe/checkout-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeaders() },
             // spotifyAddon solo viaja al comprar el complemento (ver Membership.jsx).
-            body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, policyAcceptedAt }),
+            body: JSON.stringify({ planType, diceTier, spotifyAddon: spotifyAddon ? true : undefined, trial: trial || undefined, policyAcceptedAt }),
           });
         data = await res.json();
       } catch {

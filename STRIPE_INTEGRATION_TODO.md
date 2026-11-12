@@ -48,13 +48,13 @@ Además, por cómo funciona el sitio:
 - **Una prueba por tarjeta** (tabla `trial_fingerprints`). Si la tarjeta ya tuvo prueba, la suscripción se cancela al instante sin cobrar nada y el comprador ve el aviso.
 - **Solo para empezar:** una licencia con un plan pagado vigente no puede iniciar una prueba.
 - **Durante la prueba la licencia es de tipo `trial`:** sin Spotify de la plataforma; con los anuncios de las licencias de prueba en el panel.
-- **Cambiar de plan:** comprar Anual siendo Mensual (o al revés) crea la suscripción nueva y cancela la anterior. Si a la licencia le queda tiempo pagado, el primer cobro espera a que termine. Comprar Lifetime cancela la suscripción y cualquier prueba.
+- **Mejorar de plan (desde Membresía, con una ventana de confirmación):** se cobra al momento y se cancela la suscripción anterior sin más cobros. Los días pagados que le quedaban se suman al plan nuevo: el servidor corre la siguiente renovación de Stripe esos días (`trial_end` sin prorrateo), así no paga dos veces por el mismo tiempo. En Stripe esa suscripción aparece "en prueba" hasta esa fecha, aunque ya se cobró. Comprar Lifetime cancela la suscripción y cualquier prueba.
 - **Cancelar:** en Membresía, "Gestionar suscripción" abre el portal de clientes de Stripe (tarjeta, recibos y cancelar). La prueba de Lifetime tiene su propio "Cancelar prueba".
 - **Renovación que falla:** la licencia tiene 2 días de margen tras el fin del periodo mientras Stripe reintenta el cobro.
 
 ## Pasos pendientes
 
-1. **Portal de clientes:** en el Dashboard, *Configuración → Facturación → Portal de clientes*, activa "Cancelar suscripciones" y "Actualizar métodos de pago" y guarda (en modo de prueba y en modo real). Sin guardarlo una vez, "Gestionar suscripción" da error.
+1. **Portal de clientes:** en el Dashboard, *Configuración → Facturación → Portal de clientes*, activa "Cancelar suscripciones" y "Actualizar métodos de pago" y guarda (en modo de prueba y en modo real). Sin guardarlo una vez, "Gestionar suscripción" da error. **Deja apagado "Permitir que los clientes cambien de plan"**: los cambios de plan se hacen desde Membresía (el portal no conoce los planes y la licencia no se enteraría).
 2. **Webhook:** en el destino `https://TU_BACKEND/api/payments/stripe/webhook`, marca estos eventos (además de los que ya tenías):
    - `checkout.session.completed`
    - `invoice.paid`

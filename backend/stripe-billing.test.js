@@ -55,7 +55,7 @@ function setup({ licenses = {}, subs = {}, setupIntents = {} } = {}) {
     applyApprovedStripePaymentIfNew: async (args) => { events.applied.push(args); return { applied: true }; },
     log: { log: () => {}, error: (...a) => events.logs.push(a.join(' ')) },
   });
-  return { billing, rows, fingerprints, subs, events, setIntentOutcome: (v) => { intentOutcome = v; } };
+  return { billing, rows, fingerprints, subs, events, stripe, setIntentOutcome: (v) => { intentOutcome = v; } };
 }
 
 const trialSub = (id, { licenseId, planType = 'month', fingerprint = 'fp_1', trial = '1', trialEnd = Date.now() + TRIAL_DAYS * DAY, extra = {} } = {}) => ({
@@ -143,15 +143,37 @@ test('changing plan cancels the previous subscription, and its later notices no 
   assert.equal(t.rows.get('lic-1').subscription_status, 'active');
 });
 
-test('time already paid is respected: a first charge delayed to the old expiry keeps the plan, not a trial', async () => {
-  const until = Date.now() + 25 * DAY;
+test('upgrading charges now and adds the days left to the new plan, moving the next renewal by those days, once', async () => {
+  const periodEnd = Date.now() + 365 * DAY;
+  const bonus = 20 * DAY;
   const t = setup({
-    licenses: { 'lic-1': { license_type: 'month', expires_at: until } },
-    subs: { sub_1: trialSub('sub_1', { licenseId: 'lic-1', planType: 'annual', trial: '', trialEnd: until }) },
+    licenses: { 'lic-1': { license_type: 'month', expires_at: Date.now() + bonus + 2 * DAY, stripe_subscription_id: 'sub_old', subscription_status: 'active', subscription_plan: 'month' } },
+    subs: { sub_new: { ...trialSub('sub_new', { licenseId: 'lic-1', planType: 'annual', trial: '' }), status: 'active', trial_end: null, items: { data: [{ current_period_end: sec(periodEnd) }] } } },
   });
-  await t.billing.fulfillBillingSession(session({ metadata: { licenseId: 'lic-1', planType: 'annual', trial: '' } }));
-  assert.equal(t.rows.get('lic-1').license_type, 'annual');
-  assert.equal(t.fingerprints.size, 0, 'not a free trial: the card is not spent');
+  // The days left exclude the renewal grace (it was never paid time).
+  const left = t.billing.remainingPaidMs(await t.rows.get('lic-1'));
+  assert.ok(Math.abs(left - bonus) < 5000, `left ${left}`);
+  const updates = [];
+  // Capture the subscription update through the fake Stripe client.
+  const fakeUpdate = async (id, params) => { updates.push({ id, params }); Object.assign(t.subs[id], { status: 'trialing', trial_end: params.trial_end }); return structuredClone(t.subs[id]); };
+  t.stripe.subscriptions.update = fakeUpdate;
+  const res = await t.billing.fulfillBillingSession(session({ subscription: 'sub_new', metadata: { licenseId: 'lic-1', planType: 'annual', trial: '', bonusMs: String(bonus) } }));
+  assert.equal(res.status, 'approved');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].params.trial_end, Math.floor((sec(periodEnd) * 1000 + bonus) / 1000), 'next renewal moved by the days left');
+  assert.equal(updates[0].params.proration_behavior, 'none');
+  const row = t.rows.get('lic-1');
+  assert.equal(row.license_type, 'annual', 'the plan applies right away, never a trial');
+  assert.equal(row.expires_at, updates[0].params.trial_end * 1000, 'access until the new period plus the days left');
+  assert.deepEqual(t.events.canceled, ['sub_old']);
+  assert.equal(t.fingerprints.size, 0, 'not a free trial: the card keeps its trial');
+  // The webhook and the browser both arrive: the renewal is moved only once.
+  await t.billing.fulfillBillingSession(session({ subscription: 'sub_new', metadata: { licenseId: 'lic-1', planType: 'annual', trial: '', bonusMs: String(bonus) } }));
+  assert.equal(updates.length, 1);
+  // Nothing left (a trial, or already expired) means nothing to add.
+  assert.equal(t.billing.remainingPaidMs({ license_type: 'trial', expires_at: Date.now() + 9 * DAY }), 0);
+  assert.equal(t.billing.remainingPaidMs({ license_type: 'month', expires_at: Date.now() - DAY }), 0);
+  assert.equal(t.billing.remainingPaidMs({ license_type: 'lifetime', expires_at: null }), 0);
 });
 
 test('the Lifetime trial saves the card, charges the one-time price on day 14 without changing the key, once', async () => {

@@ -89,6 +89,17 @@ function createStripeBilling(deps) {
         return { synced: true, licenseId: license.id, status: sub.status };
     }
 
+    // Tiempo pagado que le queda a una licencia (un plan comprado antes o el
+    // periodo de su suscripción), para sumarlo al plan nuevo al mejorar. Sin
+    // el margen de renovación (no es tiempo pagado) y nada en una prueba.
+    function remainingPaidMs(license, now = Date.now()) {
+        if (!license || license.revoked || !SUBSCRIPTION_PLANS.includes(license.license_type)) return 0;
+        let end = Number(license.expires_at) || 0;
+        if (license.stripe_subscription_id && ['active', 'past_due'].includes(license.subscription_status)) end -= RENEWAL_GRACE_MS;
+        const left = end - now;
+        return left > 60 * 60 * 1000 ? left : 0;
+    }
+
     // Reserva la prueba de la tarjeta; false si esa tarjeta ya tuvo prueba.
     async function claimTrial(fingerprint, licenseId) {
         if (!fingerprint) return false;
@@ -117,7 +128,18 @@ function createStripeBilling(deps) {
         const subId = subscriptionId(session.subscription);
         if (!licenseId || !SUBSCRIPTION_PLANS.includes(planType) || !subId) return { status: 'invalid' };
         const stripe = getStripeClient();
-        const sub = await stripe.subscriptions.retrieve(subId, { expand: ['default_payment_method'] }, { apiVersion });
+        let sub = await stripe.subscriptions.retrieve(subId, { expand: ['default_payment_method'] }, { apiVersion });
+        // Mejora con días de sobra: el plan nuevo ya se cobró; la siguiente
+        // renovación se corre esos días (trial_end sin prorrateo), así no paga
+        // dos veces por el mismo tiempo. Solo la primera vez (luego ya está en
+        // 'trialing' con su fecha).
+        const bonusMs = Number(meta.bonusMs) || 0;
+        if (bonusMs > 0 && sub.status === 'active' && !sub.trial_end) {
+            const end = periodEndMs(sub);
+            if (end) {
+                sub = await stripe.subscriptions.update(subId, { trial_end: Math.floor((end + bonusMs) / 1000), proration_behavior: 'none', expand: ['default_payment_method'] }, { apiVersion });
+            }
+        }
         if (meta.trial === '1' && sub.status === 'trialing') {
             const fingerprint = sub.default_payment_method?.card?.fingerprint;
             if (!(await claimTrial(fingerprint, licenseId))) {
@@ -225,7 +247,7 @@ function createStripeBilling(deps) {
         return results;
     }
 
-    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, cancelPreviousSubscription, subscriptionId };
+    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, remainingPaidMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, cancelPreviousSubscription, subscriptionId };
 }
 
 module.exports = { createStripeBilling, TRIAL_DAYS, SUBSCRIPTION_PLANS };

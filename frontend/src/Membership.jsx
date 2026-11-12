@@ -59,6 +59,25 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 // (ver auth.js); `onSessionUpdate` deja que App.jsx refresque su estado
 // después de crear la cuenta y/o de volver de un pago.
 
+// Tiempo pagado que le queda a la licencia y que se suma al plan nuevo al
+// mejorar (misma regla que billing.remainingPaidMs en el backend: sin el margen
+// de 2 días de una renovación, que no es tiempo pagado; nada en una prueba).
+function remainingPaidMs(session, now = Date.now()) {
+  if (!session || !SUBSCRIPTION_PLANS.includes(session.licenseType) || !session.expiresAt) return 0;
+  let end = session.expiresAt;
+  if (session.billing?.hasSubscription && ['active', 'past_due'].includes(session.billing.status)) end -= 2 * DAY_MS;
+  const left = end - now;
+  return left > 60 * 60 * 1000 ? left : 0;
+}
+
+// Hasta cuándo queda un plan de suscripción comprado hoy, con los días que se suman.
+function upgradedUntil(planId, bonusMs, now = Date.now()) {
+  const d = new Date(now);
+  if (planId === 'annual') d.setFullYear(d.getFullYear() + 1);
+  else d.setMonth(d.getMonth() + 1);
+  return d.getTime() + bonusMs;
+}
+
 // Cómo va el cobro de la licencia, en una frase (ver sessionLicense.billing en
 // el backend).
 function billingSummary(billing, session, livePrices) {
@@ -76,6 +95,10 @@ function billingSummary(billing, session, livePrices) {
   }
   if (!SUBSCRIPTION_PLANS.includes(billing.plan)) return '';
   if (billing.cancelAt) return `Suscripción cancelada: no se cobrará más y tu acceso sigue hasta el ${formatDate(billing.cancelAt)}.`;
+  // 'trialing' sin ser prueba: una mejora que sumó días; la renovación se corrió.
+  if (billing.status === 'trialing' && session?.licenseType !== 'trial') {
+    return `Tu plan ${planInfo?.label} sigue hasta el ${end} (incluye los días que te quedaban); ese día se renueva solo y después ${planInfo?.after}.`;
+  }
   if (billing.status === 'trialing') {
     return `Prueba gratis del plan ${planInfo?.label} hasta el ${end}. Ese día se cobrarán ${price(null, billing.plan)} y después ${planInfo?.after}, salvo que la canceles antes.`;
   }
@@ -96,6 +119,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [payingTrial, setPayingTrial] = useState(false);
   const [error, setError] = useState('');
   const [billingBusy, setBillingBusy] = useState(false);
+  // Plan al que se quiere mejorar, esperando que confirme el cobro inmediato.
+  const [upgradeConfirm, setUpgradeConfirm] = useState(null);
   // Pedido explicito: aceptación obligatoria de la política de reembolsos
   // antes de poder pagar -- no evita que alguien dispute con su banco (eso
   // lo decide el banco, no acá), pero le da a Stripe evidencia
@@ -223,10 +248,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
 
   const readyToPay = !!policyAcceptedAt;
   const payingPlanInfo = PLANS.find(p => p.id === payingPlan) || null;
-  // Le queda tiempo pagado: el primer cobro de la suscripción espera a que
-  // termine (el backend hace lo mismo, ver createPurchaseCheckoutSession).
-  const firstChargeLater = !!session && !payingTrial && SUBSCRIPTION_PLANS.includes(payingPlan)
-    && session.licenseType !== 'trial' && session.expiresAt > Date.now() + 2 * DAY_MS;
+  // Mejora con tiempo pagado de sobra: se cobra hoy y esos días se suman.
+  const bonusMs = !payingTrial && SUBSCRIPTION_PLANS.includes(payingPlan) ? remainingPaidMs(session) : 0;
+  const bonusDays = Math.round(bonusMs / DAY_MS);
 
   // Botón "Continuar con el pago" (visible mientras no se acepte la
   // política): lleva el foco al checkbox y dice qué falta.
@@ -249,6 +273,12 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
     if (!session && !requireAlias()) return;
     setPayingTrial(trial);
     setPayingPlan(planType);
+  };
+
+  const confirmUpgrade = () => {
+    const id = upgradeConfirm;
+    setUpgradeConfirm(null);
+    handleBuy(id);
   };
 
   // La prueba es para empezar: no para una licencia que ya paga un plan
@@ -538,7 +568,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                   <p className="theme-chip tkc-label text-center mt-3 py-2 rounded-full">En prueba</p>
                 ) : rank > currentPlanRank ? (
                   <div className="mt-3 flex flex-col gap-2">
-                    <button type="button" disabled={!session && !alias.trim()} onClick={() => handleBuy(plan.id)}
+                    <button type="button" disabled={!session && !alias.trim()} onClick={() => (paidActive ? setUpgradeConfirm(plan.id) : handleBuy(plan.id))}
                       className="theme-btn-primary theme-btn-md w-full font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
                       {buttonLabel}
                     </button>
@@ -587,8 +617,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             <p className="w-full max-w-3xl theme-notice theme-notice-warning">
               {payingTrial
                 ? `Hoy no se te cobra nada. El ${formatDate(Date.now() + TRIAL_DAYS * DAY_MS)} se cobrarán MX$${payingAmountMxn?.toLocaleString('es-MX')} ${payingPlanInfo?.after} a tu tarjeta, salvo que canceles antes desde Membresía.`
-                : firstChargeLater
-                  ? `Tu plan actual sigue hasta el ${formatDate(session.expiresAt)}: ese día será el primer cobro de MX$${payingAmountMxn?.toLocaleString('es-MX')}, y después ${payingPlanInfo?.after}.`
+                : bonusMs > 0
+                  ? `Se cobra MX$${payingAmountMxn?.toLocaleString('es-MX')} hoy. Los ${bonusDays} días que te quedan se suman: tu plan ${payingPlanInfo?.label} queda hasta el ${formatDate(upgradedUntil(payingPlan, bonusMs))} y después se renueva ${payingPlanInfo?.after}.`
                   : `Se cobra MX$${payingAmountMxn?.toLocaleString('es-MX')} hoy y después ${payingPlanInfo?.after}, hasta que canceles desde Membresía.`}
             </p>
           )}
@@ -695,6 +725,44 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}
 
       {showPolicyModal && <RefundPolicyModal onClose={() => setShowPolicyModal(false)} />}
+
+      {/* Mejorar el plan: se cobra en ese momento. Lo dice claro antes de
+          pedir la tarjeta (pedido del dueño). */}
+      {upgradeConfirm && (() => {
+        const target = PLANS.find(p => p.id === upgradeConfirm);
+        const price = (livePrices?.[target.id] != null ? livePrices[target.id] / 100 : target.mxn).toLocaleString('es-MX');
+        const left = target.id === 'lifetime' ? 0 : remainingPaidMs(session);
+        const days = Math.round(left / DAY_MS);
+        const current = PLAN_LABELS[session?.licenseType] || session?.licenseType;
+        return (
+          <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
+            <div className="theme-surface w-full max-w-md p-5 flex flex-col gap-3">
+              <p id="upgrade-title" className="theme-label tkc-label">Mejorar a {target.label}</p>
+              <p className="text-sm font-black">Se te cobrarán MX${price} de inmediato{target.id === 'lifetime' ? ', una sola vez' : ''}.</p>
+              {target.id === 'lifetime' ? (
+                <p className="tkc-hint">Lifetime no vence. Tu plan {current} se cancela en ese momento y ya no se te cobrará nada más.</p>
+              ) : (
+                <p className="tkc-hint">
+                  {days > 0
+                    ? `Los ${days} días que te quedan de tu plan ${current} se suman al plan ${target.label}: tu acceso queda hasta el ${formatDate(upgradedUntil(target.id, left))}. `
+                    : ''}
+                  Tu plan {current} se cancela sin más cobros, y el {target.label} se renueva solo {target.after} hasta que lo canceles.
+                </p>
+              )}
+              <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                <button type="button" onClick={() => setUpgradeConfirm(null)}
+                  className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
+                  Cancelar
+                </button>
+                <button type="button" onClick={confirmUpgrade}
+                  className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
+                  Sí, cobrar y mejorar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Donde se paga, a la vista: aviso legal, privacidad y cookies. */}
       <LegalLinks onNavigate={onNavigate} className="w-full max-w-3xl" />

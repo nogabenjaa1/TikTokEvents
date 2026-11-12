@@ -1753,6 +1753,11 @@ async function createPurchaseCheckoutSession({ licenseId, license = null, planTy
         policyAcceptedAt,
         ...extraMetadata,
     };
+    // Mejora de plan con tiempo pagado de sobra: se cobra al momento y esos
+    // días se suman al plan nuevo (ver billing.fulfillSubscriptionSession,
+    // que corre la siguiente renovación de Stripe esos mismos días).
+    const bonusMs = billing.SUBSCRIPTION_PLANS.includes(planType) && !trial ? billing.remainingPaidMs(license) : 0;
+    if (bonusMs > 0) metadata.bonusMs = String(bonusMs);
 
     if (billing.SUBSCRIPTION_PLANS.includes(planType)) {
         const subscriptionData = { description: `BenjaApis - Plan ${PLAN_LABELS[planType]}`, metadata };
@@ -1760,11 +1765,6 @@ async function createPurchaseCheckoutSession({ licenseId, license = null, planTy
             subscriptionData.trial_period_days = BILLING_TRIAL_DAYS;
             // Sin tarjeta al final de la prueba, la suscripción se cierra sola.
             subscriptionData.trial_settings = { end_behavior: { missing_payment_method: 'cancel' } };
-        } else if (license && license.license_type !== 'trial' && !license.revoked && Number(license.expires_at) > Date.now() + 2 * 24 * 60 * 60 * 1000) {
-            // Le quedaba tiempo pagado (un plan comprado antes o el periodo de
-            // otra suscripción): el primer cobro espera a que termine, así no
-            // pierde lo que ya pagó. Stripe pide que sea al menos 2 días después.
-            subscriptionData.trial_end = Math.floor(Number(license.expires_at) / 1000);
         }
         return stripe.checkout.sessions.create({
             ...common,

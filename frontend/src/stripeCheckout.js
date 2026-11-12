@@ -24,7 +24,10 @@ export function getStripePromise() {
   return stripePromise;
 }
 
-// Apariencia configurada en Checkout Studio de Stripe.
+// Apariencia configurada en Checkout Studio de Stripe, con el morado de la
+// marca (#7C3AED) en vez del azul de Stripe: es el mismo "color de énfasis" del
+// portal de clientes, así el pago y la gestión de la suscripción combinan
+// (texto blanco encima: contraste 5,7:1).
 export const CHECKOUT_APPEARANCE = {
   theme: 'stripe',
   labels: 'auto',
@@ -33,7 +36,7 @@ export const CHECKOUT_APPEARANCE = {
     borderRadius: '4px',
     colorBackground: '#ffffff',
     colorDanger: '#df1b41',
-    colorPrimary: '#0570de',
+    colorPrimary: '#7C3AED',
     colorSuccess: '#00c853',
     colorText: '#30313d',
     fontFamily: 'default',

@@ -32,7 +32,7 @@ Vienen de Checkout Studio y ya están puestos tal cual.
 | submit_type, saved_payment_method_options | Solo en pago único (`auto`, `enabled`); en suscripción y en setup no aplican |
 | Versión de API (llamadas de Checkout Sessions, suscripciones, setup y cobros de Lifetime) | `2026-10-28.endive` |
 | Stripe.js | `js.stripe.com/dahlia` vía `@stripe/stripe-js` 9, sin `betas` |
-| Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio |
+| Apariencia | `stripe`, etiquetas `auto`, inputs `spaced`, colores de Checkout Studio salvo `colorPrimary` `#7C3AED` (el morado de la marca, igual que el color de énfasis del portal de clientes) |
 
 Además, por cómo funciona el sitio:
 

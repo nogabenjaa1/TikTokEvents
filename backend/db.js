@@ -493,8 +493,8 @@ const ready = pool.query(`
   // hash anterior, así los enlaces que ya están en OBS siguen funcionando con la
   // clave nueva. Para invalidarlos está "Renovar enlaces" (overlay_epoch).
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS overlay_key_hash TEXT`))
-  // Suscripciones (Mensual y Anual se cobran solos cada periodo) y la prueba de
-  // 14 días con tarjeta (ver lib/stripeBilling.js). stripe_subscription_id es
+  // Suscripciones (Mensual y Anual se cobran solos cada periodo) y la prueba
+  // gratis con tarjeta (ver lib/stripeBilling.js). stripe_subscription_id es
   // la suscripción VIGENTE de la licencia (al cambiar de plan se reemplaza);
   // subscription_status refleja el de Stripe (trialing, active, past_due,
   // canceled...); subscription_plan es el plan que se cobra (month/annual, o
@@ -510,11 +510,14 @@ const ready = pool.query(`
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_charge_at BIGINT`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_amount_cents INTEGER`))
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS lifetime_trial_payment_method TEXT`))
+  // Lo que cobra la suscripción vigente (el precio con el que empezó, no el
+  // de hoy del panel): Membresía lo muestra al cobrar la prueba de una vez.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_amount_cents INTEGER`))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_stripe_subscription
     ON licenses(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL
   `))
-  // Una prueba de 14 días por tarjeta física (huella estable de Stripe), sea
+  // Una prueba gratis por tarjeta física (huella estable de Stripe), sea
   // de Mensual, Anual o Lifetime. Separada de trial_card_fingerprint, que era
   // la de la prueba de 7 días (ya retirada).
   .then(() => pool.query(`
@@ -604,7 +607,7 @@ const LICENSE_CORE_COLUMNS = [
     'dice_win_bonus_unlocked', 'trial_card_fingerprint', 'lifetime_at', 'spotify_addon', 'overlay_epoch',
     'overlay_key_hash',
     'stripe_subscription_id', 'stripe_customer_id', 'subscription_status', 'subscription_plan', 'subscription_cancel_at',
-    'lifetime_trial_charge_at', 'lifetime_trial_amount_cents', 'lifetime_trial_payment_method',
+    'lifetime_trial_charge_at', 'lifetime_trial_amount_cents', 'lifetime_trial_payment_method', 'subscription_amount_cents',
 ].join(', ');
 
 async function findByKeyHash(keyHash) {
@@ -1171,6 +1174,7 @@ async function applyBillingState(id, fields = {}) {
         subscriptionStatus: 'subscription_status', subscriptionPlan: 'subscription_plan', subscriptionCancelAt: 'subscription_cancel_at',
         lifetimeTrialChargeAt: 'lifetime_trial_charge_at', lifetimeTrialAmountCents: 'lifetime_trial_amount_cents',
         lifetimeTrialPaymentMethod: 'lifetime_trial_payment_method',
+        subscriptionAmountCents: 'subscription_amount_cents',
     };
     const sets = [];
     const params = [];
@@ -1198,7 +1202,7 @@ async function findByStripeSubscriptionId(subscriptionId) {
     return rows[0];
 }
 
-// Reserva la prueba de 14 días de una tarjeta para una licencia. Devuelve true
+// Reserva la prueba gratis de una tarjeta para una licencia. Devuelve true
 // si la tarjeta no tenía prueba o ya era de ESTA licencia (un reintento del
 // mismo pago), false si la usó otra licencia.
 async function claimTrialFingerprint(fingerprint, licenseId) {

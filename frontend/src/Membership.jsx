@@ -9,17 +9,23 @@ import StripePaymentForm from './StripePaymentForm';
 import RefundPolicyModal from './RefundPolicyModal';
 
 // Mensual y Anual son suscripciones (se cobran solas cada periodo); Lifetime
-// es un pago único. Los tres tienen prueba de 14 días con tarjeta (ver
-// backend/lib/stripeBilling.js).
+// es un pago único. Los tres tienen prueba gratis con tarjeta (ver
+// backend/lib/stripeBilling.js). Precios de respaldo = los de pricing.js
+// (US$10 / US$20 / US$30 en pesos); los reales llegan de /api/pricing.
 const PLANS = [
-  { id: 'month', label: 'Mensual', mxn: 126, period: '/ mes', after: 'cada mes' },
-  { id: 'annual', label: 'Anual', mxn: 1080, period: '/ año', after: 'cada año', savingsChip: 'AHORRAS MX$430' },
-  { id: 'lifetime', label: 'Lifetime', mxn: 1800, period: 'pago único', after: 'una sola vez' },
+  { id: 'month', label: 'Mensual', mxn: 180, period: '/ mes', after: 'cada mes' },
+  { id: 'annual', label: 'Anual', mxn: 360, period: '/ año', after: 'cada año', featured: true },
+  { id: 'lifetime', label: 'Lifetime', mxn: 540, period: 'pago único', after: 'una sola vez' },
 ];
 const SUBSCRIPTION_PLANS = ['month', 'annual'];
-const TRIAL_DAYS = 14;
+// La prueba gratis dura 1 día (antes 14; las que ya habían empezado
+// conservan su fecha, ver backend/lib/stripeBilling.js).
+const TRIAL_DAYS = 1;
+const TRIAL_TEXT = TRIAL_DAYS === 1 ? '1 día' : `${TRIAL_DAYS} días`;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const formatDate = (ms) => new Date(ms).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+// Con la prueba de 1 día importa la hora del cobro, no solo el día.
+const formatDateTime = (ms) => new Date(ms).toLocaleString('es-MX', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' });
 const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
 // El complemento de Spotify (pago único, solo para el plan Mensual — Anual y
 // Lifetime ya lo incluyen) se compra por el mismo flujo de tarjeta que un
@@ -52,7 +58,7 @@ const LIFETIME_LEGEND = 'El acceso Lifetime cubre la plataforma y sus actualizac
 // correo y el nombre los pide el propio formulario de Stripe).
 // Funciona con o sin sesión. Sin sesión va en dos pasos: 1) el alias, que
 // va en la clave (alias-plan-hash), y 2) el plan, comprado al momento o con
-// 14 días gratis. Nada se crea por adelantado: la licencia nace solo cuando
+// prueba gratis. Nada se crea por adelantado: la licencia nace solo cuando
 // Stripe confirma el cobro o la tarjeta de la prueba (ver guestPurchase.js y
 // /api/payments/stripe/guest-checkout-session).
 // `session` trae licenseType/expiresAt/diceTier ya guardados en el token
@@ -85,7 +91,7 @@ function billingSummary(billing, session, livePrices) {
   const price = (cents, plan) => `MX$${((cents ?? livePrices?.[plan] ?? (planInfo?.mxn || 0) * 100) / 100).toLocaleString('es-MX')}`;
   const end = session?.expiresAt ? formatDate(session.expiresAt) : null;
   if (billing.plan === 'lifetime' && billing.lifetimeChargeAt) {
-    return `Prueba de Lifetime: el ${formatDate(billing.lifetimeChargeAt)} se cobrarán ${price(billing.lifetimeAmountCents, 'lifetime')} una sola vez, salvo que la canceles antes.`;
+    return `Prueba de Lifetime: el ${formatDateTime(billing.lifetimeChargeAt)} se cobrarán ${price(billing.lifetimeAmountCents, 'lifetime')} una sola vez, salvo que la canceles antes o pagues ahora.`;
   }
   if (billing.plan === 'lifetime' && billing.status === 'payment_failed') {
     return 'No se pudo cobrar Lifetime al terminar la prueba. Tu acceso termina al acabar la prueba; puedes comprar Lifetime cuando quieras.';
@@ -100,7 +106,7 @@ function billingSummary(billing, session, livePrices) {
     return `Tu plan ${planInfo?.label} sigue hasta el ${end} (incluye los días que te quedaban); ese día se renueva solo y después ${planInfo?.after}.`;
   }
   if (billing.status === 'trialing') {
-    return `Prueba gratis del plan ${planInfo?.label} hasta el ${end}. Ese día se cobrarán ${price(null, billing.plan)} y después ${planInfo?.after}, salvo que la canceles antes.`;
+    return `Prueba gratis del plan ${planInfo?.label} hasta el ${session?.expiresAt ? formatDateTime(session.expiresAt) : end}. Entonces se cobrarán ${price(billing.amountCents, billing.plan)} y después ${planInfo?.after}, salvo que la canceles antes o pagues ahora.`;
   }
   if (billing.status === 'past_due' || billing.status === 'unpaid') {
     return 'No pudimos cobrar la renovación. Revisa tu tarjeta en "Gestionar suscripción" para no perder tu plan.';
@@ -115,12 +121,14 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // embebido -- null si no hay ningun pago en curso. El comprador nunca sale
   // de este sitio con este camino.
   const [payingPlan, setPayingPlan] = useState(null);
-  // Si lo que se está pagando es la prueba de 14 días de ese plan.
+  // Si lo que se está pagando es la prueba gratis de ese plan.
   const [payingTrial, setPayingTrial] = useState(false);
   const [error, setError] = useState('');
   const [billingBusy, setBillingBusy] = useState(false);
   // Plan al que se quiere mejorar, esperando que confirme el cobro inmediato.
   const [upgradeConfirm, setUpgradeConfirm] = useState(null);
+  // "Pagar ahora" durante la prueba, esperando que confirme el cobro.
+  const [payNowConfirm, setPayNowConfirm] = useState(false);
   // Pedido explicito: aceptación obligatoria de la política de reembolsos
   // antes de poder pagar -- no evita que alguien dispute con su banco (eso
   // lo decide el banco, no acá), pero le da a Stripe evidencia
@@ -156,7 +164,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // comentario en handleBuy) para que el aviso quede pegado al campo.
   const [aliasError, setAliasError] = useState('');
 
-  // Un solo alias para la compra y para la prueba de 14 días.
+  // Un solo alias para la compra y para la prueba gratis.
   const requireAlias = () => {
     if (alias.trim()) return true;
     setAliasError('Elige un alias antes de continuar.');
@@ -247,6 +255,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const spotifyStatusLabel = spotifyIncluded ? 'Incluido' : session?.spotifyAddon ? 'Complemento activo' : 'No incluido';
 
   const readyToPay = !!policyAcceptedAt;
+  // Lo que se ahorra el Anual frente a 12 meses del Mensual, con los precios vigentes.
+  const planMxn = (id) => (livePrices?.[id] != null ? livePrices[id] / 100 : PLANS.find(p => p.id === id)?.mxn || 0);
+  const annualSavingsMxn = Math.round(planMxn('month') * 12 - planMxn('annual'));
   const payingPlanInfo = PLANS.find(p => p.id === payingPlan) || null;
   // Mejora con tiempo pagado de sobra: se cobra hoy y esos días se suman.
   const bonusMs = !payingTrial && SUBSCRIPTION_PLANS.includes(payingPlan) ? remainingPaidMs(session) : 0;
@@ -266,7 +277,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   };
 
   // Sin sesión solo hace falta el alias: no se crea nada hasta que el pago se
-  // confirme (ver el comentario del componente). `trial`: la prueba de 14 días.
+  // confirme (ver el comentario del componente). `trial`: la prueba gratis.
   const handleBuy = (planType, { trial = false } = {}) => {
     if (!planType) return;
     setError('');
@@ -303,6 +314,26 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       window.location.href = data.url;
     } catch (err) {
       setError(err.message);
+      setBillingBusy(false);
+    }
+  };
+
+  // Termina la prueba y cobra en ese momento (ver /api/billing/end-trial-now).
+  const payTrialNow = async () => {
+    if (billingBusy) return;
+    setPayNowConfirm(false);
+    setBillingBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`${backendUrl()}/api/billing/end-trial-now`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'No se pudo completar el pago.');
+      setBanner('success');
+      const updated = await refreshSession();
+      if (updated) onSessionUpdate?.(updated);
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setBillingBusy(false);
     }
   };
@@ -389,7 +420,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         <p className="text-sm text-gray-500">
           {session
             ? 'Revisa tu plan actual, mejóralo o renuévalo cuando quieras.'
-            : `Primero elige tu alias; luego compra un plan o pruébalo ${TRIAL_DAYS} días gratis. Tu clave es tu única credencial: guárdala en un lugar seguro.`}
+            : `Primero elige tu alias; luego compra un plan o pruébalo ${TRIAL_TEXT} gratis. Tu clave es tu única credencial: guárdala en un lugar seguro.`}
         </p>
         {/* El acceso con clave quedó al final de la pantalla (lo primero son
             los planes): este enlace lleva directo a él. */}
@@ -406,7 +437,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         <div role={banner === 'failure' ? 'alert' : 'status'} className={['w-full max-w-3xl theme-notice theme-notice-roomy',
           banner === 'success' || banner === 'created' || banner === 'trial-started' ? 'theme-notice-success' : banner === 'pending' ? 'theme-notice-warning' : 'theme-notice-danger'].join(' ')}>
           {banner === 'success' && '¡PAGO APROBADO! TU LICENCIA YA SE ACTUALIZÓ.'}
-          {banner === 'trial-started' && `¡LISTO! TU PRUEBA GRATIS DE ${TRIAL_DAYS} DÍAS YA EMPEZÓ.`}
+          {banner === 'trial-started' && `¡LISTO! TU PRUEBA GRATIS DE ${TRIAL_TEXT.toUpperCase()} YA EMPEZÓ.`}
           {banner === 'created' && '¡PAGO APROBADO! TU LICENCIA YA ESTÁ LISTA. GUARDA TU CLAVE.'}
           {banner === 'pending' && 'TU PAGO ESTÁ PENDIENTE DE APROBACIÓN — SE APLICA SOLO APENAS SE CONFIRME.'}
           {banner === 'failure' && 'EL PAGO NO SE PUDO COMPLETAR. PUEDES INTENTAR DE NUEVO CUANDO QUIERAS.'}
@@ -474,6 +505,12 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           {billingInfo && (
             <div className="basis-full flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[var(--surface-border-color)]">
               <p className="tkc-hint flex-1 basis-64">{billingSummary(billingInfo, session, livePrices)}</p>
+              {session?.licenseType === 'trial' && (billingInfo.lifetimeChargeAt || (billingInfo.hasSubscription && billingInfo.status === 'trialing')) && (
+                <button type="button" onClick={() => setPayNowConfirm(true)} disabled={billingBusy}
+                  className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40">
+                  Pagar ahora
+                </button>
+              )}
               {billingInfo.hasSubscription && (
                 <button type="button" onClick={openBillingPortal} disabled={billingBusy}
                   className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40">
@@ -524,7 +561,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           <h2 id="plans-title" className="tkc-label theme-label">Elige tu plan</h2>
           <p className="tkc-hint">
             {!session && !alias.trim() ? 'Primero escribe tu alias en el paso 1. ' : ''}
-            Mensual y Anual se renuevan solos y los cancelas cuando quieras. La prueba de {TRIAL_DAYS} días pide tarjeta: hoy no se cobra nada y, si no cancelas antes, se cobra al terminar.
+            Mensual y Anual se renuevan solos y los cancelas cuando quieras. La prueba de {TRIAL_TEXT} pide tarjeta: hoy no se cobra nada y, si no cancelas antes, se cobra al terminar.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -533,10 +570,10 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             const rank = PLAN_RANK[plan.id];
             const buttonLabel = currentPlanRank >= 1 ? 'Mejorar' : 'Comprar';
             return (
-              <div key={plan.id} className={`${plan.savingsChip ? 'theme-surface-featured' : 'theme-surface'} p-4 text-left flex flex-col`}>
+              <div key={plan.id} className={`${plan.featured ? 'theme-surface-featured' : 'theme-surface'} p-4 text-left flex flex-col`}>
                 <div className="flex items-center justify-between mb-1 gap-2">
                   <p className="tkc-label">{plan.label}</p>
-                  {plan.savingsChip && <span className="theme-chip tkc-label px-2 py-0.5 rounded-full whitespace-nowrap">{plan.savingsChip}</span>}
+                  {plan.id === 'annual' && annualSavingsMxn > 0 && <span className="theme-chip tkc-label px-2 py-0.5 rounded-full whitespace-nowrap">AHORRAS MX${annualSavingsMxn.toLocaleString('es-MX')}</span>}
                 </div>
                 {(() => {
                   const mxnPrice = livePrices?.[plan.id] != null ? livePrices[plan.id] / 100 : plan.mxn;
@@ -575,7 +612,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                     {canTrial && (
                       <button type="button" disabled={!session && !alias.trim()} onClick={() => handleBuy(plan.id, { trial: true })}
                         className="theme-btn-secondary theme-btn-md w-full font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
-                        Probar {TRIAL_DAYS} días gratis
+                        Probar {TRIAL_TEXT} gratis
                       </button>
                     )}
                   </div>
@@ -616,7 +653,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           {!buyingAddon && (payingTrial || SUBSCRIPTION_PLANS.includes(payingPlan)) && (
             <p className="w-full max-w-3xl theme-notice theme-notice-warning">
               {payingTrial
-                ? `Hoy no se te cobra nada. El ${formatDate(Date.now() + TRIAL_DAYS * DAY_MS)} se cobrarán MX$${payingAmountMxn?.toLocaleString('es-MX')} ${payingPlanInfo?.after} a tu tarjeta, salvo que canceles antes desde Membresía.`
+                ? `Hoy no se te cobra nada. El ${formatDateTime(Date.now() + TRIAL_DAYS * DAY_MS)} se cobrarán MX$${payingAmountMxn?.toLocaleString('es-MX')} ${payingPlanInfo?.after} a tu tarjeta, salvo que canceles antes desde Membresía.`
                 : bonusMs > 0
                   ? `Se cobra MX$${payingAmountMxn?.toLocaleString('es-MX')} hoy. Los ${bonusDays} días que te quedan se suman: tu plan ${payingPlanInfo?.label} queda hasta el ${formatDate(upgradedUntil(payingPlan, bonusMs))} y después se renueva ${payingPlanInfo?.after}.`
                   : `Se cobra MX$${payingAmountMxn?.toLocaleString('es-MX')} hoy y después ${payingPlanInfo?.after}, hasta que canceles desde Membresía.`}
@@ -725,6 +762,36 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       {error && <p className="text-xs font-bold text-red-500">{error}</p>}
 
       {showPolicyModal && <RefundPolicyModal onClose={() => setShowPolicyModal(false)} />}
+
+      {/* Pagar la prueba de una vez: se cobra ya y el plan empieza hoy. */}
+      {payNowConfirm && billingInfo && (() => {
+        const planInfo = PLANS.find(p => p.id === billingInfo.plan);
+        const cents = billingInfo.plan === 'lifetime' ? billingInfo.lifetimeAmountCents : billingInfo.amountCents;
+        const amount = cents ? `MX$${(cents / 100).toLocaleString('es-MX')}` : `el precio de tu plan ${planInfo?.label}`;
+        return (
+          <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="paynow-title">
+            <div className="theme-surface w-full max-w-md p-5 flex flex-col gap-3">
+              <p id="paynow-title" className="theme-label tkc-label">Pagar ahora</p>
+              <p className="text-sm font-black">Se te cobrará {amount} de inmediato{billingInfo.plan === 'lifetime' ? ', una sola vez' : ''}.</p>
+              <p className="tkc-hint">
+                {billingInfo.plan === 'lifetime'
+                  ? 'Tu prueba termina en este momento y Lifetime queda activo para siempre, sin más cobros.'
+                  : `Tu prueba termina en este momento y tu plan ${planInfo?.label} empieza hoy; después se renueva solo ${planInfo?.after} hasta que lo canceles.`}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                <button type="button" onClick={() => setPayNowConfirm(false)}
+                  className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
+                  Cancelar
+                </button>
+                <button type="button" onClick={payTrialNow}
+                  className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
+                  Sí, cobrar ahora
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mejorar el plan: se cobra en ese momento. Lo dice claro antes de
           pedir la tarjeta (pedido del dueño). */}

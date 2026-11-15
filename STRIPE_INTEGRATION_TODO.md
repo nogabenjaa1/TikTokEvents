@@ -2,7 +2,7 @@
 
 Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session con `ui_mode: 'form'`), con la misma versión, la misma apariencia y el mismo código de montaje ([frontend/src/stripeCheckout.js](frontend/src/stripeCheckout.js)). Hay tres tipos de sesión:
 
-- **Mensual y Anual:** suscripción (modo `subscription`). Stripe cobra solo cada mes o cada año. Se compran al momento o con 14 días gratis.
+- **Mensual y Anual:** suscripción (modo `subscription`). Stripe cobra solo cada mes o cada año. Se compran al momento o con 1 día gratis (antes 14; las pruebas que ya habían empezado conservan su fecha).
 - **Lifetime con prueba:** modo `setup`. Solo guarda la tarjeta; el pago único se cobra al día 14 desde el servidor.
 - **Lifetime al momento, complemento de Spotify y dados:** pago único (modo `payment`), como siempre.
 
@@ -41,10 +41,12 @@ Además, por cómo funciona el sitio:
 - **`customer`:** hay un cliente de Stripe por licencia, buscado por la licencia y no por el correo.
 - **Recibos:** los manda Stripe al correo del formulario si está activo *Configuración → Correos a clientes → Pagos correctos*. Para las suscripciones, activa también los correos de facturas y de renovación.
 
-## Suscripciones y prueba de 14 días
+## Suscripciones y prueba gratis (1 día)
 
-- **Prueba de Mensual o Anual:** suscripción con `trial_period_days: 14` y `trial_settings.end_behavior.missing_payment_method: 'cancel'`. Al terminar, Stripe cobra la tarjeta (`invoice.paid`) y la licencia pasa al plan.
+- **Prueba de Mensual o Anual:** suscripción con `trial_period_days: 1` y `trial_settings.end_behavior.missing_payment_method: 'cancel'`. Al terminar, Stripe cobra la tarjeta (`invoice.paid`) y la licencia pasa al plan.
 - **Prueba de Lifetime:** modo `setup` con el monto en la metadata. El servidor revisa cada 10 minutos las pruebas que terminaron y cobra el pago único con la tarjeta guardada (`off_session`, con clave de idempotencia). Si la tarjeta falla, no se reintenta: la prueba vence sola.
+- **Pagar ahora:** durante la prueba, Membresía ofrece "Pagar ahora" (con ventana de confirmación y el monto real de esa suscripción). Suscripción: `trial_end: 'now'` y Stripe cobra al instante; Lifetime: el pago único con la tarjeta guardada (`POST /api/billing/end-trial-now`).
+- **Precios por defecto:** MX$180 / MX$360 / MX$540 (US$10 / US$20 / US$30), en pesos. Si en el panel de Licencias hay precios guardados, esos mandan. Las suscripciones que ya existen conservan su precio.
 - **Una prueba por tarjeta** (tabla `trial_fingerprints`). Si la tarjeta ya tuvo prueba, la suscripción se cancela al instante sin cobrar nada y el comprador ve el aviso.
 - **Solo para empezar:** una licencia con un plan pagado vigente no puede iniciar una prueba.
 - **Durante la prueba la licencia es de tipo `trial`:** sin Spotify de la plataforma; con los anuncios de las licencias de prueba en el panel.

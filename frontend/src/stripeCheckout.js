@@ -4,7 +4,7 @@ import { backendUrl } from './auth';
 // Lo común del formulario de Checkout de Stripe (Checkout Session con
 // ui_mode 'form'): la versión de Stripe.js, la apariencia y el manejo de
 // errores del cobro (StripePaymentForm.jsx: pagos únicos, suscripciones y la
-// prueba de 14 días).
+// prueba gratis).
 
 // Se crea una sola vez por carga de página (no cada vez que se monta un
 // formulario) -- no tiene sentido recargar Stripe.js en cada intento.

@@ -1729,7 +1729,11 @@ function validPolicyAcceptedAt(value) {
 // precio en el panel, aplica a las suscripciones nuevas.
 async function createPurchaseCheckoutSession({ licenseId, license = null, planType, diceTier, spotifyAddon, trial = false, policyAcceptedAt, extraMetadata = {}, returnUrl }) {
     const stripe = getStripeClient();
-    const customer = await stripeCustomerForLicense(stripe, licenseId);
+    // El cliente que la licencia ya tiene guardado, si lo tiene: buscarlo por
+    // metadata depende del buscador de Stripe, que tarda hasta un minuto en
+    // ver a un cliente recién creado, y un cliente nuevo no ve sus tarjetas
+    // guardadas (p. ej. "Pagar ahora" poco después de empezar la prueba).
+    const customer = license?.stripe_customer_id || await stripeCustomerForLicense(stripe, licenseId);
     const common = {
         // Valores configurados en Checkout Studio de Stripe.
         ui_mode: 'form',
@@ -1783,6 +1787,13 @@ async function createPurchaseCheckoutSession({ licenseId, license = null, planTy
             // que tiene la huella para no repetir la prueba): sin Link.
             ...(trial ? { allowed_payment_method_types: ['card'] } : {}),
             payment_method_collection: 'always',
+            // La casilla "Guardar tarjeta" también en suscripciones (Stripe la
+            // admite en modo payment y subscription). Sin ella, Stripe guarda la
+            // tarjeta solo para esa suscripción (allow_redisplay 'limited') y no
+            // aparece como opción en el siguiente pago (p. ej. "Pagar ahora" al
+            // terminar la prueba). Con la casilla marcada queda 'always' y el
+            // formulario la ofrece, junto a la opción de usar otra tarjeta.
+            saved_payment_method_options: { payment_method_save: 'enabled' },
             metadata,
             subscription_data: subscriptionData,
         }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
@@ -1938,6 +1949,12 @@ async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
         licenseId: meta.licenseId, planType: meta.planType || undefined, diceTier: meta.diceTier || undefined,
         spotifyAddon: meta.spotifyAddon === 'true', stripePaymentId: paymentIntentId, newLicenseAlias,
     });
+    // Se recuerda el cliente de Stripe para que la siguiente compra use el
+    // mismo (y le muestre sus tarjetas guardadas).
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+    if (customerId && meta.licenseId) {
+        try { await db.applyBillingState(meta.licenseId, { stripeCustomerId: customerId }); } catch (err) { console.error('[Stripe] No se pudo guardar el cliente de la licencia:', err.message); }
+    }
     return 'approved';
 }
 

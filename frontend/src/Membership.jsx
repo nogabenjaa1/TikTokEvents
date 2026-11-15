@@ -11,11 +11,11 @@ import RefundPolicyModal from './RefundPolicyModal';
 // Mensual y Anual son suscripciones (se cobran solas cada periodo); Lifetime
 // es un pago único. Los tres tienen prueba gratis con tarjeta (ver
 // backend/lib/stripeBilling.js). Precios de respaldo = los de pricing.js
-// (US$5 / US$10 / US$20 en pesos); los reales llegan de /api/pricing.
+// (US$15 / US$30 / US$50 en pesos); los reales llegan de /api/pricing.
 const PLANS = [
-  { id: 'month', label: 'Mensual', mxn: 90, period: '/ mes', after: 'cada mes' },
-  { id: 'annual', label: 'Anual', mxn: 180, period: '/ año', after: 'cada año', featured: true },
-  { id: 'lifetime', label: 'Lifetime', mxn: 360, period: 'pago único', after: 'una sola vez' },
+  { id: 'month', label: 'Mensual', mxn: 270, period: '/ mes', after: 'cada mes' },
+  { id: 'annual', label: 'Anual', mxn: 540, period: '/ año', after: 'cada año', featured: true },
+  { id: 'lifetime', label: 'Lifetime', mxn: 900, period: 'pago único', after: 'una sola vez' },
 ];
 const SUBSCRIPTION_PLANS = ['month', 'annual'];
 // La prueba gratis dura 1 día (antes 14; las que ya habían empezado

@@ -48,6 +48,10 @@ function recordFetch(status = 200, body = '{"access_token":"t","expires_in":3600
 const basic = (id, secret) => 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
 
 // ── Who may use Spotify ──────────────────────────────────
+// Default prices (pricing.js): Monthly MX$180 (US$10) and the Spotify add-on MX$180.
+const MONTH_CENTS = 18000;
+const ADDON_CENTS = 18000;
+
 test('Lifetime, Annual, the admin license and a Monthly with the add-on can use Spotify; nobody else', () => {
   for (const license of [ADMIN, LIFETIME, ANNUAL, MONTHLY_ADDON]) assert.equal(spotify.isLicenseAllowed(license), true, license.id);
   for (const license of [MONTHLY, TRIAL, { license_type: 'day' }, { license_type: 'week' }, undefined, null]) {
@@ -365,14 +369,14 @@ test('the add-on price is separate from the plans: it adds to a purchase but can
   assert.ok(!('spotify_addon' in pricing.getAllPlanPricesCents()));
   assert.equal(pricing.getSpotifyAddonPriceCents(), 18000);
   assert.equal(pricing.computeAmountCents({ spotifyAddon: true }), 18000);
-  assert.equal(pricing.computeAmountCents({ planType: 'month', spotifyAddon: true }), 12600 + 18000);
-  assert.equal(pricing.computeAmountCents({ planType: 'month', spotifyAddon: false }), 12600);
-  assert.equal(pricing.computeAmountCents({ planType: 'month' }), 12600);
+  assert.equal(pricing.computeAmountCents({ planType: 'month', spotifyAddon: true }), MONTH_CENTS + ADDON_CENTS);
+  assert.equal(pricing.computeAmountCents({ planType: 'month', spotifyAddon: false }), MONTH_CENTS);
+  assert.equal(pricing.computeAmountCents({ planType: 'month' }), MONTH_CENTS);
 
   await pricing.setSpotifyAddonPriceCents(25000, 'admin');
   assert.equal(pricing.getSpotifyAddonPriceCents(), 25000);
   assert.deepEqual(dbStub.saved.at(-1), ['spotify_addon', 25000]);
-  assert.equal(pricing.getPlanPriceCents('month'), 12600); // the plans are untouched
+  assert.equal(pricing.getPlanPriceCents('month'), MONTH_CENTS); // the plans are untouched
   await assert.rejects(() => pricing.setSpotifyAddonPriceCents(50, 'admin'), /precio mínimo/);
   assert.equal(pricing.getSpotifyAddonPriceCents(), 25000);
   await assert.rejects(() => pricing.setPlanPriceCents('spotify_addon', 5000, 'admin'), /Plan inválido/);
@@ -461,7 +465,7 @@ test('Monthly plus the add-on in one payment applies both, and the recorded amou
   const { context, events } = purchaseContext();
   dbStub.overrides = {};
   await context.applyApprovedStripePaymentIfNew({ licenseId: 'm1', planType: 'month', spotifyAddon: true, stripePaymentId: 'pi_2' });
-  assert.equal(events.stripePayments[0].amountCents, 12600 + 18000);
+  assert.equal(events.stripePayments[0].amountCents, MONTH_CENTS + ADDON_CENTS);
   const update = events.applied[0][1];
   assert.equal(update.licenseType, 'month');
   assert.equal(update.spotifyAddon, true);
@@ -523,7 +527,7 @@ test('a charged payment that cannot be applied is left as a pending note for the
   assert.equal(combo.events.failures.length, 1);
   const note = combo.events.failures[0];
   assert.deepEqual([note.provider, note.providerPaymentId, note.licenseId, note.planType, note.spotifyAddon, note.amountCents, note.reason, note.error],
-    ['stripe', 'pi_dead', 'm1', 'month', true, 12600 + 18000, 'apply_failed', 'db down']);
+    ['stripe', 'pi_dead', 'm1', 'month', true, MONTH_CENTS + ADDON_CENTS, 'apply_failed', 'db down']);
 
   const stripe = purchaseContext();
   stripe.context.setTimeout = (fn) => { fn(); return 0; };
@@ -606,7 +610,7 @@ test('/api/pricing publishes the add-on price and the slot count, and keeps work
   const ok = await serve(['l1', 'l2']);
   assert.deepEqual(ok.spotifySlots, { total: SLOTS, used: 2 });
   assert.equal(ok.spotifyAddon, 18000);
-  assert.deepEqual(ok.prices, { month: 12600, annual: 108000, lifetime: 180000 });
+  assert.deepEqual(ok.prices, { month: 18000, annual: 36000, lifetime: 54000 });
   const degraded = await serve(new Error('db caída'));
   assert.equal(degraded.success, true);
   assert.equal(degraded.spotifySlots, null);
@@ -768,7 +772,7 @@ test('a purchase without an account creates its license only once the charge is 
   assert.equal(row.keyHash, 'hash(novia-yearly-KEY)');
   assert.equal(row.keyEncrypted, 'enc(novia-yearly-KEY)', 'and the admin can show it again later');
   assert.equal(fresh.events.applied.length, 0, 'a new license is created, not updated');
-  assert.equal(fresh.events.stripePayments[0].amountCents, 108000);
+  assert.equal(fresh.events.stripePayments[0].amountCents, 36000);
 
   // The webhook and /guest-confirm both arrive: only the first one creates anything.
   const repeated = purchaseContext();

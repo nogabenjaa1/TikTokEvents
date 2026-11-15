@@ -1,10 +1,14 @@
-// Suscripciones y prueba de 14 días con Stripe (pedido del dueño):
+// Suscripciones y prueba gratis con Stripe (pedido del dueño):
 // - Mensual y Anual son suscripciones: Stripe cobra solo cada mes o cada año.
-//   Se pueden comprar al momento o con 14 días gratis; al terminar la prueba,
-//   Stripe cobra la tarjeta (salvo que se cancele antes desde el portal).
-// - Lifetime sigue siendo un pago único. Su prueba de 14 días guarda la tarjeta
-//   (Checkout en modo setup) y al día 14 este módulo cobra el pago único con
-//   esa tarjeta (chargeDueLifetimeTrials).
+//   Se pueden comprar al momento o con TRIAL_DAYS gratis; al terminar la
+//   prueba, Stripe cobra la tarjeta (salvo que se cancele antes desde el portal).
+// - Lifetime sigue siendo un pago único. Su prueba guarda la tarjeta (Checkout
+//   en modo setup) y al terminar este módulo cobra el pago único con esa
+//   tarjeta (chargeDueLifetimeTrials).
+// - Durante la prueba se puede pagar de una vez (endTrialNow).
+// - La prueba duraba 14 días; desde nov 2026 dura 1. Las que ya habían
+//   empezado conservan su fecha (se les prometió por escrito): su trial_end
+//   vive en Stripe y lifetime_trial_charge_at en la base.
 // - Una prueba por tarjeta física (huella de Stripe, tabla trial_fingerprints):
 //   si la tarjeta ya tuvo prueba, la suscripción se cancela al instante sin
 //   cobrar nada y no se da la prueba.
@@ -15,7 +19,7 @@
 // diga el navegador ni el cuerpo de un webhook): las funciones reciben ids o la
 // sesión ya pedida por el servidor.
 
-const TRIAL_DAYS = 14;
+const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Margen tras el fin del periodo: si el cobro de la renovación falla, Stripe
 // reintenta unos días; la licencia no se corta en el primer intento.
@@ -71,6 +75,8 @@ function createStripeBilling(deps) {
             subscriptionPlan: planType,
             subscriptionCancelAt: sub.cancel_at ? sub.cancel_at * 1000 : (sub.cancel_at_period_end ? periodEndMs(sub) : null),
         };
+        const unitAmount = sub.items?.data?.[0]?.price?.unit_amount;
+        if (Number.isFinite(unitAmount)) fields.subscriptionAmountCents = unitAmount;
         const current = Number(license.expires_at) || 0;
         if (sub.status === 'trialing') {
             // Prueba pedida: tipo 'trial' hasta que se cobre. Un trial_end puesto
@@ -212,42 +218,68 @@ function createStripeBilling(deps) {
     async function chargeDueLifetimeTrials(now = Date.now()) {
         const due = await db.listDueLifetimeTrials(now);
         const results = [];
-        for (const license of due) {
-            // Se apaga ANTES de cobrar: si el proceso se cae a la mitad, nunca se
-            // cobra dos veces (la clave de idempotencia de Stripe cubre el resto).
-            await db.applyBillingState(license.id, { lifetimeTrialChargeAt: null });
-            const amount = Number(license.lifetime_trial_amount_cents) || pricing.getPlanPriceCents('lifetime');
-            try {
-                const stripe = getStripeClient();
-                const intent = await stripe.paymentIntents.create({
-                    amount, currency: 'mxn',
-                    customer: license.stripe_customer_id,
-                    payment_method: license.lifetime_trial_payment_method,
-                    off_session: true, confirm: true,
-                    description: 'BenjaApis - Lifetime (fin de la prueba de 14 días)',
-                    metadata: { licenseId: license.id, planType: 'lifetime', diceTier: '', spotifyAddon: '', lifetimeTrial: '1' },
-                }, { apiVersion, idempotencyKey: `lifetime-trial-${license.id}-${license.lifetime_trial_charge_at}` });
-                if (intent.status === 'succeeded') {
-                    await db.applyBillingState(license.id, { subscriptionStatus: 'active', subscriptionCancelAt: null, lifetimeTrialPaymentMethod: null });
-                    await applyApprovedStripePaymentIfNew({ licenseId: license.id, planType: 'lifetime', stripePaymentId: intent.id, rotateKey: false });
-                    results.push({ licenseId: license.id, status: 'charged' });
-                } else {
-                    await db.applyBillingState(license.id, { subscriptionStatus: 'payment_failed' });
-                    results.push({ licenseId: license.id, status: intent.status });
-                }
-            } catch (err) {
-                // Tarjeta rechazada o que pide autenticarse: no se reintenta; la
-                // prueba vence sola y puede comprar Lifetime desde Membresía.
-                log.error(`[Stripe] No se pudo cobrar el fin de la prueba de Lifetime (licencia ${license.id}):`, err.message);
-                await db.applyBillingState(license.id, { subscriptionStatus: 'payment_failed' });
-                pushLicenseState?.(license.id);
-                results.push({ licenseId: license.id, status: 'failed' });
-            }
-        }
+        for (const license of due) results.push(await chargeLifetimeTrial(license));
         return results;
     }
 
-    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, remainingPaidMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, cancelPreviousSubscription, subscriptionId };
+    // El pago único de UNA prueba de Lifetime (al vencer, o antes si el
+    // streamer decide pagar de una vez).
+    async function chargeLifetimeTrial(license) {
+        // Se apaga ANTES de cobrar: si el proceso se cae a la mitad, nunca se
+        // cobra dos veces (la clave de idempotencia de Stripe cubre el resto).
+        await db.applyBillingState(license.id, { lifetimeTrialChargeAt: null });
+        const amount = Number(license.lifetime_trial_amount_cents) || pricing.getPlanPriceCents('lifetime');
+        try {
+            const stripe = getStripeClient();
+            const intent = await stripe.paymentIntents.create({
+                amount, currency: 'mxn',
+                customer: license.stripe_customer_id,
+                payment_method: license.lifetime_trial_payment_method,
+                off_session: true, confirm: true,
+                description: 'BenjaApis - Lifetime (fin de la prueba gratis)',
+                metadata: { licenseId: license.id, planType: 'lifetime', diceTier: '', spotifyAddon: '', lifetimeTrial: '1' },
+            }, { apiVersion, idempotencyKey: `lifetime-trial-${license.id}-${license.lifetime_trial_charge_at}` });
+            if (intent.status === 'succeeded') {
+                await db.applyBillingState(license.id, { subscriptionStatus: 'active', subscriptionCancelAt: null, lifetimeTrialPaymentMethod: null });
+                await applyApprovedStripePaymentIfNew({ licenseId: license.id, planType: 'lifetime', stripePaymentId: intent.id, rotateKey: false });
+                return { licenseId: license.id, status: 'charged' };
+            }
+            await db.applyBillingState(license.id, { subscriptionStatus: 'payment_failed' });
+            return { licenseId: license.id, status: intent.status };
+        } catch (err) {
+            // Tarjeta rechazada o que pide autenticarse: no se reintenta; la
+            // prueba vence sola y puede comprar Lifetime desde Membresía.
+            log.error(`[Stripe] No se pudo cobrar el fin de la prueba de Lifetime (licencia ${license.id}):`, err.message);
+            await db.applyBillingState(license.id, { subscriptionStatus: 'payment_failed' });
+            pushLicenseState?.(license.id);
+            return { licenseId: license.id, status: 'failed' };
+        }
+    }
+
+    // "Pagar ahora" durante la prueba: termina la prueba y cobra en ese momento.
+    // Suscripción: trial_end 'now' (Stripe cobra la primera factura al instante
+    // y el periodo empieza hoy). Lifetime: el pago único con la tarjeta guardada.
+    // Devuelve 'charged', 'failed' o 'none' (no había prueba que cobrar).
+    async function endTrialNow(license) {
+        if (!license || license.license_type !== 'trial') return { status: 'none' };
+        if (license.lifetime_trial_charge_at && license.lifetime_trial_payment_method) {
+            const result = await chargeLifetimeTrial(license);
+            return { status: result.status === 'charged' ? 'charged' : 'failed' };
+        }
+        if (!license.stripe_subscription_id || license.subscription_status !== 'trialing') return { status: 'none' };
+        const stripe = getStripeClient();
+        try {
+            await stripe.subscriptions.update(license.stripe_subscription_id, { trial_end: 'now', proration_behavior: 'none' }, { apiVersion });
+        } catch (err) {
+            log.error(`[Stripe] No se pudo terminar la prueba de la licencia ${license.id}:`, err.message);
+            return { status: 'failed' };
+        }
+        const sub = await stripe.subscriptions.retrieve(license.stripe_subscription_id, {}, { apiVersion });
+        await syncLicenseFromSubscription(sub);
+        return { status: sub.status === 'active' ? 'charged' : 'failed', subscriptionStatus: sub.status };
+    }
+
+    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, remainingPaidMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, chargeLifetimeTrial, endTrialNow, cancelPreviousSubscription, subscriptionId };
 }
 
 module.exports = { createStripeBilling, TRIAL_DAYS, SUBSCRIPTION_PLANS };

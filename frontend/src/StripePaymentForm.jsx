@@ -18,7 +18,7 @@ const GUEST_PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Cuando
 // ruta sin sesión y la licencia nace solo si el cobro se confirma; entonces
 // `onSuccess` recibe { key, token, license } para entrar con ella (ver
 // guestPurchase.js).
-// `trial`: la prueba de 14 días del plan (suscripción con prueba o, en
+// `trial`: la prueba gratis del plan (suscripción con prueba o, en
 // Lifetime, guardar la tarjeta para cobrar al terminar).
 export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, trial = false, guestAlias, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(true);

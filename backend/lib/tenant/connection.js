@@ -14,7 +14,7 @@ const {
     RECONNECT_LOG_EVERY,
 } = require('../../lib/tenantHelpers');
 
-// ¿Es una prueba de 14 días con tarjeta? Se lee de la base en el momento: el
+// ¿Es una prueba gratis con tarjeta? Se lee de la base en el momento: el
 // tipo guardado en el Tenant puede ser de antes de que empezara la prueba.
 async function isCardBackedTrial(licenseId) {
     try {
@@ -225,7 +225,7 @@ module.exports = {
         // (está usando SU propia prueba con otro usuario, no es abuso
         // cruzado); 'used-by-other' sí revoca: alguien más ya reclamó ese
         // mismo usuario de TikTok con otra prueba antes.
-        // La prueba de 14 días con tarjeta queda fuera: ya está limitada a una por
+        // La prueba gratis con tarjeta queda fuera: ya está limitada a una por
         // tarjeta, y revocarla dejaría a Stripe cobrando una licencia revocada al
         // terminar la prueba (ver lib/stripeBilling.js).
         const cardTrial = this.licenseType === 'trial' ? await isCardBackedTrial(this.licenseId) : false;

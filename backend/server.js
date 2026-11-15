@@ -406,7 +406,7 @@ function sessionLicense(row) {
         diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         spotifyAddon: !!row.spotify_addon,
         overlayKey: auth.overlayTokenFor(row),
-        // Suscripción o prueba de 14 días (ver lib/stripeBilling.js): Membresía
+        // Suscripción o prueba gratis (ver lib/stripeBilling.js): Membresía
         // dice cuándo se cobra o se renueva y ofrece gestionarla.
         billing: row.subscription_plan ? {
             plan: row.subscription_plan,
@@ -414,6 +414,7 @@ function sessionLicense(row) {
             cancelAt: row.subscription_cancel_at ? Number(row.subscription_cancel_at) : null,
             lifetimeChargeAt: row.lifetime_trial_charge_at ? Number(row.lifetime_trial_charge_at) : null,
             lifetimeAmountCents: row.lifetime_trial_amount_cents || null,
+            amountCents: row.subscription_amount_cents || null,
             hasSubscription: !!row.stripe_subscription_id,
         } : null,
     };
@@ -1495,7 +1496,7 @@ function computeLicenseUpdateForPurchase(license, { planType, diceTier, spotifyA
         update.expiresAt = baseExpiresAt === null ? null : baseExpiresAt + remainingMs;
 
         // El cobro al final de una prueba (Lifetime) no cambia la clave: el
-        // streamer ya la usa desde hace 14 días.
+        // streamer ya la usa desde que empezó la prueba.
         if (rotateKey) {
             const newRawKey = auth.generateLabeledKey(license.username, PLAN_KEY_LABELS[planType] || planType.toLowerCase());
             Object.assign(update, storedKeyFields(newRawKey));
@@ -1719,7 +1720,7 @@ function validPolicyAcceptedAt(value) {
 }
 
 // La Checkout Session de una compra, con o sin cuenta (ver lib/stripeBilling.js):
-// - Mensual y Anual: suscripción (mode 'subscription'), con o sin 14 días gratis.
+// - Mensual y Anual: suscripción (mode 'subscription'), con o sin prueba gratis.
 // - Lifetime con prueba: modo 'setup' (solo guarda la tarjeta; el pago único
 //   se cobra al día 14).
 // - Lifetime al momento, complemento de Spotify y dados: pago único, como siempre.
@@ -1837,7 +1838,7 @@ async function createPurchaseCheckoutSession({ licenseId, license = null, planTy
 
 // Lo que se puede comprar en una sola sesión: Mensual y Anual son suscripciones,
 // así que van solos (el complemento o los dados se compran aparte); la prueba
-// de 14 días es solo para un plan, y solo para quien no tiene un plan pagado
+// gratis es solo para un plan, y solo para quien no tiene un plan pagado
 // vigente (una licencia que ya paga no pasa a "prueba").
 function checkoutItemsError(license, { planType, diceTier, spotifyAddon, trial }) {
     if (trial !== undefined && typeof trial !== 'boolean') return 'Prueba invalida';
@@ -1885,7 +1886,7 @@ app.post('/api/payments/stripe/checkout-session', auth.requireAuth, paymentLimit
 const sha256Hex = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 
 // Compra de un plan SIN cuenta (Membresía, con solo un alias), al momento o
-// con prueba de 14 días. No se crea nada aquí: se reserva el id de la
+// con prueba gratis. No se crea nada aquí: se reserva el id de la
 // licencia, viaja en la metadata del pago junto con el alias, y la licencia
 // nace solo cuando Stripe confirma el cobro o la tarjeta de la prueba (ver
 // createPurchasedLicense y lib/stripeBilling.js). Solo planes: el complemento
@@ -2022,6 +2023,24 @@ app.post('/api/billing/portal', auth.requireAuth, paymentLimiter, async (req, re
     } catch (err) {
         console.error('[Stripe] No se pudo abrir el portal de clientes:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo abrir la gestión de tu suscripción. Intenta de nuevo en un momento.' });
+    }
+});
+
+// "Pagar ahora" durante la prueba gratis: se cobra en ese momento y el plan
+// empieza hoy (ver billing.endTrialNow). Membresía lo pide con una ventana de
+// confirmación que dice el monto.
+app.post('/api/billing/end-trial-now', auth.requireAuth, paymentLimiter, async (req, res) => {
+    try {
+        const result = await billing.endTrialNow(req.license);
+        if (result.status === 'none') return res.status(400).json({ success: false, error: 'No tienes una prueba gratis que cobrar.' });
+        if (result.status !== 'charged') {
+            return res.status(402).json({ success: false, error: 'No se pudo cobrar tu tarjeta. Revísala en "Gestionar suscripción" o intenta con otra.' });
+        }
+        console.log(`[Stripe] Prueba cobrada de una vez por el streamer (licencia ${req.license.id}).`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Stripe] No se pudo cobrar la prueba de una vez:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo completar el pago. Intenta de nuevo en un momento.' });
     }
 });
 

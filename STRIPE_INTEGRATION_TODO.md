@@ -6,7 +6,7 @@ Todo lo de Stripe usa el **formulario de Checkout** de Stripe (Checkout Session 
 - **Lifetime con prueba:** modo `setup`. Solo guarda la tarjeta; el pago único se cobra al día 14 desde el servidor.
 - **Lifetime al momento, complemento de Spotify y dados:** pago único (modo `payment`), como siempre.
 
-El formulario de Stripe pide todo dentro de su iframe: Google Pay, Apple Pay y Link arriba, luego el correo, el nombre (opcional) y la tarjeta. La página de Membresía solo pide el alias (sin cuenta) y la casilla de la política de reembolsos. La prueba de 7 días (anuncios o verificar tarjeta) ya no existe; las licencias de esa prueba que sigan vigentes vencen solas.
+El formulario de Stripe pide todo dentro de su iframe: el correo, el nombre (opcional) y el método de pago. Google Pay y Apple Pay salen como una opción más de la lista, junto a "Tarjeta" (no como botón grande arriba: `WALLETS_IN_LIST` en frontend/src/stripeCheckout.js). La página de Membresía solo pide el alias (sin cuenta) y la casilla de la política de reembolsos. La prueba de 7 días (anuncios o verificar tarjeta) ya no existe; las licencias de esa prueba que sigan vigentes vencen solas.
 
 ## Valores por reemplazar
 

@@ -45,14 +45,13 @@ export const CHECKOUT_APPEARANCE = {
   },
 };
 
-// Botones de billetera del cobro. Con 'auto' (el default) Stripe solo muestra
-// Google Pay cuando SU cálculo dice que conviene a la conversión, aunque el
-// dominio esté registrado y el navegador tenga tarjeta: en el sitio real no
-// salía. Con 'always' sale siempre que el navegador pueda pagar con Google
-// Pay (Chrome o Android con una tarjeta en la cuenta de Google); igual con
-// Apple Pay en Safari. Solo para el cobro: la verificación de la prueba
-// gratis se queda en solo tarjeta.
-export const EXPRESS_CHECKOUT_ALWAYS = { expressCheckout: { paymentMethods: { googlePay: 'always', applePay: 'always' } } };
+// Google Pay y Apple Pay van DENTRO de la lista de métodos de pago (una opción
+// más, junto a "Tarjeta"), no como el botón negro grande de arriba. Pedido
+// explícito: que el formulario se vea siempre igual. Con 'never' en el botón
+// rápido, Stripe los ofrece en la lista cuando el navegador puede pagar con
+// ellos (Chrome o Android con una tarjeta en Google; Safari con Apple Pay).
+// Antes estaba en 'always' (botón arriba) porque con 'auto' a veces no salía.
+export const WALLETS_IN_LIST = { expressCheckout: { paymentMethods: { googlePay: 'never', applePay: 'never' } } };
 
 export const LOAD_ERROR_MESSAGE = 'No se pudo cargar el formulario de Stripe. Intenta de nuevo en un momento.';
 
@@ -87,7 +86,7 @@ export function reportStripeError(context, error) {
 // del propio formulario; `confirm()` termina la operación en Stripe sin
 // sacarlo del sitio (redirect 'if_required': el 3DS va en un modal) y
 // devuelve { type: 'success' | 'error', ... }. `formOptions` se suma a las
-// opciones de createForm (ver EXPRESS_CHECKOUT_ALWAYS). Devuelve el
+// opciones de createForm (ver WALLETS_IN_LIST). Devuelve el
 // formulario (para destroy()) o lanza si Stripe.js no se pudo iniciar.
 export async function mountCheckoutForm({ clientSecret, container, onReady, onLoadError, onConfirm, formOptions = {} }) {
   const stripe = await getStripePromise();
@@ -95,7 +94,16 @@ export async function mountCheckoutForm({ clientSecret, container, onReady, onLo
     throw new Error('Stripe.js no disponible');
   }
   const checkout = stripe.initCheckoutFormSdk({ clientSecret, appearance: CHECKOUT_APPEARANCE });
-  const form = checkout.createForm({ layout: 'expanded', ...formOptions });
+  // La documentación de createForm solo promete 'auto' y 'always' para los
+  // botones rápidos: si esta versión de Stripe.js rechaza las opciones, se
+  // monta igual con las de siempre en vez de dejar al comprador sin formulario.
+  let form;
+  try {
+    form = checkout.createForm({ layout: 'expanded', ...formOptions });
+  } catch (error) {
+    reportStripeError('checkout-form-options', { message: error?.message || String(error) });
+    form = checkout.createForm({ layout: 'expanded' });
+  }
   form.on('ready', () => onReady?.());
   form.on('loaderror', (event) => onLoadError?.(event?.error || { message: 'loaderror' }));
   form.mount(container);

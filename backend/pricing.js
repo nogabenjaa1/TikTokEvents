@@ -7,14 +7,14 @@
 // ==========================================
 const db = require('./db');
 
-// Equivalentes en pesos de US$10 / US$20 / US$30 (a 18 por dólar; se sigue
+// Equivalentes en pesos de US$5 / US$10 / US$20 (a 18 por dólar; se sigue
 // cobrando en MXN: Stripe no deja que un mismo cliente tenga cobros en dos
 // monedas). OJO: si en el panel de Licencias hay un precio guardado para un
 // plan, ese manda sobre estos (ver pricing_overrides).
 const PLAN_PRICES_CENTS = {
-    month: 18000,    // $180 MXN -- US$10/mes
-    annual: 36000,   // $360 MXN -- US$20/año
-    lifetime: 54000, // $540 MXN -- US$30 unico
+    month: 9000,     // $90 MXN -- US$5/mes
+    annual: 18000,   // $180 MXN -- US$10/año
+    lifetime: 36000, // $360 MXN -- US$20 unico
 };
 
 // Ranking para no degradar un nivel ya comprado (ver applyPurchase en

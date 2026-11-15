@@ -48,8 +48,8 @@ function recordFetch(status = 200, body = '{"access_token":"t","expires_in":3600
 const basic = (id, secret) => 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
 
 // ── Who may use Spotify ──────────────────────────────────
-// Default prices (pricing.js): Monthly MX$180 (US$10) and the Spotify add-on MX$180.
-const MONTH_CENTS = 18000;
+// Default prices (pricing.js): Monthly MX$90 (US$5) and the Spotify add-on MX$180.
+const MONTH_CENTS = 9000;
 const ADDON_CENTS = 18000;
 
 test('Lifetime, Annual, the admin license and a Monthly with the add-on can use Spotify; nobody else', () => {
@@ -610,7 +610,7 @@ test('/api/pricing publishes the add-on price and the slot count, and keeps work
   const ok = await serve(['l1', 'l2']);
   assert.deepEqual(ok.spotifySlots, { total: SLOTS, used: 2 });
   assert.equal(ok.spotifyAddon, 18000);
-  assert.deepEqual(ok.prices, { month: 18000, annual: 36000, lifetime: 54000 });
+  assert.deepEqual(ok.prices, { month: 9000, annual: 18000, lifetime: 36000 });
   const degraded = await serve(new Error('db caída'));
   assert.equal(degraded.success, true);
   assert.equal(degraded.spotifySlots, null);
@@ -772,7 +772,7 @@ test('a purchase without an account creates its license only once the charge is 
   assert.equal(row.keyHash, 'hash(novia-yearly-KEY)');
   assert.equal(row.keyEncrypted, 'enc(novia-yearly-KEY)', 'and the admin can show it again later');
   assert.equal(fresh.events.applied.length, 0, 'a new license is created, not updated');
-  assert.equal(fresh.events.stripePayments[0].amountCents, 36000);
+  assert.equal(fresh.events.stripePayments[0].amountCents, 18000);
 
   // The webhook and /guest-confirm both arrive: only the first one creates anything.
   const repeated = purchaseContext();

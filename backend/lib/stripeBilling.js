@@ -5,7 +5,12 @@
 // - Lifetime sigue siendo un pago único. Su prueba guarda la tarjeta (Checkout
 //   en modo setup) y al terminar este módulo cobra el pago único con esa
 //   tarjeta (chargeDueLifetimeTrials).
-// - Durante la prueba se puede pagar de una vez (endTrialNow).
+// - "Pagar ahora" durante la prueba es una compra normal con el formulario de
+//   Stripe (tarjeta o Google Pay): al cobrarse, la suscripción nueva reemplaza
+//   a la de prueba (cancelPreviousSubscription) o Lifetime cierra su prueba.
+// - REGLA: el plan solo se da con una FACTURA PAGADA. Bug real: al terminar una
+//   prueba Stripe pone la suscripción en 'active' pero cobra la factura hasta
+//   una hora después; se daba el plan y el cobro luego salía bloqueado.
 // - La prueba duraba 14 días; desde nov 2026 dura 1. Las que ya habían
 //   empezado conservan su fecha (se les prometió por escrito): su trial_end
 //   vive en Stripe y lifetime_trial_charge_at en la base.
@@ -57,6 +62,42 @@ function createStripeBilling(deps) {
         return true;
     }
 
+    // ¿Está pagada la última factura de la suscripción? Se pide a Stripe si no
+    // viene expandida. Sin factura, o con error al pedirla: no (nunca se da un
+    // plan por las dudas).
+    async function latestInvoicePaid(sub) {
+        const latest = sub?.latest_invoice;
+        if (!latest) return false;
+        if (typeof latest === 'object') return latest.status === 'paid';
+        try {
+            const invoice = await getStripeClient().invoices.retrieve(latest, {}, { apiVersion });
+            return invoice?.status === 'paid';
+        } catch (err) {
+            log.error(`[Stripe] No se pudo leer la factura ${latest}:`, err.message);
+            return false;
+        }
+    }
+
+    // Cobra en el momento una factura nueva de una de nuestras suscripciones
+    // (fin de prueba o renovación): Stripe la deja en borrador ~1 hora antes de
+    // cobrarla, y mientras tanto la licencia no tiene el periodo nuevo. Si el
+    // cobro falla, Stripe sigue con sus reintentos y la suscripción queda en
+    // past_due (no se da nada).
+    async function collectInvoiceNow(invoice) {
+        const subId = subscriptionId(invoice?.subscription || invoice?.parent?.subscription_details?.subscription);
+        if (!subId || invoice.status !== 'draft') return { status: 'skipped' };
+        if (!(await db.findByStripeSubscriptionId(subId))) return { status: 'skipped' };
+        const stripe = getStripeClient();
+        try {
+            await stripe.invoices.finalizeInvoice(invoice.id, {}, { apiVersion });
+            const paid = await stripe.invoices.pay(invoice.id, {}, { apiVersion });
+            return { status: paid?.status === 'paid' ? 'paid' : 'open' };
+        } catch (err) {
+            log.error(`[Stripe] El cobro de la factura ${invoice.id} no pasó:`, err.message);
+            return { status: 'failed' };
+        }
+    }
+
     // Pasa el estado de una suscripción de Stripe a su licencia.
     async function syncLicenseFromSubscription(sub) {
         const meta = sub?.metadata || {};
@@ -83,9 +124,12 @@ function createStripeBilling(deps) {
             // para respetar el tiempo que ya tenía pagado sigue siendo su plan.
             fields.licenseType = isTrial ? 'trial' : planType;
             fields.expiresAt = Math.max(current, (sub.trial_end || 0) * 1000);
-        } else if (sub.status === 'active') {
-            // 'active' = Stripe ya cobró la factura del periodo: solo entonces se
-            // da el plan y se extiende el vencimiento.
+        } else if (sub.status === 'active' && await latestInvoicePaid(sub)) {
+            // Solo con la factura del periodo PAGADA se da el plan y se extiende
+            // el vencimiento. 'active' sola no basta: al terminar una prueba (o
+            // al renovar) Stripe pone 'active' y cobra la factura después; si
+            // ese cobro falla o lo bloquea Stripe, nunca se pagó nada. El
+            // invoice.paid que llega al cobrarse vuelve a pasar por aquí.
             fields.licenseType = planType;
             const end = periodEndMs(sub);
             if (end) fields.expiresAt = Math.max(current, end + RENEWAL_GRACE_MS);
@@ -268,30 +312,7 @@ function createStripeBilling(deps) {
         }
     }
 
-    // "Pagar ahora" durante la prueba: termina la prueba y cobra en ese momento.
-    // Suscripción: trial_end 'now' (Stripe cobra la primera factura al instante
-    // y el periodo empieza hoy). Lifetime: el pago único con la tarjeta guardada.
-    // Devuelve 'charged', 'failed' o 'none' (no había prueba que cobrar).
-    async function endTrialNow(license) {
-        if (!license || license.license_type !== 'trial') return { status: 'none' };
-        if (license.lifetime_trial_charge_at && license.lifetime_trial_payment_method) {
-            const result = await chargeLifetimeTrial(license);
-            return { status: result.status === 'charged' ? 'charged' : 'failed' };
-        }
-        if (!license.stripe_subscription_id || license.subscription_status !== 'trialing') return { status: 'none' };
-        const stripe = getStripeClient();
-        try {
-            await stripe.subscriptions.update(license.stripe_subscription_id, { trial_end: 'now', proration_behavior: 'none' }, { apiVersion });
-        } catch (err) {
-            log.error(`[Stripe] No se pudo terminar la prueba de la licencia ${license.id}:`, err.message);
-            return { status: 'failed' };
-        }
-        const sub = await stripe.subscriptions.retrieve(license.stripe_subscription_id, {}, { apiVersion });
-        await syncLicenseFromSubscription(sub);
-        return { status: sub.status === 'active' ? 'charged' : 'failed', subscriptionStatus: sub.status };
-    }
-
-    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, remainingPaidMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, chargeLifetimeTrial, endTrialNow, cancelPreviousSubscription, subscriptionId };
+    return { TRIAL_DAYS, SUBSCRIPTION_PLANS, periodEndMs, remainingPaidMs, syncLicenseFromSubscription, fulfillBillingSession, fulfillSubscriptionSession, fulfillLifetimeTrialSession, chargeDueLifetimeTrials, chargeLifetimeTrial, cancelPreviousSubscription, collectInvoiceNow, latestInvoicePaid, subscriptionId };
 }
 
 module.exports = { createStripeBilling, TRIAL_DAYS, SUBSCRIPTION_PLANS };

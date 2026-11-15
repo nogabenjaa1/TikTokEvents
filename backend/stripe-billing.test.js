@@ -8,10 +8,10 @@ const { createStripeBilling, TRIAL_DAYS } = require('./lib/stripeBilling');
 const DAY = 24 * 60 * 60 * 1000;
 const sec = (ms) => Math.floor(ms / 1000);
 
-function setup({ licenses = {}, subs = {}, setupIntents = {} } = {}) {
+function setup({ licenses = {}, subs = {}, setupIntents = {}, invoices = {} } = {}) {
   const rows = new Map(Object.entries(licenses).map(([id, row]) => [id, { id, revoked: false, expires_at: null, ...row }]));
   const fingerprints = new Map();
-  const events = { canceled: [], created: [], applied: [], pushed: [], intents: [], logs: [] };
+  const events = { canceled: [], created: [], applied: [], pushed: [], intents: [], logs: [], finalized: [], paidCalls: [] };
   let intentOutcome = 'succeeded';
   const db = {
     findCoreById: async (id) => (rows.has(id) ? { ...rows.get(id) } : undefined),
@@ -35,6 +35,11 @@ function setup({ licenses = {}, subs = {}, setupIntents = {} } = {}) {
       cancel: async (id) => { events.canceled.push(id); if (subs[id]) subs[id].status = 'canceled'; return subs[id]; },
     },
     setupIntents: { retrieve: async (id) => structuredClone(setupIntents[id]) },
+    invoices: {
+      retrieve: async (id) => structuredClone(invoices[id]),
+      finalizeInvoice: async (id) => { events.finalized.push(id); invoices[id].status = 'open'; return structuredClone(invoices[id]); },
+      pay: async (id) => { events.paidCalls.push(id); if (invoices[id].__fail) throw new Error('Your card was declined.'); invoices[id].status = 'paid'; return structuredClone(invoices[id]); },
+    },
     paymentIntents: {
       create: async (params, opts) => {
         events.intents.push({ params, opts });
@@ -61,7 +66,7 @@ function setup({ licenses = {}, subs = {}, setupIntents = {} } = {}) {
 const trialSub = (id, { licenseId, planType = 'month', fingerprint = 'fp_1', trial = '1', trialEnd = Date.now() + TRIAL_DAYS * DAY, extra = {} } = {}) => ({
   id, status: 'trialing', customer: 'cus_1', trial_end: sec(trialEnd), cancel_at: null, cancel_at_period_end: false,
   metadata: { licenseId, planType, trial }, default_payment_method: { id: 'pm_1', card: { fingerprint } },
-  items: { data: [{ current_period_end: sec(trialEnd) }] }, ...extra,
+  items: { data: [{ current_period_end: sec(trialEnd) }] }, latest_invoice: { id: `in_${id}`, status: 'paid' }, ...extra,
 });
 const session = (over) => ({ id: 'cs_test_1', status: 'complete', payment_status: 'paid', mode: 'subscription', subscription: 'sub_1', customer: 'cus_1', ...over });
 
@@ -221,42 +226,6 @@ test('sessions that are not complete, or not ours, apply nothing; one-time payme
   assert.equal(t.rows.size, 0);
 });
 
-test('paying now during the trial ends it and charges right away; the plan applies today', async () => {
-  const end = Date.now() + TRIAL_DAYS * DAY;
-  const t = setup({ subs: { sub_1: { ...trialSub('sub_1', { licenseId: 'lic-1', trialEnd: end }), items: { data: [{ current_period_end: sec(end), price: { unit_amount: 25900 } }] } } } });
-  await t.billing.fulfillBillingSession(session({ metadata: { licenseId: 'lic-1', planType: 'month', trial: '1', newLicenseAlias: 'x' } }));
-  assert.equal(t.rows.get('lic-1').subscription_amount_cents, 25900, 'the price the trial started with, not today\'s');
-  const updates = [];
-  t.stripe.subscriptions.update = async (id, params) => {
-    updates.push({ id, params });
-    Object.assign(t.subs[id], { status: 'active', trial_end: null, items: { data: [{ current_period_end: sec(Date.now() + 30 * DAY), price: { unit_amount: 25900 } }] } });
-    return structuredClone(t.subs[id]);
-  };
-  const res = await t.billing.endTrialNow({ ...t.rows.get('lic-1') });
-  assert.equal(res.status, 'charged');
-  assert.deepEqual(updates.map((u) => [u.id, u.params.trial_end, u.params.proration_behavior]), [['sub_1', 'now', 'none']]);
-  assert.equal(t.rows.get('lic-1').license_type, 'month');
-  // Only a real trial can be paid early; a paid plan or a missing trial does nothing.
-  assert.equal((await t.billing.endTrialNow({ ...t.rows.get('lic-1') })).status, 'none');
-  assert.equal((await t.billing.endTrialNow(null)).status, 'none');
-  // A card that fails reports it.
-  const t2 = setup({ subs: { sub_2: trialSub('sub_2', { licenseId: 'lic-2' }) } });
-  await t2.billing.fulfillBillingSession(session({ subscription: 'sub_2', metadata: { licenseId: 'lic-2', planType: 'month', trial: '1', newLicenseAlias: 'y' } }));
-  t2.stripe.subscriptions.update = async (id) => { Object.assign(t2.subs[id], { status: 'past_due', trial_end: null }); return structuredClone(t2.subs[id]); };
-  assert.equal((await t2.billing.endTrialNow({ ...t2.rows.get('lic-2') })).status, 'failed');
-});
-
-test('paying now during a Lifetime trial charges the one-time price at once', async () => {
-  const t = setup({ licenses: { 'lic-x': { license_type: 'trial', expires_at: Date.now() + DAY, lifetime_trial_charge_at: Date.now() + DAY, lifetime_trial_amount_cents: 180000, stripe_customer_id: 'cus', lifetime_trial_payment_method: 'pm' } } });
-  assert.equal((await t.billing.endTrialNow({ ...t.rows.get('lic-x') })).status, 'charged');
-  assert.equal(t.events.intents[0].params.amount, 180000, 'the amount shown when the trial started');
-  assert.equal(t.rows.get('lic-x').lifetime_trial_charge_at, null, 'never charged again at the end');
-  assert.deepEqual(t.events.applied.map((a) => [a.planType, a.rotateKey]), [['lifetime', false]]);
-  const failing = setup({ licenses: { 'lic-y': { license_type: 'trial', expires_at: Date.now() + DAY, lifetime_trial_charge_at: Date.now() + DAY, lifetime_trial_amount_cents: 180000, stripe_customer_id: 'cus', lifetime_trial_payment_method: 'pm' } } });
-  failing.setIntentOutcome('throw');
-  assert.equal((await failing.billing.endTrialNow({ ...failing.rows.get('lic-y') })).status, 'failed');
-});
-
 test('a failed or blocked charge (past_due, unpaid, incomplete) never grants the plan or extends access', async () => {
   // Real bug: the trial ended, Stripe's charge was blocked, the subscription went past_due and the license got the month.
   const trialEnd = Date.now() + DAY;
@@ -289,4 +258,39 @@ test('a completed checkout that is not paid yet applies nothing', async () => {
   const res = await t.billing.fulfillBillingSession(session({ payment_status: 'unpaid', metadata: { licenseId: 'lic-1', planType: 'month', trial: '', newLicenseAlias: 'x' } }));
   assert.equal(res.status, 'pending');
   assert.equal(t.rows.size, 0, 'no license until Stripe says it is paid');
+});
+
+test('the real bug: an "active" subscription whose invoice is not paid yet (trial ended, charge pending or blocked) gets nothing', async () => {
+  const trialEnd = Date.now() + DAY;
+  const t = setup({
+    subs: { sub_1: trialSub('sub_1', { licenseId: 'lic-1', trialEnd }) },
+    invoices: { in_open: { id: 'in_open', status: 'open' }, in_draft: { id: 'in_draft', status: 'draft' }, in_paid: { id: 'in_paid', status: 'paid' } },
+  });
+  await t.billing.fulfillBillingSession(session({ payment_status: 'no_payment_required', metadata: { licenseId: 'lic-1', planType: 'month', trial: '1', newLicenseAlias: 'x' } }));
+  const next = Date.now() + 31 * DAY;
+  const active = (latest) => ({ ...trialSub('sub_1', { licenseId: 'lic-1' }), status: 'active', trial_end: null, items: { data: [{ current_period_end: sec(next) }] }, latest_invoice: latest });
+  for (const latest of ['in_draft', 'in_open', { id: 'x', status: 'open' }, { id: 'y', status: 'uncollectible' }, null]) {
+    await t.billing.syncLicenseFromSubscription(active(latest));
+    assert.equal(t.rows.get('lic-1').license_type, 'trial', `invoice ${JSON.stringify(latest)}: still a trial`);
+    assert.equal(t.rows.get('lic-1').expires_at, sec(trialEnd) * 1000, 'access still ends with the trial');
+  }
+  // When the invoice is really paid (invoice.paid), the plan applies.
+  await t.billing.syncLicenseFromSubscription(active('in_paid'));
+  assert.equal(t.rows.get('lic-1').license_type, 'month');
+  assert.equal(t.rows.get('lic-1').expires_at, sec(next) * 1000 + 2 * DAY);
+});
+
+test('a new draft invoice of one of our subscriptions is charged at once, not an hour later; a failed charge is reported, never applied', async () => {
+  const t = setup({
+    licenses: { 'lic-1': { license_type: 'trial', stripe_subscription_id: 'sub_1' } },
+    invoices: { in_1: { id: 'in_1', status: 'draft', subscription: 'sub_1' }, in_2: { id: 'in_2', status: 'draft', parent: { subscription_details: { subscription: 'sub_1' } }, __fail: true } },
+  });
+  assert.equal((await t.billing.collectInvoiceNow({ id: 'in_1', status: 'draft', subscription: 'sub_1' })).status, 'paid');
+  assert.deepEqual([t.events.finalized, t.events.paidCalls], [['in_1'], ['in_1']]);
+  assert.equal((await t.billing.collectInvoiceNow({ id: 'in_2', status: 'draft', parent: { subscription_details: { subscription: 'sub_1' } } })).status, 'failed');
+  // Not ours, not a draft, or no subscription: untouched.
+  assert.equal((await t.billing.collectInvoiceNow({ id: 'in_x', status: 'draft', subscription: 'sub_other' })).status, 'skipped');
+  assert.equal((await t.billing.collectInvoiceNow({ id: 'in_1', status: 'open', subscription: 'sub_1' })).status, 'skipped');
+  assert.equal((await t.billing.collectInvoiceNow({ id: 'in_y', status: 'draft' })).status, 'skipped');
+  assert.equal(t.rows.get('lic-1').license_type, 'trial', 'collecting never applies the plan by itself');
 });

@@ -2026,24 +2026,6 @@ app.post('/api/billing/portal', auth.requireAuth, paymentLimiter, async (req, re
     }
 });
 
-// "Pagar ahora" durante la prueba gratis: se cobra en ese momento y el plan
-// empieza hoy (ver billing.endTrialNow). Membresía lo pide con una ventana de
-// confirmación que dice el monto.
-app.post('/api/billing/end-trial-now', auth.requireAuth, paymentLimiter, async (req, res) => {
-    try {
-        const result = await billing.endTrialNow(req.license);
-        if (result.status === 'none') return res.status(400).json({ success: false, error: 'No tienes una prueba gratis que cobrar.' });
-        if (result.status !== 'charged') {
-            return res.status(402).json({ success: false, error: 'No se pudo cobrar tu tarjeta. Revísala en "Gestionar suscripción" o intenta con otra.' });
-        }
-        console.log(`[Stripe] Prueba cobrada de una vez por el streamer (licencia ${req.license.id}).`);
-        res.json({ success: true });
-    } catch (err) {
-        console.error('[Stripe] No se pudo cobrar la prueba de una vez:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo completar el pago. Intenta de nuevo en un momento.' });
-    }
-});
-
 // Cancelar la prueba de Lifetime antes del cobro: no se cobra nada y la
 // licencia termina el día que acababa la prueba.
 app.post('/api/billing/cancel-lifetime-trial', auth.requireAuth, paymentLimiter, async (req, res) => {
@@ -2102,6 +2084,12 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
         if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
             const sub = await stripe.subscriptions.retrieve(object.id, {}, { apiVersion });
             await billing.syncLicenseFromSubscription(sub);
+            return;
+        }
+        // Factura nueva de una suscripción (fin de prueba o renovación): se
+        // cobra en el momento en vez de esperar la hora de borrador de Stripe.
+        if (event.type === 'invoice.created') {
+            await billing.collectInvoiceNow(object);
             return;
         }
         if (event.type === 'invoice.paid') {

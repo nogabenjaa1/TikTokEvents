@@ -45,8 +45,9 @@ Además, por cómo funciona el sitio:
 
 - **Prueba de Mensual o Anual:** suscripción con `trial_period_days: 1` y `trial_settings.end_behavior.missing_payment_method: 'cancel'`. Al terminar, Stripe cobra la tarjeta (`invoice.paid`) y la licencia pasa al plan.
 - **Prueba de Lifetime:** modo `setup` con el monto en la metadata. El servidor revisa cada 10 minutos las pruebas que terminaron y cobra el pago único con la tarjeta guardada (`off_session`, con clave de idempotencia). Si la tarjeta falla, no se reintenta: la prueba vence sola.
-- **Pagar ahora:** durante la prueba, Membresía ofrece "Pagar ahora" (con ventana de confirmación y el monto real de esa suscripción). Suscripción: `trial_end: 'now'` y Stripe cobra al instante; Lifetime: el pago único con la tarjeta guardada (`POST /api/billing/end-trial-now`).
-- **Precios por defecto:** MX$180 / MX$360 / MX$540 (US$10 / US$20 / US$30), en pesos. Si en el panel de Licencias hay precios guardados, esos mandan. Las suscripciones que ya existen conservan su precio.
+- **Pagar ahora:** durante la prueba (o si su cobro falló), Membresía abre una compra normal con el formulario de Stripe (tarjeta o Google Pay). El plan solo se activa si el cobro pasa; un rechazo se ve ahí mismo y se puede intentar con otra tarjeta. Al cobrarse, la suscripción de prueba se cancela sola (Lifetime: se cierra su prueba).
+- **Precios por defecto:** MX$90 / MX$180 / MX$360 (US$5 / US$10 / US$20), en pesos. Si en el panel de Licencias hay precios guardados, esos mandan. Las suscripciones que ya existen conservan su precio.
+- **El plan solo se da con una factura PAGADA.** Al terminar una prueba o al renovar, Stripe pone la suscripción en `active` pero cobra la factura después; el servidor no da nada hasta que `latest_invoice` está `paid` (o llega `invoice.paid`). Con `invoice.created` el servidor cobra la factura nueva en el momento en vez de esperar la hora de borrador de Stripe. `past_due` / `unpaid` nunca dan el plan.
 - **Una prueba por tarjeta** (tabla `trial_fingerprints`). Si la tarjeta ya tuvo prueba, la suscripción se cancela al instante sin cobrar nada y el comprador ve el aviso.
 - **Solo para empezar:** una licencia con un plan pagado vigente no puede iniciar una prueba.
 - **Durante la prueba la licencia es de tipo `trial`:** sin Spotify de la plataforma; con los anuncios de las licencias de prueba en el panel.
@@ -59,6 +60,7 @@ Además, por cómo funciona el sitio:
 1. **Portal de clientes:** en el Dashboard, *Configuración → Facturación → Portal de clientes*, activa "Cancelar suscripciones" y "Actualizar métodos de pago" y guarda (en modo de prueba y en modo real). Sin guardarlo una vez, "Gestionar suscripción" da error. **Deja apagado "Permitir que los clientes cambien de plan"**: los cambios de plan se hacen desde Membresía (el portal no conoce los planes y la licencia no se enteraría).
 2. **Webhook:** en el destino `https://TU_BACKEND/api/payments/stripe/webhook`, marca estos eventos (además de los que ya tenías):
    - `checkout.session.completed`
+   - `invoice.created` (para cobrar al instante el fin de la prueba y las renovaciones)
    - `invoice.paid`
    - `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`
    - `payment_intent.succeeded` (opcional)

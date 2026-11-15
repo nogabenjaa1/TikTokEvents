@@ -83,13 +83,22 @@ function createStripeBilling(deps) {
             // para respetar el tiempo que ya tenía pagado sigue siendo su plan.
             fields.licenseType = isTrial ? 'trial' : planType;
             fields.expiresAt = Math.max(current, (sub.trial_end || 0) * 1000);
-        } else if (sub.status === 'active' || sub.status === 'past_due') {
+        } else if (sub.status === 'active') {
+            // 'active' = Stripe ya cobró la factura del periodo: solo entonces se
+            // da el plan y se extiende el vencimiento.
             fields.licenseType = planType;
             const end = periodEndMs(sub);
             if (end) fields.expiresAt = Math.max(current, end + RENEWAL_GRACE_MS);
         }
-        // canceled / unpaid / incomplete_expired: la licencia conserva lo que
-        // ya tenía pagado y vence sola; solo se guarda el estado.
+        // past_due / unpaid: el cobro FALLÓ (tarjeta rechazada o pago bloqueado
+        // por Stripe) y Stripe lo está reintentando. No se da nada: la licencia
+        // conserva su tipo y su vencimiento (una prueba sigue siendo prueba y
+        // vence al terminar; una renovación vence con el margen del periodo
+        // anterior). Si un reintento cobra, llega 'active' / invoice.paid y ahí
+        // se aplica. Bug real: se trataba past_due como active y un cliente
+        // recibió el mes con el cobro bloqueado.
+        // canceled / incomplete / incomplete_expired: igual, solo se guarda el
+        // estado y la licencia vence sola.
         await db.applyBillingState(license.id, fields);
         pushLicenseState?.(license.id);
         return { synced: true, licenseId: license.id, status: sub.status };
@@ -129,6 +138,9 @@ function createStripeBilling(deps) {
     // Una sesión de Checkout en modo 'subscription' ya completada.
     async function fulfillSubscriptionSession(session) {
         if (session.status !== 'complete') return { status: 'pending' };
+        // Completa pero sin cobrar (un método que se confirma después): todavía
+        // nada. 'no_payment_required' es la prueba gratis.
+        if (!['paid', 'no_payment_required'].includes(session.payment_status)) return { status: 'pending' };
         const meta = session.metadata || {};
         const { licenseId, planType } = meta;
         const subId = subscriptionId(session.subscription);

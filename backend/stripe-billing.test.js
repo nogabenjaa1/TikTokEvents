@@ -63,7 +63,7 @@ const trialSub = (id, { licenseId, planType = 'month', fingerprint = 'fp_1', tri
   metadata: { licenseId, planType, trial }, default_payment_method: { id: 'pm_1', card: { fingerprint } },
   items: { data: [{ current_period_end: sec(trialEnd) }] }, ...extra,
 });
-const session = (over) => ({ id: 'cs_test_1', status: 'complete', mode: 'subscription', subscription: 'sub_1', customer: 'cus_1', ...over });
+const session = (over) => ({ id: 'cs_test_1', status: 'complete', payment_status: 'paid', mode: 'subscription', subscription: 'sub_1', customer: 'cus_1', ...over });
 
 test('a 14-day trial without an account creates a trial license that ends when the trial does, and remembers the card', async () => {
   const end = Date.now() + TRIAL_DAYS * DAY;
@@ -255,4 +255,38 @@ test('paying now during a Lifetime trial charges the one-time price at once', as
   const failing = setup({ licenses: { 'lic-y': { license_type: 'trial', expires_at: Date.now() + DAY, lifetime_trial_charge_at: Date.now() + DAY, lifetime_trial_amount_cents: 180000, stripe_customer_id: 'cus', lifetime_trial_payment_method: 'pm' } } });
   failing.setIntentOutcome('throw');
   assert.equal((await failing.billing.endTrialNow({ ...failing.rows.get('lic-y') })).status, 'failed');
+});
+
+test('a failed or blocked charge (past_due, unpaid, incomplete) never grants the plan or extends access', async () => {
+  // Real bug: the trial ended, Stripe's charge was blocked, the subscription went past_due and the license got the month.
+  const trialEnd = Date.now() + DAY;
+  const t = setup({ subs: { sub_1: trialSub('sub_1', { licenseId: 'lic-1', trialEnd }) } });
+  await t.billing.fulfillBillingSession(session({ metadata: { licenseId: 'lic-1', planType: 'month', trial: '1', newLicenseAlias: 'x' } }));
+  const nextPeriod = Date.now() + 31 * DAY;
+  for (const status of ['past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'canceled']) {
+    const sub = { ...trialSub('sub_1', { licenseId: 'lic-1' }), status, trial_end: null, items: { data: [{ current_period_end: sec(nextPeriod) }] } };
+    await t.billing.syncLicenseFromSubscription(sub);
+    const row = t.rows.get('lic-1');
+    assert.equal(row.license_type, 'trial', `${status}: still a trial, not the plan`);
+    assert.equal(row.expires_at, sec(trialEnd) * 1000, `${status}: access still ends with the trial`);
+    assert.equal(row.subscription_status, status);
+  }
+  // A retry that does charge: now it is the plan.
+  await t.billing.syncLicenseFromSubscription({ ...trialSub('sub_1', { licenseId: 'lic-1' }), status: 'active', trial_end: null, items: { data: [{ current_period_end: sec(nextPeriod) }] } });
+  assert.equal(t.rows.get('lic-1').license_type, 'month');
+  assert.equal(t.rows.get('lic-1').expires_at, sec(nextPeriod) * 1000 + 2 * DAY);
+
+  // A paying subscriber whose renewal fails keeps only what was paid (plus the grace), never the new period.
+  const paidUntil = Date.now() + 2 * DAY;
+  const r = setup({ licenses: { 'lic-2': { license_type: 'month', expires_at: paidUntil, stripe_subscription_id: 'sub_2', subscription_plan: 'month', subscription_status: 'active' } } });
+  await r.billing.syncLicenseFromSubscription({ ...trialSub('sub_2', { licenseId: 'lic-2', trial: '' }), status: 'past_due', trial_end: null, items: { data: [{ current_period_end: sec(Date.now() + 32 * DAY) }] } });
+  assert.equal(r.rows.get('lic-2').expires_at, paidUntil);
+  assert.equal(r.rows.get('lic-2').license_type, 'month');
+});
+
+test('a completed checkout that is not paid yet applies nothing', async () => {
+  const t = setup({ subs: { sub_1: { ...trialSub('sub_1', { licenseId: 'lic-1', trial: '' }), status: 'incomplete' } } });
+  const res = await t.billing.fulfillBillingSession(session({ payment_status: 'unpaid', metadata: { licenseId: 'lic-1', planType: 'month', trial: '', newLicenseAlias: 'x' } }));
+  assert.equal(res.status, 'pending');
+  assert.equal(t.rows.size, 0, 'no license until Stripe says it is paid');
 });

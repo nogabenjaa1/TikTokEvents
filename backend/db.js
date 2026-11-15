@@ -513,6 +513,25 @@ const ready = pool.query(`
   // Lo que cobra la suscripción vigente (el precio con el que empezó, no el
   // de hoy del panel): Membresía lo muestra al cobrar la prueba de una vez.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_amount_cents INTEGER`))
+  // Créditos recargados (ver lib/credits.js). Saldo en la licencia y cada
+  // recarga en credit_transactions: aparte de payments a propósito (payments
+  // son compras de planes; un crédito es saldo que se gastará después). Sin FK,
+  // como payments: el historial queda aunque se borre la licencia. El UNIQUE
+  // de stripe_payment_id hace que /confirm y el webhook sumen una sola vez.
+  .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 0`))
+  .then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL,
+      stripe_payment_id TEXT UNIQUE,
+      credits INTEGER NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      mxn_cents_per_usd INTEGER,
+      kind TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )
+  `))
   .then(() => pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_stripe_subscription
     ON licenses(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL
@@ -608,6 +627,7 @@ const LICENSE_CORE_COLUMNS = [
     'overlay_key_hash',
     'stripe_subscription_id', 'stripe_customer_id', 'subscription_status', 'subscription_plan', 'subscription_cancel_at',
     'lifetime_trial_charge_at', 'lifetime_trial_amount_cents', 'lifetime_trial_payment_method', 'subscription_amount_cents',
+    'credits',
 ].join(', ');
 
 async function findByKeyHash(keyHash) {
@@ -1212,6 +1232,50 @@ async function claimTrialFingerprint(fingerprint, licenseId) {
     return rows[0]?.license_id === licenseId;
 }
 
+// Suma los créditos de una recarga pagada, una sola vez por cobro de Stripe
+// (/confirm y el webhook pueden llegar los dos). Devuelve { added, balance }:
+// added=false si ese cobro ya se había sumado (o la licencia no existe).
+async function addCreditsFromPaymentIfNew({ id, licenseId, stripePaymentId, credits, amountCents, currency, mxnCentsPerUsd = null, createdAt }) {
+    await ready;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const exists = await client.query('SELECT id FROM licenses WHERE id = $1', [licenseId]);
+        if (!exists.rows[0]) {
+            await client.query('ROLLBACK');
+            return { added: false, balance: null, missingLicense: true };
+        }
+        // Sin ON CONFLICT a propósito: si el cobro ya se sumó, el UNIQUE lanza
+        // 23505 y la transacción entera se deshace (el saldo no se toca).
+        await client.query(`
+            INSERT INTO credit_transactions (id, license_id, stripe_payment_id, credits, amount_cents, currency, mxn_cents_per_usd, kind, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'topup', $8)
+        `, [id, licenseId, stripePaymentId, credits, amountCents, currency, mxnCentsPerUsd, createdAt]);
+        const { rows } = await client.query('UPDATE licenses SET credits = credits + $1 WHERE id = $2 RETURNING credits', [credits, licenseId]);
+        await client.query('COMMIT');
+        return { added: true, balance: Number(rows[0].credits) };
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* la conexión ya falló */ }
+        if (err.code === '23505') return { added: false, balance: null, alreadyProcessed: true };
+        throw err;
+    } finally {
+        client.release();
+    }
+}
+
+async function listCreditTransactions(licenseId, limit = 20) {
+    await ready;
+    const { rows } = await pool.query(
+        'SELECT credits, amount_cents, currency, mxn_cents_per_usd, kind, created_at FROM credit_transactions WHERE license_id = $1 ORDER BY created_at DESC LIMIT $2',
+        [licenseId, limit],
+    );
+    return rows.map((row) => ({
+        credits: Number(row.credits), amountCents: Number(row.amount_cents), currency: row.currency,
+        mxnCentsPerUsd: row.mxn_cents_per_usd == null ? null : Number(row.mxn_cents_per_usd),
+        kind: row.kind, createdAt: Number(row.created_at),
+    }));
+}
+
 // Pruebas de Lifetime cuyo cobro ya toca (ver lib/stripeBilling.js).
 async function listDueLifetimeTrials(now) {
     await ready;
@@ -1513,7 +1577,9 @@ async function listPaymentsWithoutLicense(limit = 200) {
 async function listStripePaymentIdsSince(sinceMs) {
     await ready;
     const { rows } = await pool.query('SELECT stripe_payment_id FROM payments WHERE stripe_payment_id IS NOT NULL AND created_at >= $1', [sinceMs]);
-    return rows.map((row) => row.stripe_payment_id);
+    // Las recargas de créditos también son cobros registrados (en su tabla).
+    const credits = await pool.query('SELECT stripe_payment_id FROM credit_transactions WHERE stripe_payment_id IS NOT NULL AND created_at >= $1', [sinceMs]);
+    return [...rows, ...credits.rows].map((row) => row.stripe_payment_id);
 }
 
 // ── Enlaces de overlay ─────────────────────────────────────
@@ -1544,7 +1610,7 @@ async function listReferencedMediaPaths() {
 
 module.exports = {
     applyBillingState, findByStripeSubscriptionId, claimTrialFingerprint, listDueLifetimeTrials,
-    getLicenseKey,
+    getLicenseKey, addCreditsFromPaymentIfNew, listCreditTransactions,
     insertLicense, findByKeyHash, findById, findCoreById, findCoreByKeyHash, listAll, revoke, touchLastLogin, incrementUsage, setSession, setMultiDevice,
     setWinBonusUnlocked, claimTrialConnection, deleteLicense, extendLicense, applyPurchase, insertPaymentIfNew, insertStripePaymentIfNew, consumePendingKeyReveal,
     setThemeSettings, setOverlayCustomization, setSpotifySettings, setChatSettings, setEventSettings, setTtsSettings, setGoalSettings, setGoalProgress, setRuntimeState,

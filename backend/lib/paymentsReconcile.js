@@ -37,6 +37,10 @@ function findUnrecordedStripe(intents, knownIds) {
             planType: intent.metadata.planType || null,
             diceTier: intent.metadata.diceTier || null,
             spotifyAddon: intent.metadata.spotifyAddon === 'true',
+            // Recarga de créditos (ver lib/credits.js): va en su propia tabla.
+            kind: intent.metadata.kind === 'credits' ? 'credits' : 'purchase',
+            credits: intent.metadata.kind === 'credits' ? Number(intent.metadata.credits) || 0 : null,
+            currency: String(intent.currency || 'mxn').toLowerCase(),
             amountCents: Number(intent.amount_received ?? intent.amount) || 0,
             createdAt: (Number(intent.created) || 0) * 1000,
         }));

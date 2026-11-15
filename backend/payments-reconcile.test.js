@@ -69,8 +69,8 @@ test('a charge missing from the payments table is reported with what is needed t
   ];
   const missing = findUnrecordedStripe(intents, new Set(['pi_known']));
   assert.deepEqual(missing, [
-    { paymentIntentId: 'pi_missing', licenseId: 'lic-9', planType: 'annual', diceTier: 'pro', spotifyAddon: true, amountCents: 30600, createdAt: 1_780_000_123_000 },
-    { paymentIntentId: 'pi_plain', licenseId: 'lic-2', planType: null, diceTier: null, spotifyAddon: false, amountCents: 500, createdAt: 1_780_000_000_000 },
+    { paymentIntentId: 'pi_missing', licenseId: 'lic-9', planType: 'annual', diceTier: 'pro', spotifyAddon: true, kind: 'purchase', credits: null, currency: 'mxn', amountCents: 30600, createdAt: 1_780_000_123_000 },
+    { paymentIntentId: 'pi_plain', licenseId: 'lic-2', planType: null, diceTier: null, spotifyAddon: false, kind: 'purchase', credits: null, currency: 'mxn', amountCents: 500, createdAt: 1_780_000_000_000 },
   ]);
   assert.deepEqual(findUnrecordedStripe(intents, new Set(['pi_known', 'pi_missing', 'pi_plain'])), []);
   assert.deepEqual(findUnrecordedStripe([], new Set()), []);
@@ -89,4 +89,15 @@ test('payments whose license was deleted are only summarised: the revenue histor
   assert.deepEqual(summary.latest[2], { provider: 'mp', licenseId: 'gone-3', planType: null, amountCents: 0, createdAt: 0 });
   assert.equal(summarizeWithoutLicense(Array.from({ length: 50 }, (_, i) => ({ license_id: `l${i}`, amount_cents: 1 }))).latest.length, 20, 'the list is short, the total is not');
   assert.deepEqual(summarizeWithoutLicense([]), { count: 0, amountCents: 0, latest: [] });
+});
+
+test('a credit top-up missing from the site is reported as a top-up in dollars', () => {
+  const missing = findUnrecordedStripe([
+    intent('pi_credits', { amount_received: 350, currency: 'usd', metadata: { licenseId: 'lic-3', kind: 'credits', credits: '70' } }),
+  ], new Set());
+  assert.equal(missing.length, 1);
+  assert.equal(missing[0].kind, 'credits');
+  assert.equal(missing[0].credits, 70);
+  assert.equal(missing[0].currency, 'usd');
+  assert.equal(missing[0].amountCents, 350);
 });

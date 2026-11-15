@@ -110,4 +110,5 @@ test('pending payments explain why they are pending and what they bought', () =>
   assert.equal(describePurchase({ planType: null, diceTier: null, spotifyAddon: true }), 'Complemento de Spotify');
   assert.equal(describePurchase({ planType: 'month', diceTier: 'regular' }), 'Mensual');
   assert.equal(describePurchase({}), 'Sin detalle');
+  assert.equal(describePurchase({ kind: 'credits', credits: 1500 }), 'Recarga de 1,500 créditos');
 });

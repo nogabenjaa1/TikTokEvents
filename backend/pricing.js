@@ -6,6 +6,7 @@
 // no se cobra en esa moneda.
 // ==========================================
 const db = require('./db');
+const credits = require('./lib/credits');
 
 // Equivalentes en pesos de US$5 / US$10 / US$20 (a 18 por dólar; se sigue
 // cobrando en MXN: Stripe no deja que un mismo cliente tenga cobros en dos
@@ -102,6 +103,24 @@ async function setSpotifyAddonPriceCents(amountCents, updatedBy) {
     return saveOverride(SPOTIFY_ADDON_KEY, amountCents, updatedBy);
 }
 
+// Tipo de cambio: centavos de MXN por 1 dólar (1800 = MX$18). Se guarda en
+// pricing_overrides como un precio más (así se edita en el mismo panel y deja
+// historial). Lo usan la recarga de créditos (el dólar se cobra en pesos) y la
+// referencia en dólares de la vitrina.
+const USD_RATE_KEY = 'usd_rate';
+
+function getMxnCentsPerUsd() {
+    const saved = planPriceOverridesCents[USD_RATE_KEY];
+    return credits.isValidRate(saved) ? saved : credits.DEFAULT_MXN_CENTS_PER_USD;
+}
+
+async function setMxnCentsPerUsd(mxnCentsPerUsd, updatedBy) {
+    if (!credits.isValidRate(mxnCentsPerUsd)) {
+        throw new Error(`El tipo de cambio debe estar entre MX$${credits.MIN_MXN_CENTS_PER_USD / 100} y MX$${credits.MAX_MXN_CENTS_PER_USD / 100} por dólar`);
+    }
+    return saveOverride(USD_RATE_KEY, mxnCentsPerUsd, updatedBy);
+}
+
 function isValidPlan(planType) {
     return Object.prototype.hasOwnProperty.call(PLAN_PRICES_CENTS, planType);
 }
@@ -125,4 +144,5 @@ module.exports = {
     isValidPlan, isValidAddon, computeAmountCents,
     loadPriceOverrides, getPlanPriceCents, getAllPlanPricesCents, setPlanPriceCents,
     getSpotifyAddonPriceCents, setSpotifyAddonPriceCents,
+    USD_RATE_KEY, getMxnCentsPerUsd, setMxnCentsPerUsd,
 };

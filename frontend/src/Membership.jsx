@@ -7,6 +7,7 @@ import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import StripePaymentForm from './StripePaymentForm';
 import RefundPolicyModal from './RefundPolicyModal';
+import CreditsTopup from './CreditsTopup';
 
 // Mensual y Anual son suscripciones (se cobran solas cada periodo); Lifetime
 // es un pago único. Los tres tienen prueba gratis con tarjeta (ver
@@ -35,12 +36,10 @@ const PLAN_RANK = { month: 1, annual: 2, lifetime: 3 };
 // backend/pricing.js).
 const SPOTIFY_ADDON_ID = 'spotify_addon';
 const DEFAULT_SPOTIFY_ADDON_MXN = 180;
-// Referencia aproximada MXN por USD -- pedido explicito: que la
-// referencia en dolares que ve el streamer se recalcule sola en cuanto el
-// admin cambie el precio en MXN desde el panel, en vez de quedar como un
-// texto fijo desincronizado. Es solo informativa (MXN sigue siendo la
-// única moneda que de verdad se cobra, ver pricing.js) -- si el
-// tipo de cambio real se mueve mucho, alcanza con ajustar este numero.
+// Tipo de cambio de respaldo (MXN por USD). El real lo edita el admin en el
+// panel de Licencias y llega en /api/pricing (`usdRate`, centavos de MXN por
+// dólar): la referencia en dólares de los planes y la recarga de créditos lo
+// usan. Es solo informativo para los planes (se cobra en MXN, ver pricing.js).
 const MXN_PER_USD = 18;
 
 const PLAN_LABELS = { day: '1 día', week: '1 semana', month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', trial: 'Prueba gratis' };
@@ -136,6 +135,9 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // otra tarjeta. Solo con el cobro hecho se activa el plan (y la suscripción
   // de prueba se cierra sola, ver backend/lib/stripeBilling.js).
   const [payNowConfirm, setPayNowConfirm] = useState(false);
+  // Recarga de créditos con el formulario abierto (ver CreditsTopup.jsx): se
+  // esconden los planes y complementos, como al comprar un plan.
+  const [creditsPaying, setCreditsPaying] = useState(false);
   // Pedido explicito: aceptación obligatoria de la política de reembolsos
   // antes de poder pagar -- no evita que alguien dispute con su banco (eso
   // lo decide el banco, no acá), pero le da a Stripe evidencia
@@ -187,19 +189,21 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   // Lo demás que trae /api/pricing: el precio vigente del complemento de
   // Spotify (centavos) y los cupos de la app de Spotify de la plataforma
   // ({ total, used }) para avisar cuántos quedan a los primeros Lifetime.
-  const [pricingExtras, setPricingExtras] = useState({ spotifyAddon: null, spotifySlots: null });
+  const [pricingExtras, setPricingExtras] = useState({ spotifyAddon: null, spotifySlots: null, usdRate: null });
   useEffect(() => {
     fetch(`${backendUrl()}/api/pricing`)
       .then(res => res.json())
       .then(data => {
         if (!data.success) return;
         setLivePrices(data.prices);
-        setPricingExtras({ spotifyAddon: data.spotifyAddon ?? null, spotifySlots: data.spotifySlots ?? null });
+        setPricingExtras({ spotifyAddon: data.spotifyAddon ?? null, spotifySlots: data.spotifySlots ?? null, usdRate: data.usdRate ?? null });
       })
       .catch(() => {}); // sin precios en vivo, se sigue viendo el default
   }, []);
   const spotifyAddonMxn = pricingExtras.spotifyAddon != null ? pricingExtras.spotifyAddon / 100 : DEFAULT_SPOTIFY_ADDON_MXN;
   const spotifySlots = pricingExtras.spotifySlots;
+  // Centavos de MXN por dólar (1800 = MX$18).
+  const usdRate = pricingExtras.usdRate || MXN_PER_USD * 100;
   const spotifySlotsLeft = spotifySlots ? Math.max(0, spotifySlots.total - spotifySlots.used) : null;
 
   // Ingresar con una clave que ya tienes (admin, prueba gratis guardada de
@@ -546,7 +550,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         </section>
       )}
 
-      {!payingPlan && (
+      {!payingPlan && !creditsPaying && (
       <section className="w-full max-w-3xl" aria-labelledby="plans-title">
         <div className="mb-2">
           {!session && <p className="theme-accent-text tkc-eyebrow">Paso 2</p>}
@@ -572,7 +576,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                   return (
                     <>
                       <p className="text-3xl font-black tabular-nums leading-tight">MX${mxnPrice.toLocaleString('es-MX')}</p>
-                      <p className="tkc-hint">{plan.period} · referencia US${(mxnPrice / MXN_PER_USD).toFixed(2)}{SUBSCRIPTION_PLANS.includes(plan.id) ? ' · se renueva solo' : ''}</p>
+                      <p className="tkc-hint">{plan.period} · referencia US${((mxnPrice * 100) / usdRate).toFixed(2)}{SUBSCRIPTION_PLANS.includes(plan.id) ? ' · se renueva solo' : ''}</p>
                     </>
                   );
                 })()}
@@ -705,7 +709,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           Mensual (Anual y Lifetime ya lo incluyen, ver backend/spotify.js).
           Se paga por el mismo formulario de tarjeta que un plan. Sin sesión
           no hay a qué licencia sumarlo todavía: solo informa. */}
-      {!payingPlan && (
+      {!payingPlan && !creditsPaying && (
         <section className="w-full max-w-3xl" aria-labelledby="addons-title">
           <h2 id="addons-title" className="tkc-label theme-label mb-2">Complementos</h2>
           <div className={`theme-surface p-4 flex items-center justify-between flex-wrap gap-3 ${canBuyAddon ? 'ring-2 ring-[var(--accent)]' : ''}`}>
@@ -731,6 +735,21 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
             )}
           </div>
         </section>
+      )}
+
+      {/* Créditos: recarga de pago único con monto libre en dólares. Solo con
+          sesión (se suman a una licencia). */}
+      {session && !payingPlan && (
+        <CreditsTopup
+          balance={session.credits || 0}
+          rate={usdRate}
+          onOpenPolicy={() => setShowPolicyModal(true)}
+          onPaying={setCreditsPaying}
+          onPaid={async () => {
+            const updated = await refreshSession();
+            if (updated) onSessionUpdate?.(updated);
+          }}
+        />
       )}
 
       {!session && (

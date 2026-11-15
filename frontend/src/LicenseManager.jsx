@@ -25,7 +25,10 @@ const DICE_TIERS = { regular: 'Regular', pro: 'PRO', vip: 'VIP', admin: 'Admin' 
 // pricing.js: no es un plan, por eso /api/pricing lo manda aparte y aca se
 // junta con los planes para editarlo en la misma lista); los addons de Color
 // Says quedan afuera del pedido.
-const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', spotify_addon: 'Complemento Spotify' };
+// `usd_rate` no es un precio: es el tipo de cambio (MX$ por 1 dólar) que usan
+// la referencia en dólares de los planes y la recarga de créditos. Se guarda
+// igual que un precio (centavos de MXN) y deja historial.
+const PRICING_PLAN_LABELS = { month: 'Mensual', annual: 'Anual', lifetime: 'Lifetime', spotify_addon: 'Complemento Spotify', usd_rate: '1 dólar (US$1) =' };
 const MIN_PRICE_MXN = 1; // piso pedido explicitamente: 1 peso
 
 const STATUS_FILTERS = [
@@ -217,7 +220,9 @@ export default function LicenseManager({ onSessionInvalid }) {
       if (data.success) {
         // El complemento de Spotify viaja aparte de los planes (ver
         // PRICING_PLAN_LABELS): se junta aquí para editarlo con los demás.
-        const all = data.spotifyAddon != null ? { ...data.prices, spotify_addon: data.spotifyAddon } : data.prices;
+        const all = { ...data.prices };
+        if (data.spotifyAddon != null) all.spotify_addon = data.spotifyAddon;
+        if (data.usdRate != null) all.usd_rate = data.usdRate;
         setPrices(all);
         setPriceInputs(Object.fromEntries(Object.entries(all).map(([k, cents]) => [k, (cents / 100).toString()])));
       }
@@ -246,7 +251,7 @@ export default function LicenseManager({ onSessionInvalid }) {
       if (!data.success) throw new Error(data.error || 'No se pudo guardar el precio');
       await minLoading;
       setPriceStatus({ plan: planType, status: 'success' });
-      pushToast(`Precio de ${PRICING_PLAN_LABELS[planType]} actualizado`);
+      pushToast(planType === 'usd_rate' ? 'Tipo de cambio actualizado' : `Precio de ${PRICING_PLAN_LABELS[planType]} actualizado`);
       await wait(MORPH_SUCCESS_HOLD_MS);
       await fetchPrices();
       if (historyOpen) fetchHistory();
@@ -651,6 +656,7 @@ export default function LicenseManager({ onSessionInvalid }) {
               </div>
             ))}
             <p className="text-[10px] text-gray-500 mt-1">Precio mínimo por plan: MX${MIN_PRICE_MXN.toFixed(2)}. El cambio se refleja de inmediato en la compra de los streamers.</p>
+            <p className="text-[10px] text-gray-500">El tipo de cambio (entre MX$5 y MX$50) convierte las recargas de créditos que se escriben en dólares y la referencia en US$ de los planes. Siempre se cobra en pesos.</p>
             <button onClick={toggleHistory} className="theme-link theme-link-info self-start">
               {historyOpen ? 'Ocultar historial de cambios' : 'Ver historial de cambios'}
             </button>

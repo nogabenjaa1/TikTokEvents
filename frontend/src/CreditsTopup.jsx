@@ -1,18 +1,41 @@
 import { useState, useRef } from 'react';
 import StripePaymentForm from './StripePaymentForm';
 import {
-  CREDITS_PER_USD, TOPUP_PRESETS_USD, creditsForUsdCents, parseUsdInput, topupAmountError, formatUsd, formatCredits,
+  topupPresets, CURRENCY_STORAGE_KEY, creditsForMxnCents, toMxnCents, fromMxnCents, parseAmountInput, topupAmountError,
+  formatMoney, convertInput, formatCredits,
 } from './credits';
 
+const CURRENCIES = [
+  { id: 'mxn', label: 'MXN' },
+  { id: 'usd', label: 'USD' },
+];
+const other = (currency) => (currency === 'usd' ? 'mxn' : 'usd');
+
+// La moneda en que el comprador prefiere ver el monto (solo una comodidad de
+// este navegador; puede no haber almacenamiento).
+function loadCurrency() {
+  try {
+    return window.localStorage.getItem(CURRENCY_STORAGE_KEY) === 'usd' ? 'usd' : 'mxn';
+  } catch {
+    return 'mxn';
+  }
+}
+function saveCurrency(currency) {
+  try { window.localStorage.setItem(CURRENCY_STORAGE_KEY, currency); } catch { /* sin almacenamiento */ }
+}
+
 // Recarga de créditos en Membresía (ver backend/lib/credits.js): pago único,
-// no membresía. El comprador elige cuántos dólares; el formulario de Stripe
-// cobra en USD y a la cuenta le llegan pesos (Stripe convierte solo). Los
-// créditos los suma el servidor con lo que Stripe cobró.
+// no membresía. Se cobra SIEMPRE en pesos; el comprador elige si escribe y ve
+// el monto en pesos (lo predeterminado) o en dólares, con la otra moneda
+// abajo como conversión. `rate` = centavos de MXN por dólar (del panel de
+// Licencias, vía /api/pricing). Los créditos los suma el servidor.
 // `onOpenPolicy` abre la política de reembolsos (el modal vive en Membresía).
 // `onPaying(true|false)` avisa cuando el formulario está abierto, para que
 // Membresía esconda lo demás como con la compra de un plan.
-export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }) {
-  const [amountText, setAmountText] = useState('5');
+export default function CreditsTopup({ balance, rate, onPaid, onOpenPolicy, onPaying }) {
+  const [currency, setCurrency] = useState(loadCurrency);
+  // Arranca en US$5 (100 créditos), en la moneda elegida.
+  const [amountText, setAmountText] = useState(() => String(topupPresets(loadCurrency(), rate)[1]));
   const [paying, setPaying] = useState(false);
   const [policyAcceptedAt, setPolicyAcceptedAt] = useState(null);
   const [policyError, setPolicyError] = useState('');
@@ -21,9 +44,22 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
   const policyRef = useRef(null);
   const amountRef = useRef(null);
 
-  const usdCents = parseUsdInput(amountText);
-  const validationError = topupAmountError(usdCents);
-  const previewCredits = validationError ? null : creditsForUsdCents(usdCents);
+  const amountCents = parseAmountInput(amountText);
+  const validationError = topupAmountError(amountCents, currency, rate);
+  const mxnCents = validationError ? null : toMxnCents(amountCents, currency, rate);
+  const previewCredits = mxnCents === null ? null : creditsForMxnCents(mxnCents, rate);
+  // El monto en la moneda elegida (grande) y su conversión (abajo).
+  const mainText = mxnCents === null ? '' : formatMoney(fromMxnCents(mxnCents, currency, rate), currency);
+  const otherText = mxnCents === null ? '' : `≈ ${formatMoney(fromMxnCents(mxnCents, other(currency), rate), other(currency))}`;
+  const chargedText = mxnCents === null ? '' : formatMoney(mxnCents, 'mxn');
+
+  const changeCurrency = (next) => {
+    if (next === currency) return;
+    setAmountText((text) => convertInput(text, currency, next, rate));
+    setCurrency(next);
+    saveCurrency(next);
+    setAmountError('');
+  };
 
   const setPaymentOpen = (open) => {
     setPaying(open);
@@ -41,7 +77,7 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
   };
 
   const handleSuccess = async () => {
-    setDone({ credits: previewCredits, usdCents });
+    setDone({ credits: previewCredits, mainText, chargedText });
     setPaymentOpen(false);
     setPolicyAcceptedAt(null);
     await onPaid?.();
@@ -53,7 +89,8 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
         <div className="sticky top-0 z-20 theme-surface-featured px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p id="credits-paying-title" className="theme-label tkc-label">Recarga de créditos</p>
-            <p className="text-sm font-black truncate">{formatCredits(previewCredits)} créditos · {formatUsd(usdCents)} (pago único)</p>
+            <p className="text-sm font-black truncate">{formatCredits(previewCredits)} créditos · {mainText} (pago único)</p>
+            <p className="tkc-hint truncate">{otherText}</p>
           </div>
           <button type="button" onClick={() => setPaymentOpen(false)} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest flex-shrink-0">
             Cambiar monto
@@ -61,7 +98,7 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
         </div>
 
         <p className="theme-notice theme-notice-warning">
-          Se cobra {formatUsd(usdCents)} una sola vez, en dólares. Si tu tarjeta es en pesos, tu banco hace la conversión. No es una suscripción: no se vuelve a cobrar.
+          Se cobra {chargedText} una sola vez, en pesos mexicanos{currency === 'usd' ? ` (tus ${mainText} al tipo de cambio de hoy)` : ''}. No es una suscripción: no se vuelve a cobrar.
         </p>
 
         <div>
@@ -89,7 +126,7 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
 
         {policyAcceptedAt ? (
           <StripePaymentForm
-            creditsUsdCents={usdCents}
+            credits={{ amountCents, currency }}
             policyAcceptedAt={policyAcceptedAt}
             onSuccess={handleSuccess}
             onCancel={() => setPaymentOpen(false)}
@@ -105,6 +142,9 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
     );
   }
 
+  const presets = topupPresets(currency, rate);
+  const fiveUsdInMxn = formatMoney(toMxnCents(500, 'usd', rate), 'mxn');
+
   return (
     <section className="w-full max-w-3xl" aria-labelledby="credits-title">
       <h2 id="credits-title" className="tkc-label theme-label mb-2">Créditos</h2>
@@ -115,31 +155,42 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
             <p className="text-2xl font-black tabular-nums mt-0.5">{formatCredits(balance)} créditos</p>
           </div>
           <p className="tkc-hint max-w-xs">
-            Recarga lo que quieras: cada US$5 son 100 créditos ({CREDITS_PER_USD} por dólar). Pronto podrás usarlos dentro de la plataforma.
+            Recarga lo que quieras: cada {currency === 'usd' ? `US$5 (${fiveUsdInMxn})` : `${fiveUsdInMxn} (US$5)`} son 100 créditos. Pronto podrás usarlos dentro de la plataforma.
           </p>
         </div>
 
         {done && (
           <p role="status" className="theme-notice">
-            Listo: se sumaron {formatCredits(done.credits)} créditos por {formatUsd(done.usdCents)}.
+            Listo: se sumaron {formatCredits(done.credits)} créditos por {done.mainText}.
           </p>
         )}
 
         <div className="flex flex-col gap-2">
-          <label htmlFor="credits-amount" className="theme-label tkc-label">Monto a recargar (USD)</label>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label htmlFor="credits-amount" className="theme-label tkc-label">Monto a recargar</label>
+            {/* Solo cambia cómo se ve y se escribe el monto: el cobro es en pesos. */}
+            <div className="inline-flex rounded-full theme-chip p-0.5" role="group" aria-label="Moneda para ver el monto">
+              {CURRENCIES.map((c) => (
+                <button key={c.id} type="button" onClick={() => changeCurrency(c.id)} aria-pressed={currency === c.id}
+                  className={`px-3 py-1 rounded-full text-[11px] font-black tracking-widest transition-colors ${currency === c.id ? 'theme-btn-primary' : 'text-gray-400 hover:text-white'}`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Montos rápidos">
-            {TOPUP_PRESETS_USD.map((usd) => (
-              <button key={usd} type="button"
-                onClick={() => { setAmountText(String(usd)); setAmountError(''); }}
-                aria-pressed={usdCents === usd * 100}
-                className={`${usdCents === usd * 100 ? 'theme-btn-primary' : 'theme-btn-secondary'} theme-btn-sm font-black tabular-nums`}>
-                US${usd}
+            {presets.map((value) => (
+              <button key={value} type="button"
+                onClick={() => { setAmountText(String(value)); setAmountError(''); }}
+                aria-pressed={amountCents === value * 100}
+                className={`${amountCents === value * 100 ? 'theme-btn-primary' : 'theme-btn-secondary'} theme-btn-sm font-black tabular-nums`}>
+                {formatMoney(value * 100, currency)}
               </button>
             ))}
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="relative sm:w-48">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-500" aria-hidden="true">US$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-500" aria-hidden="true">{currency === 'usd' ? 'US$' : 'MX$'}</span>
               <input
                 ref={amountRef}
                 id="credits-amount"
@@ -152,12 +203,21 @@ export default function CreditsTopup({ balance, onPaid, onOpenPolicy, onPaying }
                 className="theme-input w-full p-3 pl-12 outline-none font-bold text-sm tabular-nums"
               />
             </div>
-            <p id="credits-preview" className="text-sm font-bold tabular-nums" aria-live="polite">
-              {previewCredits !== null ? `Recibes ${formatCredits(previewCredits)} créditos` : 'Escribe un monto entre US$1 y US$500'}
-            </p>
+            <div id="credits-preview" aria-live="polite">
+              {previewCredits !== null ? (
+                <>
+                  <p className="text-sm font-bold tabular-nums">Recibes {formatCredits(previewCredits)} créditos</p>
+                  <p className="tkc-hint tabular-nums">{otherText}</p>
+                </>
+              ) : (
+                <p className="text-sm font-bold">{validationError}</p>
+              )}
+            </div>
           </div>
           {amountError && <p role="alert" className="text-xs font-bold text-red-500">{amountError}</p>}
-          <p className="tkc-hint">Pago único en dólares. Los créditos se redondean al número entero más cercano.</p>
+          <p className="tkc-hint">
+            Pago único. Se cobra en pesos mexicanos{currency === 'usd' ? `; el dólar se convierte a MX$${(rate / 100).toLocaleString('es-MX')}` : ''}. Los créditos se redondean al número entero más cercano.
+          </p>
         </div>
 
         <button type="button" onClick={startPayment}

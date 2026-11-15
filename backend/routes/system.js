@@ -299,9 +299,9 @@ function registerSystemRoutes(app, deps) {
             if (intent.metadata.kind === 'credits') {
                 const result = await applyCreditTopupIfNew({
                     licenseId: intent.metadata.licenseId, stripePaymentId: intent.id,
-                    amountCents: intent.amount_received, currency: intent.currency,
+                    amountCents: intent.amount_received, currency: intent.currency, mxnCentsPerUsd: intent.metadata.mxnCentsPerUsd,
                 });
-                if (result.invalid) return res.status(409).json({ success: false, error: 'No se pudo aplicar la recarga: revisa que la licencia exista y que el cobro sea en dólares.' });
+                if (result.invalid) return res.status(409).json({ success: false, error: 'No se pudo aplicar la recarga: revisa que la licencia exista y que el cobro sea en pesos.' });
                 audit(req, 'payment.apply_stripe_credits', { id: intent.metadata.licenseId }, { paymentIntentId: intent.id, applied: !!result.added, credits: result.credits });
                 return res.json({ success: true, applied: !!result.added, alreadyProcessed: !!result.alreadyProcessed });
             }

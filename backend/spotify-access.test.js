@@ -387,6 +387,27 @@ test('the add-on price is separate from the plans: it adds to a purchase but can
   await pricing.loadPriceOverrides();
 });
 
+test('the dollar exchange rate is edited like a price, within sensible bounds, and is not a plan', async () => {
+  dbStub.overrides = {};
+  await pricing.loadPriceOverrides();
+  assert.equal(pricing.getMxnCentsPerUsd(), 1800); // default MX$18
+  await pricing.setMxnCentsPerUsd(1950, 'admin');
+  assert.equal(pricing.getMxnCentsPerUsd(), 1950);
+  assert.deepEqual(dbStub.saved.at(-1), ['usd_rate', 1950]);
+  await assert.rejects(() => pricing.setMxnCentsPerUsd(19, 'admin'), /tipo de cambio/);
+  await assert.rejects(() => pricing.setMxnCentsPerUsd(180000, 'admin'), /tipo de cambio/);
+  assert.equal(pricing.getMxnCentsPerUsd(), 1950);
+  assert.equal(pricing.isValidPlan('usd_rate'), false);
+  assert.ok(!('usd_rate' in pricing.getAllPlanPricesCents()));
+  await pricing.loadPriceOverrides();
+  assert.equal(pricing.getMxnCentsPerUsd(), 1950); // survives a restart
+  dbStub.overrides = { usd_rate: 3 }; // a broken saved value falls back to the default
+  await pricing.loadPriceOverrides();
+  assert.equal(pricing.getMxnCentsPerUsd(), 1800);
+  dbStub.overrides = {};
+  await pricing.loadPriceOverrides();
+});
+
 // ── Purchases (server.js helpers, run against stubs) ──
 function purchaseContext() {
   const events = { created: [], forgotten: [], stripePayments: [], applied: [], logs: [], failures: [], resolved: [], fresh: true };

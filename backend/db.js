@@ -514,8 +514,8 @@ const ready = pool.query(`
   // de hoy del panel): Membresía lo muestra al cobrar la prueba de una vez.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS subscription_amount_cents INTEGER`))
   // Créditos recargados (ver lib/credits.js). Saldo en la licencia y cada
-  // recarga en credit_transactions: aparte de payments a propósito, porque
-  // payments suma ingresos en pesos y una recarga se cobra en dólares. Sin FK,
+  // recarga en credit_transactions: aparte de payments a propósito (payments
+  // son compras de planes; un crédito es saldo que se gastará después). Sin FK,
   // como payments: el historial queda aunque se borre la licencia. El UNIQUE
   // de stripe_payment_id hace que /confirm y el webhook sumen una sola vez.
   .then(() => pool.query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 0`))
@@ -527,6 +527,7 @@ const ready = pool.query(`
       credits INTEGER NOT NULL,
       amount_cents INTEGER NOT NULL,
       currency TEXT NOT NULL,
+      mxn_cents_per_usd INTEGER,
       kind TEXT NOT NULL,
       created_at BIGINT NOT NULL
     )
@@ -1234,7 +1235,7 @@ async function claimTrialFingerprint(fingerprint, licenseId) {
 // Suma los créditos de una recarga pagada, una sola vez por cobro de Stripe
 // (/confirm y el webhook pueden llegar los dos). Devuelve { added, balance }:
 // added=false si ese cobro ya se había sumado (o la licencia no existe).
-async function addCreditsFromPaymentIfNew({ id, licenseId, stripePaymentId, credits, amountCents, currency, createdAt }) {
+async function addCreditsFromPaymentIfNew({ id, licenseId, stripePaymentId, credits, amountCents, currency, mxnCentsPerUsd = null, createdAt }) {
     await ready;
     const client = await pool.connect();
     try {
@@ -1247,9 +1248,9 @@ async function addCreditsFromPaymentIfNew({ id, licenseId, stripePaymentId, cred
         // Sin ON CONFLICT a propósito: si el cobro ya se sumó, el UNIQUE lanza
         // 23505 y la transacción entera se deshace (el saldo no se toca).
         await client.query(`
-            INSERT INTO credit_transactions (id, license_id, stripe_payment_id, credits, amount_cents, currency, kind, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 'topup', $7)
-        `, [id, licenseId, stripePaymentId, credits, amountCents, currency, createdAt]);
+            INSERT INTO credit_transactions (id, license_id, stripe_payment_id, credits, amount_cents, currency, mxn_cents_per_usd, kind, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'topup', $8)
+        `, [id, licenseId, stripePaymentId, credits, amountCents, currency, mxnCentsPerUsd, createdAt]);
         const { rows } = await client.query('UPDATE licenses SET credits = credits + $1 WHERE id = $2 RETURNING credits', [credits, licenseId]);
         await client.query('COMMIT');
         return { added: true, balance: Number(rows[0].credits) };
@@ -1265,11 +1266,12 @@ async function addCreditsFromPaymentIfNew({ id, licenseId, stripePaymentId, cred
 async function listCreditTransactions(licenseId, limit = 20) {
     await ready;
     const { rows } = await pool.query(
-        'SELECT credits, amount_cents, currency, kind, created_at FROM credit_transactions WHERE license_id = $1 ORDER BY created_at DESC LIMIT $2',
+        'SELECT credits, amount_cents, currency, mxn_cents_per_usd, kind, created_at FROM credit_transactions WHERE license_id = $1 ORDER BY created_at DESC LIMIT $2',
         [licenseId, limit],
     );
     return rows.map((row) => ({
         credits: Number(row.credits), amountCents: Number(row.amount_cents), currency: row.currency,
+        mxnCentsPerUsd: row.mxn_cents_per_usd == null ? null : Number(row.mxn_cents_per_usd),
         kind: row.kind, createdAt: Number(row.created_at),
     }));
 }

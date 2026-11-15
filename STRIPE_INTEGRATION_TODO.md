@@ -56,14 +56,15 @@ Además, por cómo funciona el sitio:
 - **Cancelar:** en Membresía, "Gestionar suscripción" abre el portal de clientes de Stripe (tarjeta, recibos y cancelar). La prueba de Lifetime tiene su propio "Cancelar prueba".
 - **Renovación que falla:** la licencia tiene 2 días de margen tras el fin del periodo mientras Stripe reintenta el cobro.
 
-## Recarga de créditos (pago único en dólares)
+## Recarga de créditos (pago único, se cobra en pesos)
 
-- En Membresía, con sesión, sección **Créditos**: saldo, montos rápidos (US$3/5/10/20) o un monto libre de **US$1 a US$500** con centavos. No es membresía: un pago único (modo `payment`) que no se repite.
-- **5 dólares = 100 créditos** (20 por dólar), redondeado al entero más cercano: US$3 = 60, US$3.33 = 67. Las reglas viven en [backend/lib/credits.js](backend/lib/credits.js); la vista previa del front ([frontend/src/credits.js](frontend/src/credits.js)) usa las mismas, pero el servidor calcula los créditos con el monto que Stripe **cobró** (`amount_total` / `amount_received` en USD), nunca con la metadata ni con lo que mande el navegador.
-- **Moneda:** la sesión se crea en `usd`. Stripe deposita en pesos y hace la conversión sola (con su comisión de conversión). El comprador paga en dólares; si su tarjeta es en pesos, su banco convierte.
-- **Cliente de Stripe:** se usa el de la licencia (para ofrecer sus tarjetas guardadas). Si Stripe lo rechaza por la moneda (un cliente con suscripción en pesos), el servidor reintenta sin cliente: el pago sale igual, solo sin tarjetas guardadas.
-- **Se suma una sola vez:** `/confirm`, `checkout.session.completed` y `payment_intent.succeeded` pueden llegar todos; la tabla `credit_transactions` tiene `stripe_payment_id` único y la suma va en la misma transacción.
-- **Aparte de los ingresos en pesos:** las recargas no entran en la tabla `payments` (que suma MXN). Sistema → Pagos las reconoce como registradas, y si una se cobró sin sumarse, aparece con su monto en US$ y el botón la aplica.
+- En Membresía, con sesión, sección **Créditos**: saldo, un selector **MXN / USD** (MXN por defecto; el navegador recuerda la elección), montos rápidos y un monto libre. La moneda elegida se ve en grande y la otra abajo como conversión ("≈ US$5" o "≈ MX$90"). No es membresía: un pago único (modo `payment`) que no se repite.
+- **Siempre se cobra en pesos.** Si el comprador escribe dólares, el servidor los convierte con el **tipo de cambio del panel** (Licencias → Precios, fila "1 dólar (US$1) =", entre MX$5 y MX$50; por defecto MX$18). Así no hay comisión de conversión de Stripe ni choque de moneda con las suscripciones, y el cliente de Stripe es siempre el mismo (sus tarjetas guardadas salen).
+- **5 dólares = 100 créditos.** En pesos: `round(pesos cobrados × 20 / tipo de cambio)`; a MX$18, MX$90 = 100 y MX$100 = 111. Los montos rápidos son US$3/5/10/20 y su equivalente en pesos (MX$54/90/180/360 a 18) para que den créditos redondos.
+- Límites: el equivalente de **US$1 a US$500** (y nunca menos de MX$10, el mínimo de Stripe).
+- Reglas en [backend/lib/credits.js](backend/lib/credits.js); la vista previa ([frontend/src/credits.js](frontend/src/credits.js)) usa las mismas, pero el servidor calcula los créditos con lo que Stripe **cobró** (`amount_total` / `amount_received` en MXN) y el tipo de cambio guardado en la sesión al crearla (si el admin lo cambia mientras alguien paga, se respeta el de la sesión). El número de créditos de la metadata nunca se usa.
+- **Se suma una sola vez:** `/confirm`, `checkout.session.completed` y `payment_intent.succeeded` pueden llegar todos; `credit_transactions` tiene `stripe_payment_id` único y la suma va en la misma transacción. Cada recarga guarda su tipo de cambio.
+- **Aparte de las compras de planes:** las recargas no entran en la tabla `payments`. Sistema → Pagos las reconoce como registradas, y si una se cobró sin sumarse, aparece y el botón la aplica.
 - **Gastar créditos:** todavía no. Solo se recargan y se ve el saldo (`credits` en la sesión y `GET /api/credits` con las últimas recargas).
 
 ## Pasos pendientes

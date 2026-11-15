@@ -20,9 +20,10 @@ const GUEST_PENDING_MESSAGE = 'Tu pago quedó pendiente de confirmación. Cuando
 // guestPurchase.js).
 // `trial`: la prueba gratis del plan (suscripción con prueba o, en
 // Lifetime, guardar la tarjeta para cobrar al terminar).
-// `creditsUsdCents`: recarga de créditos por ese monto en dólares (ver
-// CreditsTopup.jsx); se confirma igual que una compra con sesión.
-export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, trial = false, guestAlias, creditsUsdCents, onSuccess, onCancel }) {
+// `credits`: recarga de créditos, { amountCents, currency: 'mxn' | 'usd' } tal
+// como la escribió el comprador (ver CreditsTopup.jsx); el servidor la cobra
+// en pesos. Se confirma igual que una compra con sesión.
+export default function StripePaymentForm({ planType, diceTier, spotifyAddon, policyAcceptedAt, trial = false, guestAlias, credits, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
@@ -75,11 +76,11 @@ export default function StripePaymentForm({ planType, diceTier, spotifyAddon, po
     (async () => {
       let data;
       try {
-        const res = creditsUsdCents
+        const res = credits
           ? await fetch(`${backendUrl()}/api/credits/checkout-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeaders() },
-            body: JSON.stringify({ amountUsdCents: creditsUsdCents, policyAcceptedAt }),
+            body: JSON.stringify({ amountCents: credits.amountCents, currency: credits.currency, policyAcceptedAt }),
           })
           : guestAlias
           ? await fetch(`${backendUrl()}/api/payments/stripe/guest-checkout-session`, {

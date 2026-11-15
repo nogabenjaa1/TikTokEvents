@@ -894,16 +894,21 @@ app.post('/api/admin/pricing', auth.requireAuth, auth.requireAdmin, adminLimiter
     // `spotify_addon` no es un plan (ver pricing.js): se acepta aparte para
     // que su precio se edite desde el mismo panel que los otros tres.
     const isSpotifyAddon = planType === pricing.SPOTIFY_ADDON_KEY;
-    if (!isSpotifyAddon && !pricing.isValidPlan(planType)) {
+    // El tipo de cambio (centavos de MXN por dólar) se edita en la misma lista.
+    const isUsdRate = planType === pricing.USD_RATE_KEY;
+    if (!isSpotifyAddon && !isUsdRate && !pricing.isValidPlan(planType)) {
         return res.status(400).json({ success: false, error: 'Plan inválido' });
     }
-    if (!Number.isInteger(amountCents) || amountCents < pricing.MIN_PLAN_PRICE_CENTS) {
+    // El tipo de cambio tiene sus propios límites (ver setMxnCentsPerUsd).
+    if (!isUsdRate && (!Number.isInteger(amountCents) || amountCents < pricing.MIN_PLAN_PRICE_CENTS)) {
         return res.status(400).json({ success: false, error: `El precio mínimo es de ${(pricing.MIN_PLAN_PRICE_CENTS / 100).toFixed(2)} MXN` });
     }
     try {
-        const { oldAmountCents } = isSpotifyAddon
-            ? await pricing.setSpotifyAddonPriceCents(amountCents, req.license.username)
-            : await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
+        const { oldAmountCents } = isUsdRate
+            ? await pricing.setMxnCentsPerUsd(amountCents, req.license.username)
+            : isSpotifyAddon
+                ? await pricing.setSpotifyAddonPriceCents(amountCents, req.license.username)
+                : await pricing.setPlanPriceCents(planType, amountCents, req.license.username);
         audit(req, 'pricing.set', { label: planType }, { oldAmountCents, newAmountCents: amountCents });
         res.json({ success: true, planType, oldAmountCents, newAmountCents: amountCents });
     } catch (err) {
@@ -1477,6 +1482,9 @@ app.get('/api/pricing', async (req, res) => {
         success: true,
         prices: pricing.getAllPlanPricesCents(),
         spotifyAddon: pricing.getSpotifyAddonPriceCents(),
+        // Centavos de MXN por dólar (1800 = MX$18): referencia en dólares y
+        // conversión de la recarga de créditos.
+        usdRate: pricing.getMxnCentsPerUsd(),
         spotifySlots,
     });
 });
@@ -1939,106 +1947,117 @@ app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (r
 });
 
 // ==========================================
-// CRÉDITOS (ver lib/credits.js): recarga de pago único con monto libre en USD.
+// CRÉDITOS (ver lib/credits.js): recarga de pago único con monto libre. Se
+// cobra en pesos; el comprador puede escribir el monto en pesos o en dólares.
 // ==========================================
 // Suma los créditos de un cobro de recarga, una sola vez por cobro (/confirm,
 // checkout.session.completed y payment_intent.succeeded pueden llegar todos).
-// Los créditos salen del monto que Stripe COBRÓ en dólares, no de la metadata:
-// si alguien manipulara la sesión, recibe lo que de verdad pagó.
-async function applyCreditTopupIfNew({ licenseId, stripePaymentId, amountCents, currency }) {
+// Los créditos salen del monto que Stripe COBRÓ en pesos y del tipo de cambio
+// con el que se creó la sesión (metadata puesta por el servidor; si no es
+// válido, el vigente). El número de créditos de la metadata nunca se usa.
+async function applyCreditTopupIfNew({ licenseId, stripePaymentId, amountCents, currency, mxnCentsPerUsd }) {
     const cents = Number(amountCents);
     if (!licenseId || !stripePaymentId || String(currency).toLowerCase() !== credits.TOPUP_CURRENCY || !Number.isInteger(cents) || cents <= 0) {
         console.error('[Créditos] Cobro de recarga con datos inválidos', { licenseId, stripePaymentId, amountCents, currency });
         return { added: false, invalid: true };
     }
-    const amount = credits.creditsForUsdCents(cents);
+    const rateFromSession = Number(mxnCentsPerUsd);
+    const rate = credits.isValidRate(rateFromSession) ? rateFromSession : pricing.getMxnCentsPerUsd();
+    const amount = credits.creditsForMxnCents(cents, rate);
     const result = await db.addCreditsFromPaymentIfNew({
         id: crypto.randomUUID(), licenseId, stripePaymentId: String(stripePaymentId),
-        credits: amount, amountCents: cents, currency: credits.TOPUP_CURRENCY, createdAt: Date.now(),
+        credits: amount, amountCents: cents, currency: credits.TOPUP_CURRENCY, mxnCentsPerUsd: rate, createdAt: Date.now(),
     });
     if (result.missingLicense) {
         console.error(`[Créditos] La licencia ${licenseId} del cobro ${stripePaymentId} ya no existe`);
         return { ...result, invalid: true };
     }
     if (result.added) {
-        console.log(`[Créditos] +${amount} créditos (${credits.formatUsd(cents)}) a la licencia ${licenseId}; saldo ${result.balance}`);
+        console.log(`[Créditos] +${amount} créditos (${credits.formatMxn(cents)}, MX$${rate / 100} por dólar) a la licencia ${licenseId}; saldo ${result.balance}`);
         pushLicenseState(licenseId);
     }
     return { ...result, credits: amount };
 }
 
-// La sesión de Checkout de una recarga. Pago único en USD: Stripe convierte
-// solo a pesos al depositar. Se usa el cliente de la licencia (así ve sus
-// tarjetas guardadas), pero si Stripe lo rechaza por la moneda (un cliente
-// con suscripción en pesos podría quedar atado a MXN), se reintenta sin
-// cliente: el pago sale igual, solo sin las tarjetas guardadas.
-async function createCreditsCheckoutSession({ license, usdCents, policyAcceptedAt }) {
+// La sesión de Checkout de una recarga: pago único en pesos, con el cliente de
+// la licencia (en pesos igual que sus suscripciones, así ve sus tarjetas
+// guardadas). El tipo de cambio de este momento viaja en la metadata para que
+// los créditos no cambien si el admin lo edita mientras el comprador paga.
+async function createCreditsCheckoutSession({ license, mxnCents, rate, input, policyAcceptedAt }) {
     const stripe = getStripeClient();
-    const amount = credits.creditsForUsdCents(usdCents);
+    const amount = credits.creditsForMxnCents(mxnCents, rate);
+    const usdCents = credits.usdCentsForMxnCents(mxnCents, rate);
     const metadata = {
-        licenseId: license.id, kind: 'credits', credits: String(amount), amountUsdCents: String(usdCents), policyAcceptedAt,
+        licenseId: license.id, kind: 'credits', credits: String(amount), mxnCents: String(mxnCents),
+        mxnCentsPerUsd: String(rate), inputCurrency: input.currency, inputAmountCents: String(input.amountCents), policyAcceptedAt,
     };
-    const params = {
+    const customer = license.stripe_customer_id || await stripeCustomerForLicense(stripe, license.id);
+    return stripe.checkout.sessions.create({
         ui_mode: 'form',
         billing_address_collection: 'auto',
         name_collection: { individual: { enabled: true, optional: true } },
         integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
+        customer,
         return_url: `${FRONTEND_URL}/membership?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
         submit_type: 'auto',
+        saved_payment_method_options: { payment_method_save: 'enabled' },
         mode: 'payment',
         line_items: [{
             quantity: 1,
             price_data: {
                 currency: credits.TOPUP_CURRENCY,
-                unit_amount: usdCents,
+                unit_amount: mxnCents,
                 product_data: { name: `${amount.toLocaleString('es-MX')} créditos` },
             },
         }],
         metadata,
-        payment_intent_data: { description: `BenjaApis - Recarga de ${amount} créditos (${credits.formatUsd(usdCents)})`, metadata },
-    };
-    const customer = license.stripe_customer_id || await stripeCustomerForLicense(stripe, license.id);
-    try {
-        return await stripe.checkout.sessions.create({
-            ...params, customer, saved_payment_method_options: { payment_method_save: 'enabled' },
-        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
-    } catch (err) {
-        if (!/currenc/i.test(err?.message || '')) throw err;
-        console.warn('[Créditos] Stripe rechazó el cliente por la moneda; recarga sin cliente:', err.message);
-        return stripe.checkout.sessions.create(params, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
-    }
+        payment_intent_data: {
+            description: `BenjaApis - Recarga de ${amount} créditos (${credits.formatMxn(mxnCents)}, aprox. ${credits.formatUsd(usdCents)})`,
+            metadata,
+        },
+    }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
 }
+
+const creditRules = () => {
+    const rate = pricing.getMxnCentsPerUsd();
+    const limits = credits.topupLimitsMxnCents(rate);
+    return { creditsPerUsd: credits.CREDITS_PER_USD, mxnCentsPerUsd: rate, minMxnCents: limits.min, maxMxnCents: limits.max };
+};
 
 app.get('/api/credits', auth.requireAuth, async (req, res) => {
     try {
         const row = await db.findCoreById(req.license.id);
         const history = await db.listCreditTransactions(req.license.id, 10);
         res.set('Cache-Control', 'no-store');
-        res.json({
-            success: true, balance: Number(row?.credits) || 0, history,
-            rules: { creditsPerUsd: credits.CREDITS_PER_USD, minUsdCents: credits.MIN_TOPUP_USD_CENTS, maxUsdCents: credits.MAX_TOPUP_USD_CENTS },
-        });
+        res.json({ success: true, balance: Number(row?.credits) || 0, history, rules: creditRules() });
     } catch (err) {
         console.error('[Créditos] No se pudo leer el saldo:', err.message);
         res.status(500).json({ success: false, error: 'No se pudo cargar tu saldo de créditos.' });
     }
 });
 
+// Cuerpo: { amountCents, currency: 'mxn' | 'usd', policyAcceptedAt }. El monto
+// se convierte aquí a los pesos que se cobran.
 app.post('/api/credits/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
-    const { amountUsdCents, policyAcceptedAt } = req.body || {};
-    const usdCents = credits.parseTopupUsdCents(amountUsdCents);
-    if (usdCents === null) {
+    const { amountCents, currency, policyAcceptedAt } = req.body || {};
+    const rate = pricing.getMxnCentsPerUsd();
+    const mxnCents = credits.parseTopup({ amountCents, currency }, rate);
+    if (mxnCents === null) {
+        const { min, max } = credits.topupLimitsMxnCents(rate);
         return res.status(400).json({
             success: false,
-            error: `El monto debe estar entre ${credits.formatUsd(credits.MIN_TOPUP_USD_CENTS)} y ${credits.formatUsd(credits.MAX_TOPUP_USD_CENTS)}.`,
+            error: `El monto debe estar entre ${credits.formatMxn(min)} y ${credits.formatMxn(max)} (${credits.formatUsd(credits.MIN_TOPUP_USD_CENTS)} a ${credits.formatUsd(credits.MAX_TOPUP_USD_CENTS)}).`,
         });
     }
     if (!validPolicyAcceptedAt(policyAcceptedAt)) {
         return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
     }
     try {
-        const session = await createCreditsCheckoutSession({ license: req.license, usdCents, policyAcceptedAt });
-        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id, credits: credits.creditsForUsdCents(usdCents) });
+        const session = await createCreditsCheckoutSession({ license: req.license, mxnCents, rate, input: { amountCents, currency }, policyAcceptedAt });
+        res.json({
+            success: true, clientSecret: session.client_secret, checkoutSessionId: session.id,
+            credits: credits.creditsForMxnCents(mxnCents, rate), mxnCents, usdCents: credits.usdCentsForMxnCents(mxnCents, rate),
+        });
     } catch (err) {
         console.error('[Créditos] Error creando Checkout Session:', err.message);
         res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
@@ -2056,7 +2075,7 @@ async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
     if (meta.kind === 'credits') {
         const result = await applyCreditTopupIfNew({
             licenseId: meta.licenseId, stripePaymentId: paymentIntentId,
-            amountCents: session.amount_total, currency: session.currency,
+            amountCents: session.amount_total, currency: session.currency, mxnCentsPerUsd: meta.mxnCentsPerUsd,
         });
         return result.invalid ? 'invalid' : 'approved';
     }
@@ -2260,7 +2279,10 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
             // El cobro del final de la prueba de Lifetime ya se aplica al hacerse.
             if (!meta.licenseId || meta.lifetimeTrial === '1') return;
             if (meta.kind === 'credits') {
-                await applyCreditTopupIfNew({ licenseId: meta.licenseId, stripePaymentId: object.id, amountCents: object.amount_received, currency: object.currency });
+                await applyCreditTopupIfNew({
+                    licenseId: meta.licenseId, stripePaymentId: object.id, amountCents: object.amount_received,
+                    currency: object.currency, mxnCentsPerUsd: meta.mxnCentsPerUsd,
+                });
                 return;
             }
             await applyApprovedStripePaymentIfNew({

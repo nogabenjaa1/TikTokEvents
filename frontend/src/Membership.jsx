@@ -11,11 +11,11 @@ import RefundPolicyModal from './RefundPolicyModal';
 // Mensual y Anual son suscripciones (se cobran solas cada periodo); Lifetime
 // es un pago único. Los tres tienen prueba gratis con tarjeta (ver
 // backend/lib/stripeBilling.js). Precios de respaldo = los de pricing.js
-// (US$10 / US$20 / US$30 en pesos); los reales llegan de /api/pricing.
+// (US$5 / US$10 / US$20 en pesos); los reales llegan de /api/pricing.
 const PLANS = [
-  { id: 'month', label: 'Mensual', mxn: 180, period: '/ mes', after: 'cada mes' },
-  { id: 'annual', label: 'Anual', mxn: 360, period: '/ año', after: 'cada año', featured: true },
-  { id: 'lifetime', label: 'Lifetime', mxn: 540, period: 'pago único', after: 'una sola vez' },
+  { id: 'month', label: 'Mensual', mxn: 90, period: '/ mes', after: 'cada mes' },
+  { id: 'annual', label: 'Anual', mxn: 180, period: '/ año', after: 'cada año', featured: true },
+  { id: 'lifetime', label: 'Lifetime', mxn: 360, period: 'pago único', after: 'una sola vez' },
 ];
 const SUBSCRIPTION_PLANS = ['month', 'annual'];
 // La prueba gratis dura 1 día (antes 14; las que ya habían empezado
@@ -108,6 +108,9 @@ function billingSummary(billing, session, livePrices) {
   if (billing.status === 'trialing') {
     return `Prueba gratis del plan ${planInfo?.label} hasta el ${session?.expiresAt ? formatDateTime(session.expiresAt) : end}. Entonces se cobrarán ${price(billing.amountCents, billing.plan)} y después ${planInfo?.after}, salvo que la canceles antes o pagues ahora.`;
   }
+  if ((billing.status === 'past_due' || billing.status === 'unpaid' || billing.status === 'payment_failed') && session?.licenseType === 'trial') {
+    return `No se pudo cobrar tu plan ${planInfo?.label} al terminar la prueba, así que no se activó. Paga con otra tarjeta o con Google Pay en "Pagar ahora".`;
+  }
   if (billing.status === 'past_due' || billing.status === 'unpaid') {
     return 'No pudimos cobrar la renovación. Revisa tu tarjeta en "Gestionar suscripción" para no perder tu plan.';
   }
@@ -127,7 +130,11 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   const [billingBusy, setBillingBusy] = useState(false);
   // Plan al que se quiere mejorar, esperando que confirme el cobro inmediato.
   const [upgradeConfirm, setUpgradeConfirm] = useState(null);
-  // "Pagar ahora" durante la prueba, esperando que confirme el cobro.
+  // "Pagar ahora" durante la prueba (o si su cobro falló), esperando que
+  // confirme. Es una compra normal con el formulario de Stripe: tarjeta o
+  // Google Pay, el error de un rechazo se ve ahí mismo y se puede intentar con
+  // otra tarjeta. Solo con el cobro hecho se activa el plan (y la suscripción
+  // de prueba se cierra sola, ver backend/lib/stripeBilling.js).
   const [payNowConfirm, setPayNowConfirm] = useState(false);
   // Pedido explicito: aceptación obligatoria de la política de reembolsos
   // antes de poder pagar -- no evita que alguien dispute con su banco (eso
@@ -286,6 +293,11 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
     setPayingPlan(planType);
   };
 
+  const continueToPayNow = () => {
+    setPayNowConfirm(false);
+    handleBuy(session?.billing?.plan);
+  };
+
   const confirmUpgrade = () => {
     const id = upgradeConfirm;
     setUpgradeConfirm(null);
@@ -314,26 +326,6 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       window.location.href = data.url;
     } catch (err) {
       setError(err.message);
-      setBillingBusy(false);
-    }
-  };
-
-  // Termina la prueba y cobra en ese momento (ver /api/billing/end-trial-now).
-  const payTrialNow = async () => {
-    if (billingBusy) return;
-    setPayNowConfirm(false);
-    setBillingBusy(true);
-    setError('');
-    try {
-      const res = await fetch(`${backendUrl()}/api/billing/end-trial-now`, { method: 'POST', headers: authHeaders() });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo completar el pago.');
-      setBanner('success');
-      const updated = await refreshSession();
-      if (updated) onSessionUpdate?.(updated);
-    } catch (err) {
-      setError(err.message);
-    } finally {
       setBillingBusy(false);
     }
   };
@@ -505,7 +497,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
           {billingInfo && (
             <div className="basis-full flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[var(--surface-border-color)]">
               <p className="tkc-hint flex-1 basis-64">{billingSummary(billingInfo, session, livePrices)}</p>
-              {session?.licenseType === 'trial' && (billingInfo.lifetimeChargeAt || (billingInfo.hasSubscription && billingInfo.status === 'trialing')) && (
+              {session?.licenseType === 'trial' && billingInfo.plan && (billingInfo.lifetimeChargeAt || billingInfo.status === 'trialing' || ['past_due', 'unpaid', 'payment_failed'].includes(billingInfo.status)) && (
                 <button type="button" onClick={() => setPayNowConfirm(true)} disabled={billingBusy}
                   className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest disabled:opacity-40">
                   Pagar ahora
@@ -766,26 +758,25 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
       {/* Pagar la prueba de una vez: se cobra ya y el plan empieza hoy. */}
       {payNowConfirm && billingInfo && (() => {
         const planInfo = PLANS.find(p => p.id === billingInfo.plan);
-        const cents = billingInfo.plan === 'lifetime' ? billingInfo.lifetimeAmountCents : billingInfo.amountCents;
-        const amount = cents ? `MX$${(cents / 100).toLocaleString('es-MX')}` : `el precio de tu plan ${planInfo?.label}`;
+        const amount = `MX$${planMxn(billingInfo.plan).toLocaleString('es-MX')}`;
         return (
           <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="paynow-title">
             <div className="theme-surface w-full max-w-md p-5 flex flex-col gap-3">
               <p id="paynow-title" className="theme-label tkc-label">Pagar ahora</p>
               <p className="text-sm font-black">Se te cobrará {amount} de inmediato{billingInfo.plan === 'lifetime' ? ', una sola vez' : ''}.</p>
               <p className="tkc-hint">
-                {billingInfo.plan === 'lifetime'
-                  ? 'Tu prueba termina en este momento y Lifetime queda activo para siempre, sin más cobros.'
-                  : `Tu prueba termina en este momento y tu plan ${planInfo?.label} empieza hoy; después se renueva solo ${planInfo?.after} hasta que lo canceles.`}
+                Paga con tu tarjeta o con Google Pay en el siguiente paso. Tu plan {planInfo?.label} se activa solo cuando el cobro pasa
+                {billingInfo.plan === 'lifetime' ? ' y queda para siempre, sin más cobros.' : `, empieza hoy y se renueva solo ${planInfo?.after} hasta que lo canceles.`}
+                {' '}Si tu tarjeta es rechazada, tu prueba sigue igual y puedes intentar con otra.
               </p>
               <div className="flex flex-col sm:flex-row gap-2 mt-1">
                 <button type="button" onClick={() => setPayNowConfirm(false)}
                   className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
                   Cancelar
                 </button>
-                <button type="button" onClick={payTrialNow}
+                <button type="button" onClick={continueToPayNow}
                   className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest">
-                  Sí, cobrar ahora
+                  Continuar al pago
                 </button>
               </div>
             </div>

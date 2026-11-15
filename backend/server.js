@@ -1729,7 +1729,11 @@ function validPolicyAcceptedAt(value) {
 // precio en el panel, aplica a las suscripciones nuevas.
 async function createPurchaseCheckoutSession({ licenseId, license = null, planType, diceTier, spotifyAddon, trial = false, policyAcceptedAt, extraMetadata = {}, returnUrl }) {
     const stripe = getStripeClient();
-    const customer = await stripeCustomerForLicense(stripe, licenseId);
+    // El cliente que la licencia ya tiene guardado, si lo tiene: buscarlo por
+    // metadata depende del buscador de Stripe, que tarda hasta un minuto en
+    // ver a un cliente recién creado, y un cliente nuevo no ve sus tarjetas
+    // guardadas (p. ej. "Pagar ahora" poco después de empezar la prueba).
+    const customer = license?.stripe_customer_id || await stripeCustomerForLicense(stripe, licenseId);
     const common = {
         // Valores configurados en Checkout Studio de Stripe.
         ui_mode: 'form',
@@ -1783,6 +1787,13 @@ async function createPurchaseCheckoutSession({ licenseId, license = null, planTy
             // que tiene la huella para no repetir la prueba): sin Link.
             ...(trial ? { allowed_payment_method_types: ['card'] } : {}),
             payment_method_collection: 'always',
+            // La casilla "Guardar tarjeta" también en suscripciones (Stripe la
+            // admite en modo payment y subscription). Sin ella, Stripe guarda la
+            // tarjeta solo para esa suscripción (allow_redisplay 'limited') y no
+            // aparece como opción en el siguiente pago (p. ej. "Pagar ahora" al
+            // terminar la prueba). Con la casilla marcada queda 'always' y el
+            // formulario la ofrece, junto a la opción de usar otra tarjeta.
+            saved_payment_method_options: { payment_method_save: 'enabled' },
             metadata,
             subscription_data: subscriptionData,
         }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
@@ -1938,6 +1949,12 @@ async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
         licenseId: meta.licenseId, planType: meta.planType || undefined, diceTier: meta.diceTier || undefined,
         spotifyAddon: meta.spotifyAddon === 'true', stripePaymentId: paymentIntentId, newLicenseAlias,
     });
+    // Se recuerda el cliente de Stripe para que la siguiente compra use el
+    // mismo (y le muestre sus tarjetas guardadas).
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+    if (customerId && meta.licenseId) {
+        try { await db.applyBillingState(meta.licenseId, { stripeCustomerId: customerId }); } catch (err) { console.error('[Stripe] No se pudo guardar el cliente de la licencia:', err.message); }
+    }
     return 'approved';
 }
 
@@ -2026,24 +2043,6 @@ app.post('/api/billing/portal', auth.requireAuth, paymentLimiter, async (req, re
     }
 });
 
-// "Pagar ahora" durante la prueba gratis: se cobra en ese momento y el plan
-// empieza hoy (ver billing.endTrialNow). Membresía lo pide con una ventana de
-// confirmación que dice el monto.
-app.post('/api/billing/end-trial-now', auth.requireAuth, paymentLimiter, async (req, res) => {
-    try {
-        const result = await billing.endTrialNow(req.license);
-        if (result.status === 'none') return res.status(400).json({ success: false, error: 'No tienes una prueba gratis que cobrar.' });
-        if (result.status !== 'charged') {
-            return res.status(402).json({ success: false, error: 'No se pudo cobrar tu tarjeta. Revísala en "Gestionar suscripción" o intenta con otra.' });
-        }
-        console.log(`[Stripe] Prueba cobrada de una vez por el streamer (licencia ${req.license.id}).`);
-        res.json({ success: true });
-    } catch (err) {
-        console.error('[Stripe] No se pudo cobrar la prueba de una vez:', err.message);
-        res.status(502).json({ success: false, error: 'No se pudo completar el pago. Intenta de nuevo en un momento.' });
-    }
-});
-
 // Cancelar la prueba de Lifetime antes del cobro: no se cobra nada y la
 // licencia termina el día que acababa la prueba.
 app.post('/api/billing/cancel-lifetime-trial', auth.requireAuth, paymentLimiter, async (req, res) => {
@@ -2102,6 +2101,12 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
         if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
             const sub = await stripe.subscriptions.retrieve(object.id, {}, { apiVersion });
             await billing.syncLicenseFromSubscription(sub);
+            return;
+        }
+        // Factura nueva de una suscripción (fin de prueba o renovación): se
+        // cobra en el momento en vez de esperar la hora de borrador de Stripe.
+        if (event.type === 'invoice.created') {
+            await billing.collectInvoiceNow(object);
             return;
         }
         if (event.type === 'invoice.paid') {

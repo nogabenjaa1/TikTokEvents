@@ -112,7 +112,7 @@ export default function SystemPayments({ onUnauthorized }) {
                     <Badge tone="danger">Stripe</Badge>
                     <strong className="text-sm">{item.license ? `@${item.license}` : 'Licencia eliminada'}</strong>
                     <span className="text-xs text-gray-400">{describePurchase(item)}</span>
-                    <strong className="text-sm ml-auto">{mxn(item.amountCents)}</strong>
+                    <strong className="text-sm ml-auto">{item.currency === 'usd' ? `US$${(item.amountCents / 100).toFixed(2)}` : mxn(item.amountCents)}</strong>
                   </div>
                   <p className="text-[11px] text-gray-500">Cobrado {formatWhen(item.createdAt)}. Stripe lo dio por bueno y este sitio no lo tiene registrado.</p>
                   <p className="text-[10px] text-gray-500 break-all">ID del cobro: {item.paymentIntentId}</p>

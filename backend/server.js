@@ -75,6 +75,7 @@ const auth = require('./auth');
 const tokenCrypto = require('./tokenCrypto');
 const { createStripeBilling, TRIAL_DAYS: BILLING_TRIAL_DAYS } = require('./lib/stripeBilling');
 const pricing = require('./pricing');
+const credits = require('./lib/credits');
 const spotify = require('./spotify');
 const storage = require('./storage');
 const Tenant = require('./tenant');
@@ -406,6 +407,8 @@ function sessionLicense(row) {
         diceWinBonusUnlocked: !!row.dice_win_bonus_unlocked,
         spotifyAddon: !!row.spotify_addon,
         overlayKey: auth.overlayTokenFor(row),
+        // Saldo de créditos recargados (ver lib/credits.js).
+        credits: Number(row.credits) || 0,
         // Suscripción o prueba gratis (ver lib/stripeBilling.js): Membresía
         // dice cuándo se cobra o se renueva y ofrece gestionarla.
         billing: row.subscription_plan ? {
@@ -1935,6 +1938,113 @@ app.post('/api/payments/stripe/guest-checkout-session', paymentLimiter, async (r
     }
 });
 
+// ==========================================
+// CRÉDITOS (ver lib/credits.js): recarga de pago único con monto libre en USD.
+// ==========================================
+// Suma los créditos de un cobro de recarga, una sola vez por cobro (/confirm,
+// checkout.session.completed y payment_intent.succeeded pueden llegar todos).
+// Los créditos salen del monto que Stripe COBRÓ en dólares, no de la metadata:
+// si alguien manipulara la sesión, recibe lo que de verdad pagó.
+async function applyCreditTopupIfNew({ licenseId, stripePaymentId, amountCents, currency }) {
+    const cents = Number(amountCents);
+    if (!licenseId || !stripePaymentId || String(currency).toLowerCase() !== credits.TOPUP_CURRENCY || !Number.isInteger(cents) || cents <= 0) {
+        console.error('[Créditos] Cobro de recarga con datos inválidos', { licenseId, stripePaymentId, amountCents, currency });
+        return { added: false, invalid: true };
+    }
+    const amount = credits.creditsForUsdCents(cents);
+    const result = await db.addCreditsFromPaymentIfNew({
+        id: crypto.randomUUID(), licenseId, stripePaymentId: String(stripePaymentId),
+        credits: amount, amountCents: cents, currency: credits.TOPUP_CURRENCY, createdAt: Date.now(),
+    });
+    if (result.missingLicense) {
+        console.error(`[Créditos] La licencia ${licenseId} del cobro ${stripePaymentId} ya no existe`);
+        return { ...result, invalid: true };
+    }
+    if (result.added) {
+        console.log(`[Créditos] +${amount} créditos (${credits.formatUsd(cents)}) a la licencia ${licenseId}; saldo ${result.balance}`);
+        pushLicenseState(licenseId);
+    }
+    return { ...result, credits: amount };
+}
+
+// La sesión de Checkout de una recarga. Pago único en USD: Stripe convierte
+// solo a pesos al depositar. Se usa el cliente de la licencia (así ve sus
+// tarjetas guardadas), pero si Stripe lo rechaza por la moneda (un cliente
+// con suscripción en pesos podría quedar atado a MXN), se reintenta sin
+// cliente: el pago sale igual, solo sin las tarjetas guardadas.
+async function createCreditsCheckoutSession({ license, usdCents, policyAcceptedAt }) {
+    const stripe = getStripeClient();
+    const amount = credits.creditsForUsdCents(usdCents);
+    const metadata = {
+        licenseId: license.id, kind: 'credits', credits: String(amount), amountUsdCents: String(usdCents), policyAcceptedAt,
+    };
+    const params = {
+        ui_mode: 'form',
+        billing_address_collection: 'auto',
+        name_collection: { individual: { enabled: true, optional: true } },
+        integration_identifier: STRIPE_CHECKOUT_INTEGRATION_ID,
+        return_url: `${FRONTEND_URL}/membership?payment=pending&stripe_checkout={CHECKOUT_SESSION_ID}`,
+        submit_type: 'auto',
+        mode: 'payment',
+        line_items: [{
+            quantity: 1,
+            price_data: {
+                currency: credits.TOPUP_CURRENCY,
+                unit_amount: usdCents,
+                product_data: { name: `${amount.toLocaleString('es-MX')} créditos` },
+            },
+        }],
+        metadata,
+        payment_intent_data: { description: `BenjaApis - Recarga de ${amount} créditos (${credits.formatUsd(usdCents)})`, metadata },
+    };
+    const customer = license.stripe_customer_id || await stripeCustomerForLicense(stripe, license.id);
+    try {
+        return await stripe.checkout.sessions.create({
+            ...params, customer, saved_payment_method_options: { payment_method_save: 'enabled' },
+        }, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+    } catch (err) {
+        if (!/currenc/i.test(err?.message || '')) throw err;
+        console.warn('[Créditos] Stripe rechazó el cliente por la moneda; recarga sin cliente:', err.message);
+        return stripe.checkout.sessions.create(params, { apiVersion: STRIPE_CHECKOUT_FORM_API_VERSION });
+    }
+}
+
+app.get('/api/credits', auth.requireAuth, async (req, res) => {
+    try {
+        const row = await db.findCoreById(req.license.id);
+        const history = await db.listCreditTransactions(req.license.id, 10);
+        res.set('Cache-Control', 'no-store');
+        res.json({
+            success: true, balance: Number(row?.credits) || 0, history,
+            rules: { creditsPerUsd: credits.CREDITS_PER_USD, minUsdCents: credits.MIN_TOPUP_USD_CENTS, maxUsdCents: credits.MAX_TOPUP_USD_CENTS },
+        });
+    } catch (err) {
+        console.error('[Créditos] No se pudo leer el saldo:', err.message);
+        res.status(500).json({ success: false, error: 'No se pudo cargar tu saldo de créditos.' });
+    }
+});
+
+app.post('/api/credits/checkout-session', auth.requireAuth, paymentLimiter, async (req, res) => {
+    const { amountUsdCents, policyAcceptedAt } = req.body || {};
+    const usdCents = credits.parseTopupUsdCents(amountUsdCents);
+    if (usdCents === null) {
+        return res.status(400).json({
+            success: false,
+            error: `El monto debe estar entre ${credits.formatUsd(credits.MIN_TOPUP_USD_CENTS)} y ${credits.formatUsd(credits.MAX_TOPUP_USD_CENTS)}.`,
+        });
+    }
+    if (!validPolicyAcceptedAt(policyAcceptedAt)) {
+        return res.status(400).json({ success: false, error: 'Debes aceptar la política de reembolsos para continuar' });
+    }
+    try {
+        const session = await createCreditsCheckoutSession({ license: req.license, usdCents, policyAcceptedAt });
+        res.json({ success: true, clientSecret: session.client_secret, checkoutSessionId: session.id, credits: credits.creditsForUsdCents(usdCents) });
+    } catch (err) {
+        console.error('[Créditos] Error creando Checkout Session:', err.message);
+        res.status(502).json({ success: false, error: 'No se pudo iniciar el pago. Intenta de nuevo en un momento.' });
+    }
+});
+
 // Aplica una sesión de Checkout ya pedida a Stripe: pago único, suscripción o
 // prueba de Lifetime. Devuelve 'approved', 'pending', 'trial_used' o 'invalid'.
 async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
@@ -1943,6 +2053,13 @@ async function fulfillCheckoutSession(session, { newLicenseAlias } = {}) {
     const meta = session.metadata || {};
     const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
     if (session.mode !== 'payment' || session.payment_status !== 'paid' || !paymentIntentId) return 'pending';
+    if (meta.kind === 'credits') {
+        const result = await applyCreditTopupIfNew({
+            licenseId: meta.licenseId, stripePaymentId: paymentIntentId,
+            amountCents: session.amount_total, currency: session.currency,
+        });
+        return result.invalid ? 'invalid' : 'approved';
+    }
     // El id del PaymentIntent, igual que el webhook: así /confirm y
     // payment_intent.succeeded se deduplican por el mismo UNIQUE.
     await applyApprovedStripePaymentIfNew({
@@ -2142,6 +2259,10 @@ app.post('/api/payments/stripe/webhook', webhookLimiter, async (req, res) => {
             const meta = object.metadata || {};
             // El cobro del final de la prueba de Lifetime ya se aplica al hacerse.
             if (!meta.licenseId || meta.lifetimeTrial === '1') return;
+            if (meta.kind === 'credits') {
+                await applyCreditTopupIfNew({ licenseId: meta.licenseId, stripePaymentId: object.id, amountCents: object.amount_received, currency: object.currency });
+                return;
+            }
             await applyApprovedStripePaymentIfNew({
                 licenseId: meta.licenseId, planType: meta.planType || undefined, diceTier: meta.diceTier || undefined,
                 spotifyAddon: meta.spotifyAddon === 'true', stripePaymentId: object.id, newLicenseAlias: meta.newLicenseAlias || undefined,
@@ -2337,7 +2458,7 @@ setInterval(() => {
 const healthChecker = createHealthChecker({ ping: () => db.ping() });
 registerSystemRoutes(app, {
     auth, db, storage, io, tenants, errorReporter, healthChecker, getStripeClient,
-    applyPaymentWithRetry, applyApprovedStripePaymentIfNew, audit, bootId: BOOT_ID, downloader,
+    applyPaymentWithRetry, applyApprovedStripePaymentIfNew, applyCreditTopupIfNew, audit, bootId: BOOT_ID, downloader,
 });
 
 // ==========================================

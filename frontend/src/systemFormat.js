@@ -133,7 +133,8 @@ export const reasonLabel = (reason) => REASON_LABELS[reason] || reason;
 export const providerLabel = provider;
 
 // Qué compró el pago, en una línea: "Anual + Spotify", "PRO", "Complemento de Spotify".
-export function describePurchase({ planType, diceTier, spotifyAddon }) {
+export function describePurchase({ planType, diceTier, spotifyAddon, kind, credits }) {
+  if (kind === 'credits') return `Recarga de ${Number(credits || 0).toLocaleString('es-MX')} créditos`;
   const parts = [];
   if (planType) parts.push(plan(planType));
   if (diceTier && diceTier !== 'regular') parts.push(`Color Says ${String(diceTier).toUpperCase()}`);

@@ -56,6 +56,16 @@ Además, por cómo funciona el sitio:
 - **Cancelar:** en Membresía, "Gestionar suscripción" abre el portal de clientes de Stripe (tarjeta, recibos y cancelar). La prueba de Lifetime tiene su propio "Cancelar prueba".
 - **Renovación que falla:** la licencia tiene 2 días de margen tras el fin del periodo mientras Stripe reintenta el cobro.
 
+## Recarga de créditos (pago único en dólares)
+
+- En Membresía, con sesión, sección **Créditos**: saldo, montos rápidos (US$3/5/10/20) o un monto libre de **US$1 a US$500** con centavos. No es membresía: un pago único (modo `payment`) que no se repite.
+- **5 dólares = 100 créditos** (20 por dólar), redondeado al entero más cercano: US$3 = 60, US$3.33 = 67. Las reglas viven en [backend/lib/credits.js](backend/lib/credits.js); la vista previa del front ([frontend/src/credits.js](frontend/src/credits.js)) usa las mismas, pero el servidor calcula los créditos con el monto que Stripe **cobró** (`amount_total` / `amount_received` en USD), nunca con la metadata ni con lo que mande el navegador.
+- **Moneda:** la sesión se crea en `usd`. Stripe deposita en pesos y hace la conversión sola (con su comisión de conversión). El comprador paga en dólares; si su tarjeta es en pesos, su banco convierte.
+- **Cliente de Stripe:** se usa el de la licencia (para ofrecer sus tarjetas guardadas). Si Stripe lo rechaza por la moneda (un cliente con suscripción en pesos), el servidor reintenta sin cliente: el pago sale igual, solo sin tarjetas guardadas.
+- **Se suma una sola vez:** `/confirm`, `checkout.session.completed` y `payment_intent.succeeded` pueden llegar todos; la tabla `credit_transactions` tiene `stripe_payment_id` único y la suma va en la misma transacción.
+- **Aparte de los ingresos en pesos:** las recargas no entran en la tabla `payments` (que suma MXN). Sistema → Pagos las reconoce como registradas, y si una se cobró sin sumarse, aparece con su monto en US$ y el botón la aplica.
+- **Gastar créditos:** todavía no. Solo se recargan y se ve el saldo (`credits` en la sesión y `GET /api/credits` con las últimas recargas).
+
 ## Pasos pendientes
 
 1. **Portal de clientes:** en el Dashboard, *Configuración → Facturación → Portal de clientes*, activa "Cancelar suscripciones" y "Actualizar métodos de pago" y guarda (en modo de prueba y en modo real). Sin guardarlo una vez, "Gestionar suscripción" da error. **Deja apagado "Permitir que los clientes cambien de plan"**: los cambios de plan se hacen desde Membresía (el portal no conoce los planes y la licencia no se enteraría).

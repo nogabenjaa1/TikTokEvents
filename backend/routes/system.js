@@ -23,7 +23,7 @@ function parseDetails(text) {
 function registerSystemRoutes(app, deps) {
     const {
         auth, db, storage, io, tenants, errorReporter, healthChecker, getStripeClient,
-        applyPaymentWithRetry, applyApprovedStripePaymentIfNew, audit, bootId,
+        applyPaymentWithRetry, applyApprovedStripePaymentIfNew, applyCreditTopupIfNew, audit, bootId,
     } = deps;
 
     const adminOnly = [auth.requireAuth, auth.requireAdmin];
@@ -295,6 +295,16 @@ function registerSystemRoutes(app, deps) {
             }
             // Una compra sin cuenta (newLicenseAlias) todavía no tiene licencia:
             // aplicarla es justamente crearla.
+            // Recarga de créditos: se suman con el monto cobrado (una sola vez).
+            if (intent.metadata.kind === 'credits') {
+                const result = await applyCreditTopupIfNew({
+                    licenseId: intent.metadata.licenseId, stripePaymentId: intent.id,
+                    amountCents: intent.amount_received, currency: intent.currency,
+                });
+                if (result.invalid) return res.status(409).json({ success: false, error: 'No se pudo aplicar la recarga: revisa que la licencia exista y que el cobro sea en dólares.' });
+                audit(req, 'payment.apply_stripe_credits', { id: intent.metadata.licenseId }, { paymentIntentId: intent.id, applied: !!result.added, credits: result.credits });
+                return res.json({ success: true, applied: !!result.added, alreadyProcessed: !!result.alreadyProcessed });
+            }
             const newLicenseAlias = intent.metadata.newLicenseAlias || undefined;
             if (!newLicenseAlias && !(await db.findById(intent.metadata.licenseId))) {
                 return res.status(409).json({ success: false, error: 'La licencia de este cobro ya no existe.' });

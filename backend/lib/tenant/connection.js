@@ -37,6 +37,9 @@ module.exports = {
     isEvictable(hasSockets, idleMs) {
         if (hasSockets) return false;
         if (this.liveConnected || this.connectingPromise || this.anyContestNeedsConnection()) return false;
+        // Eliminación offstream no necesita TikTok (ver anyContestNeedsConnection),
+        // pero una partida en curso tampoco se puede soltar de memoria.
+        if (this.elimState.isActive) return false;
         return Date.now() - this.lastSocketActivityAt >= idleMs;
     },
 
@@ -57,8 +60,10 @@ module.exports = {
     // ==========================================
     // CONEXIÓN TIKTOK
     // ==========================================
+    // Eliminación offstream (solo entradas manuales, pedido explícito) no usa
+    // TikTok: no mantiene ni reintenta la conexión por sí sola.
     anyContestNeedsConnection() {
-        return this.contestState.isActive || this.zubState.isActive || this.elimState.isActive || this.rouletteState.isActive || this.extensibleState.isActive || this.versusState.isActive || this.goalState.isActive || !!this.desiredUsername;
+        return this.contestState.isActive || this.zubState.isActive || (this.elimState.isActive && !this.elimState.offstream) || this.rouletteState.isActive || this.extensibleState.isActive || this.versusState.isActive || this.goalState.isActive || !!this.desiredUsername;
     },
 
     disconnectTikTok() {
@@ -154,7 +159,8 @@ module.exports = {
     stopAllActiveGames() {
         if (this.contestState.isActive) this.stopKingContest();
         if (this.zubState.isActive) this.stopZubastinis();
-        if (this.elimState.isActive) this.stopElimination();
+        // Una Eliminación offstream no depende del LIVE: sigue aunque se corte.
+        if (this.elimState.isActive && !this.elimState.offstream) this.stopElimination();
         if (this.rouletteState.isActive) this.stopRoulette();
         if (this.extensibleState.isActive) this.stopExtensible();
         if (this.versusState.isActive) this.stopVersus();

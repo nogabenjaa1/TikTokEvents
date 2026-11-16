@@ -96,7 +96,7 @@ test('combinar valida que sean dos participantes distintos y que haya destino', 
 function loadElim() {
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? helpers : name.includes('elimEntries') ? elimEntries : {}),
+    require: (name) => (name.includes('tenantHelpers') ? helpers : name.includes('elimEntries') ? elimEntries : name.includes('/db') ? { incrementUsage: async () => {} } : {}),
     setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
     console: { log: () => {}, error: () => {}, warn: () => {} },
     Math, Number, String, Map, Set, Object, Array, Promise, JSON,
@@ -265,4 +265,100 @@ test('la pausa solo funciona durante el tiempo para unirse; reanudar, siempre', 
   tenant.elimState.paused = true;
   call('resume_elimination');
   assert.equal(tenant.elimState.paused, false);
+});
+
+// ── Offstream: la misma dinámica solo con entradas manuales, sin TikTok ──
+
+function loadConnection() {
+  const context = {
+    module: { exports: {} },
+    require: (name) => (name.includes('tenantHelpers') ? helpers : {}),
+    setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
+    console: { log: () => {}, error: () => {}, warn: () => {} },
+    Math, Number, String, Map, Set, Object, Array, Promise, JSON, Date, Error,
+  };
+  vm.runInNewContext(fs.readFileSync(require.resolve('./lib/tenant/connection'), 'utf8'), context);
+  return context.module.exports;
+}
+
+test('offstream: se inicia sin TikTok, sin regalos, y los regalos no cuentan', () => {
+  const { tenant, call } = loadElim();
+  let connected = false;
+  tenant.ensureTikTokConnection = async () => { connected = true; };
+  call('start_elimination', { offstream: true, tiktokUsername: 'streamer', targetGiftName: 'Rosa', targetGiftCoins: 1, instaWinGiftName: 'León', instaWinGiftCoins: 100, baseTime: 60, rejoinTime: 20 });
+  assert.equal(connected, false, 'no conecta el LIVE');
+  const s = tenant.getElimPublicState();
+  assert.equal(s.offstream, true);
+  assert.equal(s.targetGiftCoins, 0);
+  assert.equal(s.instaWinGiftCoins, 0);
+
+  tenant.processGiftElim({ username: 'ana', avatar: 'ana.webp', totalCoins: 500 });
+  assert.equal(tenant.elimState.participants.length, 0, 'un regalo no da entradas');
+  assert.equal(tenant.elimState.winner, null, 'ni Insta-Win');
+  assert.equal(JSON.stringify(tenant.getElimPublicState().recentGifters), '[]');
+
+  call('elim_add_manual_entry', { username: 'ana', count: 3 });
+  call('elim_add_manual_entry', { username: 'beto', count: 2 });
+  assert.equal(tenant.elimState.participants.length, 5);
+  // Cambiar ajustes con la ronda en curso no le pone regalos.
+  call('update_elim_settings', { targetGiftName: 'Rosa', targetGiftCoins: 1, baseTime: 60, rejoinTime: 20 });
+  assert.equal(tenant.elimState.targetGiftCoins, 0);
+});
+
+test('offstream: el sorteo funciona igual que siempre', () => {
+  const { tenant, call } = loadElim();
+  call('start_elimination', { offstream: true, baseTime: 60, rejoinTime: 20, eliminationsPerRound: 2 });
+  call('elim_add_manual_entry', { username: 'ana', count: 3 });
+  call('elim_add_manual_entry', { username: 'beto', count: 3 });
+  tenant.beginEliminationReveal();
+  assert.equal(tenant.elimState.mode, 'revealing');
+  assert.equal(tenant.elimState.revealTargetIds.length, 2);
+});
+
+test('offstream: no mantiene la conexión a TikTok, no se detiene si se corta el LIVE y no se suelta de memoria', () => {
+  const conn = loadConnection();
+  let stopped = 0;
+  const tenant = Object.assign(Object.create(conn), {
+    contestState: {}, zubState: {}, rouletteState: {}, extensibleState: {}, versusState: {}, goalState: {},
+    elimState: { isActive: true, offstream: true },
+    desiredUsername: '', liveConnected: false, connectingPromise: null, lastSocketActivityAt: 0,
+    stopElimination: () => { stopped += 1; },
+  });
+  assert.equal(tenant.anyContestNeedsConnection(), false);
+  tenant.stopAllActiveGames();
+  assert.equal(stopped, 0);
+  assert.equal(tenant.isEvictable(false, 1), false);
+
+  // Con regalos (modo normal) sigue como siempre.
+  tenant.elimState.offstream = false;
+  assert.equal(tenant.anyContestNeedsConnection(), true);
+  tenant.stopAllActiveGames();
+  assert.equal(stopped, 1);
+});
+
+// ── Peso de lo que se manda por socket (mismo canal que los comentarios del TTS) ──
+
+test('la lista viaja compacta: cada foto una sola vez por jugador', () => {
+  const avatar = (u) => `https://p16-sign-va.tiktokcdn.com/${u}/${'x'.repeat(380)}.webp`;
+  const pool = Array.from({ length: 1000 }, (_, i) => ({ id: i + 1, username: `u${i % 80}`, avatar: avatar(`u${i % 80}`), source: i % 2 ? 'manual' : 'gift' }));
+  const packed = elimEntries.packElimParticipants(pool);
+  assert.equal(packed.players.length, 80);
+  assert.equal(packed.slots.length, 1000);
+  assert.deepEqual(packed.slots[1], [2, 1, 1]);
+  const before = JSON.stringify(pool).length;
+  const after = JSON.stringify(packed).length;
+  assert.ok(after * 5 < before, `de ${before} a ${after} bytes`);
+});
+
+test('un regalo de alguien nuevo manda solo el aviso chico, no la lista completa', () => {
+  const { tenant, sent, call } = loadElim();
+  call('elim_add_manual_entry', { username: 'ana', count: 50 });
+  sent.length = 0;
+  tenant.processGiftElim({ username: 'lucia', avatar: 'lucia.webp', totalCoins: 1 });
+  assert.deepEqual(sent.map((e) => e.name), ['elim_recent_gifters']);
+  assert.equal(sent[0].payload.recentGifters[0].username, 'lucia');
+  // Si alguien con entradas manuales regala, sus entradas toman su foto: ahí sí va la lista.
+  sent.length = 0;
+  tenant.processGiftElim({ username: 'ana', avatar: 'ana-real.webp', totalCoins: 1 });
+  assert.equal(sent[0].name, 'elim_state_update');
 });

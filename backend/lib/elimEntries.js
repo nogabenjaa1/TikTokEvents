@@ -142,6 +142,29 @@ function mergeParticipants(pool, { a, b, target, customUsername, avatarFor, next
     return { ok: true, username: custom, total, merged: total };
 }
 
+// Formato compacto de la lista para mandarla por socket. Antes cada entrada
+// viajaba con su propia URL de foto (~400 bytes): con 1000 entradas eran
+// ~364 KB por actualización, por el mismo socket que los comentarios del TTS
+// (que llegaban tarde detrás de cada ráfaga de regalos). Ahora cada foto va
+// una sola vez por jugador: `players` = [{ username, avatar }] y `slots` =
+// [[id, índice en players, 1 si es manual]], en el mismo orden de la lista.
+// El panel y los overlays la vuelven a armar (ver frontend/src/elimPacking.js).
+function packElimParticipants(pool) {
+    const players = [];
+    const index = new Map();
+    const slots = [];
+    for (const slot of pool) {
+        let i = index.get(slot.username);
+        if (i === undefined) {
+            i = players.length;
+            index.set(slot.username, i);
+            players.push({ username: slot.username, avatar: slot.avatar });
+        }
+        slots.push([slot.id, i, slot.source === 'manual' ? 1 : 0]);
+    }
+    return { players, slots };
+}
+
 module.exports = {
     MAX_ENTRIES_PER_ACTION,
     MAX_ROUND_SETTING,
@@ -151,5 +174,6 @@ module.exports = {
     setEntries,
     mergeParticipants,
     insertSlotsRandomly,
+    packElimParticipants,
     roundEliminationCount,
 };

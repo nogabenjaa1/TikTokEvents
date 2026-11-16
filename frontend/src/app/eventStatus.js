@@ -29,7 +29,8 @@ function missingSetup(id, saved = {}, live = {}) {
     case 'king':
       return hasGift(saved.selectedGift) ? null : 'Elige el regalo objetivo';
     case 'elim':
-      return hasGift(saved.selectedGift) ? null : 'Elige el regalo para unirse';
+      // Offstream: solo entradas manuales, no hace falta regalo.
+      return saved.offstream || hasGift(saved.selectedGift) ? null : 'Elige el regalo para unirse';
     case 'roulette':
       return saved.entryMode === 'gift' && !hasGift(saved.selectedGift) ? 'Elige el regalo para entrar' : null;
     case 'goal': {

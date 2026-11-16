@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, GiftTickerVisual, VersusOverlay, EliminationListOverlay } from './Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, GiftTickerVisual, VersusOverlay, EliminationListOverlay, EliminationSquareOverlay } from './Overlay';
 import DiceOverlay from './DiceOverlay';
 import { useTheme, accentStyleVars } from './ThemeContext';
 import { buildPreviewMock } from './overlayPreviewMocks';
@@ -58,6 +58,12 @@ function PreviewContent({ overlayId, entry, theme, liveState }) {
       return (
         <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
           <SpotifyQueueOverlay state={mock.state} customize={entry} />
+        </div>
+      );
+    case 'elim':
+      return (
+        <div className="themed-app h-full flex" style={{ minHeight: 0, ...accentStyleVars(theme) }} data-theme-style={theme.style} data-accent={theme.accent} data-mode="light">
+          <EliminationSquareOverlay state={mock.state} customize={entry} />
         </div>
       );
     case 'elimlist':

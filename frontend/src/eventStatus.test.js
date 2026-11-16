@@ -46,3 +46,8 @@ test('orden: lo urgente primero y, a igualdad, el de la barra de Eventos', () =>
   assert.ok(list.findIndex((s) => s.tone === 'ready') > list.findIndex((s) => s.tone === 'setup') || !list.some((s) => s.tone === 'setup'));
   assert.equal(list.length, 7);
 });
+
+test('Eliminación offstream no pide regalo para estar lista', () => {
+  assert.equal(getEventStatus('elim', { isActive: false }, {}).tone, 'setup');
+  assert.equal(getEventStatus('elim', { isActive: false }, { offstream: true }).tone, 'ready');
+});

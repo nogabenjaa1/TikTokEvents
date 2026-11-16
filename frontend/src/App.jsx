@@ -11,6 +11,7 @@ import AudioUnlockBanner from './AudioUnlockBanner';
 import { addSeenGift, mergeCatalog } from './giftCatalog';
 import { addFeedItem, FEED_MAX } from './feedLogic';
 import TtsChat from './TtsChat';
+import { unpackElimState } from './elimPacking';
 import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
 import { isOverlayMode, loadSession, saveSession, clearSession, buildAuthenticatedSocket, logoutSession, checkSession } from './auth';
@@ -483,13 +484,18 @@ export default function App() {
     socket.on('zub_snipe_started',   setZubState);
     socket.on('zub_winner_declared', setZubState);
 
-    socket.on('elim_state_update',    setElimState);
-    socket.on('elim_timer_updated',   setElimState);
+    // El servidor manda la lista de entradas en formato compacto (cada foto una
+    // sola vez, ver elimPacking.js): se rearma antes de guardarla.
+    const onElimState = (next) => setElimState(unpackElimState(next));
+    socket.on('elim_state_update',    onElimState);
+    socket.on('elim_timer_updated',   onElimState);
     // Segundero liviano (solo el reloj): se mezcla sobre el último estado
     // completo en vez de reemplazarlo -- ver timerTick en el backend.
     socket.on('elim_tick', (tick) => setElimState((prev) => ({ ...prev, ...tick })));
-    socket.on('elim_eliminated',      setElimState);
-    socket.on('elim_winner_declared', setElimState);
+    socket.on('elim_eliminated',      onElimState);
+    socket.on('elim_winner_declared', onElimState);
+    // Quién regaló en la ronda (panel de entradas): aviso chico, sin la lista completa.
+    socket.on('elim_recent_gifters', ({ recentGifters } = {}) => setElimState((prev) => ({ ...prev, recentGifters: recentGifters || [] })));
 
     socket.on('roulette_state_update',    setRouletteState);
     socket.on('roulette_timer_updated',   setRouletteState);
@@ -998,7 +1004,8 @@ export default function App() {
   // pasar con un modo todavía "activo" sin ganador porque la conexión se
   // cortó a mitad de partida, y bloquear el campo en ese caso solo dejaba
   // al streamer sin forma de ingresar otro usuario ni de reintentar.
-  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive || versusState.isActive);
+  // Eliminación offstream no usa TikTok: no bloquea el usuario.
+  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || (elimState.isActive && !elimState.offstream) || rouletteState.isActive || extensibleState.isActive || versusState.isActive);
 
   // Solo Color Says y Tema son de acceso libre; el resto necesita sesión
   // (licencia paga o prueba gratis) — sin ella se muestra el login

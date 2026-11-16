@@ -20,6 +20,28 @@ export function randomVoicePool(voices) {
 // lenta se cortaba a la mitad, y uno corto tardaba en dar por muerto al motor.
 // Se estima ~13 caracteres por segundo a velocidad 1 (la velocidad divide) más
 // un margen fijo, con piso de 8 s y techo de 90 s.
+// Qué hacer en cada tic del reloj del motor (ver ttsTicker.js y TtsChat.jsx).
+// - 'timeout': el mensaje pasó su tiempo máximo (watchdog): se cancela y se sigue.
+// - 'finished': creemos que algo se lee, pero el navegador ya no habla ni tiene
+//   nada pendiente (Chrome a veces no avisa el final): se sigue con el siguiente.
+//   Se espera un momento tras empezar, porque una voz de internet tarda en
+//   arrancar y en ese hueco el navegador todavía no dice que está hablando.
+// - 'nudge': una voz de internet ("Google ...") lleva un rato hablando; Chrome
+//   la corta sola a los ~15 s si no se le da un empujón (pausa y sigue).
+// - 'next': no se lee nada y hay mensajes en la cola.
+// - 'none': nada que hacer.
+export const TTS_START_GRACE_MS = 1500;
+export const TTS_NUDGE_EVERY_MS = 10000;
+export function engineTick({ now, speaking, synthSpeaking, synthPending, startedAt, deadline, lastNudgeAt, remoteVoice, queued }) {
+  if (speaking) {
+    if (deadline && now >= deadline) return 'timeout';
+    if (!synthSpeaking && !synthPending && now - (startedAt || 0) >= TTS_START_GRACE_MS) return 'finished';
+    if (remoteVoice && synthSpeaking && now - (lastNudgeAt || startedAt || now) >= TTS_NUDGE_EVERY_MS) return 'nudge';
+    return 'none';
+  }
+  return queued > 0 ? 'next' : 'none';
+}
+
 export const TTS_MIN_TIMEOUT_MS = 8000;
 export const TTS_MAX_TIMEOUT_MS = 90000;
 export function utteranceTimeoutMs(text, rate = 1) {

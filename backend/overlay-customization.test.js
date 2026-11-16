@@ -27,3 +27,9 @@ test('la lista de participantes de Eliminación tiene su propia personalización
   // Un mapa guardado antes de que existiera también la recibe, con lo de siempre.
   assert.equal(sanitizeOverlayCustomization({}).elimlist.background.type, 'solid');
 });
+
+test('el overlay cuadrado de Eliminación tiene su propia personalización', () => {
+  const out = sanitizeOverlayCustomization({ elim: { background: { type: 'transparent' } } });
+  assert.equal(out.elim.background.type, 'transparent');
+  assert.equal(sanitizeOverlayCustomization({}).elim.background.type, 'solid');
+});

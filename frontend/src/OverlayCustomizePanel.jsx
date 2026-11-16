@@ -38,6 +38,7 @@ const TEXT_ROLES = {
   chat: { names: { title: 'Nombres en el chat', hint: 'Quién escribe cada mensaje' }, labels: { title: 'Textos fijos', hint: '"Chat en vivo" y el contador' } },
   ticker: { names: { title: 'Apodo de cada regalo', hint: 'El texto que corre en la tira' }, labels: { title: 'Textos fijos', hint: 'El aviso cuando no hay regalos' } },
   versus: { names: { title: 'Marcador', hint: 'Las monedas de cada lado' }, labels: { title: 'Títulos y acción', hint: '"Héroes", "Villanos" y la acción' } },
+  elim: { names: { title: 'Nombres de usuario', hint: 'El @ de cada participante y del ganador' }, labels: { title: 'Títulos y etiquetas', hint: '"Únete con", "Tiempo" y el conteo' } },
   elimlist: { names: { title: 'Nombres de usuario', hint: 'Cada fila de la lista' }, labels: { title: 'Título y textos', hint: 'El encabezado, el conteo y la página' } },
   alerts: { names: { title: 'Texto de la alerta', hint: 'El mensaje que escribes en cada alerta' }, labels: null },
 };

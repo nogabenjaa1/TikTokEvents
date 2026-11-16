@@ -109,6 +109,15 @@ export function buildPreviewMock(overlayId) {
           { id: 't3', apodo: 'a bailar', giftIcon: '', giftName: 'Corazón' },
         ],
       };
+    case 'elim':
+      // Suficientes entradas para ver cómo se reparten las burbujas.
+      return {
+        state: {
+          isActive: true, mode: 'joining', paused: false, timeLeft: 42, rejoinTime: 20,
+          targetGiftName: 'Rosa', targetGiftCoins: 1, targetGiftIcon: '', instaWinGiftName: '',
+          participants: Array.from({ length: 48 }, (_, i) => ({ id: i + 1, username: `Test${(i % 12) + 1}`, avatar: MOCK_AVATAR })),
+        },
+      };
     case 'elimlist':
       // Más usuarios de los que caben en una página, para ver la paginación.
       return {

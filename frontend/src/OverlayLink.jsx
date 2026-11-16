@@ -279,6 +279,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
+      'Overlay de Eliminación (opcional): una fuente cuadrada de 1080×1080 solo para Eliminación, con más espacio para las burbujas.',
       'Lista de participantes de Eliminación (opcional): otra fuente de 380×700 con su propia URL; muestra a cada participante con sus entradas, en páginas que cambian solas.',
       'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, cualquier ancho (se adapta solo; 900×420 es un buen punto de partida).',
       'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
@@ -338,6 +339,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
   const elimListUrl = buildOverlayUrl('elimlist');
+  const elimUrl = buildOverlayUrl('elim');
   const alertsUrl = buildOverlayUrl('alerts');
   const tickerUrl = buildOverlayUrl('ticker');
   const tapTapUrl = buildOverlayUrl('taptap');
@@ -445,6 +447,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               url={gamesUrl}
               onCustomize={() => setCustomizingId('games')}
               preview={previewFor('games')}
+            />
+            <OverlayUrlCard
+              title="Overlay de Eliminación (cuadrado)"
+              description="Overlay propio de Eliminación, grande y cuadrado: regalo para unirse, reloj, premio, sorteo, ganador y mucho espacio para las burbujas de participantes. Úsalo en vez del overlay de juegos cuando juegues Eliminación."
+              dimensions="1080×1080 · cuadrado"
+              url={elimUrl}
+              onCustomize={() => setCustomizingId('elim')}
+              preview={previewFor('elim')}
             />
             <OverlayUrlCard
               title="Lista de participantes de Eliminación"

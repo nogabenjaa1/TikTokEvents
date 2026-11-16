@@ -14,6 +14,7 @@ export { AlertVisual, AlertOverlay, AlertSoundListener } from './overlays/AlertO
 export { GiftTickerOverlay, GiftTickerVisual } from './overlays/GiftTickerOverlay';
 export { VersusOverlay } from './overlays/VersusOverlay';
 export { EliminationListOverlay } from './overlays/EliminationListOverlay';
+export { EliminationSquareOverlay } from './overlays/EliminationSquareOverlay';
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio

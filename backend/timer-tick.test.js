@@ -47,7 +47,7 @@ test('Eliminación: el tick que cambia de fase sí manda el estado completo', ()
   const last = sent.at(-1);
   assert.equal(last.name, 'elim_timer_updated');
   assert.equal(last.payload.mode, 'revealing');
-  assert.equal(last.payload.participants.length, 6);
+  assert.equal(last.payload.slots.length, 6);
   assert.ok(!sent.some((e) => e.name === 'elim_tick'));
 });
 

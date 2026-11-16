@@ -11,7 +11,7 @@ const {
     pickEliminationBatch,
     timerTick,
 } = require('../../lib/tenantHelpers');
-const { normalizeUsername, clampCount, findParticipantName, setEntries, mergeParticipants, insertSlotsRandomly, roundEliminationCount, MAX_ROUND_SETTING } = require('../../lib/elimEntries');
+const { normalizeUsername, clampCount, findParticipantName, setEntries, mergeParticipants, insertSlotsRandomly, roundEliminationCount, MAX_ROUND_SETTING, packElimParticipants } = require('../../lib/elimEntries');
 
 // Cuántos de los últimos que mandaron regalo recuerda la ronda (ver
 // noteElimGifter): los que se muestran en el panel para dar entradas a mano.
@@ -30,7 +30,8 @@ module.exports = {
             offstream: !!this.elimState.offstream,
             fastMode: this.elimState.fastMode, eliminationsPerRound: this.elimState.eliminationsPerRound, lockedMode: this.elimState.lockedMode,
             finalPhaseAt: this.elimState.finalPhaseAt || 0, finalPhasePerRound: this.elimState.finalPhasePerRound || 1,
-            participants: this.elimState.participants,
+            // Lista compacta (ver packElimParticipants): cada foto una sola vez.
+            ...packElimParticipants(this.elimState.participants),
             revealTargetIds: this.elimState.revealTargetIds,
             revealSelectMs: this.elimState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
             revealResultMs: this.elimState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
@@ -54,13 +55,16 @@ module.exports = {
         this.elimSeenUsers.delete(key);
         this.elimSeenUsers.set(key, { username, avatar: avatar || prev?.avatar || '' });
         while (this.elimSeenUsers.size > ELIM_SEEN_USERS_MAX) this.elimSeenUsers.delete(this.elimSeenUsers.keys().next().value);
-        let changed = !prev;
+        // `listChanged`: alguien nuevo en "regalaron en esta ronda" (basta el
+        // aviso chico elim_recent_gifters). `avatarsChanged`: sus entradas
+        // tomaron la foto real (hace falta la lista completa).
+        let avatarsChanged = false;
         if (avatar) {
             for (const slot of this.elimState.participants) {
-                if (slot.username.toLowerCase() === key && slot.avatar !== avatar) { slot.avatar = avatar; changed = true; }
+                if (slot.username.toLowerCase() === key && slot.avatar !== avatar) { slot.avatar = avatar; avatarsChanged = true; }
             }
         }
-        return changed;
+        return { listChanged: !prev, avatarsChanged };
     },
 
     // Foto para alguien que se agrega a mano: la que ya tiene en la lista, la
@@ -218,8 +222,12 @@ module.exports = {
         if (!this.elimState.isActive || this.elimState.offstream) return;
         // Antes de cualquier filtro (pausa, Locked Mode, monto): cuenta para la
         // lista de "regalaron hace poco" del panel aunque no dé entrada.
-        if (this.elimState.mode !== 'finished' && this.noteElimGifter(username, avatar)) {
-            this.broadcast.emit('elim_state_update', this.getElimPublicState());
+        // Antes cada regalo de alguien nuevo reenviaba la lista completa de
+        // entradas a todas las pantallas; ahora solo la lista de 20 nombres.
+        if (this.elimState.mode !== 'finished') {
+            const seen = this.noteElimGifter(username, avatar);
+            if (seen.avatarsChanged) this.broadcast.emit('elim_state_update', this.getElimPublicState());
+            else if (seen.listChanged) this.broadcast.emit('elim_recent_gifters', { recentGifters: [...this.elimSeenUsers.values()].reverse() });
         }
         if (this.elimState.paused) return;
         // Locked Mode (pedido explícito): solo se suma gente durante la

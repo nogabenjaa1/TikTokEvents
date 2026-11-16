@@ -40,7 +40,8 @@ function getOverlayKeyFromUrl() {
 // Qué pantalla mostrar dentro del overlay: 'games' (Rey del Trono/
 // Zubastinis/Eliminación/Ruleta, el overlay de siempre), 'colors' (el
 // overlay horizontal de Color Says, ver DiceOverlay.jsx), 'taptap' (ranking
-// de likes), 'gifter' (ranking de regalos), 'musicqueue' (cola de canciones
+// de likes), 'gifter' (ranking de regalos), 'elimlist' (lista de
+// participantes de Eliminación), 'musicqueue' (cola de canciones
 // pedidas con !play, ver SpotifyQueueOverlay) o 'extensible' (contador
 // horizontal que crece con follows/regalos, ver ExtensibleOverlay en
 // Overlay.jsx) — se agrega como ?screen=... a la URL normal de overlay,

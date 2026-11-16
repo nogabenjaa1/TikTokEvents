@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, GiftTickerOverlay, VersusOverlay } from '../Overlay';
+import Overlay, { TopTapTapOverlay, TopGifterOverlay, ExtensibleOverlay, GoalOverlay, ChatOverlay, SpotifyQueueOverlay, AlertOverlay, GiftTickerOverlay, VersusOverlay, EliminationListOverlay } from '../Overlay';
 import DiceOverlay from '../DiceOverlay';
 import { accentStyleVars } from '../ThemeContext';
 import { getOverlayScreen } from '../auth';
@@ -86,6 +86,13 @@ export default function OverlayModeView({
     return (
       <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
         <TopGifterOverlay state={gifterState} customize={overlayCustomization.gifter} />
+      </div>
+    );
+  }
+  if (screen === 'elimlist') {
+    return (
+      <div className="themed-app h-screen flex" data-theme-style={overlayTheme.style} data-accent={overlayTheme.accent} style={accentStyleVars(overlayTheme)}>
+        <EliminationListOverlay state={elimState} customize={overlayCustomization.elimlist} />
       </div>
     );
   }

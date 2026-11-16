@@ -13,6 +13,7 @@ export { SpotifyQueueOverlay } from './overlays/SpotifyQueueOverlay';
 export { AlertVisual, AlertOverlay, AlertSoundListener } from './overlays/AlertOverlays';
 export { GiftTickerOverlay, GiftTickerVisual } from './overlays/GiftTickerOverlay';
 export { VersusOverlay } from './overlays/VersusOverlay';
+export { EliminationListOverlay } from './overlays/EliminationListOverlay';
 
 // El overlay refleja el skin (material + acento) elegido en el panel — le
 // llega por socket en `theme` (ver App.jsx/tenant.js), nunca de su propio

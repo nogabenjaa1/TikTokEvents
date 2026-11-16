@@ -24,6 +24,7 @@ export const NATURAL_SIZE = {
   chat: CHAT_OVERLAY_SIZE,
   ticker: { w: 960, h: 200 },
   versus: { w: 900, h: 420 },
+  elimlist: { w: 380, h: 700 },
 };
 
 // Fondo de referencia detrás de la vista previa: el overlay se compone sobre

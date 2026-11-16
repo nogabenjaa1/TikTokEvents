@@ -109,6 +109,16 @@ export function buildPreviewMock(overlayId) {
           { id: 't3', apodo: 'a bailar', giftIcon: '', giftName: 'Corazón' },
         ],
       };
+    case 'elimlist':
+      // Más usuarios de los que caben en una página, para ver la paginación.
+      return {
+        state: {
+          isActive: true, mode: 'joining', paused: false,
+          participants: Array.from({ length: 14 }, (_, i) => i).flatMap((i) => (
+            Array.from({ length: Math.max(1, 5 - Math.floor(i / 3)) }, (_, k) => ({ id: i * 10 + k + 1, username: `Test${i + 1}`, avatar: MOCK_AVATAR }))
+          )),
+        },
+      };
     case 'musicqueue':
       return {
         state: {

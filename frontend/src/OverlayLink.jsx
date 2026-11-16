@@ -279,6 +279,7 @@ const OBS_HELP = {
     steps: [
       'Agrega una fuente de tipo Navegador (OBS) o Web/Navegador (TikTok LIVE Studio).',
       'Pega la URL de "juegos" para Rey del Trono/Zubastinis/Eliminación/Ruleta, o la de "Colores" para Color Says — cada una en su propia fuente.',
+      'Lista de participantes de Eliminación (opcional): otra fuente de 380×700 con su propia URL; muestra a cada participante con sus entradas, en páginas que cambian solas.',
       'Tamaño exacto: 380×700 para el overlay de juegos (vertical); para Colores, 960×260 (es horizontal); para Versus, cualquier ancho (se adapta solo; 900×420 es un buen punto de partida).',
       'Los overlays son solo visuales: los efectos de sonido de los juegos y el de Objetivo completado los reproduce tu panel (mismo criterio que las alertas).',
     ],
@@ -336,6 +337,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
 
   const gamesUrl = buildOverlayUrl('games');
   const colorsUrl = buildOverlayUrl('colors');
+  const elimListUrl = buildOverlayUrl('elimlist');
   const alertsUrl = buildOverlayUrl('alerts');
   const tickerUrl = buildOverlayUrl('ticker');
   const tapTapUrl = buildOverlayUrl('taptap');
@@ -443,6 +445,14 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
               url={gamesUrl}
               onCustomize={() => setCustomizingId('games')}
               preview={previewFor('games')}
+            />
+            <OverlayUrlCard
+              title="Lista de participantes de Eliminación"
+              description="Overlay secundario de Eliminación: cada participante con sus entradas. Si no caben todos, se reparten en páginas que cambian solas cada 6 segundos. Úsalo junto al overlay de juegos."
+              dimensions="380×700 · vertical"
+              url={elimListUrl}
+              onCustomize={() => setCustomizingId('elimlist')}
+              preview={previewFor('elimlist')}
             />
             <OverlayUrlCard
               title="Overlay de Colores (dados)"

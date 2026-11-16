@@ -16,3 +16,14 @@ test('lo desconocido vuelve a lo de siempre (y lo guardado antes no cambia de lo
   assert.equal(out.games.font, 'sora');
   assert.equal(sanitizeOverlayCustomization({}).chat.labelText.type, 'default');
 });
+
+// Overlay secundario de Eliminación (?screen=elimlist): su personalización
+// se guarda aparte de la del overlay de juegos.
+test('la lista de participantes de Eliminación tiene su propia personalización', () => {
+  const out = sanitizeOverlayCustomization({ elimlist: { background: { type: 'transparent' }, font: 'bebas' } });
+  assert.equal(out.elimlist.background.type, 'transparent');
+  assert.equal(out.elimlist.font, 'bebas');
+  assert.equal(out.games.background.type, 'solid');
+  // Un mapa guardado antes de que existiera también la recibe, con lo de siempre.
+  assert.equal(sanitizeOverlayCustomization({}).elimlist.background.type, 'solid');
+});

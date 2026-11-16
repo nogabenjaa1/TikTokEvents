@@ -35,7 +35,8 @@ const SCHEMA = {
   zub: { mainTime: num(7200), snipeTime: num(7200), tiebreakTime: num(7200), minCoins: num() },
   elim: {
     selectedGift: gift(), selectedInstaWin: gift(), baseTime: num(7200), rejoinTime: num(7200),
-    fastMode: bool(), eliminationsPerRound: num(1000), lockedMode: bool(),
+    fastMode: bool(), eliminationsPerRound: num(100000), lockedMode: bool(),
+    finalPhaseAt: num(100000), finalPhasePerRound: num(100000),
   },
   roulette: {
     entryMode: oneOf('chat', 'gift'), keyword: text(60), entryWindowSec: num(7200), selectedGift: gift(),

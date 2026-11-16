@@ -180,3 +180,89 @@ test('sin ronda activa no se edita nada', () => {
   assert.equal(call('elim_add_manual_entry', { username: 'ana', count: 1 }).ok, false);
   assert.equal(call('elim_merge_participants', { a: 'a', b: 'b', target: 'a' }).ok, false);
 });
+
+// ── Orden al azar, Locked Mode, pausa y fase final (segunda ronda de ajustes) ──
+
+test('insertSlotsRandomly reparte las entradas nuevas por toda la lista', () => {
+  const p = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const rolls = [0, 0.99, 0.5];
+  elimEntries.insertSlotsRandomly(p, [{ id: 10 }, { id: 11 }, { id: 12 }], () => rolls.shift());
+  assert.deepEqual(p.map((s) => s.id), [10, 1, 2, 12, 3, 11]);
+});
+
+test('200 entradas de una persona no quedan en un bloque del overlay', () => {
+  const { tenant, call } = loadElim();
+  for (let i = 0; i < 10; i++) call('elim_add_manual_entry', { username: `otro${i}`, count: 1 });
+  call('elim_add_manual_entry', { username: 'ana', count: 200 });
+  const positions = tenant.elimState.participants.map((s, i) => (s.username === 'ana' ? i : -1)).filter((i) => i >= 0);
+  assert.equal(positions.length, 200);
+  // Si estuvieran juntas, la primera y la última estarían a 199 lugares.
+  assert.ok(positions.at(-1) - positions[0] > 199, 'las entradas de ana se mezclan con las de los demás');
+});
+
+test('roundEliminationCount: de 100 en 100 hasta 15 entradas y de ahí de 1 en 1', () => {
+  const cfg = { perRound: 100, finalAt: 15, finalPerRound: 1 };
+  assert.equal(elimEntries.roundEliminationCount(500, cfg), 100);
+  assert.equal(elimEntries.roundEliminationCount(40, cfg), 25, 'nunca baja de 15 en una ronda grande');
+  assert.equal(elimEntries.roundEliminationCount(15, cfg), 1);
+  assert.equal(elimEntries.roundEliminationCount(3, { ...cfg, finalPerRound: 2 }), 2);
+  assert.equal(elimEntries.roundEliminationCount(500, { perRound: 500 }), 500, 'sin fase final: lo de siempre');
+});
+
+test('el sorteo usa la fase final', () => {
+  const { tenant, call } = loadElim();
+  for (let i = 0; i < 40; i++) call('elim_add_manual_entry', { username: `u${i}`, count: 1 });
+  Object.assign(tenant.elimState, { eliminationsPerRound: 100, finalPhaseAt: 15, finalPhasePerRound: 1 });
+  tenant.beginEliminationReveal();
+  assert.equal(tenant.elimState.revealTargetIds.length, 25);
+});
+
+test('Locked Mode: se edita libre en el tiempo para unirse y nada después', () => {
+  const { tenant, call } = loadElim();
+  tenant.elimState.lockedMode = true;
+  call('elim_add_manual_entry', { username: 'ana', count: 2 });
+  call('elim_add_manual_entry', { username: 'beto', count: 2 });
+  assert.equal(call('elim_set_entries', { username: 'ana', count: 3 }).ok, true);
+  tenant.elimState.mode = 'rejoin';
+  for (const [event, payload] of [
+    ['elim_add_manual_entry', { username: 'ana', count: 1 }],
+    ['elim_set_entries', { username: 'ana', count: 1 }],
+    ['elim_merge_participants', { a: 'ana', b: 'beto', target: 'a' }],
+  ]) {
+    const r = call(event, payload);
+    assert.equal(r.ok, false, event);
+    assert.match(r.error, /Locked Mode/);
+  }
+  assert.equal(tenant.elimState.participants.length, 5);
+});
+
+test('modo normal: se edita también con las eliminaciones en curso (resultado y reingreso)', () => {
+  const { tenant, call } = loadElim();
+  call('elim_add_manual_entry', { username: 'ana', count: 2 });
+  call('elim_add_manual_entry', { username: 'beto', count: 2 });
+  for (const mode of ['result', 'rejoin']) {
+    tenant.elimState.mode = mode;
+    assert.equal(call('elim_add_manual_entry', { username: 'ana', count: 1 }).ok, true, mode);
+    assert.equal(call('elim_set_entries', { username: 'beto', count: 3 }).ok, true, mode);
+  }
+  assert.equal(call('elim_merge_participants', { a: 'ana', b: 'beto', target: 'b' }).ok, true);
+});
+
+test('la pausa solo funciona durante el tiempo para unirse; reanudar, siempre', () => {
+  const { tenant, call } = loadElim();
+  call('pause_elimination');
+  assert.equal(tenant.elimState.paused, true);
+  call('resume_elimination');
+  call('pause_elimination');
+  call('resume_elimination');
+  assert.equal(tenant.elimState.paused, false, 'se puede las veces que se quiera');
+  for (const mode of ['rejoin', 'result', 'revealing']) {
+    tenant.elimState.mode = mode;
+    call('pause_elimination');
+    assert.equal(tenant.elimState.paused, false, mode);
+  }
+  // Una ronda recuperada tras reiniciar el servidor vuelve pausada en el reingreso.
+  tenant.elimState.paused = true;
+  call('resume_elimination');
+  assert.equal(tenant.elimState.paused, false);
+});

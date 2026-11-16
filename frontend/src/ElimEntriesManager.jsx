@@ -24,7 +24,11 @@ export default function ElimEntriesManager({ state, socket }) {
   const participantNames = useMemo(() => new Set(rows.map((r) => r.username.toLowerCase())), [rows]);
   const recentGifters = state.recentGifters || [];
 
-  const canAdd = !!state.isActive && state.mode !== 'finished';
+  // Locked Mode: las entradas se tocan solo durante el tiempo para unirse.
+  // Modo normal: en cualquier fase; quitar y combinar, menos durante la
+  // animación del sorteo (mismas reglas que el servidor).
+  const lockedOut = !!state.lockedMode && !!state.isActive && state.mode !== 'joining' && state.mode !== 'finished';
+  const canAdd = !!state.isActive && state.mode !== 'finished' && !lockedOut;
   const canEdit = canAdd && state.mode !== 'revealing';
 
   // Un seleccionado que ya no está en la lista (eliminado, combinado) se suelta solo.
@@ -83,8 +87,12 @@ export default function ElimEntriesManager({ state, socket }) {
     <div className="mb-6 pt-4 border-t border-white/10 space-y-4">
       <div>
         <p className="tkc-label text-gray-400">PARTICIPANTES Y ENTRADAS</p>
-        <p className="tkc-hint mt-1">Agrega, corrige, quita o combina entradas. Cuentan igual que las que llegan por regalo y no dependen de Locked Mode.</p>
+        <p className="tkc-hint mt-1">Agrega, corrige, quita o combina entradas. Cuentan igual que las que llegan por regalo. Con Locked Mode solo se pueden cambiar durante el tiempo para unirse.</p>
       </div>
+
+      {lockedOut && (
+        <p role="status" className="theme-notice theme-notice-warning">Locked Mode: las entradas ya no se pueden modificar porque empezaron las eliminaciones. Se libera al reiniciar o detener.</p>
+      )}
 
       {status && (
         <p role={status.ok ? 'status' : 'alert'} className={`theme-notice ${status.ok ? 'theme-notice-success' : ''}`}>{status.text}</p>
@@ -146,7 +154,7 @@ export default function ElimEntriesManager({ state, socket }) {
       {rows.length > 0 && (
         <div>
           <p className="tkc-label text-gray-400 mb-1">EN LA LISTA ({rows.length})</p>
-          {state.mode === 'revealing' && <p className="tkc-hint mb-1">Espera a que termine el sorteo para editar las entradas.</p>}
+          {state.mode === 'revealing' && !lockedOut && <p className="tkc-hint mb-1">Espera a que termine el sorteo para editar las entradas.</p>}
           <ul className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
             {rows.map((r) => {
               const draft = edits[r.username];

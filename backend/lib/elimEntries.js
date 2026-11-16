@@ -11,15 +11,17 @@
 const MAX_USERNAME = 50;
 // Mismo tope que ya tenía la entrada manual (elim_add_manual_entry).
 const MAX_ENTRIES_PER_ACTION = 1000;
+// Tope de los ajustes de la fase final (ver roundEliminationCount).
+const MAX_ROUND_SETTING = 100000;
 
 function normalizeUsername(raw) {
     return typeof raw === 'string' ? raw.trim().replace(/^@+/, '').trim().slice(0, MAX_USERNAME) : '';
 }
 
-function clampCount(raw, min) {
+function clampCount(raw, min, max = MAX_ENTRIES_PER_ACTION) {
     const n = Math.round(Number(raw));
     if (!Number.isFinite(n)) return null;
-    return Math.max(min, Math.min(MAX_ENTRIES_PER_ACTION, n));
+    return Math.max(min, Math.min(max, n));
 }
 
 // El @usuario de TikTok no distingue mayúsculas: "Ana" y "ana" son la misma
@@ -48,8 +50,32 @@ function removeWhere(pool, predicate) {
     return removed;
 }
 
+// Mete cada slot nuevo en una posición al azar de la lista (pedido
+// explícito): así las 200 entradas de una misma persona quedan repartidas
+// por todo el overlay en vez de en un bloque, y se ve que el sorteo es al
+// azar. Solo cambia dónde se dibujan: el sorteo ya mezclaba la lista entera
+// (ver pickEliminationBatch) y el orden de llegada sigue en el `id`.
+function insertSlotsRandomly(pool, slots, random = Math.random) {
+    for (const slot of slots) pool.splice(Math.floor(random() * (pool.length + 1)), 0, slot);
+}
+
 function pushSlots(pool, { username, avatar, count, source, nextId }) {
-    for (let i = 0; i < count; i++) pool.push({ id: nextId(), username, avatar, source });
+    const slots = [];
+    for (let i = 0; i < count; i++) slots.push({ id: nextId(), username, avatar, source });
+    insertSlotsRandomly(pool, slots);
+}
+
+// Cuántas entradas caen en esta ronda. `perRound` es lo normal; con una fase
+// final (`finalAt` > 0, pedido explícito: "de 100 en 100 hasta que queden 15
+// y de ahí de 1 en 1"), mientras haya más de `finalAt` entradas una ronda
+// nunca baja de `finalAt`, y desde ahí caen `finalPerRound` por ronda. Se
+// cuenta en entradas (lo que elimina el sorteo), no en jugadores.
+function roundEliminationCount(totalSlots, { perRound, finalAt, finalPerRound }) {
+    const normal = Math.max(1, Math.round(Number(perRound)) || 1);
+    const at = Math.max(0, Math.round(Number(finalAt)) || 0);
+    if (!at) return normal;
+    if (totalSlots > at) return Math.max(1, Math.min(normal, totalSlots - at));
+    return Math.max(1, Math.round(Number(finalPerRound)) || 1);
 }
 
 // Deja a `username` con exactamente `count` entradas. Si sube, las nuevas son
@@ -118,9 +144,12 @@ function mergeParticipants(pool, { a, b, target, customUsername, avatarFor, next
 
 module.exports = {
     MAX_ENTRIES_PER_ACTION,
+    MAX_ROUND_SETTING,
     normalizeUsername,
     clampCount,
     findParticipantName,
     setEntries,
     mergeParticipants,
+    insertSlotsRandomly,
+    roundEliminationCount,
 };

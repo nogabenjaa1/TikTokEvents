@@ -1,5 +1,6 @@
 import { HowItWorks } from './PanelHelp';
-import { randomVoicePool, utteranceTimeoutMs } from './ttsVoice';
+import { randomVoicePool, utteranceTimeoutMs, engineTick } from './ttsVoice';
+import { createTicker } from './ttsTicker';
 import { createTtsRelease } from './ttsRelease';
 import { writeStorage } from './safeStorage';
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
@@ -82,8 +83,10 @@ const MAX_QUEUE = 15;
 // Antes los mensajes que esperaban más de 12 s se descartaban en silencio,
 // y con un chat movido parecía que "el bot dejó de leer". Ahora el tiempo es
 // configurable (ver maxMessageAgeSec en DEFAULTS) y por defecto más generoso.
-// Cada cuánto revisa que el motor de voz no se haya quedado mudo/pausado.
-const ENGINE_KEEPALIVE_MS = 4000;
+// Cada cuánto revisa el motor de voz (mensaje vencido, final que el navegador
+// no avisó, voz de internet que hay que empujar). Corre en un Web Worker para
+// no frenarse con la pestaña oculta (ver ttsTicker.js).
+const ENGINE_TICK_MS = 1000;
 const REPEAT_WINDOW_MS = 15000;
 const REPEAT_HISTORY = 3;
 
@@ -137,7 +140,10 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // arriba) — todo estado que no necesita re-render directo vive en refs.
   const queueRef = useRef([]); // [{ message, ts }]
   const speakingRef = useRef(false);
-  const watchdogRef = useRef(null);
+  // El mensaje que se lee ahora: el objeto de la voz se guarda para que Chrome
+  // no lo descarte antes de tiempo (si lo hace, nunca avisa que terminó y la
+  // cola se queda esperando), y su `finish` para poder cerrarlo desde el reloj.
+  const currentRef = useRef(null); // { utterance, finish, startedAt, deadline, lastNudgeAt, remoteVoice }
   const recoveredTimeoutRef = useRef(null);
   const recentTextsRef = useRef([]); // [{ text, ts }] — para "ignorar repetidos"
   // El mensaje que se está leyendo ahora, y cómo avisarle al servidor que se terminó con uno (ver
@@ -299,7 +305,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   // cuando el motor de voz queda trabado (ver UTTERANCE_SAFETY_MS) y el
   // streamer quiere forzar que arranque de cero sin esperar al watchdog.
   const resetEngine = () => {
-    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+    currentRef.current = null;
     if (recoveredTimeoutRef.current) { clearTimeout(recoveredTimeoutRef.current); recoveredTimeoutRef.current = null; }
     window.speechSynthesis?.cancel();
     // Lo que estaba pendiente (la cola y lo que se leía) se descarta: se avisa para que las alertas de
@@ -335,11 +341,17 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     setEngineStatus('speaking');
     const current = settingsRef.current;
     const spokenText = applyMessageTemplate(next.message, current.messageTemplate);
-    const utterance = buildUtterance(spokenText, pickVoice(current), current.pitch, current.rate, current.volume);
+    const voice = pickVoice(current);
+    const utterance = buildUtterance(spokenText, voice, current.pitch, current.rate, current.volume);
     utterance.onstart = () => setLastMessage(next.message);
 
+    // Un mensaje se cierra una sola vez, lo cierre el navegador (onend/onerror)
+    // o el reloj del motor (vencido o final sin aviso).
+    let done = false;
     const finish = () => {
-      if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+      if (done) return;
+      done = true;
+      if (currentRef.current?.utterance === utterance) currentRef.current = null;
       releaseRef.current(next.message);
       if (speakingMessageRef.current === next.message) speakingMessageRef.current = null;
       speakingRef.current = false;
@@ -347,16 +359,16 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     };
     utterance.onend = finish;
     utterance.onerror = finish;
-    // Watchdog: si un mensaje no termina de leerse en este tiempo, el motor
-    // probablemente se colgó (bug real y documentado de Chrome) — se fuerza
-    // el avance en vez de dejar la cola congelada para siempre.
-    watchdogRef.current = setTimeout(() => {
-      window.speechSynthesis.cancel();
-      setEngineStatus('recovered');
-      if (recoveredTimeoutRef.current) clearTimeout(recoveredTimeoutRef.current);
-      recoveredTimeoutRef.current = setTimeout(() => setEngineStatus(speakingRef.current ? 'speaking' : 'idle'), 4000);
-      finish();
-    }, utteranceTimeoutMs(spokenText, current.rate));
+    const startedAt = Date.now();
+    currentRef.current = {
+      utterance, finish, startedAt,
+      // Watchdog: si no termina en este tiempo, el motor se colgó (bug real y
+      // documentado de Chrome) y el reloj fuerza el avance.
+      deadline: startedAt + utteranceTimeoutMs(spokenText, current.rate),
+      lastNudgeAt: startedAt,
+      // Las voces de internet ("Google ...") son las que Chrome corta solas.
+      remoteVoice: !!voice && voice.localService === false,
+    };
 
     window.speechSynthesis.speak(utterance);
   };
@@ -444,26 +456,51 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  // Vigilancia del motor de voz mientras el TTS está activo. Chrome tiene un
-  // bug conocido: a veces pausa o deja de avisar (sin onend/onerror) y la
-  // cola se queda esperando para siempre; además congela los temporizadores
-  // de las pestañas ocultas, así que el watchdog de cada mensaje puede no
-  // dispararse a tiempo. Cada pocos segundos: si quedó pausado se reanuda, y
-  // si creemos que hay un mensaje leyéndose pero el navegador ya no habla
-  // nada, se da por terminado y se sigue con el siguiente.
+  // Vigilancia del motor de voz mientras el TTS está activo, una vez por
+  // segundo desde un Web Worker (ver ttsTicker.js: los relojes normales se
+  // frenan con la pestaña oculta y por eso la voz se atrasaba y los mensajes
+  // vencían sin leerse). Chrome tiene bugs conocidos: a veces pausa la voz, a
+  // veces no avisa el final de un mensaje, y corta las voces de internet a los
+  // ~15 s. Cada tic decide qué hacer (ver engineTick en ttsVoice.js).
+  // Devuelve true si tuvo que destrabar algo.
   const recoverIfStuck = () => {
     const synth = window.speechSynthesis;
-    if (!synth) return;
-    if (synth.paused) synth.resume();
-    if (speakingRef.current && !synth.speaking && !synth.pending) {
-      if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
-      releaseRef.current(speakingMessageRef.current);
-      speakingMessageRef.current = null;
-      speakingRef.current = false;
-      processQueue();
-    } else if (!speakingRef.current && queueRef.current.length > 0) {
-      processQueue();
+    if (!synth) return false;
+    let recovered = false;
+    if (synth.paused) { synth.resume(); recovered = true; }
+    const now = Date.now();
+    const cur = currentRef.current;
+    const action = engineTick({
+      now, speaking: speakingRef.current, synthSpeaking: synth.speaking, synthPending: synth.pending,
+      startedAt: cur?.startedAt, deadline: cur?.deadline, lastNudgeAt: cur?.lastNudgeAt,
+      remoteVoice: cur?.remoteVoice, queued: queueRef.current.length,
+    });
+    if (action === 'timeout') {
+      synth.cancel();
+      setEngineStatus('recovered');
+      if (recoveredTimeoutRef.current) clearTimeout(recoveredTimeoutRef.current);
+      recoveredTimeoutRef.current = setTimeout(() => setEngineStatus(speakingRef.current ? 'speaking' : 'idle'), 4000);
+      if (cur) cur.finish();
+      else { speakingRef.current = false; processQueue(); }
+      return true;
     }
+    if (action === 'finished') {
+      if (cur) cur.finish();
+      else {
+        releaseRef.current(speakingMessageRef.current);
+        speakingMessageRef.current = null;
+        speakingRef.current = false;
+        processQueue();
+      }
+      return true;
+    }
+    if (action === 'nudge' && cur) {
+      cur.lastNudgeAt = now;
+      synth.pause();
+      synth.resume();
+    }
+    if (action === 'next') { processQueue(); return true; }
+    return recovered;
   };
   const recoverIfStuckRef = useRef(recoverIfStuck);
   useEffect(() => { recoverIfStuckRef.current = recoverIfStuck; });
@@ -471,23 +508,22 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
   const [hiddenNotice, setHiddenNotice] = useState('');
   useEffect(() => {
     if (!settings.enabled || !('speechSynthesis' in window)) return;
-    const id = setInterval(() => recoverIfStuckRef.current(), ENGINE_KEEPALIVE_MS);
-    let hiddenAt = null;
+    const stopTicker = createTicker(ENGINE_TICK_MS, () => recoverIfStuckRef.current());
     let noticeTimer = null;
+    // Al volver a la pestaña se revisa de inmediato. El aviso sale solo si de
+    // verdad hubo que destrabar la voz (con el reloj en el worker, lo normal es
+    // que siga leyendo en segundo plano sin nada que avisar).
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
-      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : 0;
-      hiddenAt = null;
-      recoverIfStuckRef.current();
-      if (hiddenFor > 20000) {
-        setHiddenNotice(`Esta pestaña estuvo oculta ${Math.round(hiddenFor / 1000)} s: el navegador puede haber pausado la voz. Ya la reanudamos.`);
+      if (document.visibilityState === 'hidden') return;
+      if (recoverIfStuckRef.current()) {
+        setHiddenNotice('La voz se había detenido mientras esta pestaña estaba oculta. Ya la reanudamos.');
         clearTimeout(noticeTimer);
         noticeTimer = setTimeout(() => setHiddenNotice(''), 8000);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      clearInterval(id);
+      stopTicker();
       clearTimeout(noticeTimer);
       document.removeEventListener('visibilitychange', onVisibility);
     };

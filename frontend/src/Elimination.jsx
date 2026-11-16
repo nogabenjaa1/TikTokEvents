@@ -2,6 +2,7 @@ import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton }
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
+import ElimEntriesManager from './ElimEntriesManager';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -73,8 +74,6 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [fastMode, setFastMode]                 = useState(() => state.isActive ? (state.fastMode ?? false) : (draft.fastMode ?? false));
   const [eliminationsPerRound, setEliminationsPerRound] = useState(() => state.isActive ? (state.eliminationsPerRound ?? 1) : (draft.eliminationsPerRound ?? 1));
   const [lockedMode, setLockedMode]             = useState(() => state.isActive ? (state.lockedMode ?? false) : (draft.lockedMode ?? false));
-  const [manualUsername, setManualUsername]     = useState('');
-  const [manualCount, setManualCount]           = useState(1);
 
   useEffect(() => {
     saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode });
@@ -137,18 +136,6 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const stopElimination    = () => socket.emit('stop_elimination');
   const restartElimination = () => socket.emit('restart_elimination');
   const togglePause        = () => socket.emit(state.paused ? 'resume_elimination' : 'pause_elimination');
-
-  // Suma entradas a mano a un usuario existente o nuevo, sin depender de un
-  // regalo real — cuenta exactamente igual que una entrada por regalo
-  // (mismo array de slots que usa el sorteo, ver processGiftElim/
-  // elim_add_manual_entry en tenant.js).
-  const addManualEntry = () => {
-    const uname = manualUsername.trim().replace(/^@/, '');
-    if (!uname) return;
-    socket.emit('elim_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
-    setManualUsername('');
-    setManualCount(1);
-  };
 
   // Pedido explícito: una vez arrancada la ronda con Locked Mode activado,
   // no se puede desactivar hasta Detener/Reiniciar — el toggle queda
@@ -328,32 +315,10 @@ export default function Elimination({ state, socket, username, connectionStatus,
             {lockedModeLocked && <p className="tkc-hint -mt-4 mb-4">Locked Mode no se puede apagar con la ronda en curso: así nadie entra a último momento. Se libera al detener o reiniciar.</p>}
             <LiveAppliedNote phase={appliedPhase} />
 
-            {/* Entrada manual (admin): suma entradas a mano a un usuario
-                existente o nuevo, sin depender de un regalo real — cuenta
-                exactamente igual que una entrada por regalo (afecta vidas,
-                insta-win, etc.). A propósito ignora Locked Mode: es una
-                acción explícita del admin, no una entrada automática. */}
-            <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADA MANUAL</label>
-              <div className="flex gap-2">
-                <input
-                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
-                  placeholder="usuario"
-                  className="theme-input flex-1 min-w-0 p-2 text-sm outline-none"
-                />
-                <input
-                  type="number" min="1" value={manualCount}
-                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
-                  className="theme-input w-16 p-2 text-center text-sm outline-none"
-                />
-                <button type="button" onClick={addManualEntry}
-                  disabled={!state.isActive || state.mode === 'finished' || !manualUsername.trim()}
-                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
-                  Agregar
-                </button>
-              </div>
-              <p className="tkc-hint mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
-            </div>
+            {/* Entradas a mano (agregar, corregir, quitar, combinar): ver
+                ElimEntriesManager.jsx. A propósito ignoran Locked Mode: es una
+                acción explícita del streamer, no una entrada automática. */}
+            <ElimEntriesManager state={state} socket={socket} />
 
           </div>
 

@@ -106,7 +106,7 @@ export default function ElimEntriesManager({ state, socket }) {
             id="elim-add-user" list="elim-known-users"
             value={addUser} onChange={(e) => setAddUser(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && canAdd) addEntries(); }}
-            placeholder="usuario de TikTok"
+            placeholder={state.offstream ? 'nombre del participante' : 'usuario de TikTok'}
             className="theme-input flex-1 min-w-0 p-2 text-sm outline-none"
           />
           <datalist id="elim-known-users">
@@ -124,7 +124,9 @@ export default function ElimEntriesManager({ state, socket }) {
           </button>
         </div>
         <p className="tkc-hint mt-1">
-          Si ya participa, se le suman con su misma foto. Para que alguien salga con su @ y su foto de TikTok, pídele que mande cualquier regalo (una rosa basta): aparecerá abajo. Si no, sale con una foto por defecto.
+          {state.offstream
+            ? 'Offstream: escribe a cada participante y cuántas entradas tiene. Si ya participa, se le suman. Cada uno sale con una foto por defecto.'
+            : 'Si ya participa, se le suman con su misma foto. Para que alguien salga con su @ y su foto de TikTok, pídele que mande cualquier regalo (una rosa basta): aparecerá abajo. Si no, sale con una foto por defecto.'}
         </p>
 
         {recentGifters.length > 0 && (

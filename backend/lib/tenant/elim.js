@@ -27,6 +27,7 @@ module.exports = {
             targetGiftName: this.elimState.targetGiftName, targetGiftIcon: this.elimState.targetGiftIcon, targetGiftCoins: this.elimState.targetGiftCoins,
             instaWinGiftName: this.elimState.instaWinGiftName, instaWinGiftIcon: this.elimState.instaWinGiftIcon, instaWinGiftCoins: this.elimState.instaWinGiftCoins,
             baseTime: this.elimState.baseTime, rejoinTime: this.elimState.rejoinTime, timeLeft: this.elimState.timeLeft,
+            offstream: !!this.elimState.offstream,
             fastMode: this.elimState.fastMode, eliminationsPerRound: this.elimState.eliminationsPerRound, lockedMode: this.elimState.lockedMode,
             finalPhaseAt: this.elimState.finalPhaseAt || 0, finalPhasePerRound: this.elimState.finalPhasePerRound || 1,
             participants: this.elimState.participants,
@@ -213,7 +214,8 @@ module.exports = {
     // sin importar el sobrante), acá SÍ se otorgan entradas proporcionales
     // — pedido explícito, tiene sentido en un modo de "slots" como este.
     processGiftElim({ username, avatar, totalCoins }) {
-        if (!this.elimState.isActive) return;
+        // Offstream: solo entradas manuales, los regalos no cuentan para nada.
+        if (!this.elimState.isActive || this.elimState.offstream) return;
         // Antes de cualquier filtro (pausa, Locked Mode, monto): cuenta para la
         // lista de "regalaron hace poco" del panel aunque no dé entrada.
         if (this.elimState.mode !== 'finished' && this.noteElimGifter(username, avatar)) {
@@ -290,10 +292,15 @@ module.exports = {
 
             if (this.elimRevealTimeout) { clearTimeout(this.elimRevealTimeout); this.elimRevealTimeout = null; }
             if (this.elimResultTimeout) { clearTimeout(this.elimResultTimeout); this.elimResultTimeout = null; }
+            // Offstream (pedido explícito): la misma dinámica pero solo con
+            // entradas manuales, sin TikTok: sin regalo para unirse, sin
+            // Insta-Win y sin conectar el LIVE. Se elige al iniciar y no se
+            // cambia hasta detener (ver update_elim_settings).
+            const offstream = !!config.offstream;
             this.elimState = {
-                isActive: true, mode: 'joining', paused: false,
-                targetGiftName: config.targetGiftName, targetGiftIcon: config.targetGiftIcon, targetGiftCoins: config.targetGiftCoins,
-                instaWinGiftName: config.instaWinGiftName || '', instaWinGiftIcon: config.instaWinGiftIcon || '', instaWinGiftCoins: config.instaWinGiftCoins || 0,
+                isActive: true, mode: 'joining', paused: false, offstream,
+                targetGiftName: offstream ? '' : config.targetGiftName, targetGiftIcon: offstream ? '' : config.targetGiftIcon, targetGiftCoins: offstream ? 0 : config.targetGiftCoins,
+                instaWinGiftName: offstream ? '' : (config.instaWinGiftName || ''), instaWinGiftIcon: offstream ? '' : (config.instaWinGiftIcon || ''), instaWinGiftCoins: offstream ? 0 : (config.instaWinGiftCoins || 0),
                 baseTime: config.baseTime, rejoinTime: config.rejoinTime, timeLeft: config.baseTime,
                 fastMode: !!config.fastMode,
                 eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
@@ -309,7 +316,7 @@ module.exports = {
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
             this.startElimTimer();
 
-            if (config.tiktokUsername) {
+            if (config.tiktokUsername && !offstream) {
                 this.ensureTikTokConnection(config.tiktokUsername).catch(() => {});
             }
         });
@@ -359,12 +366,15 @@ module.exports = {
             if (this.elimState.isActive) {
                 const prevBase = this.elimState.baseTime;
                 const prevRejoin = this.elimState.rejoinTime;
-                this.elimState.targetGiftName = newConfig.targetGiftName;
-                this.elimState.targetGiftIcon = newConfig.targetGiftIcon;
-                this.elimState.targetGiftCoins = newConfig.targetGiftCoins;
-                this.elimState.instaWinGiftName = newConfig.instaWinGiftName || '';
-                this.elimState.instaWinGiftIcon = newConfig.instaWinGiftIcon || '';
-                this.elimState.instaWinGiftCoins = newConfig.instaWinGiftCoins || 0;
+                // Offstream no tiene regalos: se quedan vacíos aunque el panel mande alguno.
+                if (!this.elimState.offstream) {
+                    this.elimState.targetGiftName = newConfig.targetGiftName;
+                    this.elimState.targetGiftIcon = newConfig.targetGiftIcon;
+                    this.elimState.targetGiftCoins = newConfig.targetGiftCoins;
+                    this.elimState.instaWinGiftName = newConfig.instaWinGiftName || '';
+                    this.elimState.instaWinGiftIcon = newConfig.instaWinGiftIcon || '';
+                    this.elimState.instaWinGiftCoins = newConfig.instaWinGiftCoins || 0;
+                }
                 this.elimState.baseTime = newConfig.baseTime;
                 this.elimState.rejoinTime = newConfig.rejoinTime;
                 this.elimState.fastMode = !!newConfig.fastMode;

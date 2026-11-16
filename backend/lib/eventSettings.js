@@ -36,7 +36,7 @@ const SCHEMA = {
     elim: {
         selectedGift: gift(), selectedInstaWin: gift(), baseTime: num(7200), rejoinTime: num(7200),
         fastMode: bool(), eliminationsPerRound: num(100000), lockedMode: bool(),
-        finalPhaseAt: num(100000), finalPhasePerRound: num(100000),
+        finalPhaseAt: num(100000), finalPhasePerRound: num(100000), offstream: bool(),
     },
     roulette: {
         entryMode: oneOf('chat', 'gift'), keyword: text(60), entryWindowSec: num(7200), selectedGift: gift(),

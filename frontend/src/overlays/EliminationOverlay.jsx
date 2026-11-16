@@ -11,11 +11,19 @@ import { EliminationResultVisual, OfflineCard, PhaseProgressBar, PrizeStrip, Tim
 // ni la tarjeta necesita estirarse, sin importar cuánto espacio quede libre
 // según qué otros bloques (insta-win, premio, aviso de eliminado) estén
 // visibles en ese momento.
+// Interlineado del texto del @ bajo cada burbuja (el normal del sitio).
+const LABEL_LINE_HEIGHT = 1.5;
+
 function computeElimBoxSize(containerWidth, containerHeight, count) {
   if (count <= 0 || containerWidth <= 0 || containerHeight <= 0) return { size: 64, gap: 6 };
   for (let size = 64; size >= 6; size -= 2) {
     const gap = size >= 18 ? 6 : 3; // con burbujas muy chicas, menos separación para aprovechar más el espacio
-    const textSpace = size >= 18 ? 14 : 0; // debajo de cierto tamaño ya no se muestra el username
+    // Debajo de cierto tamaño ya no se muestra el username. Su alto real: la
+    // letra (22% de la burbuja, ver el <span> de abajo) por su interlineado,
+    // más el gap-0.5 (2px). Antes se suponían 14px fijos y con 64px la
+    // etiqueta mide ~21: la grilla se pasaba de alto y se cortaban la primera
+    // y la última fila (medido de 1 a 120 participantes).
+    const textSpace = size >= 18 ? Math.ceil(Math.max(4, Math.round(size * 0.22)) * LABEL_LINE_HEIGHT) + 2 : 0;
     const cellW = size + gap;
     const cellH = size + textSpace + gap;
     const cols = Math.max(1, Math.floor((containerWidth + gap) / cellW));
@@ -118,7 +126,8 @@ export function EliminationOverlay({ state, prize, customize }) {
 
       <div className="mt-3 flex flex-col items-center text-center w-full">
         <div className="flex items-center gap-2 mb-3">
-          <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold')}>💀 ELIMINACIÓN — ÚNETE CON:</p>
+          {/* Offstream: sin regalo para unirse, las entradas las da el streamer. */}
+          <p {...labelProps(customize, 'theme-accent-text text-[10px] uppercase tracking-[0.3em] font-bold')}>{state.offstream ? '💀 ELIMINACIÓN' : '💀 ELIMINACIÓN — ÚNETE CON:'}</p>
           {/* Pedido explícito: el público tiene que saber en qué modo están
               jugando — Locked Mode significa que nadie nuevo entra ya
               arrancada la dinámica. */}
@@ -126,6 +135,7 @@ export function EliminationOverlay({ state, prize, customize }) {
             <span className="tkc-ovl-fill bg-slate-800 border border-slate-500/60 text-slate-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0">🔒 Locked</span>
           )}
         </div>
+        {!state.offstream && (
         <div className="flex items-center justify-between px-5 py-2 rounded-2xl w-full" style={{ ...resolveBackgroundStyle(customize, 'var(--surface-bg-alt)'), border: rowBorder(customize) }}>
           <div className="flex items-center gap-2">
             {state.targetGiftIcon && <img alt="" src={state.targetGiftIcon} className="w-10 h-10 drop-shadow-xl" />}
@@ -133,6 +143,7 @@ export function EliminationOverlay({ state, prize, customize }) {
           </div>
           <span className="tkc-ovl-fill text-yellow-400 text-lg font-black bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-xl shadow-inner">{state.targetGiftCoins} 🪙</span>
         </div>
+        )}
 
         {state.instaWinGiftName && state.instaWinGiftName.length > 0 && (
           <div className="tkc-ovl-fill mt-3 flex items-center justify-between bg-yellow-900/30 border border-yellow-600/50 px-4 py-2 rounded-xl w-full">

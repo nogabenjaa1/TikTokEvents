@@ -998,7 +998,8 @@ export default function App() {
   // pasar con un modo todavía "activo" sin ganador porque la conexión se
   // cortó a mitad de partida, y bloquear el campo en ese caso solo dejaba
   // al streamer sin forma de ingresar otro usuario ni de reintentar.
-  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive || extensibleState.isActive || versusState.isActive);
+  // Eliminación offstream no usa TikTok: no bloquea el usuario.
+  const usernameLocked = !forceUnlockUsername && (state.isActive || zubState.isActive || (elimState.isActive && !elimState.offstream) || rouletteState.isActive || extensibleState.isActive || versusState.isActive);
 
   // Solo Color Says y Tema son de acceso libre; el resto necesita sesión
   // (licencia paga o prueba gratis) — sin ella se muestra el login

@@ -77,12 +77,17 @@ export default function Elimination({ state, socket, username, connectionStatus,
   // Fase final (pedido explícito: "de 100 en 100 hasta que queden 15 y de ahí
   // de 1 en 1"): con finalPhaseAt > 0, al quedar esa cantidad de entradas o
   // menos caen finalPhasePerRound por ronda. 0 = sin fase final.
+  // Offstream (pedido explícito): la misma dinámica solo con entradas
+  // manuales, sin TikTok. Se elige antes de iniciar; con la ronda en curso
+  // manda lo que dice el servidor.
+  const [offstreamDraft, setOffstreamDraft]     = useState(() => draft.offstream ?? false);
+  const offstream = state.isActive ? !!state.offstream : offstreamDraft;
   const [finalPhaseAt, setFinalPhaseAt]         = useState(() => state.isActive ? (state.finalPhaseAt ?? 0) : (draft.finalPhaseAt ?? 0));
   const [finalPhasePerRound, setFinalPhasePerRound] = useState(() => state.isActive ? (state.finalPhasePerRound ?? 1) : (draft.finalPhasePerRound ?? 1));
 
   useEffect(() => {
-    saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound });
-  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound, saveDraft]);
+    saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound, offstream: offstreamDraft });
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound, offstreamDraft, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // Igual que en Zubastinis: solo emitimos si el cambio es en los ajustes
@@ -97,11 +102,12 @@ export default function Elimination({ state, socket, username, connectionStatus,
     if (!isMounted.current) { isMounted.current = true; return; }
     if (activeJustChanged) return;
 
-    if (state.isActive && selectedGift) {
+    // Offstream no lleva regalo: los tiempos y demás ajustes se mandan igual.
+    if (state.isActive && (selectedGift || state.offstream)) {
       socket.emit('update_elim_settings', {
-        targetGiftName:    selectedGift.name,
-        targetGiftIcon:    selectedGift.icon,
-        targetGiftCoins:   selectedGift.coins,
+        targetGiftName:    selectedGift?.name ?? '',
+        targetGiftIcon:    selectedGift?.icon ?? '',
+        targetGiftCoins:   selectedGift?.coins ?? 0,
         instaWinGiftName:  selectedInstaWin.coins > 0 ? selectedInstaWin.name  : '',
         instaWinGiftIcon:  selectedInstaWin.coins > 0 ? selectedInstaWin.icon  : '',
         instaWinGiftCoins: selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0,
@@ -114,6 +120,11 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
   const startElimination = () => {
     setStartError('');
+    if (offstreamDraft) {
+      // Sin TikTok: no hace falta LIVE ni regalo; el servidor deja los regalos vacíos.
+      socket.emit('start_elimination', { offstream: true, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound });
+      return;
+    }
     if (connectionStatus !== 'connected') return setStartError('Espera a que se confirme la conexión en vivo con TikTok antes de iniciar.');
     if (!selectedGift) return setStartError('¡Elige el regalo para unirse!');
     socket.emit('start_elimination', {
@@ -132,7 +143,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
   // liveApply.js).
   const appliedPhase = useLiveApplied({
     active: state.isActive,
-    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, baseTime, rejoinTime, !!fastMode, eliminationsPerRound, !!lockedMode, finalPhaseAt, finalPhasePerRound]),
+    localKey: liveKey([offstream ? 0 : (selectedGift?.coins ?? 0), offstream ? 0 : (selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0), baseTime, rejoinTime, !!fastMode, eliminationsPerRound, !!lockedMode, finalPhaseAt, finalPhasePerRound]),
     serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.baseTime, state.rejoinTime, !!state.fastMode, state.eliminationsPerRound, !!state.lockedMode, state.finalPhaseAt ?? 0, state.finalPhasePerRound ?? 1]),
   });
   const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
@@ -236,6 +247,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
         </div>
 
         <HowItWorks storageKey="elim">
+        <p>Con <span className="font-bold text-white">Offstream</span> se juega igual pero solo con entradas manuales, sin conectar TikTok.</p>
         <p>Primero se abre un tiempo para <span className="font-bold text-white">unirse mandando el regalo</span> elegido. Al agotarse, se elimina a un participante al azar.</p>
         <p>Después se abre una ventana para que cualquiera (re)entre con el mismo regalo. Se repite hasta que queda un sobreviviente. El <span className="font-bold text-white">Insta-Win</span> declara ganador al instante a quien lo mande.</p>
         </HowItWorks>
@@ -243,6 +255,23 @@ export default function Elimination({ state, socket, username, connectionStatus,
         <div className="space-y-5">
           <div>
 
+            {/* Offstream: solo entradas manuales, sin TikTok */}
+            <div className="mb-5">
+              <button type="button" onClick={() => !state.isActive && setOffstreamDraft(o => !o)} aria-pressed={offstream}
+                disabled={state.isActive}
+                className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${offstream ? 'theme-btn-primary' : 'theme-btn-secondary'} ${state.isActive ? 'opacity-70 cursor-not-allowed' : ''}`}
+                title={state.isActive ? 'Se elige antes de iniciar: detén la ronda para cambiarlo' : 'Jugar solo con entradas manuales, sin conectar TikTok'}>
+                Offstream (sin TikTok)
+              </button>
+              <p className="tkc-hint mt-1">
+                {offstream
+                  ? 'Solo entradas manuales: los regalos no cuentan y no hace falta estar en LIVE. Agrega a los participantes abajo, en "Participantes y entradas".'
+                  : 'Actívalo para jugar solo con entradas manuales, sin conectar TikTok.'}
+                {state.isActive && ' Se cambia al detener la ronda.'}
+              </p>
+            </div>
+
+            {!offstream && (<>
             {/* Selector regalo para unirse */}
             <div className="mb-4 relative z-20">
               <label className="tkc-label block text-gray-400 mb-1">REGALO PARA UNIRSE<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
@@ -271,6 +300,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 Cualquier regalo (o suma de varios, máximo 10s entre uno y otro) que alcance este valor en monedas declara ganador al instante.
               </p>
             </div>
+            </>)}
 
             {/* Base Time */}
             <div className="pt-2 mb-4">
@@ -360,18 +390,19 @@ export default function Elimination({ state, socket, username, connectionStatus,
           botones juntos, sin bajar hasta el final de los ajustes); en móvil,
           después de los ajustes, como antes (ver .tkc-game-layout). */}
       <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
-        <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-        {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+        {/* Offstream no necesita LIVE: sin el aviso de conexión. */}
+        <StartRequirement connectionStatus={offstream ? 'connected' : connectionStatus} active={state.isActive} error={startError} />
+        {!state.isActive && !offstream && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
 
         {/* Botones */}
         <div className="flex flex-wrap gap-3">
           {!state.isActive ? (
             <button
               onClick={() => runLocked(startElimination)}
-              disabled={connectionStatus !== 'connected' || !selectedGift || actionLocked}
+              disabled={offstream ? actionLocked : (connectionStatus !== 'connected' || !selectedGift || actionLocked)}
               className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
+              {offstream ? 'INICIAR OFFSTREAM' : connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
             </button>
           ) : (
             <>

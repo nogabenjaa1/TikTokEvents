@@ -2,6 +2,7 @@ import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton }
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
+import ElimEntriesManager from './ElimEntriesManager';
 import PrizeEditor from './PrizeEditor';
 import TimeInput from './TimeInput';
 import { formatMMSS } from './timeFormat';
@@ -73,12 +74,15 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const [fastMode, setFastMode]                 = useState(() => state.isActive ? (state.fastMode ?? false) : (draft.fastMode ?? false));
   const [eliminationsPerRound, setEliminationsPerRound] = useState(() => state.isActive ? (state.eliminationsPerRound ?? 1) : (draft.eliminationsPerRound ?? 1));
   const [lockedMode, setLockedMode]             = useState(() => state.isActive ? (state.lockedMode ?? false) : (draft.lockedMode ?? false));
-  const [manualUsername, setManualUsername]     = useState('');
-  const [manualCount, setManualCount]           = useState(1);
+  // Fase final (pedido explícito: "de 100 en 100 hasta que queden 15 y de ahí
+  // de 1 en 1"): con finalPhaseAt > 0, al quedar esa cantidad de entradas o
+  // menos caen finalPhasePerRound por ronda. 0 = sin fase final.
+  const [finalPhaseAt, setFinalPhaseAt]         = useState(() => state.isActive ? (state.finalPhaseAt ?? 0) : (draft.finalPhaseAt ?? 0));
+  const [finalPhasePerRound, setFinalPhasePerRound] = useState(() => state.isActive ? (state.finalPhasePerRound ?? 1) : (draft.finalPhasePerRound ?? 1));
 
   useEffect(() => {
-    saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode });
-  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, saveDraft]);
+    saveDraft({ selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound });
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound, saveDraft]);
 
   // Sincronización en tiempo real cuando hay concurso activo.
   // Igual que en Zubastinis: solo emitimos si el cambio es en los ajustes
@@ -101,12 +105,12 @@ export default function Elimination({ state, socket, username, connectionStatus,
         instaWinGiftName:  selectedInstaWin.coins > 0 ? selectedInstaWin.name  : '',
         instaWinGiftIcon:  selectedInstaWin.coins > 0 ? selectedInstaWin.icon  : '',
         instaWinGiftCoins: selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0,
-        baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode,
+        baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound,
       });
     }
     // Cambiar de socket (reconexión) no debe re-enviar los ajustes: solo cuando el streamer los cambia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, state.isActive]);
+  }, [selectedGift, selectedInstaWin, baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound, state.isActive]);
 
   const startElimination = () => {
     setStartError('');
@@ -120,7 +124,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
       instaWinGiftName:  selectedInstaWin.coins > 0 ? selectedInstaWin.name  : '',
       instaWinGiftIcon:  selectedInstaWin.coins > 0 ? selectedInstaWin.icon  : '',
       instaWinGiftCoins: selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0,
-      baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode,
+      baseTime, rejoinTime, fastMode, eliminationsPerRound, lockedMode, finalPhaseAt, finalPhasePerRound,
     });
   };
 
@@ -128,8 +132,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
   // liveApply.js).
   const appliedPhase = useLiveApplied({
     active: state.isActive,
-    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, baseTime, rejoinTime, !!fastMode, eliminationsPerRound, !!lockedMode]),
-    serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.baseTime, state.rejoinTime, !!state.fastMode, state.eliminationsPerRound, !!state.lockedMode]),
+    localKey: liveKey([selectedGift?.coins ?? 0, selectedInstaWin.coins > 0 ? selectedInstaWin.coins : 0, baseTime, rejoinTime, !!fastMode, eliminationsPerRound, !!lockedMode, finalPhaseAt, finalPhasePerRound]),
+    serverKey: liveKey([state.targetGiftCoins ?? 0, state.instaWinGiftCoins ?? 0, state.baseTime, state.rejoinTime, !!state.fastMode, state.eliminationsPerRound, !!state.lockedMode, state.finalPhaseAt ?? 0, state.finalPhasePerRound ?? 1]),
   });
   const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
   const hasProgress = state.isActive && state.mode !== 'finished' && (state.participants?.length ?? 0) > 0;
@@ -137,18 +141,6 @@ export default function Elimination({ state, socket, username, connectionStatus,
   const stopElimination    = () => socket.emit('stop_elimination');
   const restartElimination = () => socket.emit('restart_elimination');
   const togglePause        = () => socket.emit(state.paused ? 'resume_elimination' : 'pause_elimination');
-
-  // Suma entradas a mano a un usuario existente o nuevo, sin depender de un
-  // regalo real — cuenta exactamente igual que una entrada por regalo
-  // (mismo array de slots que usa el sorteo, ver processGiftElim/
-  // elim_add_manual_entry en tenant.js).
-  const addManualEntry = () => {
-    const uname = manualUsername.trim().replace(/^@/, '');
-    if (!uname) return;
-    socket.emit('elim_add_manual_entry', { username: uname, count: Math.max(1, Math.round(manualCount) || 1) });
-    setManualUsername('');
-    setManualCount(1);
-  };
 
   // Pedido explícito: una vez arrancada la ronda con Locked Mode activado,
   // no se puede desactivar hasta Detener/Reiniciar — el toggle queda
@@ -308,7 +300,33 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
                 className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
               />
-              <p className="tkc-hint mt-1">Cuántos participantes se eliminan de una en cada sorteo (siempre deja al menos 1 en pie).</p>
+              <p className="tkc-hint mt-1">Cuántas entradas se eliminan de una en cada sorteo (siempre deja al menos 1 participante en pie).</p>
+            </div>
+
+            {/* Fase final: cambia cuántos caen por ronda al quedar pocas entradas */}
+            <div className="mb-4">
+              <label className="tkc-label block text-gray-400 mb-1">FASE FINAL<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
+                <span>Cuando queden</span>
+                <input
+                  type="number" min="0" inputMode="numeric" value={finalPhaseAt} aria-label="Entradas con las que empieza la fase final"
+                  onChange={e => setFinalPhaseAt(Math.max(0, Number(e.target.value) || 0))}
+                  className="theme-input w-20 p-2 text-center text-sm font-bold outline-none"
+                />
+                <span>entradas o menos, eliminar</span>
+                <input
+                  type="number" min="1" inputMode="numeric" value={finalPhasePerRound} aria-label="Eliminados por ronda en la fase final"
+                  onChange={e => setFinalPhasePerRound(Math.max(1, Number(e.target.value) || 1))}
+                  disabled={!finalPhaseAt}
+                  className="theme-input w-20 p-2 text-center text-sm font-bold outline-none disabled:opacity-50"
+                />
+                <span>por ronda</span>
+              </div>
+              <p className="tkc-hint mt-1">
+                {finalPhaseAt > 0
+                  ? `Se eliminan ${eliminationsPerRound} por ronda hasta llegar a ${finalPhaseAt} entradas (una ronda nunca baja de ahí) y desde ahí ${finalPhasePerRound} por ronda.`
+                  : 'Deja 0 para eliminar siempre la misma cantidad por ronda. Ejemplo: 100 por ronda y fase final en 15 con 1 por ronda.'}
+              </p>
             </div>
 
             {/* Fast Mode / Locked Mode */}
@@ -328,32 +346,10 @@ export default function Elimination({ state, socket, username, connectionStatus,
             {lockedModeLocked && <p className="tkc-hint -mt-4 mb-4">Locked Mode no se puede apagar con la ronda en curso: así nadie entra a último momento. Se libera al detener o reiniciar.</p>}
             <LiveAppliedNote phase={appliedPhase} />
 
-            {/* Entrada manual (admin): suma entradas a mano a un usuario
-                existente o nuevo, sin depender de un regalo real — cuenta
-                exactamente igual que una entrada por regalo (afecta vidas,
-                insta-win, etc.). A propósito ignora Locked Mode: es una
-                acción explícita del admin, no una entrada automática. */}
-            <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADA MANUAL</label>
-              <div className="flex gap-2">
-                <input
-                  value={manualUsername} onChange={e => setManualUsername(e.target.value)}
-                  placeholder="usuario"
-                  className="theme-input flex-1 min-w-0 p-2 text-sm outline-none"
-                />
-                <input
-                  type="number" min="1" value={manualCount}
-                  onChange={e => setManualCount(Math.max(1, Number(e.target.value) || 1))}
-                  className="theme-input w-16 p-2 text-center text-sm outline-none"
-                />
-                <button type="button" onClick={addManualEntry}
-                  disabled={!state.isActive || state.mode === 'finished' || !manualUsername.trim()}
-                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
-                  Agregar
-                </button>
-              </div>
-              <p className="tkc-hint mt-1">Cuenta igual que una entrada por regalo (vidas, insta-win, etc.). Usuario nuevo = foto de perfil por defecto.</p>
-            </div>
+            {/* Entradas a mano (agregar, corregir, quitar, combinar): ver
+                ElimEntriesManager.jsx. A propósito ignoran Locked Mode: es una
+                acción explícita del streamer, no una entrada automática. */}
+            <ElimEntriesManager state={state} socket={socket} />
 
           </div>
 
@@ -381,7 +377,10 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <>
               <button
                 onClick={togglePause}
-                disabled={state.mode === 'finished'}
+                // Pausa solo durante el tiempo para unirse (lo valida también el
+                // servidor); reanudar, siempre que esté pausado.
+                disabled={state.mode === 'finished' || (!state.paused && state.mode !== 'joining')}
+                title={!state.paused && state.mode !== 'joining' ? 'Solo se puede pausar durante el tiempo para unirse' : undefined}
                 className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}

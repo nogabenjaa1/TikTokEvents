@@ -76,6 +76,7 @@ function loadTenantModule(file, { db = {}, extra = {} } = {}) {
     require: (name) => (name.includes('eventSettings') ? require('./lib/eventSettings')
       : name.includes('tenantSanitizers') ? require('./lib/tenantSanitizers')
       : name.includes('tenantHelpers') ? require('./lib/tenantHelpers')
+      : name.includes('elimEntries') ? require('./lib/elimEntries')
       : name.includes('/db') ? db : {}),
     console, Math, Number, String, Object, Array, JSON, Promise, setTimeout, clearTimeout, setInterval, clearInterval,
   };

@@ -11,6 +11,11 @@ const {
     pickEliminationBatch,
     timerTick,
 } = require('../../lib/tenantHelpers');
+const { normalizeUsername, clampCount, findParticipantName, setEntries, mergeParticipants, insertSlotsRandomly, roundEliminationCount, MAX_ROUND_SETTING } = require('../../lib/elimEntries');
+
+// Cuántos de los últimos que mandaron regalo recuerda la ronda (ver
+// noteElimGifter): los que se muestran en el panel para dar entradas a mano.
+const ELIM_SEEN_USERS_MAX = 20;
 
 module.exports = {
     // ==========================================
@@ -23,12 +28,61 @@ module.exports = {
             instaWinGiftName: this.elimState.instaWinGiftName, instaWinGiftIcon: this.elimState.instaWinGiftIcon, instaWinGiftCoins: this.elimState.instaWinGiftCoins,
             baseTime: this.elimState.baseTime, rejoinTime: this.elimState.rejoinTime, timeLeft: this.elimState.timeLeft,
             fastMode: this.elimState.fastMode, eliminationsPerRound: this.elimState.eliminationsPerRound, lockedMode: this.elimState.lockedMode,
+            finalPhaseAt: this.elimState.finalPhaseAt || 0, finalPhasePerRound: this.elimState.finalPhasePerRound || 1,
             participants: this.elimState.participants,
             revealTargetIds: this.elimState.revealTargetIds,
             revealSelectMs: this.elimState.fastMode ? REVEAL_SELECT_MS_FAST : REVEAL_SELECT_MS,
             revealResultMs: this.elimState.fastMode ? REVEAL_RESULT_MS_FAST : REVEAL_RESULT_MS,
             lastEliminatedList: this.elimState.lastEliminatedList, winner: this.elimState.winner,
+            // Los últimos que mandaron cualquier regalo en esta ronda, del más
+            // reciente al más viejo (ver noteElimGifter).
+            recentGifters: [...(this.elimSeenUsers || new Map()).values()].reverse(),
         };
+    },
+
+    // Anota a quien manda un regalo durante la ronda, le alcance o no para
+    // una entrada (pedido explícito): así el streamer le pide "mándame una
+    // rosa" a alguien que pagó dentro del juego y le da entradas a mano con
+    // su @ y su foto de TikTok, como si hubiera mandado las monedas.
+    // Si ya tenía entradas manuales con la foto por defecto, pasan a su foto real.
+    noteElimGifter(username, avatar) {
+        if (!username) return false;
+        if (!this.elimSeenUsers) this.elimSeenUsers = new Map();
+        const key = username.toLowerCase();
+        const prev = this.elimSeenUsers.get(key);
+        this.elimSeenUsers.delete(key);
+        this.elimSeenUsers.set(key, { username, avatar: avatar || prev?.avatar || '' });
+        while (this.elimSeenUsers.size > ELIM_SEEN_USERS_MAX) this.elimSeenUsers.delete(this.elimSeenUsers.keys().next().value);
+        let changed = !prev;
+        if (avatar) {
+            for (const slot of this.elimState.participants) {
+                if (slot.username.toLowerCase() === key && slot.avatar !== avatar) { slot.avatar = avatar; changed = true; }
+            }
+        }
+        return changed;
+    },
+
+    // Foto para alguien que se agrega a mano: la que ya tiene en la lista, la
+    // de TikTok si mandó algún regalo en la ronda, o una al azar de la galería.
+    elimAvatarFor(username) {
+        const existing = findParticipantName(this.elimState.participants, username);
+        if (existing) return this.elimState.participants.find(p => p.username === existing).avatar;
+        const seen = this.elimSeenUsers?.get(normalizeUsername(username).toLowerCase());
+        return seen?.avatar || pickDefaultManualAvatar();
+    },
+
+    // Las ediciones a mano (quitar, fijar, combinar) no se aceptan durante la
+    // animación del sorteo: ese sorteo ya eligió sus slots y cambiarlos a
+    // medio camino haría que se elimine a quien no se ve en pantalla.
+    // Locked Mode (pedido explícito): las entradas se pueden tocar todo lo que
+    // se quiera durante el tiempo para unirse, pero ya no una vez que empiezan
+    // las eliminaciones, ni siquiera para agregar. En modo normal se pueden
+    // editar en cualquier fase menos la animación del sorteo.
+    elimEditBlockedReason() {
+        if (!this.elimState.isActive || this.elimState.mode === 'finished') return 'Inicia una ronda de Eliminación para editar las entradas.';
+        if (this.elimState.lockedMode && this.elimState.mode !== 'joining') return 'Locked Mode: las entradas ya no se pueden modificar porque empezaron las eliminaciones.';
+        if (this.elimState.mode === 'revealing') return 'Espera a que termine el sorteo para editar las entradas.';
+        return null;
     },
 
     finishElimination() {
@@ -61,7 +115,11 @@ module.exports = {
             return;
         }
 
-        const maxCount = Math.max(1, this.elimState.eliminationsPerRound || 1);
+        const maxCount = roundEliminationCount(pool.length, {
+            perRound: this.elimState.eliminationsPerRound,
+            finalAt: this.elimState.finalPhaseAt,
+            finalPerRound: this.elimState.finalPhasePerRound,
+        });
         const batch = pickEliminationBatch(pool, maxCount);
         this.elimState.mode = 'revealing';
         this.elimState.revealTargetIds = batch.map(p => p.id);
@@ -155,7 +213,13 @@ module.exports = {
     // sin importar el sobrante), acá SÍ se otorgan entradas proporcionales
     // — pedido explícito, tiene sentido en un modo de "slots" como este.
     processGiftElim({ username, avatar, totalCoins }) {
-        if (!this.elimState.isActive || this.elimState.paused) return;
+        if (!this.elimState.isActive) return;
+        // Antes de cualquier filtro (pausa, Locked Mode, monto): cuenta para la
+        // lista de "regalaron hace poco" del panel aunque no dé entrada.
+        if (this.elimState.mode !== 'finished' && this.noteElimGifter(username, avatar)) {
+            this.broadcast.emit('elim_state_update', this.getElimPublicState());
+        }
+        if (this.elimState.paused) return;
         // Locked Mode (pedido explícito): solo se suma gente durante la
         // ventana inicial de 'joining' — nadie nuevo entra ya arrancada la
         // dinámica, ni siquiera en 'rejoin' (que sin este modo sí acepta
@@ -197,10 +261,12 @@ module.exports = {
 
         // Admite duplicados: cada slot equivalente agrega una entrada nueva,
         // aunque el usuario ya esté participando.
+        const slots = [];
         for (let i = 0; i < newUnits; i++) {
             this.elimSlotCounter += 1;
-            this.elimState.participants.push({ id: this.elimSlotCounter, username, avatar });
+            slots.push({ id: this.elimSlotCounter, username, avatar, source: 'gift' });
         }
+        insertSlotsRandomly(this.elimState.participants, slots);
         this.broadcast.emit('elim_state_update', this.getElimPublicState());
     },
 
@@ -232,11 +298,14 @@ module.exports = {
                 fastMode: !!config.fastMode,
                 eliminationsPerRound: Math.max(1, Number(config.eliminationsPerRound) || 1),
                 lockedMode: !!config.lockedMode,
+                finalPhaseAt: clampCount(config.finalPhaseAt, 0, MAX_ROUND_SETTING) ?? 0,
+                finalPhasePerRound: clampCount(config.finalPhasePerRound, 1, MAX_ROUND_SETTING) ?? 1,
                 participants: [], revealTargetIds: [], lastEliminatedList: [], winner: null,
             };
             this.elimSlotCounter = 0;
             this.elimEntryAccum = {};
             this.elimInstaWinAccum = {};
+            this.elimSeenUsers = new Map();
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
             this.startElimTimer();
 
@@ -245,15 +314,21 @@ module.exports = {
             }
         });
 
+        // Pausa solo durante el tiempo para unirse, en los dos modos (pedido
+        // explícito): se puede pausar y reanudar las veces que se quiera antes de
+        // la primera eliminación, pero ya no después.
         socket.on('pause_elimination', () => {
-            if (this.elimState.isActive && this.elimState.mode !== 'finished') {
+            if (this.elimState.isActive && this.elimState.mode === 'joining' && !this.elimState.paused) {
                 this.elimState.paused = true;
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
             }
         });
 
+        // Reanudar sí en cualquier fase: una ronda recuperada tras un reinicio
+        // del servidor vuelve pausada en el reingreso (ver runtimeState.js) y
+        // tiene que poder seguir.
         socket.on('resume_elimination', () => {
-            if (this.elimState.isActive && this.elimState.mode !== 'finished') {
+            if (this.elimState.isActive && this.elimState.paused && this.elimState.mode !== 'finished') {
                 this.elimState.paused = false;
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
             }
@@ -274,6 +349,7 @@ module.exports = {
                 this.elimSlotCounter = 0;
                 this.elimEntryAccum = {};
                 this.elimInstaWinAccum = {};
+                this.elimSeenUsers = new Map();
                 this.broadcast.emit('elim_state_update', this.getElimPublicState());
                 this.startElimTimer();
             }
@@ -293,6 +369,9 @@ module.exports = {
                 this.elimState.rejoinTime = newConfig.rejoinTime;
                 this.elimState.fastMode = !!newConfig.fastMode;
                 this.elimState.eliminationsPerRound = Math.max(1, Number(newConfig.eliminationsPerRound) || 1);
+                // Fase final: se usa en el próximo sorteo (ver roundEliminationCount).
+                this.elimState.finalPhaseAt = clampCount(newConfig.finalPhaseAt, 0, MAX_ROUND_SETTING) ?? 0;
+                this.elimState.finalPhasePerRound = clampCount(newConfig.finalPhasePerRound, 1, MAX_ROUND_SETTING) ?? 1;
                 // Pedido explícito: una vez arrancada la ronda con Locked Mode
                 // activado, no se puede desactivar hasta Detener/Reiniciar — evita
                 // levantar el bloqueo a mitad de ronda para dejar entrar gente
@@ -315,24 +394,73 @@ module.exports = {
         // Suma entradas a mano, sin depender de un regalo o comentario real —
         // pedido explícito para poder premiar a alguien puntualmente o corregir
         // a mano. Cuentan EXACTAMENTE igual que las entradas por regalo (mismo
-        // array de slots que usa el sorteo), y a propósito ignoran Locked Mode:
-        // es una acción explícita del admin, no una entrada automática. Si el
-        // usuario ya está en la lista, reusa su avatar real; si es nuevo, le
-        // toca uno al azar de la galería (ver DEFAULT_MANUAL_AVATARS/
-        // pickDefaultManualAvatar) — queda fijo mientras dure la ronda.
-        socket.on('elim_add_manual_entry', ({ username, count } = {}) => {
-            if (!this.elimState.isActive || this.elimState.mode === 'finished') return;
-            const uname = (username || '').trim();
-            if (!uname) return;
-            const n = Math.max(1, Math.min(1000, Math.round(Number(count) || 1)));
-            const existing = this.elimState.participants.find(p => p.username === uname);
-            const avatar = existing ? existing.avatar : pickDefaultManualAvatar();
+        // array de slots que usa el sorteo). Antes ignoraban Locked Mode; ahora
+        // (pedido explícito) siguen la misma regla que el resto de las
+        // ediciones: con Locked Mode, solo durante el tiempo para unirse (ver
+        // elimEditBlockedReason). Durante la animación del sorteo sí se puede
+        // agregar: igual que un regalo, entra para la ronda siguiente.
+        // Sirve también para sumarle a quien ya entró con regalos (mismo @, sin
+        // importar mayúsculas). La foto sale de elimAvatarFor: la que ya tiene,
+        // la de TikTok si mandó algún regalo en la ronda (aunque no le
+        // alcanzara para una entrada), o una al azar de la galería (ver
+        // DEFAULT_MANUAL_AVATARS) que queda fija mientras dure la ronda.
+        // `ack` (opcional): el panel muestra si se aplicó o por qué no.
+        socket.on('elim_add_manual_entry', (payload, ack) => {
+            const reply = typeof ack === 'function' ? ack : () => {};
+            const { username, count } = payload || {};
+            if (!this.elimState.isActive || this.elimState.mode === 'finished') return reply({ ok: false, error: 'Inicia una ronda de Eliminación para agregar entradas.' });
+            if (this.elimState.lockedMode && this.elimState.mode !== 'joining') return reply({ ok: false, error: this.elimEditBlockedReason() });
+            const typed = normalizeUsername(username);
+            if (!typed) return reply({ ok: false, error: 'Escribe el usuario.' });
+            const n = clampCount(count, 1) ?? 1;
+            const uname = findParticipantName(this.elimState.participants, typed)
+                || this.elimSeenUsers?.get(typed.toLowerCase())?.username
+                || typed;
+            const avatar = this.elimAvatarFor(uname);
+            const slots = [];
             for (let i = 0; i < n; i++) {
                 this.elimSlotCounter += 1;
-                this.elimState.participants.push({ id: this.elimSlotCounter, username: uname, avatar });
+                slots.push({ id: this.elimSlotCounter, username: uname, avatar, source: 'manual' });
             }
+            insertSlotsRandomly(this.elimState.participants, slots);
             console.log(`[${this.logId}] [ELIMINACION] ➕ Entrada manual: @${uname} x${n}`);
             this.broadcast.emit('elim_state_update', this.getElimPublicState());
+            reply({ ok: true, username: uname, added: n });
+        });
+
+        // Deja a un participante con un número exacto de entradas (sumar,
+        // restar o 0 para sacarlo), sin importar si eran de regalo o manuales
+        // (pedido explícito). Ver setEntries en lib/elimEntries.js.
+        socket.on('elim_set_entries', (payload, ack) => {
+            const reply = typeof ack === 'function' ? ack : () => {};
+            const blocked = this.elimEditBlockedReason();
+            if (blocked) return reply({ ok: false, error: blocked });
+            const result = setEntries(this.elimState.participants, {
+                username: payload?.username, count: payload?.count,
+                nextId: () => { this.elimSlotCounter += 1; return this.elimSlotCounter; },
+            });
+            if (!result.ok) return reply(result);
+            console.log(`[${this.logId}] [ELIMINACION] ✏️ Entradas de @${result.username}: ${result.before} → ${result.after}`);
+            this.broadcast.emit('elim_state_update', this.getElimPublicState());
+            reply(result);
+        });
+
+        // Combina las entradas de dos participantes en uno de los dos o en un
+        // tercer perfil (pedido explícito). Ver mergeParticipants en
+        // lib/elimEntries.js.
+        socket.on('elim_merge_participants', (payload, ack) => {
+            const reply = typeof ack === 'function' ? ack : () => {};
+            const blocked = this.elimEditBlockedReason();
+            if (blocked) return reply({ ok: false, error: blocked });
+            const result = mergeParticipants(this.elimState.participants, {
+                a: payload?.a, b: payload?.b, target: payload?.target, customUsername: payload?.customUsername,
+                avatarFor: (name) => this.elimAvatarFor(name),
+                nextId: () => { this.elimSlotCounter += 1; return this.elimSlotCounter; },
+            });
+            if (!result.ok) return reply(result);
+            console.log(`[${this.logId}] [ELIMINACION] 🔗 Combinados @${normalizeUsername(payload.a)} + @${normalizeUsername(payload.b)} → @${result.username} (${result.total})`);
+            this.broadcast.emit('elim_state_update', this.getElimPublicState());
+            reply(result);
         });
 
         socket.on('stop_elimination', () => this.stopElimination());

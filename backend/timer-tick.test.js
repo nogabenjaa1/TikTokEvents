@@ -12,7 +12,7 @@ function load(file) {
   const intervals = [];
   const context = {
     module: { exports: {} },
-    require: (name) => (name.includes('tenantHelpers') ? helpers : {}),
+    require: (name) => (name.includes('tenantHelpers') ? helpers : name.includes('elimEntries') ? require('./lib/elimEntries') : {}),
     setInterval: (fn) => { intervals.push(fn); return intervals.length; },
     clearInterval: () => {},
     setTimeout: () => 0,

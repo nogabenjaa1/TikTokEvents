@@ -75,6 +75,10 @@ class Tenant {
         };
         this.elimTimerInterval = null;
         this.elimSlotCounter = 0;
+        // Quién mandó regalos en la ronda (aunque no le alcanzara para una
+        // entrada), con su foto de TikTok: el panel lo ofrece al dar entradas a
+        // mano (ver noteElimGifter en lib/tenant/elim.js).
+        this.elimSeenUsers = new Map();
         this.elimRevealTimeout = null;
         this.elimResultTimeout = null;
         // Ver comentario de kingTargetAccum/kingInstaWinAccum más arriba.

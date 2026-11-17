@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
-import { rollFair, rollWithPairBias } from './diceBias';
+import { rollFair, rollWithWinBonus, rollForSafeMode } from './diceBias';
 import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
@@ -12,39 +12,7 @@ const MIN_DICE = 1;
 const MAX_DICE = 6;
 const DEFAULT_DICE = 4;
 
-// Safe Mode: fuerza que `colorIdx` aparezca EXACTAMENTE `targetCount` veces
-// entre los N dados. Las demás posiciones se llenan con otros colores al
-// azar (nunca colorIdx), así el conteo final queda garantizado.
-function rollWithExactCount(n, colorIdx, targetCount) {
-  const clamped = Math.max(0, Math.min(n, targetCount));
-  const otherColors = COLORS.map((_, i) => i).filter(i => i !== colorIdx);
-  const positions = Array.from({ length: n }, (_, i) => i);
-  for (let i = positions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [positions[i], positions[j]] = [positions[j], positions[i]];
-  }
-  const result = new Array(n);
-  positions.forEach((pos, idx) => {
-    result[pos] = idx < clamped ? colorIdx : otherColors[Math.floor(Math.random() * otherColors.length)];
-  });
-  return result;
-}
-
-// "Asegurar": garantiza que ese color salga EXACTAMENTE 1 vez (nunca 3, ni
-// ningún otro conteo — a pedido explícito, un solo camino, no dos).
-// "Bloquear": garantiza el camino FÁCIL (0 o el punto de equilibrio N/2).
-// Generalizado para N dados.
-function rollForSafeMode(n, colorIdx, action) {
-  const half = Math.floor(n / 2);
-  if (action === 'ensure') {
-    return rollWithExactCount(n, colorIdx, 1);
-  }
-  if (action === 'block') {
-    const targetCount = Math.random() < 0.7 ? half : 0;
-    return rollWithExactCount(n, colorIdx, targetCount);
-  }
-  return rollWithPairBias(n);
-}
+// Reglas, Win Bonus y Modo Seguro: ver diceBias.js.
 
 let audioCtx = null;
 function ensureAudioCtx() {
@@ -135,18 +103,17 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
   // preservar el comportamiento de siempre; una excepción manual arranca apagada.
   const [winBonusEnabled, setWinBonusEnabled] = useState(() => isAdmin);
   const [winBonusPct, setWinBonusPct]         = useState(() => isAdmin ? 100 : DEFAULT_WIN_BONUS_PCT);
-  const [winBonusHidden, setWinBonusHidden]   = useState(false);
+  const [winBonusHidden, setWinBonusHidden]   = useState(true);
 
   // Safe Mode: override manual para un color puntual. 'ensure' fuerza el
   // camino difícil y 'block' fuerza el camino fácil. Solo aplica si es Admin.
   const [safeModeColor, setSafeModeColor]   = useState(null);
   const [safeModeAction, setSafeModeAction] = useState('none'); // 'none' | 'ensure' | 'block'
 
-  // Botón de pánico: por si un día se comparte pantalla completa por error,
-  // el panel entero se puede ocultar de un clic. No persiste entre recargas
-  // a propósito (arranca visible siempre), así nunca queda "oculto sin
-  // querer" en la próxima sesión sin que el dueño se dé cuenta.
-  const [safeModeHidden, setSafeModeHidden] = useState(false);
+  // Paneles ocultos al abrir (pedido explícito): así una pantalla completa
+  // compartida no los muestra; se despliegan con las líneas casi invisibles
+  // del borde derecho (ver más abajo). No se recuerda entre recargas.
+  const [safeModeHidden, setSafeModeHidden] = useState(true);
 
   // Invitado (sin sesión): banco de horas sin ads en localStorage (ver
   // adBank.js). Mientras no haya banco activo, se interrumpe el juego cada
@@ -222,26 +189,19 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
     if (isAdmin && safeModeAction !== 'none' && safeModeColor !== null) {
       results = rollForSafeMode(diceCount, safeModeColor, safeModeAction);
     } else if (hasWinBonus && winBonusEnabled) {
-      results = rollWithPairBias(diceCount, winBonusPct / 100);
+      results = rollWithWinBonus(diceCount, winBonusPct / 100);
     } else {
       results = rollFair(diceCount); // sin el bono (default) o con el bono apagado
     }
-
-    const allSame = diceCount > 1 && results.every(r => r === results[0]);
-
-    if (allSame) {
-      setDiceResult(Array(diceCount).fill(null));
-      setTimeout(() => doRollInternal(), 1500);
-      return;
-    }
+    // Ya no hay re-tiro automático cuando todos salen iguales: con las reglas
+    // nuevas (ver diceBias.js) el streamer decide según el color de cada
+    // espectador, y 4 iguales es "gana doble".
 
     stopTicking();
     playResultSound();
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
-    // doRollInternal se declara después y depende de finishRoll: cuando uno cambia el otro también, nunca queda una versión vieja.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
 
   const doRollInternal = useCallback(() => {
@@ -307,6 +267,20 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
             {n}
           </button>
         ))}
+      </div>
+
+      {/* Reglas (pedido explícito): el streamer las aplica al color que eligió
+          cada espectador. Debajo del botón, para no mover la zona de dados. */}
+      <div className="theme-surface w-full max-w-xs p-3">
+        <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1.5">Reglas: veces que sale el color elegido</p>
+        <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-300">
+          <li><span className="font-black">1 vez:</span> gana</li>
+          <li><span className="font-black">2 veces:</span> pierde</li>
+          <li><span className="font-black">3 veces:</span> se vuelve a tirar</li>
+          <li><span className="font-black">4 veces:</span> gana doble</li>
+          <li><span className="font-black">No sale:</span> pierde</li>
+          <li><span className="font-black">2 re-tiros:</span> pierde</li>
+        </ul>
       </div>
 
       {/* Altura fija (no depende de la cantidad de tiradas) para que los
@@ -390,7 +364,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
           </div>
-          <p className="text-[9px] text-gray-500 leading-snug">Sesgo ajustable a favor de sacar pares.</p>
+          <p className="text-[9px] text-gray-500 leading-snug">A favor del streamer: más tiradas donde el espectador pierde.</p>
           {winBonusEnabled && (
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
@@ -406,7 +380,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
       {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
-        <div className="theme-surface w-full max-w-xs md:fixed md:top-80 md:right-4 md:w-60 p-4">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-[23rem] md:right-4 md:w-60 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
@@ -436,9 +410,9 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           </div>
 
           <p className="text-[9px] text-gray-500 mt-3 leading-snug">
-            {safeModeAction === 'none' && 'Elige un color y una acción. Sin nada activo, tira con sesgo normal.'}
-            {safeModeAction === 'ensure' && safeModeColor !== null && <>Asegurando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale exactamente 1 vez.</>}
-            {safeModeAction === 'block' && safeModeColor !== null && <>Bloqueando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: camino fácil.</>}
+            {safeModeAction === 'none' && 'Elige un color y una acción. Sin nada activo, tira normal (o con el Win Bonus si está encendido).'}
+            {safeModeAction === 'ensure' && safeModeColor !== null && <>Asegurando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale exactamente 1 vez (el espectador gana).</>}
+            {safeModeAction === 'block' && safeModeColor !== null && <>Bloqueando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale 0 o 2 veces (el espectador pierde).</>}
           </p>
         </div>
       )}

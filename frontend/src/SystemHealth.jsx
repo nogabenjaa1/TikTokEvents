@@ -49,7 +49,7 @@ export default function SystemHealth({
         {items.map((item) => (
           <span key={item.id} className="flex items-center gap-1.5" title={`${item.label}: ${item.text}`}>
             <span className={`w-2 h-2 rounded-full ${DOT[item.state]}`} aria-hidden="true" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hidden lg:inline">{item.label}</span>
+            <span className="text-[11px] font-semibold text-gray-500 hidden lg:inline">{item.label}</span>
             <span className="sr-only">{`${item.label}: ${item.text}`}</span>
           </span>
         ))}
@@ -70,12 +70,12 @@ export default function SystemHealth({
       {(ttsEnabled || canReconnect) && (
         <div className="flex gap-2 mt-1 flex-wrap">
           {canReconnect && onReconnectTikTok && (
-            <button type="button" onClick={onReconnectTikTok} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest" title="Vuelve a conectar con tu LIVE sin perder rankings ni partidas">
+            <button type="button" onClick={onReconnectTikTok} className="theme-btn-secondary theme-btn-sm font-bold" title="Vuelve a conectar con tu LIVE sin perder rankings ni partidas">
               Reconectar TikTok
             </button>
           )}
           {ttsEnabled && onResetVoice && (
-            <button type="button" onClick={onResetVoice} className="theme-btn-secondary theme-btn-sm font-black uppercase tracking-widest" title="Reinicia el motor de voz si dejó de leer">
+            <button type="button" onClick={onResetVoice} className="theme-btn-secondary theme-btn-sm font-bold" title="Reinicia el motor de voz si dejó de leer">
               Reiniciar voz
             </button>
           )}

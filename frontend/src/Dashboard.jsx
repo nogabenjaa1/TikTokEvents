@@ -15,7 +15,7 @@ const SECTION_SHORTCUTS = [
   { id: 'overlay', label: 'Overlays', hint: 'Los enlaces que pegas en OBS', free: true },
   { id: 'color', label: 'ColorDice', hint: 'Dados y colores', free: true },
   { id: 'downloader', label: 'Downloader', hint: 'Descarga videos sin marca de agua', free: false },
-  { id: 'theme', label: 'Tema', hint: 'Cambia el estilo del panel', free: true },
+  { id: 'theme', label: 'Tema', hint: 'Color de acento y apariencia', free: true },
   { id: 'membership', label: 'Membresía', hint: 'Planes y precios', free: true },
 ];
 
@@ -79,9 +79,9 @@ function ShortcutCard({ icon, label, hint, onClick, locked }) {
     >
       {icon && <NavIcon name={icon} size={20} className="theme-accent-text mt-0.5" />}
       <span className="min-w-0 flex flex-col gap-0.5">
-        <span className="text-sm font-black text-white leading-tight">{label}</span>
+        <span className="text-sm font-bold text-white leading-tight">{label}</span>
         {hint && <span className="tkc-hint">{hint}</span>}
-        {locked && <span className="tkc-label theme-label mt-0.5">Con licencia</span>}
+        {locked && <span className="tkc-meta mt-0.5">Con licencia</span>}
       </span>
     </button>
   );
@@ -100,14 +100,14 @@ function NowCard({ statuses, labels, lastEventTab, onGo }) {
   if (!current.length && !resume) return null;
   return (
     <section className="w-full max-w-5xl theme-surface p-4 sm:px-5 flex flex-col gap-3" aria-labelledby="dash-now">
-      <h2 id="dash-now" className="tkc-label theme-label">{current.length ? 'Ahora en tu directo' : 'Seguir donde lo dejaste'}</h2>
+      <h2 id="dash-now" className="tkc-section-title">{current.length ? 'Ahora en tu directo' : 'Seguir donde lo dejaste'}</h2>
       {current.length > 0 && (
         <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {current.map((s) => (
             <li key={s.id}>
               <button type="button" onClick={() => onGo(s.id)} className="tkc-row-link theme-input w-full text-left px-3 py-2.5 flex items-center justify-between gap-2">
                 <span className="min-w-0 flex flex-col">
-                  <span className="text-sm font-black text-white leading-tight truncate">{labels[s.id]}</span>
+                  <span className="text-sm font-bold text-white leading-tight truncate">{labels[s.id]}</span>
                   {s.detail && <span className="tkc-hint tabular-nums">{s.detail}</span>}
                 </span>
                 <EventStatusBadge status={s} />
@@ -117,7 +117,7 @@ function NowCard({ statuses, labels, lastEventTab, onGo }) {
         </ul>
       )}
       {resume && (
-        <button type="button" onClick={() => onGo(resume)} className={current.length ? 'theme-link self-start' : 'theme-btn-primary theme-btn-sm self-start font-black uppercase tracking-widest'}>
+        <button type="button" onClick={() => onGo(resume)} className={current.length ? 'theme-link self-start' : 'theme-btn-primary theme-btn-sm self-start font-bold'}>
           {current.length ? `Volver a ${labels[resume]}` : `Abrir ${labels[resume]}`}
         </button>
       )}
@@ -129,7 +129,7 @@ function EventGroupCard({ group, locked, onGo, statuses }) {
   const titleId = `dash-group-${group.id}`;
   return (
     <section className="theme-surface p-2 flex flex-col" aria-labelledby={titleId}>
-      <h2 id={titleId} className="tkc-label theme-label px-3 pt-2 pb-1.5">{group.title}</h2>
+      <h2 id={titleId} className="tkc-card-title px-3 pt-2 pb-1.5">{group.title}</h2>
       <ul className="flex flex-col">
         {group.items.map((t) => (
           <li key={t.id}>
@@ -140,7 +140,7 @@ function EventGroupCard({ group, locked, onGo, statuses }) {
               className="tkc-row-link w-full text-left px-3 py-2 flex flex-col gap-0.5"
             >
               <span className="flex items-center justify-between gap-2">
-                <span className="text-sm font-black text-white leading-tight">{t.label}</span>
+                <span className="text-sm font-bold text-white leading-tight">{t.label}</span>
                 {!locked && <EventStatusBadge status={statuses?.[t.id]} />}
               </span>
               <span className="tkc-hint">{statuses?.[t.id]?.tone === 'setup' && !locked ? statuses[t.id].detail : t.hint}</span>
@@ -218,11 +218,10 @@ export default function Dashboard({
   const showOnboarding = !!session && !onboarding.dismissed && doneCount < steps.length;
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:px-6 sm:pt-8 font-sans flex-1 overflow-y-auto gap-6">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:px-8 sm:pt-10 font-sans flex-1 overflow-y-auto gap-8">
       <header className="w-full max-w-5xl flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <p className="theme-accent-text tkc-eyebrow">Dashboard</p>
-          <h1 className="theme-heading text-2xl font-black">
+          <h1 className="tkc-page-title">
             {session ? `Hola, @${session.username}` : 'Bienvenido a BenjaApis'}
           </h1>
           <p className="text-sm text-gray-500">
@@ -232,14 +231,14 @@ export default function Dashboard({
           </p>
         </div>
         {session && connected && (
-          <span role="status" className="tkc-label inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-full border text-green-300 border-green-500/40 bg-green-500/10">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span role="status" className="tkc-status-pill tkc-status-live self-start sm:self-auto">
+            <span className="tkc-status-pip" aria-hidden="true" />
             En vivo
           </span>
         )}
         {session && !connected && (
-          <span role="status" className="tkc-label inline-flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-full border border-gray-600/50 text-gray-400">
-            <span className="w-2 h-2 rounded-full bg-gray-500" />
+          <span role="status" className="tkc-status-pill self-start sm:self-auto">
+            <span className="tkc-status-pip" aria-hidden="true" />
             Sin conexión en vivo
           </span>
         )}
@@ -251,11 +250,11 @@ export default function Dashboard({
       {!session && (
         <div className="w-full max-w-5xl theme-surface-featured p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="theme-heading text-lg font-black">Desbloquea todo tu panel</h2>
+            <h2 className="text-lg font-bold text-white">Desbloquea todo tu panel</h2>
             <p className="tkc-hint mt-1 max-w-lg">Juegos con regalos, alertas, TTS del chat, Spotify y overlays para OBS. Pruébalo gratis, sin pagar nada.</p>
           </div>
           <div className="flex flex-col items-stretch sm:items-end gap-1 flex-shrink-0">
-            <button type="button" onClick={() => onGoSection('membership')} className="theme-btn-primary theme-btn-lg font-black uppercase tracking-widest shadow-lg">
+            <button type="button" onClick={() => onGoSection('membership')} className="theme-btn-primary theme-btn-lg font-bold">
               Probar gratis
             </button>
             <button type="button" onClick={() => onGoEventTab('king')} className="theme-link self-center sm:self-end">
@@ -273,27 +272,27 @@ export default function Dashboard({
         <section className="w-full max-w-5xl theme-surface-featured p-5 sm:px-6" aria-labelledby="onboarding-title">
           <div className="flex items-start justify-between gap-4 mb-3">
             <div>
-              <h2 id="onboarding-title" className="theme-heading text-lg font-black">Primeros pasos</h2>
+              <h2 id="onboarding-title" className="text-lg font-bold text-white">Primeros pasos</h2>
               <p className="tkc-hint mt-0.5">{doneCount} de {steps.length} listos — sigue el orden o salta al que quieras.</p>
             </div>
             <button type="button" onClick={() => updateOnboarding({ dismissed: true })} className="theme-link whitespace-nowrap">
               Ocultar guía
             </button>
           </div>
-          <div className="w-full h-1.5 rounded-full overflow-hidden mb-4 bg-black/25" aria-hidden="true">
+          <div className="w-full h-1.5 rounded-full overflow-hidden mb-4 tkc-track" aria-hidden="true">
             <div className="h-full theme-accent-bg transition-[width] duration-500" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
           </div>
           <ol className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             {steps.map((step, i) => (
               <li key={step.id} className="theme-input p-3 flex gap-3">
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${step.done ? 'bg-green-500 text-black' : 'theme-chip'}`} aria-label={step.done ? 'Listo' : `Paso ${i + 1}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${step.done ? 'tkc-step-done' : 'theme-chip'}`} aria-label={step.done ? 'Listo' : `Paso ${i + 1}`}>
                   {step.done ? '✓' : i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-black leading-tight ${step.done ? 'text-gray-400 line-through' : 'text-white'}`}>{step.title}</p>
+                  <p className={`text-sm font-bold leading-tight ${step.done ? 'text-gray-400 line-through' : 'text-white'}`}>{step.title}</p>
                   <p className="tkc-hint mt-1">{step.text}</p>
                   {step.action && !step.done && (
-                    <button type="button" onClick={step.action.run} className="theme-btn-primary theme-btn-sm mt-2 font-black uppercase tracking-widest">
+                    <button type="button" onClick={step.action.run} className="theme-btn-primary theme-btn-sm mt-2 font-bold">
                       {step.action.label}
                     </button>
                   )}
@@ -311,7 +310,7 @@ export default function Dashboard({
         <section className="w-full max-w-5xl" aria-label="Estado de tu cuenta">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="theme-surface p-4 flex flex-col gap-2">
-              <h2 className="tkc-label theme-label">Conexión a TikTok</h2>
+              <h2 className="tkc-card-title">Conexión a TikTok</h2>
               <TikTokLoginBar
                 username={username} setUsername={setUsername}
                 connectionStatus={connectionStatus} connectionError={connectionError}
@@ -323,14 +322,14 @@ export default function Dashboard({
             </div>
 
             <div className="theme-surface p-4 flex flex-col gap-2">
-              <h2 className="tkc-label theme-label">TTS del chat</h2>
+              <h2 className="tkc-card-title">TTS del chat</h2>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-black">{ttsEnabled ? 'Activado' : 'Apagado'}</span>
+                <span className="text-sm font-bold text-white">{ttsEnabled ? 'Activado' : 'Apagado'}</span>
                 <button
                   type="button"
                   onClick={onToggleTts}
                   disabled={ttsLocked || (!ttsEnabled && !connected)}
-                  className={`font-black uppercase tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-sm ${ttsEnabled ? 'theme-btn-danger' : 'theme-btn-primary'}`}
+                  className={`font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-sm ${ttsEnabled ? 'theme-btn-danger' : 'theme-btn-primary'}`}
                 >
                   {ttsEnabled ? 'Apagar' : 'Prender'}
                 </button>
@@ -345,8 +344,8 @@ export default function Dashboard({
             </div>
 
             <div className="theme-surface p-4 flex flex-col gap-1">
-              <h2 className="tkc-label theme-label">Tu plan</h2>
-              <p className="text-sm font-black capitalize">{session.licenseType === 'trial' ? 'Prueba gratis' : session.licenseType || '—'}</p>
+              <h2 className="tkc-card-title">Tu plan</h2>
+              <p className="text-sm font-bold text-white capitalize">{session.licenseType === 'trial' ? 'Prueba gratis' : session.licenseType || '—'}</p>
               {daysLeft !== null ? (
                 <p className={`text-xs font-bold ${daysLeft <= 3 ? 'text-red-700' : 'text-gray-500'}`}>
                   {daysLeft <= 0 ? 'Vence hoy' : `Vence en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`}
@@ -360,7 +359,7 @@ export default function Dashboard({
             </div>
 
             <div className="theme-surface p-4 flex flex-col gap-2 md:col-span-3">
-              <h2 className="tkc-label theme-label">Estado del sistema</h2>
+              <h2 className="tkc-card-title">Estado del sistema</h2>
               <SystemHealth
                 socketConnected={socketConnected} connectionStatus={connectionStatus}
                 ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
@@ -373,8 +372,8 @@ export default function Dashboard({
 
       <section className="w-full max-w-5xl" aria-labelledby="dash-events">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-2 px-1">
-          <h2 id="dash-events" className="tkc-label theme-label">Eventos</h2>
-          {!session && <p className="text-xs font-bold text-gray-500">Requieren licencia o la prueba gratis</p>}
+          <h2 id="dash-events" className="tkc-section-title">Eventos</h2>
+          {!session && <p className="tkc-meta">Requieren licencia o la prueba gratis</p>}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {EVENT_GROUPS.map((group) => (
@@ -384,7 +383,7 @@ export default function Dashboard({
       </section>
 
       <section className="w-full max-w-5xl" aria-labelledby="dash-tools">
-        <h2 id="dash-tools" className="tkc-label theme-label mb-2 px-1">Herramientas y ajustes</h2>
+        <h2 id="dash-tools" className="tkc-section-title mb-2 px-1">Herramientas y ajustes</h2>
         <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {SECTION_SHORTCUTS.map((s) => (
             <ShortcutCard

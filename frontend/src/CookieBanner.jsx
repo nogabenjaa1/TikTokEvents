@@ -17,17 +17,17 @@ export default function CookieBanner({ onNavigate }) {
         role="dialog" aria-modal="false" aria-labelledby="cookie-title"
         className="theme-surface tkc-rise pointer-events-auto mx-auto w-full max-w-2xl p-4 sm:p-5 flex flex-col gap-3"
       >
-        <h2 id="cookie-title" className="theme-label text-xs uppercase tracking-widest font-black">Cookies y anuncios</h2>
+        <h2 id="cookie-title" className="text-sm font-bold text-white">Cookies y anuncios</h2>
         <p className="text-xs text-gray-400 leading-relaxed">
           BenjaApis guarda en tu navegador solo lo necesario para que el panel funcione (tu sesión, tu tema) y cuenta las visitas sin cookies.
           Las funciones gratis muestran anuncios de Google y Adsterra, que pueden usar cookies. Puedes pedir anuncios no personalizados.{' '}
           <a href="/cookies" onClick={(e) => { e.preventDefault(); onNavigate?.('cookies'); }} className="theme-link theme-link-info !p-0 !text-xs">Más información</a>
         </p>
         <div className="flex flex-col-reverse sm:flex-row gap-2">
-          <button type="button" onClick={() => choose('non_personalized')} className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
+          <button type="button" onClick={() => choose('non_personalized')} className="theme-btn-secondary theme-btn-md flex-1 font-bold">
             Anuncios no personalizados
           </button>
-          <button type="button" onClick={() => choose('all')} className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
+          <button type="button" onClick={() => choose('all')} className="theme-btn-secondary theme-btn-md flex-1 font-bold">
             Aceptar todo
           </button>
         </div>

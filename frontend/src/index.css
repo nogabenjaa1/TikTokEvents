@@ -525,6 +525,142 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .tkc-preview-nav { font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); padding: 0.5rem 0.625rem; border-radius: var(--surface-radius-sm); }
 .tkc-preview-nav-active { background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent-text); }
 
+.tkc-card-title { font-size: 0.8125rem; line-height: 1.25rem; font-weight: 700; color: var(--ink-2); }
+.tkc-meta { font-size: 0.75rem; line-height: 1rem; font-weight: 600; color: var(--ink-3); }
+.tkc-track { background: color-mix(in oklch, var(--ink) 10%, transparent); }
+.tkc-step-done { background: color-mix(in oklch, var(--ink-success) 85%, var(--status-mix)); color: var(--page-bg); }
+/* Estado en vivo (Dashboard): píldora neutra; en vivo toma el verde de estado
+   con un punto que late (estado, no adorno). */
+.tkc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.tkc-status-pip { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--ink-3); }
+.tkc-status-live { color: color-mix(in oklch, var(--ink-success) 85%, var(--status-mix)); border-color: color-mix(in oklch, #10B981 45%, transparent); background: color-mix(in oklch, #10B981 10%, transparent); }
+.tkc-status-live .tkc-status-pip { background: #10B981; box-shadow: 0 0 0 0 rgb(16 185 129 / 0.6); animation: tkc-live-pip 2s var(--ease-out-soft) infinite; }
+@keyframes tkc-live-pip { 0% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.55); } 100% { box-shadow: 0 0 0 7px rgb(16 185 129 / 0); } }
+/* Botones en mayúsculas (la voz de acción del producto): el tracking muy
+   abierto de antes se cierra para que lean como botones, no como letreros. */
+.themed-app[data-theme-style="master"] :is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-warning):is(.tracking-widest, .tracking-wider):not([data-theme-style="default"] *) { letter-spacing: 0.06em; }
+
+/* Filtro en fila (actividad en vivo y siguientes): píldora neutra; elegida,
+   el acento. */
+.tkc-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+.tkc-filter:hover { color: var(--ink); background: var(--surface-raised); }
+.tkc-filter[aria-pressed="true"] { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.tkc-filter-count { font-variant-numeric: tabular-nums; opacity: 0.75; }
+.tkc-field-label { font-size: 0.75rem; line-height: 1rem; font-weight: 700; color: var(--ink-2); }
+
+/* Pestañas en fila (Eventos, Overlays, Sistema): texto en tinta secundaria,
+   la activa en el acento con su indicador deslizante. */
+.tkc-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.25rem;
+  padding: 0 0.875rem;
+  border-radius: var(--surface-radius-sm);
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  flex-shrink: 0;
+  transition: color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.tkc-tab:hover { color: var(--ink); }
+.tkc-tab[aria-current="page"], .tkc-tab[aria-current="page"]:hover { color: var(--accent-text); }
+.tkc-tab-label { font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
+.tkc-tab-indicator { border-radius: var(--surface-radius-sm); }
+
+/* Barra de navegación principal (AppSidebar.jsx). Celular: fila desplazable
+   arriba, nombre bajo el ícono. Escritorio: columna de 224px, ícono y nombre
+   en la misma fila, como cualquier herramienta de trabajo. */
+.tkc-rail {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.5rem;
+  flex-shrink: 0;
+  overflow-x: auto;
+  z-index: 50;
+}
+.tkc-rail-brand { display: flex; flex-direction: column; align-items: center; gap: 0.125rem; flex-shrink: 0; padding: 0 0.5rem; }
+.tkc-rail-brand-name { font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.02em; color: var(--ink-2); }
+.tkc-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 4rem;
+  height: 3.25rem;
+  padding: 0 0.5rem;
+  border-radius: var(--surface-radius-sm);
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  flex-shrink: 0;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.tkc-rail-item[aria-current="page"] { color: var(--accent-text); }
+.tkc-rail-item:hover { color: var(--ink); }
+.tkc-rail-item[aria-current="page"]:hover { color: var(--accent-text); }
+.tkc-rail-label { font-size: 0.625rem; font-weight: 700; line-height: 1; white-space: nowrap; }
+.tkc-rail-indicator { border-radius: var(--surface-radius-sm); }
+.tkc-rail-group { display: none; }
+.tkc-rail-action:hover { background: color-mix(in oklch, var(--ink) 6%, transparent); }
+.tkc-rail-exit:hover { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); }
+@media (min-width: 768px) {
+  .tkc-rail {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.125rem;
+    width: 14rem;
+    min-height: 100vh;
+    padding: 1rem 0.75rem;
+    overflow: visible;
+  }
+  .tkc-rail-brand { flex-direction: row; gap: 0.625rem; padding: 0.25rem 0.5rem 1rem; }
+  .tkc-rail-brand-name { font-size: 0.9375rem; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+  .tkc-rail-item {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    min-width: 0;
+    width: 100%;
+    height: 2.25rem;
+    padding: 0 0.625rem;
+  }
+  .tkc-rail-item svg { width: 18px; height: 18px; }
+  .tkc-rail-label { font-size: 0.8125rem; font-weight: 600; }
+  .tkc-rail-group {
+    display: block;
+    margin: 1rem 0.625rem 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--ink-3);
+  }
+}
+
 /* Isla clara: la vista previa de un overlay embebida en el panel lleva
    data-mode="light" en su propio wrapper y el aspecto de OBS. Un panel oscuro
    heredaría sus tintas claras hacia adentro (son variables heredables). */
@@ -722,6 +858,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .theme-notice-danger  { --notice: #EF4444; --notice-ink: var(--ink-danger); }
 .theme-notice-warning { --notice: #F59E0B; --notice-ink: var(--ink-warning); }
 .theme-notice-success { --notice: #10B981; --notice-ink: var(--ink-premio); }
+.theme-notice-info    { --notice: #0EA5E9; --notice-ink: var(--ink-info); }
 /* Aviso con más aire, para los que llevan un botón o varias líneas. */
 .theme-notice-roomy { padding: 0.75rem 1rem; }
 

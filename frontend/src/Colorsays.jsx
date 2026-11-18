@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { COLORS, Die } from './colorsData';
 import { rollFair, rollWithWinBonus, rollForSafeMode } from './diceBias';
+import { ensureAudioCtx, playRollClatter, playRevealSound } from './diceSounds';
 import RewardedAdGate from './RewardedAdGate';
 import InterstitialAd from './InterstitialAd';
 import AdBanner from './AdBanner';
@@ -14,43 +15,9 @@ const DEFAULT_DICE = 4;
 
 // Reglas, Win Bonus y Modo Seguro: ver diceBias.js.
 
-let audioCtx = null;
-function ensureAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  return audioCtx;
-}
-
-function playTick() {
-  const ctx = ensureAudioCtx();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'square';
-  osc.frequency.value = 200 + Math.random() * 100;
-  gain.gain.setValueAtTime(0.05, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.08);
-}
-
-function playResultSound() {
-  const ctx = ensureAudioCtx();
-  const now = ctx.currentTime;
-  [523.25, 659.25, 783.99].forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    const t = now + i * 0.08;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.15, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.55);
-  });
-}
+// Sonidos (repiqueteo al girar y aviso al mostrar la tirada): ver diceSounds.js.
+// Cuánto dura la tirada; el repiqueteo se programa con esta misma duración.
+const ROLL_MS = 1200;
 
 // Interruptor visual compartido para activar/desactivar el WIN BONUS —
 // mismas clases que el Toggle de TtsChat.jsx, para mantener un solo
@@ -94,7 +61,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
   const [diceResult, setDiceResult] = useState(() => Array(DEFAULT_DICE).fill(null));
   const [rolling, setRolling]       = useState(false);
   const [history, setHistory]       = useState([]);
-  const tickIntervalRef             = useRef(null);
+  const rollTimeoutRef              = useRef(null);
 
   // WIN BONUS: quien lo tiene (isAdmin, siempre; o winBonusUnlocked, la
   // excepción manual de un admin para un streamer puntual) elige el % con
@@ -155,7 +122,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
   };
 
   const stopTicking = useCallback(() => {
-    if (tickIntervalRef.current) { clearInterval(tickIntervalRef.current); tickIntervalRef.current = null; }
+    if (rollTimeoutRef.current) { clearTimeout(rollTimeoutRef.current); rollTimeoutRef.current = null; }
   }, []);
 
   useEffect(() => stopTicking, [stopTicking]);
@@ -197,22 +164,20 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
     // nuevas (ver diceBias.js) el streamer decide según el color de cada
     // espectador, y 4 iguales es "gana doble".
 
-    stopTicking();
-    playResultSound();
+    rollTimeoutRef.current = null;
+    playRevealSound();
     setDiceResult(results);
     setRolling(false);
     setHistory(h => [results, ...h].slice(0, 8));
-  }, [stopTicking, safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
+  }, [safeModeColor, safeModeAction, diceCount, isAdmin, hasWinBonus, winBonusEnabled, winBonusPct]);
 
   const doRollInternal = useCallback(() => {
     setRolling(true);
     setDiceResult(Array(diceCount).fill(null));
     stopTicking();
-    tickIntervalRef.current = setInterval(playTick, 110);
-
-    setTimeout(() => {
-      finishRoll();
-    }, 1200);
+    playRollClatter(ROLL_MS);
+    // Guardado en una ref: si el panel se cierra a mitad de tirada, se cancela.
+    rollTimeoutRef.current = setTimeout(finishRoll, ROLL_MS);
   }, [finishRoll, stopTicking, diceCount]);
 
   const doRoll = () => {

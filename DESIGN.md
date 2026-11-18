@@ -1,32 +1,30 @@
 ---
 name: TikTok Concurso
-description: Cabina de control pastel para correr minijuegos de regalos de TikTok LIVE, con overlay para OBS.
+description: Cabina de control oscura para correr minijuegos de regalos de TikTok LIVE, con overlay para OBS.
 colors:
   accent: "#7C3AED"
-  accent-secondary: "#6366F1"
   accent-blue: "#3B82F6"
-  accent-blue-secondary: "#06B6D4"
   accent-pink: "#EC4899"
-  accent-pink-secondary: "#FB7185"
-  accent-green: "#10B981"
-  accent-green-secondary: "#34D399"
-  page-void: "#A69AD8"
-  surface-deep: "#C0B2F9"
-  surface-raised: "#B2A8E0"
-  page-void-kawaii: "#A69AD8"
-  surface-kawaii-base: "#C0B2F9"
-  surface-kawaii-base-alt: "#B2A8E0"
-  page-void-minimal: "#A69AD8"
-  surface-raised-minimal: "#B2A8E0"
-  page-void-cute: "#ACA1DC"
-  surface-cute-base: "#C6BAFA"
-  surface-cute-base-alt: "#B8B0E1"
-  accent-soft: "#A78BFA"
-  accent-blue-soft: "#93C5FD"
-  accent-pink-soft: "#F9A8D4"
-  accent-green-soft: "#6EE7B7"
-  ink-kawaii: "#2E2136"
-  ink-cute: "#2A1B2E"
+  page: "#0F0E13"
+  rail: "#0B0A0F"
+  surface: "#17161D"
+  surface-sunken: "#121117"
+  surface-raised: "#1F1E26"
+  ink-primary: "#F2F1F5"
+  ink-secondary: "#B4B1BF"
+  ink-tertiary: "#8A8797"
+  page-light: "#F7F7F9"
+  rail-light: "#EFEFF3"
+  surface-light: "#FFFFFF"
+  surface-sunken-light: "#F3F3F6"
+  surface-raised-light: "#ECECF1"
+  ink-primary-light: "#16131D"
+  ink-secondary-light: "#4A4656"
+  ink-tertiary-light: "#66626F"
+  overlay-page: "#A69AD8"
+  overlay-surface: "#C0B2F9"
+  overlay-surface-alt: "#B2A8E0"
+  overlay-ink: "#2E2136"
   danger: "#EF4444"
   warning: "#F59E0B"
   success: "#10B981"
@@ -117,14 +115,12 @@ typography:
     lineHeight: 1
     letterSpacing: "-0.05em"
 rounded:
-  sm: "0.75rem"
-  cute-nav: "1.1rem"
-  cute-box: "1rem"
-  lg: "1.5rem"
-  cute-dock: "1.75rem"
+  sm: "0.625rem"
+  md: "0.875rem"
+  overlay-sm: "0.75rem"
+  overlay-lg: "1.5rem"
   scrollbar: "10px"
   pill: "999px"
-  flat: "0px"
 spacing:
   sm: "0.5rem"
   md: "1rem"
@@ -133,26 +129,27 @@ spacing:
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
-    textColor: "{colors.ink}"
+    textColor: "{colors.ink-primary}"
     rounded: "{rounded.sm}"
-    padding: "12px 32px"
-  button-primary-hover:
-    backgroundColor: "{colors.accent}"
+    padding: "12px 16px"
   button-secondary:
-    backgroundColor: "{colors.surface-deep}"
-    textColor: "{colors.accent}"
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-primary}"
     rounded: "{rounded.sm}"
-    padding: "12px 32px"
+    padding: "12px 16px"
   input:
-    backgroundColor: "{colors.surface-raised}"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.surface-sunken}"
+    textColor: "{colors.ink-primary}"
     rounded: "{rounded.sm}"
-    padding: "10px 14px"
+    padding: "10px 12px"
+  card:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.md}"
   chip:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.accent}"
     rounded: "{rounded.pill}"
-    padding: "4px 12px"
+    padding: "4px 10px"
 ---
 
 # Design System: TikTok Concurso
@@ -161,47 +158,49 @@ components:
 
 **Creative North Star: "La Cabina de Control"**
 
-TikTok Concurso es la cabina de control del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE, donde un único acento de color hace de faro sobre un fondo pastel teñido de ese mismo acento. El sistema es deliberadamente táctil y de arcade — botones con peso, glows de acento, tipografía en mayúsculas y trazo grueso — no un dashboard corporativo silencioso.
+TikTok Concurso es la cabina de control del streamer: una interfaz densa en estado, pensada para leerse de un vistazo en medio de un LIVE. Desde noviembre de 2026 el panel tiene **un solo diseño, el tema maestro**, más **un color de acento** que elige el streamer. Ya no hay materiales ni skins: fondo, superficies, bordes, radios, sombras, tipografía, espaciado y movimiento son iguales con cualquier acento.
 
-> **Estado actual (importante).** Los materiales Kawaii y Minimal y el acento verde se retiraron: hoy hay **dos materiales** (Clásico —el id `default`— y Cute) combinables con **tres acentos** (morado, azul, rosa) más uno **personalizado**. Las menciones a Kawaii, Minimal, Verde y a "16 combinaciones" más abajo describen ese sistema anterior y se conservan como historial; los tokens y las reglas siguen valiendo tal cual para los dos materiales que quedan.
+Dirección: **estándar premium**, a la altura de Linear, Raycast, Stripe o Vercel en oficio (no en copia). La personalidad de arcade vive en el peso tipográfico y en la energía del acento sobre una cabina oscura y quieta, no en adornos, degradados ni brillos. Se eligió en la ronda de dirección de impeccable (dos tiradas descartadas; el dueño tomó la salida estándar).
 
-Lo más distintivo del sistema no es una paleta fija sino su **pluralismo controlado**: cuatro "materiales" (Default, Kawaii, Minimal, Cute) combinables con cuatro acentos de color (morado, azul, rosa, verde) — 16 combinaciones reales, todas construidas sobre el mismo esqueleto de tokens CSS (`--page-bg`, `--surface-bg`, `--surface-radius`, `--surface-shadow`, `--accent`). Los cuatro materiales comparten la misma familia de color — un **pastel claro de verdad** (`L` 0.72–0.82 en OKLCH) — y se distinguen entre sí únicamente por forma y profundidad, no por luminosidad (decisión del dueño del producto: antes Default/Minimal eran una cabina nocturna casi negra y Kawaii/Cute los únicos pasteles; se homogenizó todo a la paleta clara porque es la que mejor representa la marca). Default es el punto de referencia del sistema — esquinas moderadas (`1.5rem`/`0.75rem`), sombra ambiental difusa; Minimal es plano y callado — sin cajas, una sola línea de borde tintada del acento como única seña de profundidad; Cute (reemplazo de Claymorfismo) es dulce y contenido — borde punteado tipo washi-tape, radios grandes (`1.75rem`), textura de puntitos tipo sprinkles; Kawaii (reemplazo de Glassmorfismo) es dulce y máximo — radios ultra redondeados (`2rem`/píldora completa en cada control), relleno pastel lleno en botones/chips con brillo diagonal interior tipo gomita inflada, sombra profunda y difuminada del color del acento. Al vivir los cuatro sobre fondo claro, todo el texto blanco/gris del resto del sistema se sobreescribe a una tinta oscura propia de cada material (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — mismo hex en los cuatro hoy) para mantener el contraste — ver Colors › Tinta de Material.
+- **Oscuro de fábrica**, con apariencia **Clara** y **Automática** como alternativa (misma geometría, otra luz). El streamer trabaja junto a OBS, casi siempre de noche o con la sala a media luz.
+- **El acento pinta solo lo que depende de él**: botón principal, selección, navegación activa, foco, chips y texto de acento. Nada más.
+- **Los colores de estado** (peligro, aviso, éxito/premio, información) son fijos y nunca siguen al acento.
+- **Los overlays de OBS conservan su aspecto pastel de siempre** (el antiguo material Clásico), teñido del acento, y siguen sincronizados por socket. No usan el tema maestro.
 
-El overlay de OBS (lo que ve la audiencia del stream) **replica el mismo skin** (material + acento) que el streamer eligió en el panel — sincronizado en tiempo real por Socket.io, no por `localStorage` (el overlay corre en la ventana de OBS, un navegador aparte que nunca comparte sesión con el panel). El streamer elige el skin justamente para que represente su marca frente a su audiencia; que solo él lo vea sería el fallo del sistema, no una protección.
-
-**Key Characteristics:**
-- Fondo pastel teñido del acento activo + ese mismo acento como faro de atención en botones y texto de énfasis.
-- Cuatro materiales seleccionables (Default / Kawaii / Minimal / Cute), un mismo esqueleto de tokens, misma familia de color — se distinguen por forma y profundidad, no por luz.
-- Mayúsculas, tracking amplio y peso `black` para todo lo que es etiqueta o acción.
-- Táctil y de arcade, no SaaS corporativo: glows, gradientes, transiciones de 0.35s en cada cambio de tema.
-- El overlay de OBS sincroniza el mismo skin que el panel, en tiempo real, vía socket — nunca queda desfasado del tema elegido.
+**Historia.** Hasta octubre de 2026 el panel tenía dos materiales (Clásico y Cute) sobre un fondo pastel teñido del acento, y antes cuatro (Kawaii y Minimal se retiraron). El tema guardado conserva el campo `style` por compatibilidad con el servidor y con los overlays: siempre vale `"default"`, y quien tenía Cute (en el navegador o en la base) se migra al leerlo, conservando acento y color (`normalizeTheme` en `themeModel.js`). No hubo migración de base de datos.
 
 ## Colors
 
-Paleta pastel de un solo acento vivo sobre neutros claros teñidos de ese acento; los colores de estado (rojo, ámbar, esmeralda) son fijos y no cambian con el acento elegido.
+### Acento
 
-### Primary
-- **Neón Violeta** (`#7C3AED`): acento por defecto (`--accent`). Botones primarios, texto de énfasis, glow de foco, indicador de módulo activo. Es el faro del sistema — en el material Minimal es literalmente lo único con color en toda la pantalla.
-- **Índigo Profundo** (`#6366F1`): pareja de degradé del acento (`--accent-2`). Nunca aparece solo; siempre como el segundo extremo del gradiente en `button-primary` y del relleno pastel de botones/chips en el material Kawaii.
+Tres de fábrica (**Morado** `#7C3AED`, **Azul** `#3B82F6`, **Rosa** `#EC4899`) o **Personalizado** con cualquier color. Los ids (`purple`, `blue`, `pink`, `custom`) son los que valida el servidor (`lib/tenantSanitizers.js`).
 
-### Secondary — acentos alternos seleccionables
-El streamer elige uno de estos cuatro como su `--accent` activo; los otros tres quedan disponibles en el selector de Tema. Todos siguen la misma regla: viven en botones, texto de énfasis y glows, nunca en superficies neutras.
-- **Azul Transmisión** (`#3B82F6` / secundario `#06B6D4`)
-- **Rosa Neón** (`#EC4899` / secundario `#FB7185`)
-- **Verde Esmeralda Eléctrico** (`#10B981` / secundario `#34D399`)
+En el panel, `ThemedShell` calcula cinco variables a partir del acento y la apariencia activa (`accentTokens` en `themeModel.js`) y las pone inline:
+- `--accent`: el relleno (botón principal, foco, borde de selección).
+- `--accent-hover` / `--accent-active`: el mismo matiz, más claro u oscuro.
+- `--on-accent`: el texto encima del relleno, blanco o tinta oscura, el que contraste más.
+- `--accent-text`: el acento como texto sobre el fondo de página, ajustado hasta 4.5:1.
 
-### Neutral
-`--page-bg`, `--surface-bg` y `--surface-bg-alt` no tienen hex propio: se construyen en el momento con **sintaxis de color relativo**, `oklch(from var(--accent) L C h)` — se toma SOLO el matiz (`h`) del acento activo y se fija una luminosidad/croma (`L`/`C`) propios de cada token y cada material. Es deliberadamente distinto de `color-mix()` hacia una base: mezclar diluye luminosidad y croma en proporción al % mezclado, y el croma nativo en OKLCH no es igual entre los 4 acentos (rosa y verde parten "más flojos" que morado/azul), así que un mismo % de mezcla los deja menos saturados — ese fue el bug real detrás del "se ve grisáceo en rosa y verde". Fijando `L`/`C` a mano, los 4 acentos quedan con la misma intensidad, no solo el mismo matiz. Los hex de abajo son el resultado con el acento morado (por defecto) — cambian de matiz con cualquier otro acento, pero no de intensidad.
+**La Regla del Acento con Límites.** Un color personalizado puede ser casi blanco, casi negro o gris. Se conserva siempre su matiz, pero luminosidad y croma se llevan al rango donde funciona como acento (oscuro: L 0.53–0.88; claro: L 0.46–0.62; croma 0.09–0.26). La pantalla de Tema avisa cuando ajustó el color. Las pruebas (`themeModel.test.js`) exigen con cualquier color 4.5:1 en el texto del botón y en el texto de acento, y 3:1 del botón contra el fondo. Los overlays de OBS usan el color tal como se eligió.
 
-Los cuatro materiales viven en la misma familia de luminosidad — pastel claro de verdad, nunca la cabina nocturna casi negra que el sistema tenía antes de homogenizarse. Default y Minimal usan hoy exactamente la misma fórmula que Kawaii; Cute queda con valores de `L`/`C` levemente distintos (una diferencia de dos centésimas, no perceptible, pero no idéntica en el número):
+### Neutros (fijos, no siguen al acento)
 
-- **Vacío Pastel** (`oklch(from var(--accent) 0.72 0.09 h)` → `#A69AD8` en morado): fondo de página (`--page-bg`) en Default, Kawaii y Minimal (Cute usa `0.74/0.085` → `#ACA1DC`, casi indistinguible).
-- **Panel Pastel** (`oklch(from var(--accent) 0.8 0.1 h)` → `#C0B2F9`): fondo de superficie (`--surface-bg`) en Default y Kawaii — tarjetas, sidebar (Cute: `0.82/0.09` → `#C6BAFA`). Minimal se queda `transparent` acá: es su identidad de material, no un tema de color (ver Shapes).
-- **Panel Pastel Alterno** (`oklch(from var(--accent) 0.76 0.08 h)` → `#B2A8E0`): fondo de superficie secundaria (`--surface-bg-alt`) en los cuatro materiales — inputs, filas alternas, badges neutros (Cute: `0.78/0.07` → `#B8B0E1`).
-- **Borde Teñido** (`color-mix(in oklch, var(--accent) 55%, transparent)` en Default/Kawaii/Cute, `45%` en Minimal): borde de superficie por defecto (`--surface-border-color`) — ya no es un hex fijo en ningún material; sigue el acento activo como el resto del sistema. Minimal usa un porcentaje más bajo a propósito: su única señal de profundidad es esta línea, y tiene que leerse sutil, no como un borde de tarjeta.
-- **Tinta de Material** (`--ink-default`, `--ink-kawaii`, `--ink-minimal`, `--ink-cute` — hoy los cuatro en `#2E2136`/`#2A1B2E`, violeta casi negro): en los cuatro materiales, TODO el texto blanco/gris del resto del sistema se sobreescribe a esta tinta oscura (selector `.themed-app[data-theme-style="X"] .text-white`, etc., con `!important` porque compite con utilidades de Tailwind en una capa distinta) — un fondo pastel claro no tiene contraste suficiente para texto blanco. Antes esto era una excepción exclusiva de Kawaii/Cute; ahora es la regla del sistema completo.
-- **Acento Suave** (`accent-soft`, uno por acento — `#A78BFA` morado, `#93C5FD` azul, `#F9A8D4` rosa, `#6EE7B7` verde): versión desaturada del acento activo. Ya no se usa para texto de énfasis sobre el fondo claro (quedaba ilegible ahí) — `theme-label`/`theme-accent-text`/`theme-btn-secondary`/`theme-chip` usan en su lugar un tono oscuro construido al vuelo (`oklch(from var(--accent) 0.36 0.16 h)`) en Default y Minimal, igual que Kawaii/Cute. `accent-soft` sigue vivo como color base de acentos alternos en el selector de Tema.
-- **Acento Pastel** (`--accent-pastel`, solo en Kawaii — `oklch(from var(--accent) 0.6 0.15 h)`): un tono del acento más saturado que el fondo pastel del material, usado para rellenar botones/chips por completo y darles presencia sobre un fondo que ya es claro. Construido con la misma sintaxis de color relativo que el resto — no mezclado hacia blanco, para no perder croma nativo del acento.
+Un matiz violeta muy leve y fijo en todos los neutros; la marca vive en el acento.
+
+| Token | Oscuro | Claro | Uso |
+|---|---|---|---|
+| `--page-bg` | `#0F0E13` | `#F7F7F9` | Fondo de página |
+| `--rail-bg` | `#0B0A0F` | `#EFEFF3` | Barra lateral (una capa más profunda) |
+| `--surface-bg` | `#17161D` | `#FFFFFF` | Tarjetas |
+| `--surface-bg-alt` | `#121117` | `#F3F3F6` | Campos, zonas hundidas |
+| `--surface-raised` | `#1F1E26` | `#ECECF1` | Hover de opciones y botones secundarios |
+| `--surface-border-color` | blanco 8% | tinta 10% | Borde de tarjeta |
+| `--line-strong` | blanco 14% | tinta 18% | Borde de campos y botones secundarios |
+| `--ink` | `#F2F1F5` | `#16131D` | Texto principal |
+| `--ink-2` | `#B4B1BF` | `#4A4656` | Texto secundario, etiquetas |
+| `--ink-3` | `#8A8797` | `#66626F` | Ayudas, metadatos (4.5:1 sobre página y tarjeta) |
+
+El código escribe `text-white` / `text-gray-*` pensando en fondo oscuro: dentro del tema maestro se llevan a los tres niveles de tinta (`white`–`gray-200` → `--ink`, `gray-300`–`400` → `--ink-2`, `gray-500`–`700` → `--ink-3`), así también funcionan en claro.
 
 ### Barra de desplazamiento y fondo base
 
@@ -216,23 +215,19 @@ El overlay de la cola de Spotify marca la canción que está sonando con un bord
 - **Ámbar Aviso** (`#F59E0B`): avisos de vencimiento de licencia, estados "por vencer" o "verificando".
 - **Esmeralda Premio** (`#10B981`): franja de premio compartida por los tres juegos y estado "activa"/"conectado en vivo" — casualmente comparte hex con el acento verde, pero es un token de estado independiente, no cambia si el streamer elige otro acento.
 - **Gris Apagado** (`#6B7280`): estados offline, deshabilitado, texto secundario de baja prioridad.
-- **Superficies del panel más claras** (oct 2026): dentro de `.themed-panel` (solo el panel, nunca un overlay ni una vista previa, que declaran su propio tema) `--surface-bg` sube a `L 0.85` en Clásico y `0.86` en Cute (y a `0.25` en oscuro) para que la tarjeta se separe del fondo de página. También solo en el panel, títulos, etiquetas y texto de acento (`theme-heading`/`theme-label`/`theme-accent-text`) bajan a `L 0.31` en Clásico y `0.33` en Cute (variable `--tkc-accent-ink-l`, `0.36` de fábrica): con un acento personalizado verde azulado o amarillo daban 3.9:1 sobre el fondo de página. El chip de Cute sube a `L 0.68` por el mismo motivo (`--tkc-cute-chip-l`). Los overlays de OBS y las vistas previas embebidas conservan los valores de fábrica.
+- **Overlays y sus vistas previas**: títulos y etiquetas usan el acento a `L 0.36` (`--tkc-accent-ink-l`); el panel no lo hereda.
 - **Texto de estado sobre tarjetas**: las utilidades `text-red/amber/yellow/green/emerald/sky-*` del panel usan la tinta de estado mezclada con `--status-mix` (como los avisos), igual que `theme-btn-danger`/`-warning`; sola, la tinta daba entre 1.6:1 y 4:1 (axe).
 - **Tintas de estado** (`--ink-danger` `#B91C1C`, `--ink-warning` `#A16207`, `--ink-success` `#15803D`, `--ink-premio` `#047857`, `--ink-info` `#0369A1`, `--ink-amber` `#B45309`): versiones oscuras de los colores de estado, usadas SOLO para texto sobre los paneles claros (`.themed-panel`), donde los tonos vivos de arriba no alcanzan contraste. Viven como variables en `index.css` y son la única fuente de estos valores.
 - **Arcoíris** (`#FF6363`, `#FFA23A`, `#FFD93D`, `#4CE38A`, `#2EDCF2`, `#6FB1FF`, `#B08CFF`, `#FF7AC6`, oct 2026): degradado de la opción "Arcoíris" del fondo/texto de los overlays y de la ruleta. Luminancia pareja de 0.31 a 0.72 (antes `#3b82f6`/`#a855f7` bajaban a 0.22 y apagaban medio ciclo); el degradado cierra en el tono con que empieza. Una sola fuente en código: `RAINBOW_STOPS` (`overlayCustomization.js`), copiada en `index.css`. Es deliberadamente independiente del acento del tema y solo aparece cuando el streamer lo elige.
 
 ### Named Rules
-**La Regla del Faro Único.** El acento vivo es siempre el único color saturado en pantalla fuera de los badges de estado (rojo/ámbar/esmeralda). Ningún otro elemento decorativo compite por atención con él — el fondo teñido (ver regla siguiente) no rompe esto porque es el mismo acento, no un segundo color; solo cambia de intensidad.
+**La Regla del Faro Único.** El acento es el único color saturado de la interfaz fuera de los estados (rojo/ámbar/esmeralda). Ningún elemento decorativo compite con él.
 
-**La Regla del Fondo Teñido.** Ningún fondo del sistema es un neutro real: `--page-bg`, `--surface-bg` y `--surface-bg-alt` toman siempre el matiz del acento activo. Un fondo que no cambia con el acento hace que elegir morado, azul, rosa o verde se sienta como cambiar un detalle chico en vez de cambiar la cabina entera — con 4 acentos posibles, el fondo tiene que cargar tanto peso de identidad como los botones.
+**La Regla de la Cabina Quieta.** Ningún fondo, superficie, borde ni sombra del panel cambia con el acento. Si elegir otro color mueve algo que no sea acento, es un error.
 
-**La Regla del Color Construido, No Mezclado.** `--page-bg`, `--surface-bg` y `--surface-bg-alt` se escriben `oklch(from var(--accent) L C h)` — nunca `color-mix()` hacia una base oscura. `color-mix()` diluye luminosidad Y croma en proporción al % mezclado, y el croma nativo de cada acento en OKLCH no es igual (rosa y verde parten con menos croma que morado/azul), así que un mismo % de mezcla deja algunos acentos más "lavados" que otros — es el bug real detrás de "se ve grisáceo en rosa y verde, pero bien en morado/azul": no era casualidad, morado y azul tienen más croma nativo y disimulaban el problema. Tomar solo el matiz (`h`) del acento y fijar `L`/`C` a mano garantiza la misma intensidad para los 4. `color-mix()` sigue siendo la herramienta correcta para todo lo demás (sombras y bordes hacia `transparent`, `--accent-pastel` hacia `white`) — ahí no hay croma nativo que perder, así que mezclar no diluye nada. La regla es específica a fondos/superficies, no un rechazo general de `color-mix()`.
+### Apariencia (claro / oscuro / automático)
 
-### Modo oscuro (apariencia del panel)
-
-Independiente del skin (material + acento): el streamer elige **Claro**, **Oscuro** o **Automático** (sigue `prefers-color-scheme`) en la pantalla Tema, y se guarda por navegador (`tkc_theme_mode`). Lo aplica `ThemedShell` con `data-mode`; el overlay de OBS no lo lleva, así que lo que ve la audiencia no cambia, y las vistas previas de overlay embebidas en el panel se marcan `data-mode="light"` como "islas claras".
-
-El modo oscuro no reescribe componentes: redefine los mismos tokens. Fondo de página `L 0.17`, superficie `L 0.235` y superficie alterna `L 0.20` en OKLCH con el tinte del acento (mismo criterio de matiz que el modo claro), tinta `--ink-default`/`--ink-cute` = `#F3EEFB`, y las tintas de estado pasan a sus versiones claras: `--ink-danger #FCA5A5`, `--ink-warning #FCD34D`, `--ink-success #86EFAC`, `--ink-premio #6EE7B7`, `--ink-info #7DD3FC`, `--ink-amber #FBBF24`. Las sombras se derivan de `--page-bg`, no de un negro literal. Títulos y etiquetas usan el acento a `L 0.87` en vez de `L 0.42`.
+Preferencia de cada navegador (`tkc_theme_mode`), de fábrica **Oscuro**; quien ya había elegido una la conserva. La aplica `ThemedShell` con `data-mode`. El overlay de OBS no la lleva, y las vistas previas de overlay dentro del panel se marcan `data-mode="light"` como islas con el aspecto de OBS. Las tintas de estado tienen versión clara (oscuro) y oscura (claro).
 
 ## Typography
 
@@ -270,34 +265,21 @@ El overlay de OBS es un layout completamente aparte, sin sidebar ni chrome: solo
 
 ## Elevation & Depth
 
-Sistema híbrido: el material Default usa sombra real (glow de acento); Kawaii usa la sombra más profunda y difuminada del sistema, siempre teñida del acento activo, más un brillo diagonal interior que simula relieve inflado; Cute usa un glow difuso más suave y disperso, sin relieve duro; Minimal es deliberadamente plano — cero sombra, la profundidad la da solo una línea de borde. La elevación no es un valor fijo del sistema: es una de las cuatro decisiones de material que el streamer elige.
-
-### Shadow Vocabulary (por material)
-- **Default — Glow ambiental** (`0 0 50px color-mix(in oklch, var(--accent) 22%, transparent)`): sombra difusa del acento activo bajo las superficies principales, no ligada a interacción. Antes era un violeta fijo (`rgba(107,33,168,.15)`) sin importar el acento elegido — se corrigió para que siga la misma Regla del Fondo Teñido que el resto del sistema.
-- **Kawaii — Sombra gomita** (`0 22px 45px -12px color-mix(in oklch, var(--accent) 40%, transparent), inset 0 2px 0 rgba(255,255,255,.16)`): la más profunda y difuminada del sistema — sombra exterior grande + brillo superior marcado, para el efecto "inflado" que pidió el streamer. En superficies y dock se suma un `background-image: linear-gradient(155deg, rgba(255,255,255,.16), transparent 50%)` — el mismo mecanismo de brillo diagonal que usaba Claymorfismo, reciclado con paleta pastel.
-- **Cute — Glow de algodón de azúcar** (`0 10px 30px color-mix(in oklch, var(--accent) 28%, transparent), inset 0 1px 0 rgba(255,255,255,.1)`): sombra difusa teñida del acento activo, más un brillo superior sutil tipo caramelo — nunca relieve duro ni sombra doble.
-- **Minimal — Ninguna**: cero `box-shadow`. La única señal de profundidad es `border-left: 2px solid` en el acento activo.
-
-### Named Rules
-**La Regla del Glow Único.** Cuando hay sombra de color, siempre es el acento activo (nunca un color ajeno) y siempre en baja opacidad (12-18%) — es ambiente, no un efecto llamativo.
+Poca y real. Las tarjetas llevan un borde fino y, en oscuro, un brillo interior de 1px arriba más una sombra larga y suave hacia abajo (`--surface-shadow`); en claro, una sombra corta y otra larga muy tenue. Sin glows de color ni sombras teñidas del acento. La barra lateral no lleva sombra: se separa por ser una capa más oscura que la página.
 
 ## Shapes
 
-El radio de esquina es, junto con la sombra, la variable que más cambia entre materiales: de esquinas totalmente vivas (Minimal, `0px`) al extremo más redondeado del sistema (Kawaii, `2rem` en superficies / `1.5rem` en controles, con inputs, botones y chips en píldora completa `999px` — es el único material donde CADA control interactivo es una píldora, no solo algunos). El material Default usa `1.5rem` en superficies y `0.75rem` en controles internos — es el punto de referencia cuando no se especifica material. Cute usa esquinas grandes y parejas (`1.75rem`/`1.25rem`, con borde punteado `2px dashed` como seña de identidad) — deliberadamente un escalón menos extremo que Kawaii (el dock lateral de Cute usa `--radius-cute-dock` = `1.75rem` y sus botones de navegación `--radius-cute-nav` = `1.1rem`; en Cute la píldora completa `999px` es solo para campos de una línea — input y select —, y cualquier otra caja que use `.theme-input` (recuadros de ayuda, filas de lista, textarea) lleva `--radius-cute-box` = `1rem`, para que no se vea desproporcionadamente redonda), para que los dos materiales "tiernos" se sientan distintos entre sí y no como el mismo look con otro nombre.
-
-### Named Rules
-**La Regla del Radio No Fijo.** A diferencia de un sistema de diseño convencional, el radio de esquina no es un token único: es parte de la identidad seleccionable. Cualquier componente nuevo debe leer `var(--surface-radius)` / `var(--surface-radius-sm)`, nunca un valor de radio hardcodeado, para heredar correctamente los cuatro materiales.
+Radios fijos: `0.875rem` en tarjetas (`--surface-radius`), `0.625rem` en controles (`--surface-radius-sm`), píldora solo en chips y avisos de estado. Un componente nuevo lee las variables, nunca un radio a mano.
 
 ## Components
 
 Táctil y de arcade: los componentes tienen peso, glow y transición suave (0.35s) en cada cambio de propiedad visual al alternar de tema — nunca un corte abrupto.
 
 ### Buttons
-- **Shape:** radio `var(--surface-radius-sm)` (12px en Default), píldora completa en Kawaii/Cute.
-- **Primary:** degradé del acento activo a su color secundario (`linear-gradient(to right, var(--accent), var(--accent-2))`), texto blanco, `padding` generoso (12px 32px), mayúsculas con tracking amplio.
-- **Hover / Focus:** `filter: brightness(1.12)` en primary; en Cute/Kawaii suma un `translateY(-2px)` suave (sin rebote/elastic easing — la calidez viene de la forma y el glow, no de una animación exagerada); en Kawaii, `:active` suma `scale(0.96)` — el único material con feedback de "apretado" al soltar el clic.
-- **Secondary:** fondo tenue del acento sobre la superficie (`color-mix` 16%), borde del acento al 55%, texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.36 0.16 h)`) en los cuatro materiales — `--accent-soft` (la versión clara) quedaba ilegible sobre el fondo pastel y se reemplazó en todos.
-- **El botón primario nunca usa la tinta oscura salvo en Kawaii:** en Default/Minimal/Cute sigue siendo el degradé eléctrico de `--accent`/`--accent-2` con texto blanco — ese relleno es vívido, no pastel-diluido, así que blanco sigue contrastando igual que siempre. Kawaii es la única excepción: su botón primario usa un degradé **pastel lleno** (`linear-gradient(145deg, var(--accent-pastel), color-mix(accent-2 55% white))`, más claro que el resto) y por eso necesita texto en `--ink-kawaii` — ver Colors › Acento Pastel / Tinta de Material.
+- **Primario** (`theme-btn-primary`): `--accent` sólido, texto `--on-accent`, sin degradado ni brillo. Hover `--accent-hover`, presionado `--accent-active` y escala 0.97. Uno por zona: es la acción principal.
+- **Secundario** (`theme-btn-secondary`): transparente con borde `--line-strong` y texto `--ink`; hover `--surface-raised`. No lleva acento.
+- **Peligro / aviso** (`theme-btn-danger`, `theme-btn-warning`): colores de estado fijos.
+- **Deshabilitado**: opacidad 45% y cursor `not-allowed`.
 
 ### Tallas de botón
 Tres, y solo tres, que se suman al tipo de botón (`theme-btn-primary`, `-secondary`, `-danger`, `-warning`). Antes cada archivo decidía a mano su relleno y su tamaño de texto (25 combinaciones distintas entre los primarios).
@@ -305,10 +287,10 @@ Tres, y solo tres, que se suman al tipo de botón (`theme-btn-primary`, `-second
 - **`theme-btn-md`** — relleno `12px 16px`, texto de 12px: la talla normal de formularios y paneles.
 - **`theme-btn-lg`** — relleno `16px 24px`, texto de 14px: la acción principal de una pantalla (Iniciar, Detener, Guardar).
 - Excepciones a propósito: botones de tamaño fijo (el botón flotante 🎉, las flechas circulares de una fila desplazable, los selectores de dados) y el botón de ancho especial de Color Says.
-- El radio no se declara en el botón: lo pone el tema (`--surface-radius-sm`, píldora en Cute). Escribir `rounded-xl` en un botón de tema no hace nada.
+- El radio no se declara en el botón: lo pone el tema (`--surface-radius-sm`). Escribir `rounded-xl` en un botón de tema no hace nada.
 
 ### Avisos (`theme-notice`)
-Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio del tema (`var(--surface-radius-sm)`: 12px en Clásico, 20px en Cute), borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
+Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` (`theme-notice-roomy`: `12px 16px`), radio del tema (`var(--surface-radius-sm)`: 10px en el panel, 12px en los overlays), borde y fondo del color de estado al 40% y 10%, texto de 12px en negrita. Variantes: `theme-notice` (peligro, la de fábrica), `theme-notice-warning` y `theme-notice-success`.
 - El texto usa el token de tinta de estado (`--ink-*`) **mezclado 58% (antes 65%) con negro en modo claro y con blanco en oscuro** (`--status-mix`), lo que da al menos 4,5:1 sobre el pastel y sobre el fondo oscuro. Mezclar con la tinta morada movía el matiz (el verde salía azul): con un acromático el rojo, el ámbar, el verde y el azul siguen reconociéndose.
 - Los avisos de ancho completo (las franjas de arriba de la pantalla) siguen siendo componentes propios.
 
@@ -316,14 +298,11 @@ Un solo aspecto para las cajas de error, atención y éxito: relleno `8px 12px` 
 Botones sin caja: subrayados, texto de 11px en negrita (antes 10px), área de toque de 8px arriba y abajo y un cambio visible al pasar el cursor. Por defecto en tinta apagada; `theme-link-danger`, `theme-link-info` y `theme-link-warning` para acciones destructivas, informativas y de atención. Usan los mismos tonos de estado que los avisos.
 
 ### Chips
-- **Style:** fondo del acento activo al 22% de opacidad, siempre píldora completa. Texto en un tono oscuro construido del acento (`oklch(from var(--accent) 0.36 0.16 h)`, no `--accent-soft`) en Default y Minimal. En Kawaii, relleno pastel lleno (`--accent-pastel`) con texto en `--ink-kawaii`. En Cute, relleno del acento a `oklch(from var(--accent) 0.6 0.14 h)` con texto en `--ink-cute` y borde punteado — los cuatro materiales resuelven el mismo problema (texto legible sobre fondo claro), cada uno con su propio tono.
-- **State:** los badges de estado (Activa/Revocada/Por vencer/Expirada en licencias) no usan el acento — usan los colores de estado fijos (verde/rojo/ámbar/gris) con el mismo tratamiento de badge (fondo 40% + borde 50%).
+- Fondo del acento al 16%, texto `--accent-text`, píldora. Los badges de estado (Activa, Revocada, Por vencer) usan los colores de estado, no el acento.
 
 ### Cards / Containers (`.theme-surface`)
-- **Corner Style:** `var(--surface-radius)` (24px en Default; 0 en Minimal, con `border-left` de acento en su lugar).
-- **Background:** `var(--surface-bg)`, con variante `theme-surface-featured` que suma un borde del acento al 45% para destacar el bloque de "vista previa" o resumen activo de cada módulo.
-- **Shadow Strategy:** ver Elevation & Depth — depende del material activo.
-- **Internal Padding:** `1.25rem`–`1.5rem` estándar en todos los materiales.
+- `--surface-bg`, borde `--surface-border`, radio `--surface-radius`, sombra `--surface-shadow`. `theme-surface-featured` suma un borde del acento al 40% para el bloque destacado de una pantalla.
+- **Opción seleccionable** (`tkc-option`, pantalla de Tema): fila de 44px de alto mínimo con borde fino; seleccionada, borde y aro interior del acento (`aria-checked="true"`).
 
 ### Casillas, opciones, archivos y colores
 Ningún control se queda con el aspecto del navegador. Dentro del panel (`.themed-panel`), y sin tocar cada componente:
@@ -333,19 +312,19 @@ Ningún control se queda con el aspecto del navegador. Dentro del panel (`.theme
 - Los deslizadores (`range`) ya tenían su estilo propio (pista del color de la tinta, perilla del acento).
 
 ### Inputs / Fields
-- **Style:** fondo `var(--surface-bg-alt)`, radio `var(--surface-radius-sm)` (en Kawaii/Cute, píldora completa: `border-radius: 999px`), sin sombra en reposo.
-- **Focus:** el borde pasa al acento activo; en Default/Kawaii/Cute suma un glow externo suave del acento (`box-shadow` `color-mix`) — en Kawaii ese glow es más ancho (`0 0 0 5px`) para que combine con el resto de sombras profundas del material.
-- **Disabled:** opacidad 50% + cursor `not-allowed` (ver `TikTokLoginBar`, se bloquea mientras hay un juego activo).
+- Fondo `--surface-bg-alt`, borde `--line-strong`, radio `--surface-radius-sm`.
+- **Foco**: borde del acento y aro de 3px del acento al 28%.
+- **Deshabilitado**: opacidad 50% y cursor `not-allowed`.
 
 ### Navigation (dock de íconos)
-- Columna fija de botones cuadrados de ícono + micro-label (8px, mayúsculas) debajo. El estado activo suma fondo tintado del acento (20%) y borde sólido del acento; el material Minimal reemplaza esto por una línea vertical de acento a la izquierda del ícono, sin fondo. El dock en sí (`.theme-sidebar`) hereda `var(--surface-bg)`/`var(--surface-shadow)` como cualquier superficie.
-- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): en vez de que cada botón pinte su propio fondo activo, un solo elemento con las clases del botón activo (`theme-nav-btn-active`) viaja de un módulo al otro. Lo usan la barra lateral y las barras de pestañas (Eventos, Overlays, Sistema). Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
+- Riel `--rail-bg` con borde derecho fino. Hover: tinta al 6%. Activo: acento al 16% de fondo y texto `--accent-text`, sin borde.
+- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): un solo elemento con las clases del botón activo (`theme-nav-btn-active`) viaja de un módulo al otro. Lo usan la barra lateral y las barras de pestañas (Eventos, Overlays, Sistema). Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
 
 ### Franja de Premio (componente propio)
-Franja horizontal fija (imagen 50×50 + título) que comparten los tres juegos de regalos para mostrar el premio configurado. Usa siempre esmeralda fijo (`emerald-900/25` fondo, `emerald-500/40` borde), independiente del acento del tema — es la única superficie de "contenido de juego" que no seguirá el material/acento activo, porque comunica un estado de negocio (premio), no navegación de marca.
+Franja horizontal fija (imagen 50×50 + título) que comparten los tres juegos de regalos para mostrar el premio configurado. Usa siempre esmeralda fijo (`emerald-900/25` fondo, `emerald-500/40` borde), independiente del acento del tema — es la única superficie de "contenido de juego" que no sigue al acento, porque comunica un estado de negocio (premio), no navegación de marca.
 
 ### Overlay de OBS (`.theme-die-frame`)
-La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como fuente de captura en OBS) usa `.theme-die-frame` — la misma variante de `.theme-surface` pero sin el padding forzado que algunos materiales le suman a las superficies normales, porque acá el padding lo define el layout del juego, no el material. Refleja el mismo material/acento que el panel de control, sincronizado por socket en tiempo real (ver Overview). Dentro de la tarjeta, las etiquetas y bordes que representan la marca del streamer ("STEAL SPOT WITH:", el aro del avatar activo, las cajas de metadata) siguen `var(--accent)`/`var(--surface-bg-alt)`; los colores de estado del juego (amarillo insta-win/ganador, rojo snipe/peligro, gris pausa) se mantienen fijos, igual que en el panel — la regla de "Estado" de la sección Colors aplica también acá.
+La tarjeta de cada juego en el overlay (lo que la audiencia ve, recortado como fuente de captura en OBS) usa `.theme-die-frame` — la misma variante de `.theme-surface` sin padding forzado, porque acá el padding lo define el layout del juego. Usa el aspecto pastel de los overlays (`data-theme-style="default"`) con el acento del panel, sincronizado por socket en tiempo real (ver Overview). Dentro de la tarjeta, las etiquetas y bordes que representan la marca del streamer ("STEAL SPOT WITH:", el aro del avatar activo, las cajas de metadata) siguen `var(--accent)`/`var(--surface-bg-alt)`; los colores de estado del juego (amarillo insta-win/ganador, rojo snipe/peligro, gris pausa) se mantienen fijos, igual que en el panel — la regla de "Estado" de la sección Colors aplica también acá.
 
 ## Motion
 
@@ -372,7 +351,7 @@ El movimiento cuenta qué cambió y dónde quedó: al entrar al sitio, al cambia
 ### Named Rules
 **La Regla del Movimiento con Motivo.** Solo se anima lo que acaba de cambiar por algo que hizo el streamer o por algo que pasó en el servidor: una vista nueva, un módulo elegido, una validación. Nada se mueve en reposo (salvo el arco de "cargando" y el halo de "conectado", que son estado, no adorno).
 
-**La Regla del Mismo Color.** El movimiento no trae colores nuevos: el indicador lleva las clases del botón activo de cada material, el botón que se transforma conserva su relleno, y el punto de estado usa el color de su texto. Nada de gradientes, brillos ni neones agregados para "acompañar" una animación.
+**La Regla del Mismo Color.** El movimiento no trae colores nuevos: el indicador lleva las clases del botón activo, el botón que se transforma conserva su relleno, y el punto de estado usa el color de su texto. Nada de gradientes, brillos ni neones agregados para "acompañar" una animación.
 
 **La Regla del Menos Movimiento.** Todo lo de esta sección vive dentro de `.themed-panel`, donde `prefers-reduced-motion: reduce` deja las animaciones y transiciones en 0.01ms; `wait()` tampoco espera. Los overlays de OBS quedan fuera a propósito: sus animaciones son parte de lo que ve la audiencia.
 
@@ -466,22 +445,19 @@ El Dashboard y la barra de Eventos leen **el mismo estado de cada evento** (`app
 ## Do's and Don'ts
 
 ### Do:
-- **Do** dar tamaño a un botón de tema con `theme-btn-sm|md|lg`, a una caja de aviso con `theme-notice` y a un enlace de texto con `theme-link`, en vez de escribir relleno, tamaño de texto, radio o colores de estado a mano: así el cambio de un solo valor llega a toda la interfaz y los avisos cumplen contraste en claro y en oscuro.
-- **Do** leer siempre los tokens CSS (`var(--surface-bg)`, `var(--accent)`, `var(--surface-radius)`) en vez de hardcodear color o radio — un componente nuevo debe funcionar en los 16 combos de material×acento sin tocarlo.
-- **Do** usar mayúsculas + tracking amplio + peso `black` para cualquier etiqueta, botón o estado nuevo — es la voz tipográfica dominante del sistema.
-- **Do** reservar los colores de estado fijos (rojo/ámbar/esmeralda/gris) exclusivamente para semántica de juego o licencia (peligro, aviso, premio/éxito, offline) — nunca para decoración.
-- **Do** sincronizar el overlay de OBS (`Overlay.jsx`) con el skin elegido en el panel — recibe `theme` por socket (evento `theme_updated`, ver `tenant.js`/`App.jsx`) y se pinta con `.themed-app`/`data-theme-style`/`data-accent` igual que cualquier otra pantalla. El overlay nunca decide su propio tema ni lo lee de `localStorage`.
-- **Do** mantener el fondo pastel claro en los cuatro materiales — Default y Minimal usaban antes un fondo casi negro, pero el sistema se homogenizó a una sola paleta clara; ningún material nuevo debería reintroducir un fondo oscuro sin decisión explícita del dueño del producto.
-- **Do** usar tinta oscura (`--ink-default` / `--ink-kawaii` / `--ink-minimal` / `--ink-cute`) en TODO el texto blanco/gris dentro del scope de cada material — los cuatro son fondo claro de punta a punta, así que la sobreescritura de tinta no se limita a un botón o chip puntual, y tampoco es ya una excepción de solo dos materiales.
-- **Do** usar `MorphButton` para cualquier acción nueva que valide datos contra el servidor, `tkc-view-enter` para cualquier vista que entre, y `tkc-nav-item` + `aria-current` (con su `NavIndicator`) para cualquier barra de navegación nueva, en vez de inventar una animación propia. Ver Motion.
-- **Do** definir `--page-bg`/`--surface-bg`/`--surface-bg-alt` de cualquier material (nuevo o existente) como `oklch(from var(--accent) L C h)` con `L`/`C` fijos a mano — nunca un hex fijo, nunca `color-mix()` hacia una base. Ver La Regla del Fondo Teñido y La Regla del Color Construido, No Mezclado.
+- **Do** dar tamaño a un botón con `theme-btn-sm|md|lg`, a un aviso con `theme-notice` y a un enlace de texto con `theme-link`, en vez de escribir relleno, tamaño, radio o colores de estado a mano.
+- **Do** leer siempre los tokens (`var(--surface-bg)`, `var(--ink-2)`, `var(--accent)`, `var(--surface-radius)`): un componente nuevo debe verse bien con cualquier acento, en oscuro y en claro, sin tocarlo.
+- **Do** reservar el acento para lo que depende de él (acción principal, selección, navegación activa, foco) y los colores de estado para semántica de juego o licencia.
+- **Do** probar un componente nuevo con un acento personalizado extremo (amarillo puro, gris, casi negro) en las dos apariencias.
+- **Do** sincronizar el overlay de OBS con el acento del panel: recibe `theme` por socket (`theme_updated`) y se pinta con `.themed-app` + `data-theme-style="default"` + `data-accent`. Nunca decide su propio tema ni lo lee de `localStorage`.
+- **Do** usar `MorphButton` para acciones que validan contra el servidor, `tkc-view-enter` para vistas que entran y `tkc-nav-item` + `aria-current` (con `NavIndicator`) para barras de navegación. Ver Motion.
 
 ### Don't:
-- **Don't** dejar un fondo (`--page-bg`, `--surface-bg`, sombra ambiental) como color fijo sin relación al acento — es exactamente el bug que tenía el glow de Default hasta que se corrigió, y el motivo original de este Do.
-- **Don't** usar `color-mix()` para construir `--page-bg`/`--surface-bg`/`--surface-bg-alt` — mezclar hacia una base siempre diluye el croma en proporción distinta según el acento (rosa/verde quedan más lavados que morado/azul con el mismo %), aunque la base sea neutra y la mezcla sea `in oklch`. Es el bug que ya se corrigió dos veces antes de encontrar la causa real: usar `oklch(from ...)` para construir el color directo, no para mezclarlo.
-- **Don't** introducir un look plano/neutro tipo "SaaS corporativo" (fondo blanco puro o gris sin teñir, sombras suaves de dashboard B2B) en ningún material, incluidos Kawaii/Cute — el pastel de estos dos SIEMPRE lleva el matiz del acento activo (`oklch(from var(--accent)...)`), nunca un gris o blanco neutro; "claro" no es lo mismo que "sin color".
-- **Don't** usar el color de acento para estados de negocio (premio, error, aviso) — esos ya tienen su propio color fijo; mezclar los dos sistemas rompe la lectura rápida en medio de un live.
-- **Don't** agregar una quinta familia tipográfica o romper la regla de "una sola fuente, jerarquía por peso/tracking" sin decisión explícita.
+- **Don't** hacer que un fondo, superficie, borde o sombra del panel dependa del acento (La Regla de la Cabina Quieta).
+- **Don't** volver a agregar materiales, skins o un selector de "estilos": un diseño, un acento.
+- **Don't** usar degradados, glass o glows decorativos en el panel; el acento es un color sólido.
+- **Don't** usar el acento para estados de negocio (premio, error, aviso).
+- **Don't** agregar otra familia tipográfica sin decisión explícita.
 - **Don't** poner emojis en el copy del panel (títulos, etiquetas, botones, avisos): ver Iconografía.
-- **Don't** escribir duraciones o curvas sueltas (`transition: all 0.5s`) en una animación nueva: salen de los tokens `--motion-*` / `--ease-*-soft`.
-- **Don't** usar bounce/elastic easing en transiciones nuevas (incluidos Cute y Kawaii) — la calidez del material viene de la forma, el punteado/relleno pastel y el glow, nunca de una animación con rebote.
+- **Don't** escribir duraciones o curvas sueltas en una animación nueva: salen de los tokens `--motion-*` / `--ease-*-soft`.
+- **Don't** usar bounce/elastic easing en transiciones nuevas.

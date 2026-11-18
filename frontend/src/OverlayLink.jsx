@@ -126,9 +126,7 @@ function TapTapDiagnosticsBox({ diagnostics }) {
   const d = diagnostics || {};
   const fmt = (ts) => ts ? new Date(ts).toLocaleTimeString() : '—';
   return (
-    // El redondeo de este recuadro (y de cualquier otra caja con `theme-input`)
-    // lo modera el propio tema Cute (ver --radius-cute-box en index.css): ya no
-    // hace falta pisar el radio a mano acá.
+    // El redondeo lo pone el tema (--surface-radius-sm de theme-input).
     <details className="theme-input w-full px-3 py-2 text-xs">
       <summary className="cursor-pointer tkc-label text-gray-400 py-1">Diagnóstico (likes crudos recibidos de TikTok)</summary>
       <div className="pt-2">

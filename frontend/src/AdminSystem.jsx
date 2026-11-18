@@ -24,8 +24,8 @@ export default function AdminSystem({ onSessionInvalid }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-        <ScrollRow label="Secciones del sistema" activeKey={tab} indicatorClassName="rounded-full">
+      <div className="flex items-center w-full min-w-0 px-3 py-2 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+        <ScrollRow label="Secciones del sistema" activeKey={tab} indicatorClassName="tkc-tab-indicator">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -33,11 +33,10 @@ export default function AdminSystem({ onSessionInvalid }) {
               aria-current={tab === t.id ? 'page' : undefined}
               onClick={() => setTab(t.id)}
               className={[
-                'theme-nav-btn tkc-nav-item h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0',
-                'bg-transparent border-transparent',
+                'theme-nav-btn tkc-nav-item tkc-tab',
               ].join(' ')}
             >
-              <span className={['text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', tab === t.id ? 'theme-accent-text' : 'text-gray-500'].join(' ')}>
+              <span className="tkc-tab-label">
                 {t.label}
               </span>
             </button>

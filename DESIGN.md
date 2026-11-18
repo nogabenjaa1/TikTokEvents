@@ -316,9 +316,27 @@ Ningún control se queda con el aspecto del navegador. Dentro del panel (`.theme
 - **Foco**: borde del acento y aro de 3px del acento al 28%.
 - **Deshabilitado**: opacidad 50% y cursor `not-allowed`.
 
-### Navigation (dock de íconos)
-- Riel `--rail-bg` con borde derecho fino. Hover: tinta al 6%. Activo: acento al 16% de fondo y texto `--accent-text`, sin borde.
-- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): un solo elemento con las clases del botón activo (`theme-nav-btn-active`) viaja de un módulo al otro. Lo usan la barra lateral y las barras de pestañas (Eventos, Overlays, Sistema). Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
+### Navegación principal (`AppSidebar.jsx`, `.tkc-rail`)
+- **Escritorio (md+)**: columna de 224px en `--rail-bg` con borde derecho fino. Arriba la marca (logo + "BenjaApis"); cada sección es una fila de 36px con ícono de 18px y nombre (13px, 600). Las secciones de administrador van bajo un rótulo "Administración". Entrar / Salir quedan al fondo.
+- **Celular**: fila desplazable arriba, nombre de 10px bajo el ícono.
+- Hover: tinta principal. Activa: texto `--accent-text` y fondo del acento al 16% (`theme-nav-btn-active`).
+- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): un solo elemento con las clases del botón activo viaja de un módulo al otro. Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
+
+### Pestañas (`.tkc-tab`)
+Las barras de Eventos, Overlays y Sistema: pestañas de 36px con texto de 13px en tinta secundaria, la activa en `--accent-text` con el indicador deslizante (`tkc-tab-indicator`). Sin mayúsculas.
+
+### Títulos y textos de apoyo
+- `tkc-page-title` (24px, 800): el título de una pantalla. Sin antetítulo encima.
+- `tkc-section-title` (14px, 700): título de un bloque de la pantalla.
+- `tkc-card-title` (13px, 700, tinta secundaria): título dentro de una tarjeta.
+- `tkc-field-label` (12px, 700): etiqueta de campo.
+- `tkc-meta` (12px, 600, tinta terciaria): metadatos y notas cortas.
+- Las mayúsculas quedan para la acción principal de un botón (con tracking de 0.06em); etiquetas, pestañas y títulos van en minúsculas normales.
+
+### Estado y filtros
+- `tkc-status-pill`: estado en vivo (neutro; `tkc-status-live` en verde de estado con un punto que late).
+- `tkc-filter`: filtro en fila con `aria-pressed`; elegido, relleno del acento.
+- `theme-notice-info`: aviso informativo (azul de estado), para lo que no es error ni advertencia (p. ej. "Necesitas una licencia…").
 
 ### Franja de Premio (componente propio)
 Franja horizontal fija (imagen 50×50 + título) que comparten los tres juegos de regalos para mostrar el premio configurado. Usa siempre esmeralda fijo (`emerald-900/25` fondo, `emerald-500/40` borde), independiente del acento del tema — es la única superficie de "contenido de juego" que no sigue al acento, porque comunica un estado de negocio (premio), no navegación de marca.

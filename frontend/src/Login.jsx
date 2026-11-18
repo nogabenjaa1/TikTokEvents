@@ -66,15 +66,16 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
       <div className="w-full max-w-sm flex flex-col gap-4">
         <form onSubmit={submit} className="theme-surface p-8 tkc-rise relative" aria-busy={status === 'loading'}>
           <HoneypotField />
-          <div className="flex items-center gap-3 mb-2">
-            <img src={logoMark} alt="" className="h-9 w-auto flex-shrink-0" />
-            <h1 className="theme-heading text-2xl font-semibold tracking-wide">BenjaApis</h1>
+          <div className="flex items-center gap-2.5 mb-6">
+            <img src={logoMark} alt="" className="h-7 w-auto flex-shrink-0" />
+            <span className="text-sm font-extrabold text-white">BenjaApis</span>
           </div>
-          <p className="text-xs text-gray-500 mb-7">Entra con tu clave de licencia para abrir tu panel.</p>
+          <h1 className="tkc-page-title">Entra a tu panel</h1>
+          <p className="tkc-hint mt-1 mb-6">Usa tu clave de licencia para abrir tus juegos, alertas y overlays.</p>
 
-          {notice && <p role="status" className="theme-notice mb-4">{notice}</p>}
+          {notice && <p role="status" className="theme-notice theme-notice-info mb-4">{notice}</p>}
 
-          <label htmlFor="license-key" className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Clave de licencia</label>
+          <label htmlFor="license-key" className="tkc-field-label block mb-1.5">Clave de licencia</label>
           <div className="flex items-center gap-2 mb-4">
             <input
               id="license-key"
@@ -96,9 +97,9 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
               aria-invalid={status === 'error' || undefined}
               aria-describedby={error ? 'license-key-error' : undefined}
               placeholder="Pega tu clave aquí"
-              className="theme-input flex-1 min-w-0 p-4 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm"
+              className="theme-input flex-1 min-w-0 px-3 py-3 outline-none transition-all placeholder-gray-600 font-semibold text-white text-sm"
             />
-            <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest flex-shrink-0">
+            <button type="button" onClick={() => setShowKey((v) => !v)} aria-pressed={showKey} aria-label={showKey ? 'Ocultar la clave' : 'Mostrar la clave'} className="theme-btn-secondary theme-btn-md font-bold flex-shrink-0">
               {showKey ? 'Ocultar' : 'Ver'}
             </button>
           </div>
@@ -110,19 +111,19 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             status={status}
             loadingLabel="Verificando tu clave…"
             disabled={!loading && !key.trim()}
-            className="theme-btn-primary theme-btn-lg font-black tracking-widest uppercase shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-primary theme-btn-lg font-extrabold tracking-wider uppercase disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {status === 'success' ? 'LISTO' : 'ENTRAR'}
+            {status === 'success' ? 'Listo' : 'Entrar'}
           </MorphButton>
 
-          <p className="text-[11px] text-gray-500 mt-4 text-center">¿Aún no tienes clave? Puedes probar gratis o comprar un plan.</p>
+          {!onWantsMembership && <p className="tkc-meta mt-4 text-center">¿Aún no tienes clave? Puedes probar gratis o comprar un plan en Membresía.</p>}
         </form>
 
         {onWantsMembership && (
           <button
             type="button"
             onClick={onWantsMembership}
-            className="theme-btn-secondary theme-btn-md w-full font-black tracking-widest uppercase transition-all tkc-rise tkc-rise-2"
+            className="theme-btn-secondary theme-btn-md w-full font-bold transition-all tkc-rise tkc-rise-2"
           >
             ¿No tienes licencia? Ver planes y prueba gratis
           </button>

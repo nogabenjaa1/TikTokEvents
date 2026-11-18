@@ -20,7 +20,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
   return (
     <div className="flex flex-col gap-2">
       <div className="flex justify-between items-center">
-        <label className="theme-label text-[10px] uppercase tracking-widest font-semibold">Usuario de TikTok</label>
+        <label className="tkc-field-label">Usuario de TikTok</label>
       </div>
       <input
         className={`theme-input w-full p-2.5 outline-none transition-all placeholder-gray-600 font-bold text-white text-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -38,7 +38,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
           data-status={live ? 'success' : (verifying || connectionStatus === 'checking') ? 'loading' : 'idle'}
           aria-hidden="true"
         />
-        <span key={connectionStatus} className={`tkc-msg-enter text-[10px] font-bold uppercase tracking-widest flex-1 ${live ? 'text-green-400' : verifying ? 'text-yellow-400' : 'text-gray-500'}`}>
+        <span key={connectionStatus} className={`tkc-msg-enter text-xs font-semibold flex-1 ${live ? 'text-green-400' : verifying ? 'text-yellow-400' : 'text-gray-500'}`}>
           {live ? 'Conectado en vivo' : verifying ? 'Conectando en vivo...' : connectionStatus === 'checking' ? 'Buscando la cuenta...' : connectionStatus === 'error' ? 'Error de conexión' : 'Sin conexión en vivo'}
         </span>
       </div>
@@ -48,7 +48,7 @@ export default function TikTokLoginBar({ username, setUsername, connectionStatus
           (que sigue funcionando igual). Solo tiene sentido mientras hay
           algo conectado o intentándolo. */}
       {(live || verifying) && !disabled && (
-        <button onClick={onDisconnect} className="theme-btn-secondary theme-btn-sm w-full font-black uppercase tracking-widest text-red-400 hover:text-red-300">
+        <button onClick={onDisconnect} className="theme-btn-danger theme-btn-sm w-full font-bold">
           ⏻ Desconectar
         </button>
       )}

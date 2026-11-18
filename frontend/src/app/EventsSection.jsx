@@ -45,8 +45,8 @@ export default function EventsSection({
     <>
       {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
           entre igual de bien en mobile que el rail principal. */}
-      <div className="flex items-center w-full min-w-0 px-3 py-3 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-      <ScrollRow label="Eventos de TikTok" activeKey={eventsTab} indicatorClassName="rounded-full">
+      <div className="flex items-center w-full min-w-0 px-3 py-2 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
+      <ScrollRow label="Eventos de TikTok" activeKey={eventsTab} indicatorClassName="tkc-tab-indicator">
         {EVENT_TABS.map((t) => (
           <Fragment key={t.id}>
           {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
@@ -56,11 +56,10 @@ export default function EventsSection({
             data-events-tab-active={eventsTab === t.id ? 'true' : undefined}
             onClick={() => onSelectTab(t.id)}
             className={[
-              'theme-nav-btn tkc-nav-item h-9 px-4 rounded-full border flex items-center gap-2 transition-all duration-200 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
-              'bg-transparent border-transparent',
+              'theme-nav-btn tkc-nav-item tkc-tab',
             ].join(' ')}
           >
-            <span className={[ 'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', eventsTab === t.id ? 'theme-accent-text' : 'text-gray-500' ].join(' ')}>
+            <span className="tkc-tab-label">
               {t.label}
             </span>
             <EventStatusDot status={eventStatuses[t.id]} />

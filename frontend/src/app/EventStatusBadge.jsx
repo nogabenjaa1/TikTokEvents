@@ -20,7 +20,7 @@ const DOT_CLASSES = {
 export function EventStatusBadge({ status, className = '' }) {
   if (!status) return null;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${TONE_CLASSES[status.tone]} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-bold whitespace-nowrap ${TONE_CLASSES[status.tone]} ${className}`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${DOT_CLASSES[status.tone]}`} aria-hidden="true" />
       {status.label}
     </span>

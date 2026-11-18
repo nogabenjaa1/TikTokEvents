@@ -269,20 +269,6 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
         ))}
       </div>
 
-      {/* Reglas (pedido explícito): el streamer las aplica al color que eligió
-          cada espectador. Debajo del botón, para no mover la zona de dados. */}
-      <div className="theme-surface w-full max-w-xs p-3">
-        <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1.5">Reglas: veces que sale el color elegido</p>
-        <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-300">
-          <li><span className="font-black">1 vez:</span> gana</li>
-          <li><span className="font-black">2 veces:</span> pierde</li>
-          <li><span className="font-black">3 veces:</span> se vuelve a tirar</li>
-          <li><span className="font-black">4 veces:</span> gana doble</li>
-          <li><span className="font-black">No sale:</span> pierde</li>
-          <li><span className="font-black">2 re-tiros:</span> pierde</li>
-        </ul>
-      </div>
-
       {/* Altura fija (no depende de la cantidad de tiradas) para que los
           dados de arriba nunca se muevan al capturar una ventana recortada en OBS.
           También en su propio marco temático, igual que la zona de dados. */}
@@ -355,11 +341,17 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
         />
       )}
 
+      {/* Columna de paneles de la derecha (en escritorio): Win Bonus arriba y
+          Modo Seguro abajo, en UNA sola columna fija con alto máximo y scroll.
+          Antes cada uno tenía su propia posición fija y, en pantallas bajas,
+          los botones Asegurar/Bloquear quedaban fuera de la pantalla. */}
+      {((hasWinBonus && !winBonusHidden) || (isAdmin && !safeModeHidden)) && (
+      <div className="w-full max-w-xs flex flex-col gap-3 md:fixed md:top-24 md:right-4 md:w-60 md:max-h-[calc(100vh-12rem)] md:overflow-y-auto z-40">
       {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro — va
           arriba de ese panel. Solo visible para Admin o para una excepción
           manual habilitada por un admin (ver winBonusUnlocked). */}
       {hasWinBonus && !winBonusHidden && (
-        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-52 p-3">
+        <div className="theme-surface w-full flex-shrink-0 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
             <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
@@ -380,10 +372,10 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
       {/* Modo Seguro: exclusivo del nivel Admin de Color Says (no confundir
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
-        <div className="theme-surface w-full max-w-xs md:fixed md:top-[23rem] md:right-4 md:w-60 p-4">
+        <div className="theme-surface w-full flex-shrink-0 p-4">
           <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">Modo Seguro</p>
 
-          <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto">
+          <div className="flex flex-col gap-1 mb-3 max-h-32 overflow-y-auto">
             {COLORS.map((c, i) => (
               <button key={i} onClick={() => setSafeModeColor(i)}
                 className={['flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all',
@@ -415,6 +407,8 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
             {safeModeAction === 'block' && safeModeColor !== null && <>Bloqueando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale 0 o 2 veces (el espectador pierde).</>}
           </p>
         </div>
+      )}
+      </div>
       )}
 
       {isGuest && (

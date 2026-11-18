@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AlertSoundListener } from './Overlay';
+// Directo de su archivo: './Overlay' trae todos los overlays de OBS, que el panel no usa.
+import { AlertSoundListener } from './overlays/AlertOverlays';
 import Login from './Login';
 import { lazyPanel } from './lazyPanel';
 import Dashboard from './Dashboard';
@@ -25,7 +26,6 @@ const NotFoundPage = lazyPanel(() => import('./LegalPages').then((m) => ({ defau
 import CookieBanner from './CookieBanner';
 import NavIcon from './app/NavIcon';
 import EventsSection from './app/EventsSection';
-import OverlayModeView from './app/OverlayModeView';
 import useGiftCatalog from './app/useGiftCatalog';
 import useSectionRouting from './app/useSectionRouting';
 import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
@@ -49,6 +49,9 @@ const AdminSystem = lazyPanel(() => import('./AdminSystem'));
 const Membership = lazyPanel(() => import('./Membership'));
 const ThemeSwitcher = lazyPanel(() => import('./ThemeSwitcher'));
 const OverlayLink = lazyPanel(() => import('./OverlayLink'));
+// La vista de OBS (?overlay=true) y todos sus overlays: el panel no los carga.
+// Sin aviso de carga: un "Cargando..." saldría al aire en el directo.
+const OverlayModeView = lazyPanel(() => import('./app/OverlayModeView'), { fallback: null });
 
 
 

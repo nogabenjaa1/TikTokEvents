@@ -7,7 +7,7 @@ import iconFollow from './assets/alert-follow.webp';
 import iconGlobal from './assets/alert-global.webp';
 import iconSticker from './assets/alert-sticker.webp';
 import { backendUrl, authHeaders } from './auth';
-import { AlertVisual } from './Overlay';
+import { AlertVisual } from './overlays/AlertOverlays';
 import { alertTiming } from './alertQueue';
 import { quotaSummary } from './alertQuota';
 import OverlayCustomizePanel from './OverlayCustomizePanel';

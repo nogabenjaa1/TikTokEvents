@@ -47,7 +47,7 @@ export default function AdminSystem({ onSessionInvalid }) {
       <div className="min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-5 font-sans flex-1 overflow-y-auto">
         <div className="w-full max-w-3xl">
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">Administración</p>
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">Sistema</h1>
+          <h1 className="tkc-page-title">Sistema</h1>
         </div>
         {/* El contenido de cada pestaña sube al elegirla (ver .tkc-reveal). */}
         <div key={tab} className="tkc-reveal contents">

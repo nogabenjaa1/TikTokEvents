@@ -412,8 +412,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
   return (
     <div className="flex-1 min-h-screen p-6 pt-10 flex flex-col items-center gap-6 overflow-y-auto">
       <div className="w-full max-w-3xl flex flex-col gap-1">
-        <p className="theme-accent-text tkc-eyebrow">Membresía</p>
-        <h1 className="theme-heading text-2xl font-black">{session ? 'Tu plan y tus pagos' : 'Elige cómo empezar'}</h1>
+        <h1 className="tkc-page-title">{session ? 'Tu plan y tus pagos' : 'Elige cómo empezar'}</h1>
         <p className="text-sm text-gray-500">
           {session
             ? 'Revisa tu plan actual, mejóralo o renuévalo cuando quieras.'

@@ -1,25 +1,67 @@
 // Secciones de la barra lateral, pestañas de TikTokEvents y sus URLs. Sin JSX ni estado: solo datos y
 // dos funciones puras, para que App.jsx, la barra lateral y la sección de eventos lean lo mismo.
 
-// Secciones de primer nivel de la sidebar. "events" agrupa los juegos de
-// TikTok (antes eran botones sueltos de primer nivel) detrás de una
-// subsidebar propia — ver EVENT_TABS. "dashboard" (pedido explícito: página
-// principal con accesos directos, ver Dashboard.jsx) va primero porque es
-// el nuevo destino por default al entrar con sesión.
-export const SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'overlay', label: 'Overlays' },
-  { id: 'events',  label: 'Eventos' },
-  { id: 'color',   label: 'ColorDice' },
-  { id: 'downloader', label: 'Downloader' },
-  { id: 'theme',   label: 'Tema' },
-  { id: 'membership', label: 'Membresía' },
+// ── Arquitectura de navegación (nov 2026) ──
+// La barra lateral ya no lista módulos técnicos sino ÁREAS por lo que hace el
+// streamer: Inicio, lo que usa en su directo (Juegos, Alertas y chat, Metas y
+// tiempo, Overlays de OBS), herramientas sueltas, su cuenta y la
+// administración. Las áreas de Directo agrupan pestañas que antes vivían todas
+// juntas en "Eventos" (11 pestañas de tres tipos) y suman Color Says, que era
+// el único de los cuatro juegos fuera de esa sección.
+// Las URLs NO cambian (/tiktokevents/<pestaña>, /colordice, /overlays...): el
+// estado sigue siendo sidebarMode + eventsTab, y `areaOf` deduce el área. Así
+// ningún marcador, enlace compartido ni URL de OBS se rompe, y el backend
+// (lib/sitePages.js) no necesita cambios.
+export const NAV_AREAS = [
+  { id: 'home', label: 'Inicio', icon: 'dashboard', mode: 'dashboard' },
+  { id: 'games', label: 'Juegos', icon: 'games', group: 'Directo' },
+  { id: 'interaction', label: 'Alertas y chat', shortLabel: 'Alertas', icon: 'chat', group: 'Directo' },
+  { id: 'timers', label: 'Metas y tiempo', shortLabel: 'Metas', icon: 'timer', group: 'Directo' },
+  { id: 'overlays', label: 'Overlays de OBS', shortLabel: 'Overlays', icon: 'overlay', group: 'Directo', mode: 'overlay' },
+  { id: 'downloader', label: 'Descargas', icon: 'downloader', group: 'Herramientas', mode: 'downloader' },
+  { id: 'membership', label: 'Mi plan', icon: 'membership', group: 'Cuenta', mode: 'membership' },
+  { id: 'theme', label: 'Tema', icon: 'theme', group: 'Cuenta', mode: 'theme' },
+  { id: 'licenses', label: 'Licencias', icon: 'licenses', group: 'Administración', mode: 'licenses', admin: true },
+  { id: 'system', label: 'Sistema', icon: 'system', group: 'Administración', mode: 'system', admin: true },
 ];
 
-// Primer id de cada grupo de EVENT_TABS (juegos | contadores y metas |
-// interacción con el chat, mismo orden que el Dashboard) -- delante de cada
-// uno va un separador fino en la subnavegación.
-export const EVENT_TAB_GROUP_STARTS = ['extensible', 'spotify'];
+// Pestañas de cada área de Directo, en orden. 'color' es Color Says: no es una
+// pestaña de TikTokEvents (tiene su propia ruta, /colordice) pero vive con los
+// demás juegos.
+export const AREA_TABS = {
+  games: ['king', 'zub', 'elim', 'roulette', 'versus', 'color'],
+  interaction: ['alerts', 'tts', 'chat', 'spotify'],
+  timers: ['extensible', 'goal'],
+};
+
+export const TAB_LABELS = {
+  king: 'Rey del Trono', zub: 'Zubastinis', elim: 'Eliminación', roulette: 'Ruleta', versus: 'Versus', color: 'Color Says',
+  alerts: 'Alertas', tts: 'TTS', chat: 'Chat', spotify: 'Spotify',
+  extensible: 'Extensible', goal: 'Objetivo',
+};
+
+// Área a la que pertenece lo que se está viendo (para marcar la navegación).
+export function areaOf(sidebarMode, eventsTab) {
+  if (sidebarMode === 'color') return 'games';
+  if (sidebarMode === 'events') {
+    return Object.keys(AREA_TABS).find((area) => AREA_TABS[area].includes(eventsTab)) || 'games';
+  }
+  return NAV_AREAS.find((a) => a.mode === sidebarMode)?.id || null;
+}
+
+// Pestaña con la que se abre un área de Directo: la última que se usó en ella
+// (en esta visita) o la primera.
+export function areaEntryTab(area, lastTabByArea = {}) {
+  const tabs = AREA_TABS[area];
+  if (!tabs) return null;
+  return tabs.includes(lastTabByArea[area]) ? lastTabByArea[area] : tabs[0];
+}
+
+// Nombre del plan para mostrarlo (el tipo de licencia viene del servidor).
+const PLAN_LABELS = { trial: 'Prueba gratis', day: 'Plan de un día', week: 'Plan semanal', month: 'Plan mensual', annual: 'Plan anual', lifetime: 'De por vida' };
+export function planLabel(licenseType) {
+  return PLAN_LABELS[licenseType] || 'Sin plan';
+}
 
 // Pestañas dentro de la sección "TikTokEvents" — cada una es uno de los
 // módulos que ya existían como botón de primer nivel.
@@ -134,8 +176,9 @@ export function sectionTitle(sidebarMode, eventsTab) {
     const tab = EVENT_TABS.find((t) => t.id === eventsTab);
     return tab ? `TikTokEvents · ${tab.label}` : 'TikTokEvents';
   }
-  const section = SECTIONS.find((s) => s.id === sidebarMode);
-  if (section) return `BenjaApis · ${section.label}`;
+  if (sidebarMode === 'color') return 'BenjaApis · Color Says';
+  const area = NAV_AREAS.find((a) => a.mode === sidebarMode);
+  if (area) return `BenjaApis · ${area.label}`;
   return ADMIN_SECTION_LABELS[sidebarMode] ? `BenjaApis · ${ADMIN_SECTION_LABELS[sidebarMode]}` : 'BenjaApis';
 }
 

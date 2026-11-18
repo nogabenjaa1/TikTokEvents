@@ -12,7 +12,7 @@ export default function CookieBanner({ onNavigate }) {
 
   const choose = (ads) => { saveConsent(ads); setOpen(false); };
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[90] p-3 sm:p-4 pointer-events-none">
+    <div className="fixed inset-x-0 bottom-0 z-[90] p-3 sm:p-4 pointer-events-none" style={{ bottom: "var(--tkc-tabbar-h, 0px)" }}>
       <section
         role="dialog" aria-modal="false" aria-labelledby="cookie-title"
         className="theme-surface tkc-rise pointer-events-auto mx-auto w-full max-w-2xl p-4 sm:p-5 flex flex-col gap-3"

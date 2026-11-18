@@ -25,11 +25,11 @@ const PrivacyNotice = lazyPanel(() => import('./LegalPages').then((m) => ({ defa
 const CookiesNotice = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.CookiesNotice })));
 const NotFoundPage = lazyPanel(() => import('./LegalPages').then((m) => ({ default: m.NotFoundPage })));
 import CookieBanner from './CookieBanner';
-import NavIcon from './app/NavIcon';
+import AreaHeader from './app/AreaHeader';
 import EventsSection from './app/EventsSection';
 import useGiftCatalog from './app/useGiftCatalog';
 import useSectionRouting from './app/useSectionRouting';
-import { FREE_MODES, OVERLAY_APPS, sectionFromPath } from './app/navigation';
+import { FREE_MODES, OVERLAY_APPS, sectionFromPath, NAV_AREAS, areaOf, areaEntryTab } from './app/navigation';
 import { TRIAL_AD_INTERVAL_MS } from './adConfig';
 import { loadOverlayCustomization, saveOverlayCustomization, defaultOverlayCustomizationMap, OVERLAY_CUSTOMIZE_IDS, copyOverlayVisual } from './overlayCustomization';
 import { createSettingsSync, overlayEchoPlan } from './settingsSync';
@@ -743,6 +743,16 @@ export default function App() {
     eventSettings,
   ).map((st) => [st.id, st]));
 
+  // Área de navegación de lo que se ve y la última pestaña usada en cada área
+  // de Directo (ver goArea más abajo): volver a "Juegos" abre el último juego.
+  const activeArea = areaOf(sidebarMode, eventsTab);
+  const [lastTabByArea, setLastTabByArea] = useState({});
+  useEffect(() => {
+    const tab = sidebarMode === 'color' ? 'color' : sidebarMode === 'events' ? eventsTab : null;
+    if (!tab || !activeArea) return;
+    setLastTabByArea((prev) => (prev[activeArea] === tab ? prev : { ...prev, [activeArea]: tab }));
+  }, [sidebarMode, eventsTab, activeArea]);
+
   // El último evento que se abrió en este navegador, para el "Seguir donde lo
   // dejaste" del Dashboard (dato de comodidad, no de la cuenta).
   const [lastEventTab, setLastEventTab] = useState(() => readStorage(LAST_EVENT_TAB_KEY));
@@ -1048,10 +1058,6 @@ export default function App() {
     const busy = OVERLAY_APPS.find((id) => id !== tabId && gameInProgress[id]);
     if (!busy) socket.emit('set_active_app', tabId);
   };
-  const selectEventsTab = (tabId) => {
-    setEventsTab(tabId);
-    switchGamesOverlay(tabId);
-  };
 
   // Shortcut del Dashboard: ir directo a una pestaña de TikTokEvents --
   // misma lógica que ya usan los botones de la subsidebar.
@@ -1061,8 +1067,22 @@ export default function App() {
     switchGamesOverlay(tabId);
   };
 
+  // Navegación por áreas (ver NAV_AREAS en app/navigation.js). Las pestañas
+  // de un área de Directo incluyen Color Says ('color'), que tiene su propia
+  // ruta; el resto son pestañas de TikTokEvents.
+  const selectAreaTab = (tabId) => {
+    if (tabId === 'color') setSidebarMode('color');
+    else goToEventTab(tabId);
+  };
+  const goArea = (areaId) => {
+    const tab = areaEntryTab(areaId, lastTabByArea);
+    if (tab) { selectAreaTab(tab); return; }
+    const area = NAV_AREAS.find((a) => a.id === areaId);
+    if (area?.mode) setSidebarMode(area.mode);
+  };
+
   return (
-    <ThemedShell className="flex flex-col tkc-app-enter">
+    <ThemedShell className="flex flex-col tkc-app-enter tkc-shell">
     <EventSettingsContext.Provider value={eventSettingsContext}>
       <a href="#contenido-principal" className="tkc-skip-link">Saltar al contenido</a>
       {kickedOutMessage && (
@@ -1083,12 +1103,12 @@ export default function App() {
       <AudioUnlockBanner enabled={soundEnabled && !!session} />
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <AppSidebar
-        sidebarMode={sidebarMode} onNavigate={setSidebarMode} session={session}
+        activeArea={activeArea} onNavigate={goArea} session={session} connectionStatus={connectionStatus}
         gameRunning={state.isActive || zubState.isActive || elimState.isActive || rouletteState.isActive}
         onEnter={() => goToEventTab('king')} onLogout={logout}
       />
 
-      <main id="contenido-principal" tabIndex={-1} className="flex-1 flex flex-col md:flex overflow-y-auto md:overflow-hidden focus:outline-none">
+      <main id="contenido-principal" tabIndex={-1} className="tkc-main-pad flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto focus:outline-none">
         {/* Cada sección (menos Eventos, que anima solo su panel para que su
             barra de pestañas no se mueva) entra con un fade corto al
             elegirla -- ver .tkc-view-enter. Va con `key` para que la
@@ -1112,7 +1132,7 @@ export default function App() {
             onResetVoice={() => ttsRef.current?.resetEngine()}
             onReconnectTikTok={() => socket?.emit('force_reconnect')}
             onGoSection={setSidebarMode}
-            onGoEventTab={goToEventTab}
+            onGoEventTab={selectAreaTab}
           />
         )}
         {sidebarMode === 'overlay' && (
@@ -1137,7 +1157,15 @@ export default function App() {
             Colorsays.jsx). Sin sesión, tier es 'regular' y sin bono
             (probabilidades limpias). `isGuest` (sin sesión) es lo que gatea
             los ads dentro del propio componente — ver Colorsays.jsx. */}
-        {sidebarMode === 'color' && <ColorSays tier={session?.diceTier || 'regular'} winBonusUnlocked={!!session?.diceWinBonusUnlocked} socket={socket} isGuest={!session} />}
+        {sidebarMode === 'color' && (
+          <div className="flex flex-col flex-1 min-h-0">
+            <AreaHeader
+              area="games" activeTab="color" onSelectTab={selectAreaTab} eventStatuses={eventStatuses}
+              socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
+            />
+            <ColorSays tier={session?.diceTier || 'regular'} winBonusUnlocked={!!session?.diceWinBonusUnlocked} socket={socket} isGuest={!session} />
+          </div>
+        )}
         {sidebarMode === 'downloader' && (
           needsAccess('downloader') ? (
             <Login embedded onLoggedIn={onLoggedIn} onWantsMembership={() => setSidebarMode('membership')} notice="Necesitas una licencia o una prueba gratis para usar el Downloader." />
@@ -1164,7 +1192,7 @@ export default function App() {
 
         {sidebarMode === 'events' && (
           <EventsSection
-            eventsTab={eventsTab} onSelectTab={selectEventsTab} eventStatuses={eventStatuses} socketConnected={socketConnected} connectionStatus={connectionStatus}
+            eventsTab={eventsTab} onSelectTab={selectAreaTab} eventStatuses={eventStatuses} socketConnected={socketConnected} connectionStatus={connectionStatus}
             ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} needsAccess={needsAccess} onLoggedIn={onLoggedIn} onGoMembership={() => setSidebarMode('membership')}
             socket={socket} username={username} giftsList={allGifts} prize={prize} activeApp={activeApp}
             overlayTheme={overlayTheme} overlayCustomization={overlayCustomization}
@@ -1195,40 +1223,16 @@ export default function App() {
       </main>
     </div>
 
-    {/* Acceso directo a TikTokEvents desde CUALQUIER sección (pedido
-        explícito) — a diferencia del botón de la sidebar, este queda fijo
-        en pantalla y no se pierde de vista al hacer scroll dentro de una
-        sección larga (Membresía, Licencias) en mobile. Se oculta solo
-        mientras ya estás en "events", para no apuntar a donde ya estás.
-        OJO: el botón NO puede ser hijo DIRECTO de .themed-app — esa clase
-        fuerza `position: relative` a todos sus hijos directos (ver
-        index.css, ".themed-app > *"), lo que pisaba el `fixed` de Tailwind
-        y dejaba el botón mal ubicado dentro del flujo normal en vez de
-        flotando sobre la pantalla. Este div envoltorio absorbe esa regla;
-        el `fixed` de adentro sí queda intacto (un padre `position:
-        relative` no crea un containing block para un hijo `fixed`). */}
-    {sidebarMode !== 'events' && session && (
-      <div>
-        <button
-          onClick={() => setSidebarMode('events')}
-          title="Ir a TikTokEvents" aria-label="Ir a TikTokEvents"
-          className="theme-btn-primary fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
-        >
-          <NavIcon name="events" size={24} />
-        </button>
-      </div>
-    )}
-
-    {/* Envuelto por lo mismo que el botón flotante: .themed-app fuerza
+    {/* Envuelto en un div: .themed-app fuerza
         position: relative en sus hijos directos y anularía el fixed del aviso
         (quedaba en el flujo y movía la página: lo detectó la auditoría de CLS). */}
     <div><CookieBanner onNavigate={setSidebarMode} /></div>
     <InterstitialAd open={trialAdOpen} onDone={() => setTrialAdOpen(false)} title="Gracias por probar BenjaApis" />
     {/* Destino de las ventanas emergentes que se montan con un portal (ver
         OverlayCustomizePanel.jsx): va al final, dentro del tema (hereda sus
-        colores) y después del botón flotante y del aviso de cookies. Como
+        colores) y después del aviso de cookies. Como
         .themed-app pone z-index: 1 a cada hijo directo, el que va más abajo
-        en el documento queda encima: antes el botón flotante tapaba el
+        en el documento queda encima: antes un botón flotante tapaba el
         "Listo" de Personalizar en el celular. */}
     <div id="tkc-modal-root" />
     </EventSettingsContext.Provider>

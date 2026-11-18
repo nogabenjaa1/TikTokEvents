@@ -639,7 +639,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
         <header className="mb-6 flex items-end justify-between gap-4">
           <div>
             <p className="theme-label text-[10px] uppercase tracking-[0.3em] font-black">Voz del Live</p>
-            <h1 className="text-2xl font-black tracking-wide mt-2">TTS</h1>
+            <h2 className="text-2xl font-black tracking-wide mt-2">TTS</h2>
             <p className="text-sm text-gray-500 mt-2">Lee automáticamente los mensajes autorizados. Los mensajes con @ nunca se reproducen.</p>
           </div>
           <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-full border ${statusBadge.cls}`}>
@@ -665,7 +665,7 @@ const TtsChat = forwardRef(function TtsChat({ socket, connectionStatus, visible,
             </div>
 
             {!('speechSynthesis' in window) && <p className="theme-notice">Este navegador no admite Speech Synthesis.</p>}
-            {!connected && <p role="status" className="theme-notice mb-4">Para activar el TTS conecta una cuenta que esté transmitiendo en TikTok LIVE (desde el Dashboard).</p>}
+            {!connected && <p role="status" className="theme-notice mb-4">Para activar el TTS conecta una cuenta que esté transmitiendo en TikTok LIVE (desde Inicio).</p>}
             {!settings.allUsers && !settings.moderators && !settings.superFans && !settings.fanMembers && (
               <p role="status" className="theme-notice theme-notice-warning mb-4">Ahora mismo no se leerá a nadie: activa al menos una opción de abajo (por ejemplo "Todos los usuarios").</p>
             )}

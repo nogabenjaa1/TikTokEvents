@@ -49,6 +49,11 @@ export default function ModalDialog({ onClose, dismissible = true, lightDismiss 
   const onDialogClose = () => {
     const dialog = ref.current;
     if (!dialog) return;
+    // El evento 'close' llega después, en otra tarea. Si para entonces la
+    // ventana ya está abierta otra vez (el modo estricto de React en
+    // desarrollo la monta, la cierra y la vuelve a abrir), ese cierre ya no
+    // vale: avisar al padre la desmontaba recién abierta.
+    if (dialog.open) return;
     if (dismissible) onClose?.();
     else if (dialog.isConnected) dialog.showModal();
   };

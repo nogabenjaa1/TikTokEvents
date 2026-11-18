@@ -1,12 +1,10 @@
-import { Fragment, useContext } from 'react';
+import { useContext } from 'react';
 import { lazyPanel } from '../lazyPanel';
 import Login from '../Login';
-import ScrollRow from '../ScrollRow';
-import SystemHealth from '../SystemHealth';
 import MobileOverlayPreview from './MobileOverlayPreview';
 import ViewEnter from './ViewEnter';
-import { EVENT_TABS, EVENT_TAB_GROUP_STARTS } from './navigation';
-import { EventStatusDot } from './EventStatusBadge';
+import { areaOf } from './navigation';
+import AreaHeader from './AreaHeader';
 import { EventSettingsContext } from './eventSettingsContext';
 
 const AdminPanel = lazyPanel(() => import('../AdminPanel'));
@@ -20,7 +18,8 @@ const Goal = lazyPanel(() => import('../Goal'));
 const AlertsAdmin = lazyPanel(() => import('../AlertsAdmin'));
 const ChatPanel = lazyPanel(() => import('../ChatPanel'));
 
-// La sección "TikTokEvents": la subnavegación y el panel de la pestaña elegida. Cada panel que necesita sesión
+// Las áreas de Directo que viven en TikTokEvents (Juegos, Alertas y chat, Metas y tiempo): su encabezado y el panel
+// de la pestaña elegida. Cada panel que necesita sesión
 // muestra el login embebido si no la hay (`needsAccess`). El estado en vivo llega de App.jsx.
 export default function EventsSection({
   eventsTab, onSelectTab, eventStatuses = {}, socketConnected, connectionStatus, ttsEnabled, ttsEngine, needsAccess, onLoggedIn, onGoMembership,
@@ -43,32 +42,10 @@ export default function EventsSection({
   };
   return (
     <>
-      {/* Subsidebar de TikTokEvents: horizontal y scrolleable para que
-          entre igual de bien en mobile que el rail principal. */}
-      <div className="flex items-center w-full min-w-0 px-3 py-2 flex-shrink-0 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
-      <ScrollRow label="Eventos de TikTok" activeKey={eventsTab} indicatorClassName="tkc-tab-indicator">
-        {EVENT_TABS.map((t) => (
-          <Fragment key={t.id}>
-          {EVENT_TAB_GROUP_STARTS.includes(t.id) && <span className="w-px h-5 flex-shrink-0 mx-1 bg-current opacity-20" aria-hidden="true" />}
-          <button
-            type="button"
-            aria-current={eventsTab === t.id ? 'page' : undefined}
-            data-events-tab-active={eventsTab === t.id ? 'true' : undefined}
-            onClick={() => onSelectTab(t.id)}
-            className={[
-              'theme-nav-btn tkc-nav-item tkc-tab',
-            ].join(' ')}
-          >
-            <span className="tkc-tab-label">
-              {t.label}
-            </span>
-            <EventStatusDot status={eventStatuses[t.id]} />
-          </button>
-          </Fragment>
-        ))}
-      </ScrollRow>
-        <SystemHealth compact socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine} />
-      </div>
+      <AreaHeader
+        area={areaOf('events', eventsTab)} activeTab={eventsTab} onSelectTab={onSelectTab} eventStatuses={eventStatuses}
+        socketConnected={socketConnected} connectionStatus={connectionStatus} ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
+      />
 
       {/* El panel de la pestaña entra con un fade corto (la barra de arriba no
           se mueve: su indicador ya se desliza). TTS con sesión no va acá: su

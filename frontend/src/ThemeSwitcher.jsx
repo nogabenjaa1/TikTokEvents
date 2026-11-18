@@ -103,9 +103,9 @@ function PreviewSample() {
   return (
     <div className="p-4 sm:p-5 grid gap-4 sm:grid-cols-[9rem_1fr]">
       <nav aria-label="Ejemplo de navegación" className="hidden sm:flex flex-col gap-1">
-        <span className="tkc-preview-nav">Dashboard</span>
-        <span className="tkc-preview-nav tkc-preview-nav-active">Eventos</span>
-        <span className="tkc-preview-nav">Overlays</span>
+        <span className="tkc-preview-nav">Inicio</span>
+        <span className="tkc-preview-nav tkc-preview-nav-active">Juegos</span>
+        <span className="tkc-preview-nav">Overlays de OBS</span>
       </nav>
       <div className="theme-surface p-4 flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">

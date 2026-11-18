@@ -316,11 +316,29 @@ Ningún control se queda con el aspecto del navegador. Dentro del panel (`.theme
 - **Foco**: borde del acento y aro de 3px del acento al 28%.
 - **Deshabilitado**: opacidad 50% y cursor `not-allowed`.
 
-### Navegación principal (`AppSidebar.jsx`, `.tkc-rail`)
-- **Escritorio (md+)**: columna de 224px en `--rail-bg` con borde derecho fino. Arriba la marca (logo + "BenjaApis"); cada sección es una fila de 36px con ícono de 18px y nombre (13px, 600). Las secciones de administrador van bajo un rótulo "Administración". Entrar / Salir quedan al fondo.
-- **Celular**: fila desplazable arriba, nombre de 10px bajo el ícono.
-- Hover: tinta principal. Activa: texto `--accent-text` y fondo del acento al 16% (`theme-nav-btn-active`).
-- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): un solo elemento con las clases del botón activo viaja de un módulo al otro. Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
+### Arquitectura de navegación (nov 2026)
+La navegación va por **áreas** según lo que hace el streamer, no por módulo técnico (`NAV_AREAS` y `AREA_TABS` en `app/navigation.js`):
+
+- **Inicio**: estado de la conexión con TikTok, TTS, plan y sistema; lo que está en curso; primeros pasos; actividad en vivo; resumen de todo lo del directo.
+- **Directo**
+  - **Juegos**: Rey del Trono · Zubastinis · Eliminación · Ruleta · Versus · Color Says.
+  - **Alertas y chat**: Alertas · TTS · Chat · Spotify.
+  - **Metas y tiempo**: Extensible · Objetivo.
+  - **Overlays de OBS**.
+- **Herramientas**: Descargas.
+- **Cuenta**: Mi plan · Tema.
+- **Administración** (solo admin): Licencias · Sistema.
+
+Antes, "Eventos" juntaba 11 pestañas de tres tipos y Color Says vivía aparte como "ColorDice". **Las URLs no cambiaron** (`/tiktokevents/<pestaña>`, `/colordice`, `/overlays`…): `areaOf` deduce el área a partir de `sidebarMode` y `eventsTab`, así que los marcadores, los enlaces y las URLs de OBS siguen igual y `lib/sitePages.js` no cambia. Volver a un área de Directo abre la última pestaña usada en ella.
+
+### Navegación principal (`AppSidebar.jsx`)
+- **Escritorio (md+)**: columna de 224px en `--rail-bg`. Arriba la marca; las áreas, agrupadas con su rótulo (Directo, Herramientas, Cuenta, Administración); al pie, el **estado de TikTok LIVE** (lleva a Inicio, donde se conecta) y la **cuenta** (@usuario y plan, lleva a Mi plan; botón de cerrar sesión, con el aviso si hay un juego activo). El panel mide el alto de la ventana (`.tkc-shell`) y el área principal es la que se desplaza, así el pie siempre se ve.
+- **Celular**: barra superior con la marca y el estado del LIVE (`.tkc-mobilebar`) y barra inferior fija (`.tkc-tabbar`) con Inicio · Juegos · Alertas · Overlays · Más. "Más" abre una hoja (`<dialog>`) con el resto de las áreas, la cuenta y cerrar sesión. Se retiró el botón flotante "Ir a TikTokEvents": la barra inferior ya está siempre a mano.
+- Activa: texto `--accent-text`, fondo del acento al 16%, y `aria-current="page"`.
+- **El fondo activo es un indicador que se desliza** (`NavIndicator`, `.tkc-nav-indicator`): un solo elemento con las clases del botón activo viaja de un elemento al otro. Un botón de navegación nuevo lleva `tkc-nav-item` y `aria-current="page"` cuando está activo; la barra que lo contiene necesita `position: relative` (en `ScrollRow` basta pasar `activeKey`). Ver Motion.
+
+### Encabezado de área (`AreaHeader.jsx`, `.tkc-area-head`)
+En Juegos, Alertas y chat y Metas y tiempo: el nombre del área (el único h1 de la pantalla), el estado del servidor, TikTok y la voz, y las pestañas del área con el punto de estado de cada evento. Queda fijo arriba al desplazarse, para cambiar de juego en medio de un directo sin buscar la barra.
 
 ### Pestañas (`.tkc-tab`)
 Las barras de Eventos, Overlays y Sistema: pestañas de 36px con texto de 13px en tinta secundaria, la activa en `--accent-text` con el indicador deslizante (`tkc-tab-indicator`). Sin mayúsculas.

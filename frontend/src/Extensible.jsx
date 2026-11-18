@@ -153,7 +153,7 @@ export default function Extensible({ state, socket, username, connectionStatus }
       <div className="theme-surface w-full max-w-md p-8 relative">
         <div className="flex items-center gap-3 mb-8">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
+          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
         </div>
 
         <HowItWorks storageKey="extensible">

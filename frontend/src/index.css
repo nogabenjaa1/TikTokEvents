@@ -587,7 +587,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    en el panel. Solo el panel: los overlays de OBS quedan fuera a propósito
    (las animaciones de las alertas son parte de lo que ve la audiencia). */
 @media (prefers-reduced-motion: reduce) {
-  .themed-panel *, .themed-panel *::before, .themed-panel *::after {
+  .themed-panel *, .themed-panel *::before, .themed-panel *::after, .themed-panel dialog::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -1518,6 +1518,33 @@ select:disabled { cursor: not-allowed; }
    sube; nada aparece de golpe sobre la pantalla. */
 .tkc-backdrop { animation: tkc-fade-in var(--motion-base) ease backwards; }
 .tkc-backdrop > * { animation: tkc-slide-up var(--motion-slow) var(--ease-out-soft) backwards; }
+
+/* Ventanas modales con <dialog> nativo (ModalDialog.jsx). El <dialog> es el
+   recuadro: se le quitan los estilos del navegador (borde, relleno, fondo
+   blanco) y el aspecto lo dan las clases del tema. Centrado y capa superior
+   los pone el propio navegador al abrirlo con showModal(). */
+@layer base {
+  /* En la capa base: las clases de Tailwind de cada ventana (p-5, max-w-lg...)
+     van en una capa posterior y ganan. margin: auto la centra (el reseteo de
+     Tailwind se lo quita a todos los elementos). */
+  dialog.tkc-dialog {
+    margin: auto;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100dvh - 2rem);
+  }
+}
+dialog.tkc-dialog[open] { animation: tkc-slide-up var(--motion-slow, 420ms) var(--ease-out-soft, ease-out) backwards; }
+/* Sin esto, el scroll dentro de la ventana o sobre el fondo mueve la página de atrás. */
+dialog.tkc-dialog:modal { overscroll-behavior: contain; }
+dialog.tkc-dialog::backdrop {
+  background: rgb(0 0 0 / 0.7);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  animation: tkc-fade-in 280ms ease backwards;
+}
 
 /* Secciones que se despliegan (¿Cómo funciona?, detalles de un error): el
    contenido baja suave al abrir. */

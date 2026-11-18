@@ -1,3 +1,4 @@
+import ModalDialog from './ModalDialog';
 import { useEffect, useRef, useState } from 'react';
 import AdIframeBanner from './AdIframeBanner';
 import { INTERSTITIAL_AD_ZONE, INTERSTITIAL_MIN_WAIT_MS, INTERSTITIAL_AUTO_CLOSE_MS } from './adConfig';
@@ -38,9 +39,9 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
   if (!open) return null;
 
   return (
-    <div className="tkc-backdrop fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
-      <div className="theme-surface w-full max-w-sm p-6 flex flex-col items-center gap-4">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</p>
+    // Esc no la cierra: hay que esperar la cuenta (como antes); después, "Continuar".
+    <ModalDialog dismissible={false} labelledBy="interstitial-ad-title" className="theme-surface w-[calc(100%-3rem)] max-w-sm p-6 flex-col items-center gap-4 font-sans [&[open]]:flex">
+        <h2 id="interstitial-ad-title" className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</h2>
         <AdIframeBanner zone={INTERSTITIAL_AD_ZONE} active={open} />
         <button
           onClick={() => canClose && onDone()}
@@ -49,7 +50,6 @@ export default function InterstitialAd({ open, onDone, title = 'Un momento...' }
         >
           {canClose ? 'Continuar' : `Disponible en ${secondsLeft}s`}
         </button>
-      </div>
-    </div>
+    </ModalDialog>
   );
 }

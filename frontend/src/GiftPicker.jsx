@@ -42,7 +42,7 @@ const VARIANTS = {
 // Un regalo sin ícono (pasa con los que TikTok no trae con imagen) se muestra igual.
 function GiftIcon({ icon }) {
   return icon
-    ? <img src={icon} alt="" className="w-6 h-6 flex-shrink-0" />
+    ? <img src={icon} alt="" loading="lazy" className="w-6 h-6 flex-shrink-0" />
     : <span className="w-6 h-6 flex-shrink-0 rounded-md theme-input" aria-hidden="true" />;
 }
 

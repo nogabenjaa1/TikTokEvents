@@ -16,7 +16,7 @@ function StickerImage({ sticker, size }) {
   if (!sticker?.imageUrl || failed) {
     return <span className={`${size} flex-shrink-0 rounded-md theme-input`} aria-hidden="true" />;
   }
-  return <img src={sticker.imageUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className={`${size} flex-shrink-0 object-contain`} />;
+  return <img src={sticker.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className={`${size} flex-shrink-0 object-contain`} />;
 }
 
 export default function StickerPicker({ stickers, selected, onSelect, anyLabel = 'Cualquier sticker', renderBadge }) {

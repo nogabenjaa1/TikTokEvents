@@ -6,6 +6,7 @@ import {
   OVERLAY_STYLE_PRESETS, applyOverlayPreset, matchOverlayPreset, resetOverlayVisual, backgroundNeedsLightInk,
 } from './overlayCustomization';
 import OverlayPreviewBox from './OverlayPreviewBox';
+import ModalDialog from './ModalDialog';
 import { NATURAL_SIZE, PREVIEW_BACKDROPS } from './overlayPreview';
 
 // Personalizar un overlay (rediseño, pedido explícito: "configurar cada
@@ -261,20 +262,8 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
   // Las muestras de fuente se pintan con su propia letra: se descargan al
   // abrir el panel (solo aquí; un overlay pide únicamente la que usa).
   useEffect(() => { Object.keys(OVERLAY_FONTS).forEach(ensureOverlayFont); }, []);
-  // Al abrir, el foco entra al diálogo (para el teclado y los lectores de
-  // pantalla); al cerrar, vuelve a donde estaba (el botón que lo abrió).
-  const dialogRef = useRef(null);
-  useEffect(() => {
-    const previous = document.activeElement;
-    dialogRef.current?.focus({ preventScroll: true });
-    return () => { if (previous && typeof previous.focus === 'function') previous.focus({ preventScroll: true }); };
-  }, []);
-  // Esc cierra, como cualquier ventana emergente.
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Foco al abrir y al cerrar, Esc, tocar fuera y la página inerte detrás:
+  // los hace el <dialog> nativo (ver ModalDialog.jsx).
 
   const applyToAll = () => {
     if (!window.confirm('¿Usar este mismo aspecto (fondo, bordes, colores de texto y fuente) en todos tus overlays? El volumen de las Alertas y la animación del Chat no cambian.')) return;
@@ -316,12 +305,10 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
   // flotante; si no existe (pruebas aisladas), en su lugar de siempre.
   const modalRoot = typeof document !== 'undefined' ? document.getElementById('tkc-modal-root') : null;
   const modal = (
-    <div className="tkc-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-2 sm:p-4" onClick={onClose}>
-      <div
-        role="dialog" aria-modal="true" aria-label={`Personalizar: ${title}`} ref={dialogRef} tabIndex={-1}
-        className="theme-surface outline-none w-full max-w-5xl max-h-[94vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalDialog
+      onClose={onClose} lightDismiss label={`Personalizar: ${title}`}
+      className="theme-surface w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-5xl max-h-[94vh] flex-col overflow-hidden [&[open]]:flex"
+    >
         <header className="flex items-center justify-between gap-4 px-4 sm:px-5 py-3 border-b" style={{ borderColor: 'var(--surface-border-color)' }}>
           <div className="min-w-0">
             <p className="theme-accent-text tkc-eyebrow">Personalizar</p>
@@ -472,8 +459,7 @@ export default function OverlayCustomizePanel({ title, overlayId, entry, onChang
             </button>
           </div>
         </footer>
-      </div>
-    </div>
+    </ModalDialog>
   );
   return modalRoot ? createPortal(modal, modalRoot) : modal;
 }

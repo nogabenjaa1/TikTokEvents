@@ -78,9 +78,17 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
           <div className="flex items-center gap-2 mb-4">
             <input
               id="license-key"
+              name="license-key"
               autoFocus={!embedded}
               type={showKey ? 'text' : 'password'}
-              autoComplete="off"
+              // La clave funciona como una contraseña: así el gestor de
+              // contraseñas del navegador ofrece guardarla y la rellena la
+              // próxima vez (con "off" había que pegarla siempre).
+              autoComplete="current-password"
+              required
+              autoCapitalize="none"
+              autoCorrect="off"
+              enterKeyHint="go"
               spellCheck={false}
               value={key}
               onChange={e => { setKey(e.target.value); if (status === 'error') setStatus('idle'); }}

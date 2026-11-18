@@ -1,3 +1,4 @@
+import ModalDialog from './ModalDialog';
 import { useEffect, useRef, useState } from 'react';
 import { SMARTLINK_URL, REWARD_MIN_WAIT_MS } from './adConfig';
 
@@ -45,9 +46,8 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
   };
 
   return (
-    <div className="tkc-backdrop fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 font-sans">
-      <div className="theme-surface w-full max-w-sm p-6 flex flex-col gap-4">
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</p>
+    <ModalDialog onClose={() => { reset(); onCancel(); }} labelledBy="rewarded-ad-title" className="theme-surface w-[calc(100%-3rem)] max-w-sm p-6 flex-col gap-4 font-sans [&[open]]:flex">
+        <h2 id="rewarded-ad-title" className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">{title}</h2>
         {description && <p className="text-[11px] text-gray-500 leading-snug">{description}</p>}
 
         {!watching ? (
@@ -81,7 +81,6 @@ export default function RewardedAdGate({ open, onClaim, onCancel, title, descrip
         >
           Cancelar
         </button>
-      </div>
-    </div>
+    </ModalDialog>
   );
 }

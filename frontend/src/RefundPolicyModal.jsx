@@ -1,3 +1,4 @@
+import ModalDialog from './ModalDialog';
 
 // Política de reembolsos/contracargos -- pedido explícito: reducir el
 // riesgo de que un contracargo de mala fe (alguien que sí recibió el
@@ -20,9 +21,8 @@ const REFUND_POLICY_PARAGRAPHS = [
 
 export default function RefundPolicyModal({ onClose }) {
   return (
-    <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="theme-surface w-full max-w-lg p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto">
-        <p className="theme-label text-xs uppercase tracking-widest font-semibold">Política de reembolsos</p>
+    <ModalDialog onClose={onClose} labelledBy="refund-policy-title" className="theme-surface w-[calc(100%-2rem)] max-w-lg p-5 flex-col gap-3 max-h-[85vh] overflow-y-auto [&[open]]:flex">
+        <h2 id="refund-policy-title" className="theme-label text-xs uppercase tracking-widest font-semibold">Política de reembolsos</h2>
         {REFUND_POLICY_PARAGRAPHS.map((paragraph, i) => (
           <p key={i} className="text-[11px] text-gray-400 leading-relaxed">{paragraph}</p>
         ))}
@@ -33,7 +33,6 @@ export default function RefundPolicyModal({ onClose }) {
         >
           Entendido
         </button>
-      </div>
-    </div>
+    </ModalDialog>
   );
 }

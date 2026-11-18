@@ -7,6 +7,7 @@ import HoneypotField from './HoneypotField';
 import { MORPH_MIN_LOADING_MS, MORPH_SUCCESS_HOLD_MS, wait } from './motion';
 import StripePaymentForm from './StripePaymentForm';
 import RefundPolicyModal from './RefundPolicyModal';
+import ModalDialog from './ModalDialog';
 import CreditsTopup from './CreditsTopup';
 
 // Mensual y Anual son suscripciones (se cobran solas cada periodo); Lifetime
@@ -779,9 +780,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         const planInfo = PLANS.find(p => p.id === billingInfo.plan);
         const amount = `MX$${planMxn(billingInfo.plan).toLocaleString('es-MX')}`;
         return (
-          <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="paynow-title">
-            <div className="theme-surface w-full max-w-md p-5 flex flex-col gap-3">
-              <p id="paynow-title" className="theme-label tkc-label">Pagar ahora</p>
+          <ModalDialog onClose={() => setPayNowConfirm(false)} labelledBy="paynow-title" className="theme-surface w-[calc(100%-2rem)] max-w-md p-5 flex-col gap-3 [&[open]]:flex">
+              <h2 id="paynow-title" className="theme-label tkc-label">Pagar ahora</h2>
               <p className="text-sm font-black">Se te cobrará {amount} de inmediato{billingInfo.plan === 'lifetime' ? ', una sola vez' : ''}.</p>
               <p className="tkc-hint">
                 Paga con tu tarjeta o con Google Pay en el siguiente paso. Tu plan {planInfo?.label} se activa solo cuando el cobro pasa
@@ -789,7 +789,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 {' '}Si tu tarjeta es rechazada, tu prueba sigue igual y puedes intentar con otra.
               </p>
               <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                <button type="button" onClick={() => setPayNowConfirm(false)}
+                {/* autoFocus en lo seguro: un Enter sin querer no cobra. */}
+                <button type="button" autoFocus onClick={() => setPayNowConfirm(false)}
                   className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
                   Cancelar
                 </button>
@@ -798,8 +799,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                   Continuar al pago
                 </button>
               </div>
-            </div>
-          </div>
+          </ModalDialog>
         );
       })()}
 
@@ -812,9 +812,8 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
         const days = Math.round(left / DAY_MS);
         const current = PLAN_LABELS[session?.licenseType] || session?.licenseType;
         return (
-          <div className="tkc-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
-            <div className="theme-surface w-full max-w-md p-5 flex flex-col gap-3">
-              <p id="upgrade-title" className="theme-label tkc-label">Mejorar a {target.label}</p>
+          <ModalDialog onClose={() => setUpgradeConfirm(null)} labelledBy="upgrade-title" className="theme-surface w-[calc(100%-2rem)] max-w-md p-5 flex-col gap-3 [&[open]]:flex">
+              <h2 id="upgrade-title" className="theme-label tkc-label">Mejorar a {target.label}</h2>
               <p className="text-sm font-black">Se te cobrarán MX${price} de inmediato{target.id === 'lifetime' ? ', una sola vez' : ''}.</p>
               {target.id === 'lifetime' ? (
                 <p className="tkc-hint">Lifetime no vence. Tu plan {current} se cancela en ese momento y ya no se te cobrará nada más.</p>
@@ -827,7 +826,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                 </p>
               )}
               <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                <button type="button" onClick={() => setUpgradeConfirm(null)}
+                <button type="button" autoFocus onClick={() => setUpgradeConfirm(null)}
                   className="theme-btn-secondary theme-btn-md flex-1 font-black uppercase tracking-widest">
                   Cancelar
                 </button>
@@ -836,8 +835,7 @@ export default function Membership({ session, onSessionUpdate, onNavigate }) {
                   Sí, cobrar y mejorar
                 </button>
               </div>
-            </div>
-          </div>
+          </ModalDialog>
         );
       })()}
 

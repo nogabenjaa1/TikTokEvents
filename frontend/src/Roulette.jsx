@@ -21,7 +21,7 @@ function sizeFor(count) {
 function EntryBlock({ e, size }) {
   return (
     <div className="flex flex-col items-center gap-0.5" title={e.username}>
-      <img alt="" src={e.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
+      <img alt="" loading="lazy" src={e.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
       <span className={`${size.text} text-gray-300 max-w-[56px] truncate`}>@{e.username}</span>
     </div>
   );

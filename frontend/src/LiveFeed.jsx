@@ -25,9 +25,9 @@ function FeedIcon({ item }) {
   if (item.type === 'follow') content = <img src={iconFollow} alt="" className="w-7 h-7 object-contain" />;
   else if (item.type === 'sticker') {
     content = item.icon && !failed
-      ? <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />
+      ? <img src={item.icon} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />
       : <img src={iconSticker} alt="" className="w-7 h-7 object-contain" />;
-  } else if (item.icon && !failed) content = <img src={item.icon} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />;
+  } else if (item.icon && !failed) content = <img src={item.icon} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-8 h-8 object-contain" />;
   else content = <span className="w-8 h-8 rounded-md theme-input" aria-hidden="true" />;
   return (
     <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'color-mix(in oklch, var(--accent) 14%, transparent)' }}>

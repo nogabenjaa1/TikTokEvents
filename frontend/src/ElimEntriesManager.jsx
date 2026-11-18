@@ -140,7 +140,7 @@ export default function ElimEntriesManager({ state, socket }) {
                     title={inList ? 'Ya participa: toca para sumarle entradas' : 'Todavía sin entradas: toca para dárselas'}
                     className="theme-input flex items-center gap-1.5 pl-1 pr-2 py-1 text-xs hover:opacity-80">
                     {g.avatar
-                      ? <img alt="" src={g.avatar} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                      ? <img alt="" loading="lazy" src={g.avatar} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
                       : <span className="w-6 h-6 rounded-full flex-shrink-0" style={{ background: 'var(--surface-border-color)' }} />}
                     <span className="font-bold text-white">@{g.username}</span>
                     {!inList && <span className="text-gray-500">sin entradas</span>}
@@ -166,7 +166,7 @@ export default function ElimEntriesManager({ state, socket }) {
                 <li key={r.username} className={`theme-input flex items-center gap-2 px-2 py-1.5 ${isSelected ? 'ring-2 ring-[var(--accent)]' : ''}`}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(r.username)} disabled={!canEdit}
                     aria-label={`Seleccionar a @${r.username} para combinar`} className="w-4 h-4 flex-shrink-0" />
-                  <img alt="" src={r.avatar} className="w-7 h-7 rounded-full border-2 object-cover flex-shrink-0" style={{ borderColor: 'var(--accent)' }} />
+                  <img alt="" loading="lazy" src={r.avatar} className="w-7 h-7 rounded-full border-2 object-cover flex-shrink-0" style={{ borderColor: 'var(--accent)' }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-white truncate">@{r.username}</p>
                     <p className="text-[11px] text-gray-500 truncate">{entriesBreakdown(r)}</p>

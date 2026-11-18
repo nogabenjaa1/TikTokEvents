@@ -32,7 +32,7 @@ function ParticipantBlock({ p, size }) {
   // repetido por el mismo usuario) inserta su propio slot/bloque.
   return (
     <div className="flex flex-col items-center gap-0.5" title={p.username}>
-      <img alt="" src={p.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
+      <img alt="" loading="lazy" src={p.avatar} className={`${size.box} rounded-full border-2 object-cover flex-shrink-0`} style={{ borderColor: 'var(--accent)' }} />
       <span className={`${size.text} text-gray-300 max-w-[56px] truncate`}>@{p.username}</span>
     </div>
   );

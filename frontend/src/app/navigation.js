@@ -119,7 +119,7 @@ const SECTION_DESCRIPTIONS = {
   events: 'Juegos y eventos para tu TikTok LIVE: Rey del Trono, Zubastinis, Eliminación, Ruleta, Versus, Extensible, Objetivo, alertas y TTS.',
   color: 'ColorDice: dados de colores para dinámicas en vivo, gratis y con overlay para OBS.',
   downloader: 'Descarga videos de TikTok sin marca de agua y de otros sitios, desde tu panel de BenjaApis.',
-  theme: 'Elige el estilo y los colores de tu panel de BenjaApis.',
+  theme: 'Elige el color de acento y la apariencia de tu panel de BenjaApis.',
   membership: 'Planes de BenjaApis para streamers de TikTok LIVE: prueba gratis, mensual, anual y de por vida.',
   legal: 'Aviso legal de BenjaApis: quién ofrece el servicio y en qué condiciones.',
   privacy: 'Aviso de privacidad de BenjaApis: qué datos tratamos, para qué y cómo ejercer tus derechos ARCO.',

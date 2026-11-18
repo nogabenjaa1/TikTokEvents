@@ -253,7 +253,7 @@ function lightInkVars() {
   // `color` también: lo que no lleva clase de color hereda el del tema, que
   // ya viene calculado oscuro desde más arriba.
   // `--tkc-rainbow-stroke`: el trazo oscuro del texto arcoíris no hace falta sobre un fondo oscuro.
-  return { color: LIGHT_INK, '--ink-default': LIGHT_INK, '--ink-cute': LIGHT_INK, '--ink': LIGHT_INK, '--tkc-name-default': LIGHT_INK, '--tkc-accent-ink-l': 0.86, '--tkc-rainbow-stroke': '0px transparent' };
+  return { color: LIGHT_INK, '--ink-default': LIGHT_INK, '--ink': LIGHT_INK, '--tkc-name-default': LIGHT_INK, '--tkc-accent-ink-l': 0.86, '--tkc-rainbow-stroke': '0px transparent' };
 }
 
 // Fondo de un overlay (marco completo en King/Zub/Elim/Ruleta/Colores/

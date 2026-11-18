@@ -15,6 +15,7 @@ import TtsChat from './TtsChat';
 import { unpackElimState } from './elimPacking';
 import InterstitialAd from './InterstitialAd';
 import { ThemedShell, useTheme } from './ThemeContext';
+import { normalizeTheme } from './themeModel';
 import { isOverlayMode, loadSession, saveSession, clearSession, buildAuthenticatedSocket, logoutSession, checkSession } from './auth';
 import AppSidebar from './app/AppSidebar';
 import ViewEnter from './app/ViewEnter';
@@ -167,20 +168,19 @@ export default function App() {
 
   // Estado para el Overlay
   const [activeApp, setActiveApp] = useState('king');
-  // Skin (material + acento) que el overlay debe reflejar — le llega por
+  // Tema (acento) que el overlay debe reflejar — le llega por
   // socket desde el tenant, nunca de su propio localStorage: el overlay
   // corre en la ventana de OBS, un navegador aparte que nunca comparte
   // sesión con el panel de control.
   const [overlayTheme, setOverlayTheme] = useState({ style: 'default', accent: 'purple', customColor: '#7C3AED' });
   // El panel SÍ tiene su propio tema local (useTheme, persistido en este
   // dispositivo); lo usamos acá solo para emitirlo al backend cada vez que
-  // cambia, para que el overlay lo replique. `setSkin`: pedido explícito de
+  // cambia, para que el overlay lo replique. `setAccent`: pedido explícito de
   // que el tema no se pierda al entrar desde otro navegador/computadora —
   // cuando llega la sincronización inicial del backend (ver theme_updated
-  // más abajo), corrige TAMBIÉN el skin propio del panel en este
-  // dispositivo, no solo `overlayTheme`. Es un no-op si ya coinciden (ver
-  // el guard `sameSkin` dentro de setSkin, en ThemeContext.jsx).
-  const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor, setSkin } = useTheme();
+  // más abajo), corrige TAMBIÉN el acento propio del panel en este
+  // dispositivo, no solo `overlayTheme`. Es un no-op si ya coinciden.
+  const { style: panelThemeStyle, accent: panelThemeAccent, customColor: panelThemeCustomColor, setAccent } = useTheme();
   // Nombre accesible para los campos que solo tienen un texto vecino (ver useAutoLabels.js).
   useAutoLabels(!overlayMode);
 
@@ -528,12 +528,15 @@ export default function App() {
     socket.on('active_app_changed', setActiveApp);
     socket.on('prize_updated', setPrize);
     socket.on('dice_state_update', setDiceState);
-    // El overlay se pinta con el skin que le llega acá — nunca con su
+    // El overlay se pinta con el tema que le llega acá — nunca con su
     // propio localStorage (ver comment de overlayTheme más arriba). Pedido
-    // explícito: TAMBIÉN corrige el skin propio del panel en este
-    // dispositivo (setSkin) para que no haga falta re-elegirlo al entrar
+    // explícito: TAMBIÉN corrige el acento propio del panel en este
+    // dispositivo (setAccent) para que no haga falta re-elegirlo al entrar
     // desde otro navegador/computadora.
-    socket.on('theme_updated', (t) => {
+    socket.on('theme_updated', (raw) => {
+      // Lo guardado puede venir de una versión vieja (material Cute): se lleva
+      // al tema maestro conservando el acento (ver normalizeTheme).
+      const t = normalizeTheme(raw);
       // Primer estado de esta conexión (ver settingsSync.js): adoptarlo, o
       // mandar el propio si la persona cambió el tema mientras tanto.
       const decision = themeSync.receive(t, panelThemeRef.current);
@@ -547,7 +550,7 @@ export default function App() {
       }
       if (decision === 'adopt') {
         setOverlayTheme(t);
-        if (t?.style) setSkin(t.style, t.accent, t.customColor);
+        setAccent(t.accent, t.customColor);
         return;
       }
       // Ver comentario de themeEmitTimeoutRef/lastEmittedThemeRef más
@@ -560,7 +563,7 @@ export default function App() {
       const current = panelThemeRef.current;
       if (sent && (sent.style !== current.style || sent.accent !== current.accent || sent.customColor !== current.customColor)) return;
       setOverlayTheme(t);
-      if (t?.style) setSkin(t.style, t.accent, t.customColor);
+      setAccent(t.accent, t.customColor);
     });
     // Ídem para la personalización de overlays: además de `overlayCustomization`
     // (con la que se pinta todo), corrige `panelOverlayDraft` (la copia que
@@ -699,11 +702,11 @@ export default function App() {
     });
 
     return () => socket.off();
-    // overlayMode no cambia en toda la vida de la página, y handleSessionInvalid y setSkin no usan estado viejo.
+    // overlayMode no cambia en toda la vida de la página, y handleSessionInvalid y setAccent no usan estado viejo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
-  // Emite el skin del panel al backend cada vez que cambia (y una vez al
+  // Emite el tema del panel al backend cada vez que cambia (y una vez al
   // conectar, para sincronizar de entrada) — nunca en modo overlay, que solo
   // debe RECIBIR el tema, jamás pisarlo con el suyo propio. Debounce a
   // propósito (ver comentario de themeEmitTimeoutRef más arriba): colapsa

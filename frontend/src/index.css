@@ -14,15 +14,15 @@
    PERSONALIZACIÓN DE SCROLLBAR (ESTILO DARK)
    ========================================== */
 ::-webkit-scrollbar         { width: 8px; height: 8px; }
-::-webkit-scrollbar-track   { background: #0A0614; border-radius: 10px; }
-::-webkit-scrollbar-thumb   { background: #3E266E; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #6B21A8; }
+::-webkit-scrollbar-track   { background: transparent; border-radius: 10px; }
+::-webkit-scrollbar-thumb   { background: #2e2c38; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4757; }
 
 /* ==========================================
    ESTILOS GENERALES
    ========================================== */
 body {
-  background-color: #05030A;
+  background-color: #0f0e13;
   color: white;
   font-family: var(--font-sans);
   user-select: none;
@@ -62,10 +62,8 @@ input[type=range]::-webkit-slider-thumb {
   transition: transform 0.1s;
 }
 input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
-/* currentColor = la tinta legible de cada material (blanco en Default,
-   --ink-cute en Cute vía la herencia del bloque de material) — así el
-   track siempre contrasta contra su propio fondo sin tener que condicionar
-   el color por material a mano. var(--surface-border-color) estaba pensado
+/* currentColor = la tinta legible del tema que lo contiene (la del panel o
+   la del overlay) — así el track siempre contrasta contra su propio fondo. var(--surface-border-color) estaba pensado
    para bordes sutiles (1.2:1 de contraste en Default: invisible como
    track), no para un control interactivo. */
 input[type=range]::-webkit-slider-runnable-track {
@@ -85,11 +83,12 @@ input[type=range]::-moz-range-thumb {
 
 /* ==========================================
    SISTEMA DE TEMAS
-   2 estilos (forma/material: Clásico/Cute) x acento (color: Morado/Azul/
-   Rosa, o "Personalizado" con cualquier color vía --accent inline, ver
-   accentStyleVars en ThemeContext.jsx), combinables.
-   Todo vive bajo .themed-app — el Overlay de OBS nunca lleva esta
-   clase, así que jamás cambia de aspecto sin importar el tema elegido.
+   Dos aspectos bajo .themed-app, elegidos por data-theme-style:
+   - "master": el panel de control (ver TEMA MAESTRO más abajo).
+   - "default": los overlays de OBS y sus vistas previas, con el aspecto
+     pastel de siempre teñido del acento.
+   El acento (Morado/Azul/Rosa o "Personalizado") es lo único que elige el
+   streamer, y llega a los dos.
    ========================================== */
 .themed-app {
   position: relative;
@@ -301,9 +300,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --surface-blur: none;
   --ink-default: #2E2136;
   --ink: var(--ink-default);
-  /* Mismo motivo que Cute (ver ese bloque): fondo pastel claro de punta a
-     punta, así que el blanco/gris global del resto del sistema necesita
-     este fallback para no quedar ilegible. */
+  /* Fondo pastel claro de punta a punta, así que el blanco/gris global del
+     resto del sistema necesita esta tinta oscura para no quedar ilegible. */
   color: var(--ink-default);
 }
 .themed-app[data-theme-style="default"] .text-white,
@@ -347,121 +345,6 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   color: oklch(from var(--accent) 0.36 0.16 h);
 }
 
-/* ==========================================================
-   CUTE — "washi-tape sticker book"
-   Pastel claro de verdad: borde punteado tipo washi-tape/sticker (silueta
-   que ningún otro material usa), radios grandes pero no extremos, sombra
-   difusa con el tono del acento (glow de algodón de azúcar) y una textura
-   de puntitos sutil en las superficies grandes.
-   ========================================================== */
-.themed-app[data-theme-style="cute"] {
-  --page-bg: oklch(from var(--accent) 0.74 0.085 h);
-  --surface-bg: oklch(from var(--accent) 0.82 0.09 h);
-  --surface-bg-alt: oklch(from var(--accent) 0.78 0.07 h);
-  --surface-border-color: color-mix(in oklch,var(--accent) 55%, transparent);
-  --surface-border: 2px dashed var(--surface-border-color);
-  --surface-radius: 1.75rem;
-  --surface-radius-sm: 1.25rem;
-  --surface-shadow: 0 14px 32px -10px oklch(from var(--accent) 0.42 0.12 h / 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  --surface-blur: none;
-  --ink-cute: #2A1B2E;
-  --ink: var(--ink-cute);
-  /* Fallback de color heredado para texto sin clase Tailwind explícita. */
-  color: var(--ink-cute);
-  font-weight: 500;
-}
-/* Pastel de verdad = fondo CLARO: se sobreescribe el texto blanco/gris
-   hardcodeado del resto del sistema dentro del scope de Cute. Los colores
-   de estado siguen intactos porque viven en su propia isla de fondo oscuro
-   (el badge), no sobre --surface-bg. */
-.themed-app[data-theme-style="cute"] .text-white,
-.themed-app[data-theme-style="cute"] .text-gray-100,
-.themed-app[data-theme-style="cute"] .text-gray-200,
-.themed-app[data-theme-style="cute"] .text-gray-300,
-.themed-app[data-theme-style="cute"] .text-gray-400,
-.themed-app[data-theme-style="cute"] .text-gray-500,
-.themed-app[data-theme-style="cute"] .text-gray-600 {
-  color: var(--ink-cute) !important;
-}
-.themed-app[data-theme-style="cute"] .text-gray-500,
-.themed-app[data-theme-style="cute"] .text-gray-600 {
-  color: color-mix(in oklch, var(--ink-cute) 88%, transparent) !important;
-}
-.themed-app[data-theme-style="cute"] .placeholder-gray-600::placeholder {
-  color: color-mix(in oklch, var(--ink-cute) 55%, transparent);
-}
-/* Textura de "sprinkles": puntitos suaves, solo en las superficies de
-   control (nunca en theme-die-frame, que se recorta en OBS — ahí la
-   prioridad es que el texto del juego se lea limpio, sin ruido de fondo).
-   Más oscuros que el acento puro para que se noten sobre un fondo ahora claro. */
-.themed-app[data-theme-style="cute"] .theme-surface,
-.themed-app[data-theme-style="cute"] .theme-surface-featured {
-  background-image: radial-gradient(oklch(from var(--accent) 0.45 0.13 h / 0.5) 1px, transparent 1.5px);
-  background-size: 14px 14px;
-}
-.themed-app[data-theme-style="cute"] .theme-heading,
-.themed-app[data-theme-style="cute"] .theme-label,
-.themed-app[data-theme-style="cute"] .theme-accent-text {
-  color: oklch(from var(--accent) var(--tkc-accent-ink-l, 0.36) 0.16 h);
-}
-.themed-app[data-theme-style="cute"] .theme-heading { font-weight: 700; letter-spacing: 0.01em; }
-/* La píldora completa solo va en los campos de UNA línea (input/select).
-   Cualquier otra cosa que use .theme-input es una CAJA (recuadros de ayuda
-   plegables, filas de listas, textarea, botones-interruptor de varias
-   líneas): con 999px se veía desproporcionadamente redonda, así que usa un
-   radio moderado -- ver --radius-cute-box en :root. */
-.themed-app[data-theme-style="cute"] .theme-input {
-  border-radius: var(--radius-cute-box);
-}
-.themed-app[data-theme-style="cute"] input.theme-input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-.themed-app[data-theme-style="cute"] select.theme-input {
-  border-radius: 999px;
-}
-.themed-app[data-theme-style="cute"] .theme-input:focus {
-  box-shadow: 0 0 0 4px color-mix(in oklch,var(--accent) 22%, transparent);
-}
-/* Botones píldora con un brillo superior tipo caramelo — sin rebote, la
-   "gracia" viene de la forma y el glow, no de una animación elástica. */
-.themed-app[data-theme-style="cute"] .theme-btn-primary,
-.themed-app[data-theme-style="cute"] .theme-btn-secondary {
-  border-radius: 999px;
-  transition: transform 0.2s ease, filter 0.2s ease;
-}
-.themed-app[data-theme-style="cute"] .theme-btn-primary {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 14px color-mix(in oklch,var(--accent) 35%, transparent);
-}
-.themed-app[data-theme-style="cute"] .theme-btn-secondary {
-  background: color-mix(in oklch, var(--accent) 30%, var(--surface-bg));
-  color: var(--ink-cute);
-}
-.themed-app[data-theme-style="cute"] .theme-btn-primary:hover,
-.themed-app[data-theme-style="cute"] .theme-btn-secondary:hover {
-  transform: translateY(-2px);
-}
-.themed-app[data-theme-style="cute"] .theme-chip {
-  border: 1px dashed var(--surface-border-color);
-  border-radius: 999px;
-  /* En el panel va más claro (ver .themed-panel más abajo): con la tinta
-     oscura daba 3.8:1 en rosa (axe). Los overlays conservan el de siempre. */
-  background: oklch(from var(--accent) var(--tkc-cute-chip-l, 0.6) var(--tkc-cute-chip-c, 0.14) h);
-  color: var(--ink-cute);
-}
-/* Dock flotante redondeado, igual de "sticker" que el resto del material. */
-.themed-app[data-theme-style="cute"] .theme-sidebar {
-  margin: 0.75rem 0 0.75rem 0.75rem;
-  border-radius: var(--radius-cute-dock);
-  gap: 0.6rem;
-}
-.themed-app[data-theme-style="cute"] .theme-nav-btn {
-  border-radius: var(--radius-cute-nav) !important;
-  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-}
-.themed-app[data-theme-style="cute"] .theme-nav-btn:hover { transform: translateY(-1px); }
-.themed-app[data-theme-style="cute"] .theme-nav-btn-active {
-  border: 1px dashed var(--accent);
-  box-shadow: 0 0 14px color-mix(in oklch,var(--accent) 40%, transparent);
-}
-
 /* ---- Acentos ---- */
 .themed-app[data-accent="purple"] { --accent: #7C3AED; --accent-2: #6366F1; --accent-soft: #A78BFA; }
 .themed-app[data-accent="blue"]   { --accent: #3B82F6; --accent-2: #06B6D4; --accent-soft: #93C5FD; }
@@ -480,26 +363,37 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 }
 
 /* ==========================================================
-   MODO OSCURO (panel de control)
-   Todo el sistema de temas lee sus colores de tokens, así que el modo oscuro
-   los redefine en vez de tocar cada componente: superficies oscuras con el
-   tinte del acento, y la "tinta" (--ink-*) pasa a ser clara, con lo que las
-   reglas que remapean text-white/text-gray-* (y las tintas de estado) se
-   vuelven claras solas. Solo lo activa ThemedShell (data-mode); el overlay de
-   OBS nunca lo lleva, así que lo que ve la audiencia no cambia.
-   Especificidad a propósito mayor que la de cada material (Clásico/Cute).
+   TEMA MAESTRO (panel de control)
+   Un solo diseño para todo el panel: fondo, superficies, bordes, radios,
+   sombras y tipografía son fijos y NO cambian con el acento. El acento solo
+   pinta lo que depende de él (botón principal, selección, navegación activa,
+   foco, texto de acento). Sus variables (--accent, --accent-hover,
+   --accent-active, --on-accent, --accent-text) las pone ThemedShell inline,
+   calculadas en themeModel.js con límites para que cualquier color se lea.
+   Oscuro de fábrica; claro como alternativa (misma geometría, otra luz).
+   Las vistas previas de overlays dentro del panel (data-theme-style="default")
+   quedan fuera de las reglas de abajo: conservan el aspecto que ve OBS.
    ========================================================== */
-.themed-app[data-theme-style][data-mode="dark"] {
+.themed-app[data-theme-style="master"] {
   color-scheme: dark;
-  --page-bg: oklch(from var(--accent) 0.17 0.045 h);
-  /* 0.25 (antes 0.235): la tarjeta se separa mejor del fondo de página. */
-  --surface-bg: oklch(from var(--accent) 0.25 0.06 h);
-  --surface-bg-alt: oklch(from var(--accent) 0.2 0.05 h);
-  --surface-border-color: color-mix(in oklch, var(--accent) 50%, transparent);
-  --surface-shadow: 0 10px 30px -12px var(--page-bg), 0 0 40px color-mix(in oklch, var(--accent) 12%, transparent);
-  --ink-default: #F3EEFB;
-  --ink-cute: #F3EEFB;
-  --ink: #F3EEFB;
+  /* Neutros con un matiz violeta muy leve y FIJO (no sigue el acento): la
+     marca vive en el acento, el fondo es la cabina. */
+  --page-bg: #0f0e13;
+  --rail-bg: #0b0a0f;
+  --surface-bg: #17161d;
+  --surface-bg-alt: #121117;
+  --surface-raised: #1f1e26;
+  --surface-border-color: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.14);
+  --surface-border: 1px solid var(--surface-border-color);
+  --surface-radius: 0.875rem;
+  --surface-radius-sm: 0.625rem;
+  --surface-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03), 0 12px 32px -18px rgb(0 0 0 / 0.7);
+  --surface-blur: none;
+  --ink: #f2f1f5;
+  --ink-2: #b4b1bf;
+  --ink-3: #8a8797;
+  --ink-default: var(--ink);
   --ink-danger: #FCA5A5;
   --ink-warning: #FCD34D;
   --ink-success: #86EFAC;
@@ -507,15 +401,27 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-info: #7DD3FC;
   --ink-amber: #FBBF24;
   --status-mix: #fff;
+  /* Compatibilidad con reglas que todavía leen los nombres viejos: sin
+     degradados de dos colores, el acento es uno solo. */
+  --accent-2: var(--accent);
+  --accent-soft: var(--accent-text);
   color: var(--ink);
+  background: var(--page-bg);
+  scrollbar-color: var(--line-strong) transparent;
 }
-/* Isla clara: la vista previa de un overlay embebida en el panel (data-mode="light"
-   en su propio wrapper). Un panel oscuro heredaría sus tintas claras hacia adentro
-   (--ink-* son variables heredables), así que se restablecen aquí. */
-.themed-app[data-theme-style][data-mode="light"] {
+.themed-app[data-theme-style="master"][data-mode="light"] {
   color-scheme: light;
-  --ink-default: #2E2136;
-  --ink-cute: #2A1B2E;
+  --page-bg: #f7f7f9;
+  --rail-bg: #efeff3;
+  --surface-bg: #ffffff;
+  --surface-bg-alt: #f3f3f6;
+  --surface-raised: #ececf1;
+  --surface-border-color: rgb(20 18 30 / 0.1);
+  --line-strong: rgb(20 18 30 / 0.18);
+  --surface-shadow: 0 1px 2px rgb(20 18 30 / 0.05), 0 8px 24px -16px rgb(20 18 30 / 0.18);
+  --ink: #16131d;
+  --ink-2: #4a4656;
+  --ink-3: #66626f;
   --ink-danger: #B91C1C;
   --ink-warning: #A16207;
   --ink-success: #15803D;
@@ -524,27 +430,117 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   --ink-amber: #B45309;
   --status-mix: #000;
 }
-/* Títulos, etiquetas y botones secundarios: en claro usan un tono oscuro del
-   acento; en oscuro, uno claro. */
-.themed-app[data-theme-style][data-mode="dark"] .theme-heading:not([data-mode="light"] *),
-.themed-app[data-theme-style][data-mode="dark"] .theme-label:not([data-mode="light"] *),
-.themed-app[data-theme-style][data-mode="dark"] .theme-accent-text:not([data-mode="light"] *),
-.themed-app[data-theme-style][data-mode="dark"] .theme-btn-secondary:not([data-mode="light"] *),
-.themed-app[data-theme-style][data-mode="dark"] .theme-chip:not([data-mode="light"] *) {
-  color: oklch(from var(--accent) 0.87 0.08 h);
+.themed-app[data-theme-style="master"] ::selection { background: color-mix(in oklch, var(--accent) 35%, transparent); }
+
+/* Tinta: el código del panel escribe text-white/text-gray-* pensando en un
+   fondo oscuro. Se llevan a tres niveles de tinta del tema (principal,
+   secundaria, terciaria), que también funcionan en claro. */
+.themed-app[data-theme-style="master"] :is(.text-white, .text-gray-100, .text-gray-200):not([data-theme-style="default"] *) { color: var(--ink) !important; }
+.themed-app[data-theme-style="master"] :is(.text-gray-300, .text-gray-400):not([data-theme-style="default"] *) { color: var(--ink-2) !important; }
+.themed-app[data-theme-style="master"] :is(.text-gray-500, .text-gray-600, .text-gray-700):not([data-theme-style="default"] *) { color: var(--ink-3) !important; }
+.themed-app[data-theme-style="master"] .placeholder-gray-600:not([data-theme-style="default"] *)::placeholder,
+.themed-app[data-theme-style="master"] :is(input, textarea):not([data-theme-style="default"] *)::placeholder { color: var(--ink-3); opacity: 0.8; }
+
+.themed-app[data-theme-style="master"] .theme-heading:not([data-theme-style="default"] *) { color: var(--ink); }
+.themed-app[data-theme-style="master"] .theme-label:not([data-theme-style="default"] *) { color: var(--ink-2); }
+.themed-app[data-theme-style="master"] .theme-accent-text:not([data-theme-style="default"] *) { color: var(--accent-text); }
+
+/* Botón principal: el acento sólido, sin degradado ni brillo. */
+.themed-app[data-theme-style="master"] .theme-btn-primary:not([data-theme-style="default"] *) {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid transparent;
+  filter: none;
 }
-/* El chip de Cute es de un tono medio sólido: en oscuro se baja para que el
-   texto claro contraste. */
-.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-chip:not([data-mode="light"] *) {
-  background: oklch(from var(--accent) 0.38 0.12 h);
+.themed-app[data-theme-style="master"] .theme-btn-primary:not([data-theme-style="default"] *):hover:not(:disabled) { background: var(--accent-hover); filter: none; }
+.themed-app[data-theme-style="master"] .theme-btn-primary:not([data-theme-style="default"] *):active:not(:disabled) { background: var(--accent-active); }
+.themed-app[data-theme-style="master"] .theme-btn-primary:not([data-theme-style="default"] *) :is(.text-white, .text-gray-100, .text-gray-200),
+.themed-app[data-theme-style="master"] .theme-btn-primary.text-white:not([data-theme-style="default"] *) { color: var(--on-accent) !important; }
+/* Secundario: neutro con borde. El acento queda para lo principal. */
+.themed-app[data-theme-style="master"] .theme-btn-secondary:not([data-theme-style="default"] *) {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
 }
-/* Los puntitos de Cute eran oscuros para verse sobre pastel claro. */
-.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-surface:not([data-mode="light"] *),
-.themed-app[data-theme-style="cute"][data-mode="dark"] .theme-surface-featured:not([data-mode="light"] *) {
-  background-image: radial-gradient(oklch(from var(--accent) 0.7 0.12 h / 0.25) 1px, transparent 1.5px);
+.themed-app[data-theme-style="master"] .theme-btn-secondary:not([data-theme-style="default"] *):hover:not(:disabled) { background: var(--surface-raised); }
+.themed-app[data-theme-style="master"] :is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-warning):not([data-theme-style="default"] *):disabled { opacity: 0.45; cursor: not-allowed; }
+.themed-app[data-theme-style="master"] .theme-btn-danger:not([data-theme-style="default"] *) { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); }
+.themed-app[data-theme-style="master"] .theme-btn-warning:not([data-theme-style="default"] *) { color: color-mix(in oklch, var(--ink-warning) 85%, var(--status-mix)); }
+
+.themed-app[data-theme-style="master"] .theme-chip:not([data-theme-style="default"] *) {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  color: var(--accent-text);
 }
-/* Tonos -600/-700 que el panel usa para texto de estado sobre fondo claro:
-   en oscuro pasan a las tintas claras de estado. */
+.themed-app[data-theme-style="master"] .theme-input:not([data-theme-style="default"] *) {
+  background: var(--surface-bg-alt);
+  border: 1px solid var(--line-strong);
+}
+.themed-app[data-theme-style="master"] .theme-input:not([data-theme-style="default"] *):focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent);
+}
+.themed-app[data-theme-style="master"] .theme-surface-featured:not([data-theme-style="default"] *) {
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--surface-border-color));
+}
+
+/* Navegación: el riel es una capa más oscura que la página, sin sombra. */
+.themed-app[data-theme-style="master"] .theme-sidebar {
+  background: var(--rail-bg);
+  border-right: 1px solid var(--surface-border-color);
+  box-shadow: none;
+}
+.themed-app[data-theme-style="master"] .theme-nav-btn:hover {
+  background: color-mix(in oklch, var(--ink) 6%, transparent);
+  border-color: transparent;
+}
+.themed-app[data-theme-style="master"] .theme-nav-btn-active {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+
+/* Componentes nuevos del tema maestro (pantalla de Tema y siguientes). */
+.tkc-page-title { font-size: 1.5rem; line-height: 2rem; font-weight: 800; letter-spacing: -0.015em; color: var(--ink); }
+.tkc-section-title { font-size: 0.875rem; line-height: 1.25rem; font-weight: 700; color: var(--ink); display: flex; align-items: baseline; gap: 0.5rem; }
+.tkc-section-meta { font-weight: 600; color: var(--ink-3); }
+.tkc-option {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--surface-radius-sm);
+  border: 1px solid var(--surface-border-color);
+  background: var(--surface-bg);
+  text-align: left;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.tkc-option:hover { background: var(--surface-raised); }
+.tkc-option[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tkc-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tkc-option-stacked { flex-direction: column; align-items: flex-start; gap: 0.125rem; }
+.tkc-option-label { font-size: 0.8125rem; font-weight: 700; color: var(--ink); }
+.tkc-swatch { width: 1.125rem; height: 1.125rem; border-radius: 999px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.25); }
+.tkc-theme-preview { border-radius: var(--surface-radius); border: 1px solid var(--surface-border-color); overflow: hidden; }
+.tkc-preview-nav { font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); padding: 0.5rem 0.625rem; border-radius: var(--surface-radius-sm); }
+.tkc-preview-nav-active { background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent-text); }
+
+/* Isla clara: la vista previa de un overlay embebida en el panel lleva
+   data-mode="light" en su propio wrapper y el aspecto de OBS. Un panel oscuro
+   heredaría sus tintas claras hacia adentro (son variables heredables). */
+.themed-app[data-theme-style="default"][data-mode="light"] {
+  color-scheme: light;
+  --ink-default: #2E2136;
+  --ink-danger: #B91C1C;
+  --ink-warning: #A16207;
+  --ink-success: #15803D;
+  --ink-premio: #047857;
+  --ink-info: #0369A1;
+  --ink-amber: #B45309;
+  --status-mix: #000;
+}
+/* Tonos -600/-700 que el panel usa para texto de estado: en oscuro pasan a
+   las tintas claras de estado. */
 .themed-panel[data-mode="dark"] .text-red-600:not([data-mode="light"] *),
 .themed-panel[data-mode="dark"] .text-red-700:not([data-mode="light"] *) { color: var(--ink-danger) !important; }
 .themed-panel[data-mode="dark"] .text-amber-600:not([data-mode="light"] *),
@@ -552,10 +548,6 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .themed-panel[data-mode="dark"] .text-emerald-600:not([data-mode="light"] *),
 .themed-panel[data-mode="dark"] .text-emerald-700:not([data-mode="light"] *) { color: var(--ink-premio) !important; }
 .themed-panel[data-mode="dark"] .text-sky-700:not([data-mode="light"] *) { color: var(--ink-info) !important; }
-/* Botones de peligro/aviso: su rojo/ámbar fijo no llega a 4.5:1 sobre la
-   superficie oscura; pasan a las tintas claras de estado. */
-.themed-app[data-theme-style][data-mode="dark"] .theme-btn-danger:not([data-mode="light"] *) { color: var(--ink-danger); }
-.themed-app[data-theme-style][data-mode="dark"] .theme-btn-warning:not([data-mode="light"] *) { color: var(--ink-warning); }
 .themed-app[data-mode="dark"] .tkc-switch::after { box-shadow: 0 1px 3px var(--page-bg); }
 
 /* ==========================================================
@@ -672,7 +664,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 /* Botones de acción de estado (restart/stop en los juegos) — mismo criterio
    que los badges de estado: color fijo (no sigue el acento), pero la base
    SÍ tiene que ser var(--surface-bg-alt) para no quedar como una caja
-   oscura fija flotando sobre un material pastel claro (Cute). */
+   oscura fija flotando sobre el fondo pastel de un overlay. */
 .theme-btn-warning {
   background: color-mix(in oklch, #F59E0B 14%, var(--surface-bg-alt));
   border: 1px solid color-mix(in oklch, #F59E0B 45%, transparent);
@@ -768,28 +760,10 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   .tkc-hint { font-size: 0.75rem; line-height: 1.35; color: color-mix(in oklch, var(--ink, currentColor) 80%, transparent); }
 }
 
-/* Superficies del panel un escalón más claras que el fondo de la página: antes
-   la tarjeta (L 0.80) y la página (L 0.72) casi se confundían, todo era morado
-   sobre morado. Solo en el panel (ThemedShell lleva .themed-panel): las vistas
-   previas y los overlays de OBS declaran su propio tema y no lo heredan, así
-   que lo que ve la audiencia no cambia. */
-.themed-panel[data-theme-style="default"]:not([data-mode="dark"]) {
-  --surface-bg: oklch(from var(--accent) 0.85 0.08 h);
-  /* Títulos, etiquetas y texto de acento: 4.5:1 con cualquier acento. */
-  --tkc-accent-ink-l: 0.31;
-}
-.themed-panel[data-theme-style="cute"]:not([data-mode="dark"]) {
-  --surface-bg: oklch(from var(--accent) 0.86 0.075 h);
-  --tkc-accent-ink-l: 0.33;
-  --tkc-cute-chip-l: 0.68;
-  --tkc-cute-chip-c: 0.13;
-}
-/* Las vistas previas de overlays dentro del panel vuelven a los valores de
-   OBS: declaran su propio tema, pero estas variables se heredarían. */
+/* Las vistas previas de overlays dentro del panel conservan la tinta de acento
+   que ven en OBS (la variable se heredaría del panel). */
 .themed-panel .themed-app[data-theme-style] {
   --tkc-accent-ink-l: 0.36;
-  --tkc-cute-chip-l: 0.6;
-  --tkc-cute-chip-c: 0.14;
 }
 
 /* Tarjeta que es un acceso directo (Dashboard): sube un poco y toma el borde
@@ -861,8 +835,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .tkc-row-link:hover { background: color-mix(in oklch, var(--accent) 14%, transparent); }
 .tkc-row-link:active { transform: scale(0.99); }
 
-/* Tokens de tinta de estado y radios del material Cute -- documentados en
-   DESIGN.md (Colors › Estado / Shapes). Cada valor vive UNA sola vez acá y
+/* Tokens de tinta de estado -- documentados en DESIGN.md (Colors › Estado). Cada valor vive UNA sola vez acá y
    el resto del archivo lee la variable. */
 :root {
   --ink-danger: #B91C1C;
@@ -876,9 +849,6 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
      Mezclar con una tinta morada movía el matiz (el verde salía azul); con un
      acromático el rojo, el ámbar, el verde y el azul siguen siendo reconocibles. */
   --status-mix: #000;
-  --radius-cute-dock: 1.75rem;
-  --radius-cute-nav: 1.1rem;
-  --radius-cute-box: 1rem;
 }
 
 /* ==========================================
@@ -1127,8 +1097,7 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
    flex-col del contenedor en App.jsx), y esos mismos bordes redondeados
    dejan ver triangulitos del fondo en cada esquina, como si las secciones
    no encajaran entre sí. Se sacan los bordes/márgenes solo en mobile; a
-   partir de md: no se toca nada (Cute sí le da margen y radio propios al
-   sidebar ahí, y eso se mantiene intacto en desktop). */
+   partir de md: no se toca nada. */
 @media (max-width: 767px) {
   .tkc-mobile-flush {
     border-radius: 0 !important;
@@ -1349,8 +1318,8 @@ select:disabled { cursor: not-allowed; }
 
 /* Indicador de navegación que se desliza al módulo elegido (barra lateral y
    pestañas de Eventos). Lleva las mismas clases de botón activo que antes
-   tenía el botón, así que cada material (Clásico, Cute) lo pinta igual que
-   siempre; lo único nuevo es que viaja en vez de aparecer de golpe. */
+   tenía el botón, así que el tema lo pinta igual que al botón; lo único
+   nuevo es que viaja en vez de aparecer de golpe. */
 .tkc-nav-indicator {
   position: absolute;
   top: 0;
@@ -1368,7 +1337,6 @@ select:disabled { cursor: not-allowed; }
               height var(--motion-base) var(--ease-out-soft),
               background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
 }
-.themed-app[data-theme-style="cute"] .tkc-nav-indicator { border-radius: var(--radius-cute-nav) !important; }
 .tkc-nav-item { position: relative; z-index: 1; }
 /* El botón activo ya no pinta su propio fondo: lo pone el indicador. */
 .tkc-nav-item[aria-current="page"],
@@ -1387,8 +1355,8 @@ select:disabled { cursor: not-allowed; }
   overflow: hidden;
   white-space: nowrap;
 }
-/* Selector más fuerte a propósito: los materiales (Cute) redefinen la
-   transición de .theme-btn-primary y se comerían la del ancho. */
+/* Selector más fuerte a propósito: otras reglas de .theme-btn-primary
+   redefinen la transición y se comerían la del ancho. */
 .themed-app .tkc-morph[data-status] {
   transition: width var(--motion-slow) var(--ease-in-out-soft),
               border-radius var(--motion-slow) var(--ease-in-out-soft),

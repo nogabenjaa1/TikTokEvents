@@ -1,244 +1,126 @@
-import { useEffect, useState } from 'react';
-import { useTheme, THEME_STYLES, THEME_ACCENTS, THEME_MODES, ThemedShell, skinName } from './ThemeContext';
+import { useState } from 'react';
+import { useTheme, THEME_MODES, ThemedShell } from './ThemeContext';
+import { ACCENT_PRESETS, accentLabel, accentTokens } from './themeModel';
 
-// ─────────────────────────────────────────────
-// SELECTOR DE SKIN — cada tile ya es la combinación completa (material +
-// acento): 2 materiales (Clásico/Cute) x 4 columnas (Morado/Azul/Rosa +
-// Personalizado), agrupados en filas por material para que sigan siendo
-// escaneables. "Personalizado" no es un color fijo — es un
-// <input type="color"> nativo escondido detrás del tile (el círculo de
-// muestra SÍ usa el color elegido); arrastrar el selector actualiza la
-// vista previa en vivo al toque (evento `input`) y recién confirma el skin
-// al soltar (evento `change`), mismo criterio de "probar antes de
-// comprometerse" que ya usa el hover en los 3 presets.
-//
-// Dos necesidades del streamer en vivo que este diseño ataca directo:
-//  1. Previsualizar ANTES de comprometerse → hover (o arrastrar el color
-//     picker) sobre una tile actualiza la vista previa en vivo (arriba de
-//     todo) sin tocar el tema real.
-//  2. Volver fácil si no le gustó → chip de "últimos usados" + botón
-//     "Volver al anterior" que alterna con el skin previo.
-// ─────────────────────────────────────────────
+// Pantalla de Tema: un solo diseño, así que aquí solo se elige el color de
+// acento (tres de fábrica o uno propio) y la apariencia del panel. El acento se
+// aplica al instante, en el panel y en los overlays de OBS. Pasar el cursor o
+// el foco por un color lo prueba en la vista previa sin aplicarlo.
 export default function ThemeSwitcher() {
-  const { style, accent, customColor, recents, previous, setSkin, revertToPrevious, mode, setMode } = useTheme();
-  const [previewSkin, setPreviewSkin] = useState(null); // { style, accent, customColor? } | null — solo hover/arrastre, no se aplica
-  const [toast, setToast] = useState(null);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2400);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  const current = { style, accent, customColor };
-  const effective = previewSkin || current; // lo que muestra la vista previa
-
-  const applySkin = (s, a, cc) => {
-    setSkin(s, a, cc);
-    setToast({ name: skinName({ style: s, accent: a }) });
-    setPreviewSkin(null);
-  };
-
-  const isSelected = (s, a) => style === s && accent === a;
-  const accentHex = (id) => (id === 'custom' ? customColor : THEME_ACCENTS.find(x => x.id === id)?.swatch) ?? '#7C3AED';
+  const { accent, customColor, setAccent, mode, setMode, resolvedMode } = useTheme();
+  const [preview, setPreview] = useState(null); // { accent, customColor } | null
+  const shown = preview || { accent, customColor };
+  const adjusted = accent === 'custom' && accentTokens(customColor, resolvedMode).adjusted;
 
   return (
-    <div className="min-h-screen text-white flex flex-col gap-6 p-6 pt-10 font-sans flex-1 overflow-y-auto max-w-3xl mx-auto w-full">
+    <div className="flex-1 overflow-y-auto w-full">
+      <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-10 flex flex-col gap-8">
+        <header>
+          <h1 className="tkc-page-title">Tema</h1>
+          <p className="tkc-hint mt-1.5 max-w-prose">Elige el color de tu cabina. Se aplica al instante en el panel y en los overlays que ve tu audiencia.</p>
+        </header>
 
-      {/* ── Encabezado ── */}
-      <div>
-        <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">TEMA</p>
-        <h2 className="theme-heading text-2xl font-black tracking-wide">Elige el skin de tu cabina</h2>
-        <p className="text-xs text-gray-500 mt-1">Se aplica al instante, en vivo. En computadora pasa el mouse (o usa el teclado) sobre un skin para probarlo antes de confirmarlo; en el celular solo tócalo.</p>
-      </div>
+        <section aria-labelledby="tkc-accent-title" className="flex flex-col gap-3">
+          <h2 id="tkc-accent-title" className="tkc-section-title">Color de acento</h2>
+          <div role="radiogroup" aria-labelledby="tkc-accent-title" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {ACCENT_PRESETS.map(p => {
+              const selected = accent === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => { setAccent(p.id); setPreview(null); }}
+                  onMouseEnter={() => setPreview({ accent: p.id, customColor })}
+                  onMouseLeave={() => setPreview(null)}
+                  onFocus={() => setPreview({ accent: p.id, customColor })}
+                  onBlur={() => setPreview(null)}
+                  className="tkc-option"
+                >
+                  <span className="tkc-swatch" style={{ background: p.hex }} aria-hidden />
+                  <span className="tkc-option-label">{p.label}</span>
+                </button>
+              );
+            })}
+            {/* Personalizado: el <input type="color"> nativo va dentro del
+                <label>; tocar la opción abre el selector del sistema. Mientras
+                se arrastra solo cambia la vista previa (input); al soltar se
+                aplica (change). */}
+            <label className="tkc-option cursor-pointer" aria-checked={accent === 'custom'} role="radio">
+              <input
+                type="color"
+                value={customColor}
+                onInput={(e) => setPreview({ accent: 'custom', customColor: e.target.value })}
+                onChange={(e) => { setAccent('custom', e.target.value); setPreview(null); }}
+                onBlur={() => setPreview(null)}
+                className="sr-only"
+                aria-label="Elegir un color propio"
+              />
+              <span className="tkc-swatch tkc-swatch-custom" style={{ background: shown.accent === 'custom' ? shown.customColor : customColor }} aria-hidden />
+              <span className="tkc-option-label">Personalizado</span>
+            </label>
+          </div>
+          {adjusted && (
+            <p className="tkc-hint" role="status">Ajustamos un poco el brillo de este color para que los botones y los textos se lean bien. Tus overlays de OBS usan el color tal como lo elegiste.</p>
+          )}
+        </section>
 
-      {/* ── Apariencia: claro / oscuro / automático según el sistema ── */}
-      <div role="radiogroup" aria-label="Apariencia del panel" className="flex flex-col gap-2">
-        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Apariencia</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {THEME_MODES.map(m => {
-            const selected = mode === m.id;
-            return (
+        <section aria-label="Vista previa" className="flex flex-col gap-3">
+          <h2 className="tkc-section-title">Vista previa <span className="tkc-section-meta">{accentLabel(shown)}</span></h2>
+          <ThemedShell fitContent accentOverride={shown.accent} customColorOverride={shown.customColor} className="tkc-theme-preview">
+            <PreviewSample />
+          </ThemedShell>
+        </section>
+
+        <section aria-labelledby="tkc-mode-title" className="flex flex-col gap-3">
+          <h2 id="tkc-mode-title" className="tkc-section-title">Apariencia</h2>
+          <div role="radiogroup" aria-labelledby="tkc-mode-title" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {THEME_MODES.map(m => (
               <button
                 key={m.id}
                 type="button"
                 role="radio"
-                aria-checked={selected}
+                aria-checked={mode === m.id}
                 onClick={() => setMode(m.id)}
-                className="theme-input p-3 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                style={selected ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : undefined}
+                className="tkc-option tkc-option-stacked"
               >
-                <span className="flex items-center gap-2 text-sm font-bold text-gray-200">
-                  {m.label}
-                  {selected && <span className="ml-auto text-[10px] theme-accent-text" aria-hidden>✓</span>}
-                </span>
-                <span className="block text-[10px] text-gray-500 leading-snug mt-0.5">{m.hint}</span>
+                <span className="tkc-option-label">{m.label}</span>
+                <span className="tkc-hint">{m.hint}</span>
               </button>
-            );
-          })}
-        </div>
-        <p className="text-[10px] text-gray-500 leading-snug">Solo cambia cómo ves tú el panel en este navegador. Los overlays de OBS y lo que ve tu audiencia no cambian.</p>
-      </div>
-
-      {/* ── 1. Vista previa en vivo — domina la pantalla, no un preview chico al final ── */}
-      <div className="theme-surface p-5">
-        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-3">
-          Vista previa — <span className="text-gray-300">{skinName(effective)}</span>
-        </p>
-        <ThemedShell
-          className="rounded-2xl overflow-hidden flex justify-center py-5 px-5"
-          fitContent
-          styleOverride={effective.style}
-          accentOverride={effective.accent}
-          customColorOverride={effective.customColor}
-        >
-          <div className="theme-surface-featured w-full max-w-sm p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="theme-accent-bg w-3 h-8 rounded-full" />
-              <h1 className="theme-heading text-lg font-semibold tracking-wide">Rey del Trono</h1>
-            </div>
-            <label className="theme-label block text-xs uppercase tracking-widest font-semibold mb-2">Usuario de TikTok</label>
-            <input readOnly value="streamer_oficial" className="theme-input w-full p-3 outline-none text-sm font-bold text-white mb-4" />
-            <button className="theme-btn-primary theme-btn-md w-full font-black tracking-widest uppercase shadow-lg">
-              Empezar
-            </button>
+            ))}
           </div>
-        </ThemedShell>
+          <p className="tkc-hint">La apariencia solo cambia cómo ves el panel en este navegador. Los overlays de OBS no cambian.</p>
+        </section>
       </div>
+    </div>
+  );
+}
 
-      {/* ── 2. Últimos usados — revertir en un toque ── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 font-semibold flex-shrink-0">Últimos usados:</span>
-        <span
-          className="theme-chip px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
-          style={{ background: `color-mix(in oklch, ${accentHex(accent)} 68%, black)`, color: '#fff' }}
-          title="Skin que estás usando ahora"
-        >
-          <span aria-hidden>✓</span> {skinName(current)}
-        </span>
-        {recents.map(r => (
-          <button
-            type="button"
-            key={`${r.style}-${r.accent}-${r.customColor}`}
-            onClick={() => applySkin(r.style, r.accent, r.customColor)}
-            onMouseEnter={() => setPreviewSkin(r)}
-            onMouseLeave={() => setPreviewSkin(null)}
-            className="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
-            style={{ borderColor: 'var(--surface-border-color)', color: '#9CA3AF', background: 'var(--surface-bg-alt)' }}
-          >
-            {skinName(r)}
-          </button>
-        ))}
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={revertToPrevious}
-          disabled={!previous}
-          className="text-[11px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors flex items-center gap-1.5 py-2"
-        >
-          Volver al anterior
-        </button>
-      </div>
-
-      {/* ── 3. Grid de skins — un clic elige el combo completo, agrupado por material ── */}
-      <div className="flex flex-col gap-4">
-        {THEME_STYLES.map(s => (
-          <div key={s.id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-            <div className="sm:w-24 flex-shrink-0 sm:pt-2.5">
-              <p className="text-sm font-bold text-gray-200 leading-tight">{s.shortLabel}</p>
-              <p className="text-[10px] text-gray-600 leading-snug">{s.hint}</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 flex-1">
-              {THEME_ACCENTS.map(a => {
-                const selected = isSelected(s.id, a.id);
-                const hex = a.swatch;
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    aria-pressed={selected}
-                    aria-label={`Skin ${s.shortLabel} ${a.label}`}
-                    onClick={() => applySkin(s.id, a.id)}
-                    onMouseEnter={() => setPreviewSkin({ style: s.id, accent: a.id })}
-                    onMouseLeave={() => setPreviewSkin(null)}
-                    onFocus={() => setPreviewSkin({ style: s.id, accent: a.id })}
-                    onBlur={() => setPreviewSkin(null)}
-                    className="rounded-xl p-2.5 text-left border transition-all min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                    style={{
-                      background: selected ? `${hex}22` : 'var(--surface-bg-alt)',
-                      borderColor: selected ? hex : 'var(--surface-border-color)',
-                      boxShadow: selected ? `0 0 0 1px ${hex}55` : 'none',
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20"
-                        style={{ background: hex }}
-                        aria-hidden
-                      />
-                      <span className="text-[11px] font-bold text-gray-200 truncate">{a.label}</span>
-                      {selected && <span className="ml-auto text-[10px] flex-shrink-0 theme-accent-text">✓</span>}
-                    </div>
-                  </button>
-                );
-              })}
-              {/* "Personalizado": el <input type="color"> nativo va escondido
-                  (sr-only) dentro del <label> — clickear cualquier parte del
-                  tile abre el selector del sistema operativo. `onInput`
-                  (dispara en cada tick mientras arrastra) solo actualiza la
-                  vista previa; `onChange` (dispara al soltar/cerrar el
-                  selector) recién confirma el skin de verdad. */}
-              {(() => {
-                const selected = isSelected(s.id, 'custom');
-                const hex = (previewSkin?.style === s.id && previewSkin?.accent === 'custom') ? previewSkin.customColor : customColor;
-                return (
-                  <label
-                    className="rounded-xl p-2.5 text-left border transition-all min-w-0 cursor-pointer"
-                    style={{
-                      background: selected ? `${hex}22` : 'var(--surface-bg-alt)',
-                      borderColor: selected ? hex : 'var(--surface-border-color)',
-                      boxShadow: selected ? `0 0 0 1px ${hex}55` : 'none',
-                    }}
-                  >
-                    <input
-                      type="color"
-                      value={hex}
-                      onInput={(e) => setPreviewSkin({ style: s.id, accent: 'custom', customColor: e.target.value })}
-                      onChange={(e) => applySkin(s.id, 'custom', e.target.value)}
-                      onBlur={() => setPreviewSkin(null)}
-                      className="sr-only"
-                    />
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20"
-                        style={{ background: hex }}
-                        aria-hidden
-                      />
-                      <span className="text-[11px] font-bold text-gray-200 truncate">Personalizado</span>
-                      {selected && <span className="ml-auto text-[10px] flex-shrink-0 theme-accent-text">✓</span>}
-                    </div>
-                  </label>
-                );
-              })()}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── 4. Confirmación no bloqueante ── */}
-      <div className="flex items-start gap-3 bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] rounded-xl px-4 py-3">
-        <span className="text-sm flex-shrink-0">ℹ️</span>
-        <p className="text-[11px] text-gray-500 leading-snug">
-          No hace falta guardar — cada clic aplica el skin al instante, aquí y también en el overlay de OBS que ve tu audiencia, así el tema que elijas te representa de verdad.
-        </p>
-      </div>
-
-      {/* ── Toast de confirmación — no bloqueante, se cierra solo ── */}
-      {toast && (
-        <div role="status" className="fixed bottom-6 right-6 z-[100] bg-[var(--surface-bg-alt)] border border-[var(--surface-border-color)] text-gray-100 text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-pop">
-          <span className="text-emerald-400">✓</span> Skin "{toast.name}" aplicado
+// Fragmento de un panel real (un juego listo para iniciar) con los mismos
+// componentes que usa la app, para juzgar el acento donde de verdad aparece.
+function PreviewSample() {
+  return (
+    <div className="p-4 sm:p-5 grid gap-4 sm:grid-cols-[9rem_1fr]">
+      <nav aria-label="Ejemplo de navegación" className="hidden sm:flex flex-col gap-1">
+        <span className="tkc-preview-nav">Dashboard</span>
+        <span className="tkc-preview-nav tkc-preview-nav-active">Eventos</span>
+        <span className="tkc-preview-nav">Overlays</span>
+      </nav>
+      <div className="theme-surface p-4 flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-bold text-sm text-white">Rey del Trono</p>
+          <span className="theme-chip tkc-label px-2.5 py-1 rounded-full">Listo para iniciar</span>
         </div>
-      )}
+        <label className="flex flex-col gap-1.5">
+          <span className="tkc-label text-gray-400">Regalo objetivo</span>
+          <input readOnly tabIndex={-1} value="Rosa" className="theme-input px-3 py-2.5 text-sm text-white outline-none" />
+        </label>
+        <div className="flex gap-2">
+          <span className="theme-btn-primary theme-btn-md flex-1 text-center font-bold">Iniciar</span>
+          <span className="theme-btn-secondary theme-btn-md font-bold">Personalizar</span>
+        </div>
+      </div>
     </div>
   );
 }

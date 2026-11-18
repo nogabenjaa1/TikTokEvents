@@ -35,7 +35,7 @@ One license bundles four distinct gift-driven game modes — King of the Throne,
 - **Multi-tenant backend:** one `Tenant` instance per active license, each with its own isolated Socket.io room — licenses never see each other's state or TikTok connection.
 - **Licensing is admin-issued OR self-serve payment.** The admin (today, one person: `notbenjaa1`) can still hand-issue/extend license keys from the License Manager panel, but streamers can also buy or renew their own plan (Monthly/Annual/Lifetime) and optionally add the PRO/VIP Color Says addon through a self-serve Stripe checkout form in the control panel (Monthly and Annual are auto-renewing subscriptions; all three plans offer a 14-day card trial), with no admin involvement. License durations: day / week / month / annual / lifetime (day/week are admin-only, not offered in the self-serve store).
 - **One active device per license by default:** logging in elsewhere kicks the prior session out with a visible notice; a license can be explicitly flagged "multi-device" (todopoderosa) to lift this, intended for the owner, not paying customers.
-- **Theming:** the control panel supports switchable UI themes via a dedicated theme picker.
+- **Theming:** one master design for the whole panel plus one streamer-chosen accent color (three presets or a custom color, kept legible by automatic limits), with Dark (default), Light or Auto appearance. OBS overlays keep their own pastel look tinted by that same accent, synced over Socket.io.
 - **Live-connection resilience:** the backend retries the TikTok LIVE connection every ~3s while a username is set, independent of the operator pressing Start, so a dropped connection recovers without manual intervention.
 
 ## Brand Commitments
@@ -43,6 +43,7 @@ One license bundles four distinct gift-driven game modes — King of the Throne,
 - Name: **TikTok Concurso**.
 - All UI copy is in **Spanish**, written for a Spanish-speaking (likely LatAm) creator audience — future surfaces default to Spanish, not English.
 - Voice is playful and gamer-leaning: emoji-forward mode labels (👑 🏆 💀 🎲) and energetic, all-caps action copy ("ENTRAR", "CREAR LICENCIA").
+- Visual direction: **one master theme, standard premium** — the craft bar of Linear, Raycast, Stripe and Vercel, executed straight (no themed costume), with the arcade personality carried by type weight and the accent, never by ornament. No multiple skins or materials.
 
 ## Evidence on Hand
 

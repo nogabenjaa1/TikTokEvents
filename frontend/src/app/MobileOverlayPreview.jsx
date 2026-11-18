@@ -1,4 +1,8 @@
-import Overlay from '../Overlay';
+import { lazyPanel } from '../lazyPanel';
+
+// Bajo demanda: el overlay de juegos (y sus cuatro juegos) no viaja en el
+// paquete principal del panel. Mientras baja, queda el recuadro vacío.
+const Overlay = lazyPanel(() => import('../Overlay'), { fallback: null });
 
 // La tarjeta del overlay mide 380x700 fijo (pensada para el recorte de OBS)
 // — se achica a este factor para que entre en un celular sin desbordar.

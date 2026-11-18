@@ -72,12 +72,14 @@ function PanelLoading() {
 // Devuelve un componente que se usa igual que el original (mismas props);
 // el Suspense vive DENTRO, así la barra de navegación de al lado no parpadea
 // mientras el panel se descarga.
-export function lazyPanel(factory) {
+// `fallback`: lo que se ve mientras baja. Los overlays de OBS pasan null:
+// un "Cargando..." saldría al aire.
+export function lazyPanel(factory, { fallback = <PanelLoading /> } = {}) {
   const Lazy = lazy(() => importWithRecovery(factory));
   return function LazyPanel(props) {
     return (
       <PanelErrorBoundary>
-        <Suspense fallback={<PanelLoading />}>
+        <Suspense fallback={fallback}>
           <Lazy {...props} />
         </Suspense>
       </PanelErrorBoundary>

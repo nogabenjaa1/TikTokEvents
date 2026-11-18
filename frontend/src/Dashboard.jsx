@@ -2,52 +2,43 @@ import { useState, useEffect } from 'react';
 import TikTokLoginBar from './TikTokLoginBar';
 import SystemHealth from './SystemHealth';
 import LiveFeed from './LiveFeed';
-import NavIcon from './app/NavIcon';
 import LegalLinks from './LegalLinks';
 import { EventStatusBadge } from './app/EventStatusBadge';
 import { isRunning } from './app/eventStatus';
+import { planLabel } from './app/navigation';
 
-// Mismos ids/labels que SECTIONS/EVENT_TABS en App.jsx -- duplicados acá
-// nada más para no importar de vuelta (App.jsx ya importa Dashboard, un
-// import circular). Si algún día se agrega/saca una sección, hay que
-// actualizar las listas.
-const SECTION_SHORTCUTS = [
-  { id: 'overlay', label: 'Overlays', hint: 'Los enlaces que pegas en OBS', free: true },
-  { id: 'color', label: 'ColorDice', hint: 'Dados y colores', free: true },
-  { id: 'downloader', label: 'Downloader', hint: 'Descarga videos sin marca de agua', free: false },
-  { id: 'theme', label: 'Tema', hint: 'Color de acento y apariencia', free: true },
-  { id: 'membership', label: 'Membresía', hint: 'Planes y precios', free: true },
-];
-
-// Los eventos van agrupados por lo que hacen, para que alguien nuevo
-// entienda de un vistazo qué es cada cosa (antes eran 8 tarjetas iguales).
+// Resumen de las áreas de Directo, con los mismos nombres y el mismo orden
+// que la navegación (AREA_TABS en app/navigation.js). Color Says es de acceso
+// libre (`free`): sin sesión no se marca como "con licencia".
 const EVENT_GROUPS = [
   {
     id: 'games',
-    title: 'Juegos para tu directo',
+    title: 'Juegos',
     items: [
       { id: 'king', label: 'Rey del Trono', hint: 'Quien regala último se queda con el trono' },
       { id: 'zub', label: 'Zubastinis', hint: 'Gana quien más monedas regale' },
       { id: 'elim', label: 'Eliminación', hint: 'Los participantes van saliendo hasta que queda uno' },
       { id: 'roulette', label: 'Ruleta', hint: 'Sortea un ganador entre los participantes' },
       { id: 'versus', label: 'Versus', hint: 'Héroes contra villanos: cada regalo suma a su lado' },
+      { id: 'color', label: 'Color Says', hint: 'Dados de colores, gratis y con overlay', free: true },
     ],
   },
   {
-    id: 'counters',
-    title: 'Contadores y metas',
-    items: [
-      { id: 'extensible', label: 'Extensible', hint: 'Un tiempo que crece con seguidores y regalos' },
-      { id: 'goal', label: 'Objetivo', hint: 'Barra de meta de monedas o seguidores' },
-    ],
-  },
-  {
-    id: 'chat',
-    title: 'Interacción con tu chat',
+    id: 'interaction',
+    title: 'Alertas y chat',
     items: [
       { id: 'alerts', label: 'Alertas', hint: 'Imagen, sonido y texto cuando llega un regalo' },
       { id: 'tts', label: 'TTS', hint: 'Lee el chat en voz alta' },
+      { id: 'chat', label: 'Chat', hint: 'El chat de tu directo como overlay de OBS' },
       { id: 'spotify', label: 'Spotify', hint: 'Cola de canciones para tu directo' },
+    ],
+  },
+  {
+    id: 'timers',
+    title: 'Metas y tiempo',
+    items: [
+      { id: 'extensible', label: 'Extensible', hint: 'Un tiempo que crece con seguidores y regalos' },
+      { id: 'goal', label: 'Objetivo', hint: 'Barra de meta de monedas o seguidores' },
     ],
   },
 ];
@@ -64,27 +55,6 @@ function loadOnboarding() {
 
 function saveOnboarding(value) {
   try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify(value)); } catch { /* sin storage: la guía igual funciona en esta sesión */ }
-}
-
-// Acceso directo a una herramienta (Overlays, ColorDice...): ícono, nombre y
-// una línea de ayuda. Si necesita licencia lo dice en su propia línea, debajo
-// (antes era una etiqueta encimada en la esquina que chocaba con el título).
-function ShortcutCard({ icon, label, hint, onClick, locked }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={locked ? `${label} (requiere licencia)` : label}
-      className="theme-surface tkc-card-link p-3 flex items-start gap-3 text-left"
-    >
-      {icon && <NavIcon name={icon} size={20} className="theme-accent-text mt-0.5" />}
-      <span className="min-w-0 flex flex-col gap-0.5">
-        <span className="text-sm font-bold text-white leading-tight">{label}</span>
-        {hint && <span className="tkc-hint">{hint}</span>}
-        {locked && <span className="tkc-meta mt-0.5">Con licencia</span>}
-      </span>
-    </button>
-  );
 }
 
 // Un grupo de eventos (Juegos, Contadores, Chat) en UNA tarjeta, con una fila
@@ -136,12 +106,13 @@ function EventGroupCard({ group, locked, onGo, statuses }) {
             <button
               type="button"
               onClick={() => onGo(t.id)}
-              aria-label={locked ? `${t.label} (requiere licencia)` : undefined}
+              aria-label={locked && !t.free ? `${t.label} (requiere licencia)` : undefined}
               className="tkc-row-link w-full text-left px-3 py-2 flex flex-col gap-0.5"
             >
               <span className="flex items-center justify-between gap-2">
                 <span className="text-sm font-bold text-white leading-tight">{t.label}</span>
                 {!locked && <EventStatusBadge status={statuses?.[t.id]} />}
+                {locked && t.free && <span className="tkc-meta">Gratis</span>}
               </span>
               <span className="tkc-hint">{statuses?.[t.id]?.tone === 'setup' && !locked ? statuses[t.id].detail : t.hint}</span>
             </button>
@@ -230,18 +201,6 @@ export default function Dashboard({
               : 'Inicia sesión o prueba gratis para desbloquear todo el panel.'}
           </p>
         </div>
-        {session && connected && (
-          <span role="status" className="tkc-status-pill tkc-status-live self-start sm:self-auto">
-            <span className="tkc-status-pip" aria-hidden="true" />
-            En vivo
-          </span>
-        )}
-        {session && !connected && (
-          <span role="status" className="tkc-status-pill self-start sm:self-auto">
-            <span className="tkc-status-pip" aria-hidden="true" />
-            Sin conexión en vivo
-          </span>
-        )}
       </header>
 
       {/* Una sola llamada a la acción para quien llega sin licencia: probar
@@ -262,6 +221,71 @@ export default function Dashboard({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Preparar el directo: conexión con TikTok, TTS y plan, antes que nada. */}
+      {session && (
+        <section className="w-full max-w-5xl" aria-label="Estado de tu cuenta">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="theme-surface p-4 flex flex-col gap-2">
+              <h2 className="tkc-card-title">Conexión a TikTok</h2>
+              <TikTokLoginBar
+                username={username} setUsername={setUsername}
+                connectionStatus={connectionStatus} connectionError={connectionError}
+                disabled={usernameLocked} onDisconnect={onDisconnectTikTok}
+              />
+              {!connected && connectionStatus !== 'connecting' && connectionStatus !== 'checking' && (
+                <p className="tkc-hint">Conéctate cuando vayas a empezar tu directo. Puedes dejar todo configurado antes.</p>
+              )}
+            </div>
+
+            <div className="theme-surface p-4 flex flex-col gap-2">
+              <h2 className="tkc-card-title">TTS del chat</h2>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-white">{ttsEnabled ? 'Activado' : 'Apagado'}</span>
+                <button
+                  type="button"
+                  onClick={onToggleTts}
+                  disabled={ttsLocked || (!ttsEnabled && !connected)}
+                  className={`font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-sm ${ttsEnabled ? 'theme-btn-danger' : 'theme-btn-primary'}`}
+                >
+                  {ttsEnabled ? 'Apagar' : 'Prender'}
+                </button>
+              </div>
+              <p className="tkc-hint">
+                {ttsLocked
+                  ? 'El TTS no está incluido en tu plan actual.'
+                  : !connected && !ttsEnabled
+                    ? 'Necesitas estar conectado a un LIVE para prenderlo.'
+                    : 'Por seguridad se apaga solo cada vez que recargas la página.'}
+              </p>
+            </div>
+
+            <div className="theme-surface p-4 flex flex-col gap-1">
+              <h2 className="tkc-card-title">Tu plan</h2>
+              <p className="text-sm font-bold text-white">{planLabel(session.licenseType)}</p>
+              {daysLeft !== null ? (
+                <p className={`text-xs font-bold ${daysLeft <= 3 ? 'text-red-700' : 'text-gray-500'}`}>
+                  {daysLeft <= 0 ? 'Vence hoy' : `Vence en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`}
+                </p>
+              ) : (
+                <p className="tkc-hint">Sin fecha de vencimiento</p>
+              )}
+              <button type="button" onClick={() => onGoSection('membership')} className="theme-link theme-link-info text-left self-start">
+                Ver planes
+              </button>
+            </div>
+
+            <div className="theme-surface p-4 flex flex-col gap-2 md:col-span-3">
+              <h2 className="tkc-card-title">Estado del sistema</h2>
+              <SystemHealth
+                socketConnected={socketConnected} connectionStatus={connectionStatus}
+                ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
+                onResetVoice={onResetVoice} onReconnectTikTok={onReconnectTikTok}
+              />
+            </div>
+          </div>
+        </section>
       )}
 
       {/* Lo más urgente primero: lo que está en curso (o el último evento
@@ -306,91 +330,14 @@ export default function Dashboard({
       {/* Lo último que pasó en el directo: regalos (con su imagen y cuántos), seguidores y stickers. */}
       {session && <LiveFeed feed={feed} connected={connected} />}
 
-      {session && (
-        <section className="w-full max-w-5xl" aria-label="Estado de tu cuenta">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="theme-surface p-4 flex flex-col gap-2">
-              <h2 className="tkc-card-title">Conexión a TikTok</h2>
-              <TikTokLoginBar
-                username={username} setUsername={setUsername}
-                connectionStatus={connectionStatus} connectionError={connectionError}
-                disabled={usernameLocked} onDisconnect={onDisconnectTikTok}
-              />
-              {!connected && connectionStatus !== 'connecting' && connectionStatus !== 'checking' && (
-                <p className="tkc-hint">Conéctate cuando vayas a empezar tu directo. Puedes dejar todo configurado antes.</p>
-              )}
-            </div>
-
-            <div className="theme-surface p-4 flex flex-col gap-2">
-              <h2 className="tkc-card-title">TTS del chat</h2>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-white">{ttsEnabled ? 'Activado' : 'Apagado'}</span>
-                <button
-                  type="button"
-                  onClick={onToggleTts}
-                  disabled={ttsLocked || (!ttsEnabled && !connected)}
-                  className={`font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed theme-btn-sm ${ttsEnabled ? 'theme-btn-danger' : 'theme-btn-primary'}`}
-                >
-                  {ttsEnabled ? 'Apagar' : 'Prender'}
-                </button>
-              </div>
-              <p className="tkc-hint">
-                {ttsLocked
-                  ? 'El TTS no está incluido en tu plan actual.'
-                  : !connected && !ttsEnabled
-                    ? 'Necesitas estar conectado a un LIVE para prenderlo.'
-                    : 'Por seguridad se apaga solo cada vez que recargas la página.'}
-              </p>
-            </div>
-
-            <div className="theme-surface p-4 flex flex-col gap-1">
-              <h2 className="tkc-card-title">Tu plan</h2>
-              <p className="text-sm font-bold text-white capitalize">{session.licenseType === 'trial' ? 'Prueba gratis' : session.licenseType || '—'}</p>
-              {daysLeft !== null ? (
-                <p className={`text-xs font-bold ${daysLeft <= 3 ? 'text-red-700' : 'text-gray-500'}`}>
-                  {daysLeft <= 0 ? 'Vence hoy' : `Vence en ${daysLeft} día${daysLeft === 1 ? '' : 's'}`}
-                </p>
-              ) : (
-                <p className="tkc-hint">Sin fecha de vencimiento</p>
-              )}
-              <button type="button" onClick={() => onGoSection('membership')} className="theme-link theme-link-info text-left self-start">
-                Ver planes
-              </button>
-            </div>
-
-            <div className="theme-surface p-4 flex flex-col gap-2 md:col-span-3">
-              <h2 className="tkc-card-title">Estado del sistema</h2>
-              <SystemHealth
-                socketConnected={socketConnected} connectionStatus={connectionStatus}
-                ttsEnabled={ttsEnabled} ttsEngine={ttsEngine}
-                onResetVoice={onResetVoice} onReconnectTikTok={onReconnectTikTok}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-
       <section className="w-full max-w-5xl" aria-labelledby="dash-events">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-2 px-1">
-          <h2 id="dash-events" className="tkc-section-title">Eventos</h2>
-          {!session && <p className="tkc-meta">Requieren licencia o la prueba gratis</p>}
+          <h2 id="dash-events" className="tkc-section-title">Juegos y herramientas</h2>
+          {!session && <p className="tkc-meta">Con licencia o la prueba gratis, salvo Color Says</p>}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {EVENT_GROUPS.map((group) => (
             <EventGroupCard key={group.id} group={group} locked={!session} onGo={onGoEventTab} statuses={eventStatuses} />
-          ))}
-        </div>
-      </section>
-
-      <section className="w-full max-w-5xl" aria-labelledby="dash-tools">
-        <h2 id="dash-tools" className="tkc-section-title mb-2 px-1">Herramientas y ajustes</h2>
-        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {SECTION_SHORTCUTS.map((s) => (
-            <ShortcutCard
-              key={s.id} icon={s.id} label={s.label} hint={s.hint}
-              locked={!session && !s.free}
-              onClick={() => onGoSection(s.id)}
-            />
           ))}
         </div>
       </section>

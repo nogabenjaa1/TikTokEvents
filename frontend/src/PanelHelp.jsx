@@ -39,7 +39,7 @@ export function StartRequirement({ connectionStatus, active, error }) {
         <p role="status" className="text-xs text-amber-500 font-bold mb-3 leading-snug">
           {connecting
             ? 'Conectando con tu LIVE... en cuanto se confirme podrás iniciar.'
-            : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde el Dashboard). Mientras tanto puedes dejar todo configurado.'}
+            : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde Inicio). Mientras tanto puedes dejar todo configurado.'}
         </p>
       )}
     </>

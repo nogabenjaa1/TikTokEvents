@@ -210,7 +210,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
       <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
         <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h1>
+          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
         </div>
 
         <HowItWorks storageKey="roulette">

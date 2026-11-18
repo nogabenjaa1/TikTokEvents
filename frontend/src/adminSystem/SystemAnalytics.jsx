@@ -8,8 +8,8 @@ import { SkeletonKpis } from '../PanelHelp';
 const RANGES = [7, 30, 90];
 
 const PAGE_NAMES = {
-  '/': 'Inicio', '/dashboard': 'Dashboard', '/membership': 'Membresía', '/colordice': 'ColorDice',
-  '/overlays': 'Overlays', '/downloader': 'Downloader', '/theme': 'Tema', '/licenses': 'Licencias', '/system': 'Sistema',
+  '/': 'Inicio (/)', '/dashboard': 'Inicio', '/membership': 'Mi plan', '/colordice': 'Color Says',
+  '/overlays': 'Overlays de OBS', '/downloader': 'Descargas', '/theme': 'Tema', '/licenses': 'Licencias', '/system': 'Sistema',
   '/aviso-legal': 'Aviso legal', '/privacidad': 'Aviso de privacidad', '/cookies': 'Cookies', '/tiktokevents': 'TikTokEvents',
 };
 const pageName = (path) => PAGE_NAMES[path] || (path.startsWith('/tiktokevents/') ? `TikTokEvents · ${path.split('/')[2]}` : path);

@@ -152,7 +152,7 @@ export default function ChatPanel({ socket, viewerCount, customization }) {
       <div className="theme-surface w-full max-w-4xl p-6 relative">
         <div className="flex items-center gap-3 mb-6">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">CHAT</h1>
+          <h2 className="theme-heading text-2xl font-semibold tracking-wide">CHAT</h2>
         </div>
 
         <HowItWorks storageKey="chat">

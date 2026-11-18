@@ -419,8 +419,7 @@ export default function OverlayLink({ socket, tapTapState, tapTapDiagnostics, gi
             ancho, antes de cualquier overlay. */}
         <header className="w-full max-w-5xl flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <p className="theme-accent-text tkc-eyebrow">Overlays</p>
-            <h1 className="theme-heading text-2xl font-black">Tus overlays para OBS</h1>
+            <h1 className="tkc-page-title">Tus overlays para OBS</h1>
             <p className="text-sm text-gray-500">Toca una miniatura para cambiar cómo se ve: elige un estilo y listo.</p>
           </div>
           <button

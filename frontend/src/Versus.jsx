@@ -168,7 +168,7 @@ export default function Versus({ state, socket, username, connectionStatus, gift
       <div className="w-full max-w-4xl">
         <div className="flex items-center gap-3 mb-2">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">VERSUS</h1>
+          <h2 className="theme-heading text-2xl font-semibold tracking-wide">VERSUS</h2>
         </div>
         <HowItWorks storageKey="versus">
           <p>Asigna regalos a <span className="font-bold text-white">héroes</span> y a <span className="font-bold text-white">villanos</span>, y cada regalo suma sus monedas al marcador de su lado — el overlay muestra cuántas monedas lleva cada lado y los íconos de los regalos que le suman.</p>

@@ -679,7 +679,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
       <div className="w-full max-w-2xl flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black mb-1">Alertas</p>
-          <h1 className="theme-heading text-2xl font-semibold tracking-wide">Mis alertas</h1>
+          <h2 className="theme-heading text-2xl font-semibold tracking-wide">Mis alertas</h2>
           <p className="text-xs text-gray-500 mt-1 max-w-md">Lo que aparece (y suena) en tu stream cuando alguien te manda un regalo, te sigue o usa un sticker.</p>
           {quotaView && !loading && (
             quotaView.unlimited ? (
@@ -812,7 +812,7 @@ export default function AlertsAdmin({ giftsList, socket, customization, onCustom
         <div className="flex items-center gap-3">
           <div className="theme-accent-bg w-3 h-8 rounded-full" />
           <div>
-            <h1 className="theme-heading text-2xl font-semibold tracking-wide">{editingId ? 'Editar alerta' : 'Nueva alerta'}</h1>
+            <h2 className="theme-heading text-2xl font-semibold tracking-wide">{editingId ? 'Editar alerta' : 'Nueva alerta'}</h2>
             <p className="text-xs text-gray-500">
               {editingId
                 ? 'Cambia lo que quieras, incluido el disparador. Si eliges uno que ya tiene otra alerta, tendrás que resolverlo antes de guardar.'

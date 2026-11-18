@@ -66,6 +66,33 @@ const PATHS = {
       <circle cx="17" cy="18" r="2" />
     </>
   ),
+  games: (
+    <>
+      <path d="M7.5 7h9a5 5 0 0 1 4.8 6.3l-.9 3.4a2.3 2.3 0 0 1-4 .8L14.6 15H9.4l-1.8 2.5a2.3 2.3 0 0 1-4-.8l-.9-3.4A5 5 0 0 1 7.5 7Z" />
+      <path d="M8 10v3M6.5 11.5h3" />
+      <circle cx="15.5" cy="10.5" r=".9" fill="currentColor" />
+      <circle cx="17.5" cy="12.5" r=".9" fill="currentColor" />
+    </>
+  ),
+  chat: (
+    <>
+      <path d="M4 5.5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4.5 3.5V16.5H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z" />
+      <path d="M7.5 10h9M7.5 13h5.5" />
+    </>
+  ),
+  timer: (
+    <>
+      <circle cx="12" cy="13.5" r="7.5" />
+      <path d="M12 9.5v4l2.5 2M9.5 2.5h5M12 2.5v3.5" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5.5" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.3" fill="currentColor" />
+    </>
+  ),
   enter: (
     <>
       <path d="M14 3.5h4a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-4" />

@@ -13,10 +13,25 @@ export default function AudioUnlockBanner({ enabled }) {
   useEffect(() => {
     if (!enabled || alreadyActive()) { setBlocked(false); return undefined; }
     setBlocked(true);
-    const unlock = () => { unlockSounds(); setBlocked(false); };
+    // El sonido se desbloquea al presionar (ahí el navegador ya cuenta la
+    // interacción), pero el aviso se quita recién DESPUÉS del clic: si se
+    // quitaba al presionar, toda la página subía lo que mide el aviso antes de
+    // soltar y el clic caía en otro lugar (el primer clic en la navegación no
+    // hacía nada).
+    let hideTimer = null;
+    const hide = () => { hideTimer = setTimeout(() => setBlocked(false), 0); };
+    const unlock = (event) => {
+      unlockSounds();
+      if (event.type === 'keydown') hide();
+      else window.addEventListener('click', hide, { once: true });
+    };
     const events = ['pointerdown', 'keydown', 'touchstart'];
     events.forEach((name) => window.addEventListener(name, unlock, { once: true, passive: true }));
-    return () => events.forEach((name) => window.removeEventListener(name, unlock));
+    return () => {
+      events.forEach((name) => window.removeEventListener(name, unlock));
+      window.removeEventListener('click', hide);
+      clearTimeout(hideTimer);
+    };
   }, [enabled]);
 
   if (!blocked) return null;
@@ -24,7 +39,7 @@ export default function AudioUnlockBanner({ enabled }) {
     <div role="status" className="w-full border-b-2 bg-amber-500/15 border-amber-500 text-[11px] py-2 px-3 flex-shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
       <span className="font-bold tracking-wide text-white">El sonido de las alertas está esperando tu primer clic.</span>
       <span className="hidden sm:inline text-gray-300">Tu navegador no deja reproducir audio hasta que interactúes con esta pestaña.</span>
-      <button type="button" onClick={() => { unlockSounds(); setBlocked(false); }} className="theme-btn-primary theme-btn-sm font-black uppercase tracking-widest">
+      <button type="button" onClick={() => { unlockSounds(); setBlocked(false); }} className="theme-btn-primary theme-btn-sm font-bold">
         Activar sonido
       </button>
     </div>

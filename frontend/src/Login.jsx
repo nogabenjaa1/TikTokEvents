@@ -33,6 +33,9 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
+  // Dentro de un área (Juegos, Alertas y chat…) ya hay un h1 arriba: el título va como h2.
+  const Title = embedded ? 'h2' : 'h1';
+
   const submit = async (e) => {
     e.preventDefault();
     if (!key.trim() || loading) return;
@@ -70,7 +73,7 @@ export default function Login({ onLoggedIn, notice = '', embedded = false, onWan
             <img src={logoMark} alt="" className="h-7 w-auto flex-shrink-0" />
             <span className="text-sm font-extrabold text-white">BenjaApis</span>
           </div>
-          <h1 className="tkc-page-title">Entra a tu panel</h1>
+          <Title className="tkc-page-title">Entra a tu panel</Title>
           <p className="tkc-hint mt-1 mb-6">Usa tu clave de licencia para abrir tus juegos, alertas y overlays.</p>
 
           {notice && <p role="status" className="theme-notice theme-notice-info mb-4">{notice}</p>}

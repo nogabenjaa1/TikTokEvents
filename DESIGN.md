@@ -356,6 +356,15 @@ Las barras de Eventos, Overlays y Sistema: pestañas de 36px con texto de 13px e
 - `tkc-filter`: filtro en fila con `aria-pressed`; elegido, relleno del acento.
 - `theme-notice-info`: aviso informativo (azul de estado), para lo que no es error ni advertencia (p. ej. "Necesitas una licencia…").
 
+### Paneles de juego (`GameStage`, `SettingsTitle` en `PanelHelp.jsx`)
+Rey del Trono, Zubastinis, Eliminación y Ruleta comparten la misma estructura (`.tkc-game-layout`): **escenario**, **controles** y **premio** a la izquierda; **ajustes** a la derecha. En el celular, una columna.
+- **Escenario** (`GameStage`, `.tkc-stage`): el nombre del juego, la **fase** como píldora (`.tkc-phase`) y el **reloj** grande (`.tkc-timer`, 48px, cifras tabulares). Debajo, lo propio de cada juego: quién está en el trono (Rey del Trono), el top 3 con puestos y monedas (Zubastinis), los que siguen en pie, el último sorteo y las entradas de cada uno (Eliminación), las entradas en juego (Ruleta).
+- **Tonos de fase**: `idle` (sin iniciar o esperando), `live` (en curso; el punto late), `snipe` (snipe o reingreso, rojo), `tiebreak` (desempate, ámbar), `paused` (en pausa), `finished` (terminado, verde) y `nowinner` (sin ganador, rojo). Una línea de 2px arriba del escenario toma el color de la fase: el acento mientras corre. Se retiró el destello amarillo que latía sin parar al terminar.
+- **Resultado** (`.tkc-stage-result`): ganador en verde o "sin ganador" en rojo, con el motivo.
+- **Ajustes**: título "Ajustes" (`SettingsTitle`), cada campo en `.tkc-field` con su `.tkc-field-label` en minúsculas normales. Los que tienen significado de estado llevan `data-tone`: Insta-Win y desempate en ámbar (`warning`), snipe y reingreso en rojo (`danger`), premio en verde (`premio`). Los interruptores (Offstream, Fast Mode, Locked Mode, Modo Chat/Gift, posición ganadora) son `.tkc-option` con `aria-pressed`.
+- **Controles**: Iniciar / Pausar / Reiniciar / Detener en mayúsculas (la voz de acción), `theme-btn-lg`; los avisos de por qué no se puede iniciar son `theme-notice-warning`.
+- **Color Says** no usa escenario: su zona de dados (`.theme-die-frame`) es lo que algunos streamers recortan de la ventana en OBS. Arriba de los dados solo va la leyenda de colores; los paneles de Win Bonus, Modo Seguro y Modo invitado flotan a la derecha en escritorio, debajo del encabezado del área.
+
 ### Franja de Premio (componente propio)
 Franja horizontal fija (imagen 50×50 + título) que comparten los tres juegos de regalos para mostrar el premio configurado. Usa siempre esmeralda fijo (`emerald-900/25` fondo, `emerald-500/40` borde), independiente del acento del tema — es la única superficie de "contenido de juego" que no sigue al acento, porque comunica un estado de negocio (premio), no navegación de marca.
 

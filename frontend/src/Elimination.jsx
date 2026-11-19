@@ -1,4 +1,4 @@
-import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton, GameStage, SettingsTitle } from './PanelHelp';
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GiftPicker from './GiftPicker';
@@ -38,11 +38,12 @@ function ParticipantBlock({ p, size }) {
   );
 }
 
-const MODE_LABEL = {
-  joining:   'TIEMPO PARA UNIRSE',
-  revealing: 'SORTEANDO...',
-  result:    'RESULTADO',
-  rejoin:    'TIEMPO DE REINGRESO',
+// Nombre de cada fase en el escenario.
+const PHASE = {
+  joining:   { phase: 'Tiempo para unirse', tone: 'live' },
+  revealing: { phase: 'Sorteando…', tone: 'live' },
+  result:    { phase: 'Resultado del sorteo', tone: 'live' },
+  rejoin:    { phase: 'Tiempo de reingreso', tone: 'snipe' },
 };
 
 // ─────────────────────────────────────────────
@@ -173,78 +174,64 @@ export default function Elimination({ state, socket, username, connectionStatus,
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [participants]);
 
-  const timerTitle = state.paused ? 'PAUSADO' : state.mode === 'finished' ? 'FINALIZADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
+  // Fase del juego para el escenario: qué está pasando y con qué tono.
+  const stage = !state.isActive ? { phase: 'Sin iniciar', tone: 'idle' }
+    : state.mode === 'finished' ? (state.winner ? { phase: 'Terminado', tone: 'finished' } : { phase: 'Sin ganador', tone: 'nowinner' })
+    : state.paused ? { phase: 'En pausa', tone: 'paused' }
+    : PHASE[state.mode] || { phase: 'En curso', tone: 'live' };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
       {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
       <div className="tkc-game-layout">
 
-      {/* Preview */}
-      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
-        {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
-
-        <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text tkc-eyebrow">ELIMINACIÓN</p>
-          <div className="text-right">
-            <p className="tkc-label text-gray-500">{timerTitle}</p>
-            <p className={`text-3xl font-black tabular-nums transition-colors ${state.paused ? 'text-gray-500' : state.mode === 'rejoin' ? 'text-red-500' : 'text-white'}`}>
-              {formatMMSS(state.timeLeft || 0)}
-            </p>
-          </div>
-        </div>
-
+      {/* Escenario: quién sigue en pie, quién acaba de caer y cuánto falta. */}
+      <GameStage title={offstream ? 'Eliminación · Offstream' : 'Eliminación'} phase={stage.phase} tone={stage.tone} timer={formatMMSS(state.timeLeft || 0)}>
         {(state.lastEliminatedList || []).length > 0 && state.mode !== 'idle' && (
-          <div className="flex flex-col gap-1.5 mb-3 relative z-10">
+          <ul className="flex flex-col gap-1.5" aria-label="Último sorteo">
             {state.lastEliminatedList.map((e, i) => (
-              <div key={e.username + i} className="flex items-center gap-2 theme-notice">
-                <img alt="" src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
-                <span className="text-xs font-bold text-red-300">
-                  @{e.username} {e.final === false ? 'perdió un slot (todavía sigue en pie)' : 'fue eliminado'}
-                </span>
-              </div>
+              <li key={e.username + i} className="theme-notice flex items-center gap-2">
+                <img alt="" src={e.avatar} className="w-7 h-7 rounded-full object-cover grayscale" />
+                <span>@{e.username} {e.final === false ? 'perdió una entrada (sigue en pie)' : 'fue eliminado'}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
 
         {state.mode === 'finished' ? (
-          <p className="relative z-10 text-center text-sm font-black text-yellow-300">
-            {state.winner ? `GANADOR: @${state.winner.username}` : 'SIN GANADOR — nadie participó'}
+          <p className="tkc-stage-result" data-tone={state.winner ? 'finished' : 'nowinner'}>
+            {state.winner ? `Ganador: @${state.winner.username}` : 'Sin ganador: nadie participó.'}
           </p>
         ) : participants.length > 0 ? (
-          <div className="flex flex-wrap gap-2 justify-center relative z-10 max-h-52 overflow-y-auto">
-            {participants.map(p => <ParticipantBlock key={p.id} p={p} size={size} />)}
-          </div>
+          <>
+            <p className="tkc-meta -mt-2">
+              {distinctCount} participante{distinctCount === 1 ? '' : 's'} en pie · {participants.length} entrada{participants.length === 1 ? '' : 's'}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center max-h-52 overflow-y-auto">
+              {participants.map(p => <ParticipantBlock key={p.id} p={p} size={size} />)}
+            </div>
+          </>
         ) : (
-          <p className="text-gray-600 text-sm italic font-medium relative z-10">Nadie se ha unido todavía...</p>
+          <p className="tkc-stage-empty">{offstream ? 'Nadie todavía. Agrega participantes en "Participantes y entradas".' : 'Nadie se ha unido todavía. Entran al mandar el regalo para unirse.'}</p>
         )}
 
-        {participants.length > 0 && state.mode !== 'finished' && (
-          <p className="tkc-hint text-center mt-2 relative z-10">
-            {participants.length} slot{participants.length === 1 ? '' : 's'} · {distinctCount} participante{distinctCount === 1 ? '' : 's'}
-          </p>
-        )}
-
-        {/* Cuántos slots tiene cada uno, para saber quién arriesga más en el
-            próximo sorteo (a más slots, más chances de perder uno). */}
+        {/* Cuántas entradas tiene cada uno, para saber quién arriesga más en el
+            próximo sorteo (a más entradas, más chances de perder una). */}
         {slotCounts.length > 0 && state.mode !== 'finished' && (
-          <div className="relative z-10 mt-2 max-h-32 overflow-y-auto space-y-1">
+          <ol className="max-h-32 overflow-y-auto flex flex-col gap-1" aria-label="Entradas por participante">
             {slotCounts.map(([username, count]) => (
-              <div key={username} className="theme-input flex items-center justify-between px-2 py-1">
-                <span className="text-gray-300 text-xs truncate">@{username}</span>
-                <span className="text-yellow-400 text-xs font-bold flex-shrink-0 ml-2">{count} slot{count === 1 ? '' : 's'}</span>
-              </div>
+              <li key={username} className="tkc-stage-row py-1.5">
+                <span className="flex-1 text-white text-xs font-semibold truncate">@{username}</span>
+                <span className="tkc-coins text-xs">{count} entrada{count === 1 ? '' : 's'}</span>
+              </li>
             ))}
-          </div>
+          </ol>
         )}
-      </div>
+      </GameStage>
 
       {/* Settings */}
       <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
-        </div>
+        <SettingsTitle />
 
         <HowItWorks storageKey="elim">
         <p>Con <span className="font-bold text-white">Offstream</span> se juega igual pero solo con entradas manuales, sin conectar TikTok.</p>
@@ -256,12 +243,12 @@ export default function Elimination({ state, socket, username, connectionStatus,
           <div>
 
             {/* Offstream: solo entradas manuales, sin TikTok */}
-            <div className="mb-5">
+            <div className="tkc-field">
               <button type="button" onClick={() => !state.isActive && setOffstreamDraft(o => !o)} aria-pressed={offstream}
                 disabled={state.isActive}
-                className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${offstream ? 'theme-btn-primary' : 'theme-btn-secondary'} ${state.isActive ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`tkc-option w-full justify-center ${state.isActive ? 'opacity-70 cursor-not-allowed' : ''}`}
                 title={state.isActive ? 'Se elige antes de iniciar: detén la ronda para cambiarlo' : 'Jugar solo con entradas manuales, sin conectar TikTok'}>
-                Offstream (sin TikTok)
+                <span className="tkc-option-label">Offstream (sin TikTok)</span>
               </button>
               <p className="tkc-hint mt-1">
                 {offstream
@@ -273,8 +260,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
 
             {!offstream && (<>
             {/* Selector regalo para unirse */}
-            <div className="mb-4 relative z-20">
-              <label className="tkc-label block text-gray-400 mb-1">REGALO PARA UNIRSE<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
+            <div className="tkc-field relative z-20">
+              <label className="tkc-field-label">Regalo para unirse<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
@@ -287,8 +274,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </div>
 
             {/* Selector Insta-Win */}
-            <div className="mb-6 relative z-10">
-              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
+            <div className="tkc-field relative z-10">
+              <label className="tkc-field-label" data-tone="warning">Insta-Win<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -303,28 +290,24 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </>)}
 
             {/* Base Time */}
-            <div className="pt-2 mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="theme-label tkc-label">
-                  TIEMPO PARA UNIRSE<LiveTag active={state.isActive} title="Si el tiempo para unirse está corriendo, salta al tiempo nuevo; si no, se usa en la próxima ronda" />
-                </label>
-              </div>
+            <div className="tkc-field">
+              <label className="tkc-field-label">
+                Tiempo para unirse<LiveTag active={state.isActive} title="Si el tiempo para unirse está corriendo, salta al tiempo nuevo; si no, se usa en la próxima ronda" />
+              </label>
               <TimeInput seconds={baseTime} onChange={setBaseTime} />
             </div>
 
             {/* Rejoin Time */}
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <label className="tkc-label text-red-400">
-                  TIEMPO DE REINGRESO<LiveTag active={state.isActive} title="Si el reingreso está corriendo, salta al tiempo nuevo; si no, se usa en el próximo" />
-                </label>
-              </div>
+            <div className="tkc-field">
+              <label className="tkc-field-label" data-tone="danger">
+                Tiempo de reingreso<LiveTag active={state.isActive} title="Si el reingreso está corriendo, salta al tiempo nuevo; si no, se usa en el próximo" />
+              </label>
               <TimeInput seconds={rejoinTime} onChange={setRejoinTime} />
             </div>
 
             {/* Cuántos caen por ronda */}
-            <div className="mb-4">
-              <label className="tkc-label block text-gray-400 mb-1">ELIMINADOS POR RONDA<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
+            <div className="tkc-field">
+              <label className="tkc-field-label">Eliminados por ronda<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
               <input
                 type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
@@ -334,8 +317,8 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </div>
 
             {/* Fase final: cambia cuántos caen por ronda al quedar pocas entradas */}
-            <div className="mb-4">
-              <label className="tkc-label block text-gray-400 mb-1">FASE FINAL<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
+            <div className="tkc-field">
+              <label className="tkc-field-label">Fase final<LiveTag active={state.isActive} title="Se usa en el próximo sorteo" /></label>
               <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
                 <span>Cuando queden</span>
                 <input
@@ -360,17 +343,17 @@ export default function Elimination({ state, socket, username, connectionStatus,
             </div>
 
             {/* Fast Mode / Locked Mode */}
-            <div className="flex gap-3 mb-6">
+            <div className="tkc-field flex gap-3 mb-6">
               <button type="button" onClick={() => setFastMode(f => !f)} aria-pressed={!!fastMode}
-                className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                className="tkc-option flex-1 justify-center"
                 title="Reduce las animaciones de sorteo/resultado a la mitad (1s en vez de 2s)">
-                Fast Mode
+                <span className="tkc-option-label">Fast Mode</span>
               </button>
               <button type="button" onClick={() => !lockedModeLocked && setLockedMode(l => !l)} aria-pressed={!!lockedMode}
                 disabled={lockedModeLocked}
-                className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-md ${lockedMode ? 'theme-btn-primary' : 'theme-btn-secondary'} ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`tkc-option flex-1 justify-center ${lockedModeLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
                 title={lockedModeLocked ? 'No se puede desactivar hasta Detener o Reiniciar la ronda' : 'Solo participa quien entró durante el tiempo para unirse inicial — nadie nuevo se suma después'}>
-                Locked Mode
+                <span className="tkc-option-label">Locked Mode</span>
               </button>
             </div>
             {lockedModeLocked && <p className="tkc-hint -mt-4 mb-4">Locked Mode no se puede apagar con la ronda en curso: así nadie entra a último momento. Se libera al detener o reiniciar.</p>}
@@ -392,7 +375,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
       <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
         {/* Offstream no necesita LIVE: sin el aviso de conexión. */}
         <StartRequirement connectionStatus={offstream ? 'connected' : connectionStatus} active={state.isActive} error={startError} />
-        {!state.isActive && !offstream && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+        {!state.isActive && !offstream && connectionStatus === 'connected' && !selectedGift && <p role="status" className="theme-notice theme-notice-warning mb-3">Elige el regalo para unirse para iniciar.</p>}
 
         {/* Botones */}
         <div className="flex flex-wrap gap-3">
@@ -400,7 +383,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
             <button
               onClick={() => runLocked(startElimination)}
               disabled={offstream ? actionLocked : (connectionStatus !== 'connected' || !selectedGift || actionLocked)}
-              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {offstream ? 'INICIAR OFFSTREAM' : connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
             </button>
@@ -412,7 +395,7 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 // servidor); reanudar, siempre que esté pausado.
                 disabled={state.mode === 'finished' || (!state.paused && state.mode !== 'joining')}
                 title={!state.paused && state.mode !== 'joining' ? 'Solo se puede pausar durante el tiempo para unirse' : undefined}
-                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-secondary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
@@ -420,16 +403,16 @@ export default function Elimination({ state, socket, username, connectionStatus,
                 needsConfirm={hasProgress}
                 onConfirm={() => runLocked(restartElimination)}
                 disabled={actionLocked}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-warning theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                REINICIAR ⟲
+                REINICIAR
               </ConfirmButton>
             </>
           )}
           <ConfirmButton
             needsConfirm={hasProgress}
             onConfirm={stopElimination}
-            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+            className="theme-btn-danger theme-btn-lg flex-1 sm:flex-none font-extrabold tracking-wider uppercase transition-all"
           >
             DETENER
           </ConfirmButton>

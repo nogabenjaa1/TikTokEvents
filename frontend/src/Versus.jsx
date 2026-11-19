@@ -91,7 +91,7 @@ function GiftSideEditor({ title, kind, list, siblingList, giftsList, cap, mode, 
         <button
           type="button" onClick={add}
           disabled={!draftGift || full || !!conflict(draftGift)}
-          className="theme-btn-primary theme-btn-sm font-black uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed"
+          className="theme-btn-primary theme-btn-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
         >
           ＋ Agregar
         </button>
@@ -164,12 +164,8 @@ export default function Versus({ state, socket, username, connectionStatus, gift
   const extVillains = state.extVillains || [];
 
   return (
-    <div className="min-h-screen text-white flex flex-col items-center p-6 pt-10 font-sans flex-1 gap-6 overflow-y-auto">
+    <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1 gap-6 overflow-y-auto">
       <div className="w-full max-w-4xl">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h2 className="theme-heading text-2xl font-semibold tracking-wide">VERSUS</h2>
-        </div>
         <HowItWorks storageKey="versus">
           <p>Asigna regalos a <span className="font-bold text-white">héroes</span> y a <span className="font-bold text-white">villanos</span>, y cada regalo suma sus monedas al marcador de su lado — el overlay muestra cuántas monedas lleva cada lado y los íconos de los regalos que le suman.</p>
           <p>Opcional: vincúlalo con el modo Extensible para que, además, algunos regalos sumen o resten segundos a su cuenta.</p>
@@ -206,22 +202,22 @@ export default function Versus({ state, socket, username, connectionStatus, gift
       </section>
 
       <section className="theme-surface w-full max-w-4xl p-6">
-        <h2 className="theme-heading text-lg font-semibold mb-4">Ajustes</h2>
+        <h2 className="tkc-section-title text-base mb-4">Ajustes</h2>
         <div className="grid sm:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">Título del lado héroes</label>
+            <label className="tkc-field-label block mb-1.5">Título del lado héroes</label>
             <input type="text" value={heroLabel} onChange={(e) => setHeroLabel(e.target.value.slice(0, 30))} className="theme-input w-full p-2 text-sm outline-none" />
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">Título del lado villanos</label>
+            <label className="tkc-field-label block mb-1.5">Título del lado villanos</label>
             <input type="text" value={villainLabel} onChange={(e) => setVillainLabel(e.target.value.slice(0, 30))} className="theme-input w-full p-2 text-sm outline-none" />
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">Acción de los héroes (opcional)</label>
+            <label className="tkc-field-label block mb-1.5">Acción de los héroes (opcional)</label>
             <input type="text" value={heroAction} onChange={(e) => setHeroAction(e.target.value.slice(0, MAX_ACTION_TEXT))} placeholder="Ej: hablar" className="theme-input w-full p-2 text-sm outline-none" />
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1 font-semibold">Acción de los villanos (opcional)</label>
+            <label className="tkc-field-label block mb-1.5">Acción de los villanos (opcional)</label>
             <input type="text" value={villainAction} onChange={(e) => setVillainAction(e.target.value.slice(0, MAX_ACTION_TEXT))} placeholder="Ej: silencio" className="theme-input w-full p-2 text-sm outline-none" />
           </div>
         </div>
@@ -230,7 +226,7 @@ export default function Versus({ state, socket, username, connectionStatus, gift
           Vincular con el modo Extensible (algunos regalos suman/restan segundos a su cuenta)
         </label>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={saveSettings} className="theme-btn-primary theme-btn-md font-black uppercase tracking-widest">
+          <button type="button" onClick={saveSettings} className="theme-btn-primary theme-btn-md font-bold">
             Guardar ajustes
           </button>
           {settingsSaved && <span className="text-[11px] font-bold text-green-400 tkc-pop">Guardado</span>}

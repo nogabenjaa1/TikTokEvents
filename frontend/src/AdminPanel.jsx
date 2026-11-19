@@ -1,4 +1,4 @@
-import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton, GameStage, SettingsTitle } from './PanelHelp';
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
@@ -110,63 +110,43 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
   // Los ajustes se pueden tocar en cualquier momento, sin LIVE conectado (pedido
   // explícito); solo el botón START exige "connected" a secas.
 
-  const timerLabel = state.paused ? 'PAUSADO' : (state.mode === 'waiting' ? 'ESPERANDO' : 'TIEMPO');
-  const timerColorClass = state.paused
-    ? 'text-gray-500'
-    : state.mode === 'snipe' ? 'text-red-500'
-    : state.mode === 'waiting' ? 'text-gray-500'
-    : 'text-white';
+  // Fase del juego para el escenario: qué está pasando y con qué tono.
+  const stage = !state.isActive ? { phase: 'Sin iniciar', tone: 'idle' }
+    : state.mode === 'finished' ? { phase: 'Terminado', tone: 'finished' }
+    : state.paused ? { phase: 'En pausa', tone: 'paused' }
+    : state.mode === 'waiting' ? { phase: 'Esperando el primer regalo', tone: 'idle' }
+    : state.mode === 'snipe' ? { phase: 'Snipe: último aviso', tone: 'snipe' }
+    : { phase: 'En curso', tone: 'live' };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
       {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
       <div className="tkc-game-layout">
 
-      {/* Preview del Admin */}
-      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
-        {state.mode === 'finished' && (
-          <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />
+      {/* Escenario: quién tiene el trono y cuánto le queda. */}
+      <GameStage title="Rey del Trono" phase={stage.phase} tone={stage.tone} timer={formatMMSS(state.timeLeft)}>
+        {state.lastParticipant ? (
+          <div className="flex items-center gap-3">
+            <img
+              src={state.lastParticipant.avatar}
+              alt=""
+              className="w-14 h-14 rounded-full object-cover flex-shrink-0"
+              style={{ boxShadow: `0 0 0 3px ${state.mode === 'finished' ? '#10B981' : 'var(--accent)'}` }}
+            />
+            <div className="min-w-0">
+              <p className="tkc-meta">{state.mode === 'finished' ? 'Ganador' : 'En el trono'}</p>
+              <p className="font-bold text-white text-lg leading-tight truncate">@{state.lastParticipant.username}</p>
+              <p className="tkc-meta truncate">{state.lastParticipant.giftName}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="tkc-stage-empty">Nadie en el trono todavía. El primero que mande el regalo objetivo lo toma.</p>
         )}
-        <div className="flex justify-between items-center relative z-10">
-          <div>
-            <p className="theme-accent-text tkc-eyebrow mb-1">REY DEL TRONO</p>
-            {state.lastParticipant ? (
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  {state.mode === 'finished' && (
-                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 z-20 theme-chip px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Ganador</span>
-                  )}
-                  <img
-                    src={state.lastParticipant.avatar}
-                    className="w-12 h-12 rounded-full border-[3px] border-green-400 object-cover"
-                  />
-                </div>
-                <div>
-                  <p className="font-bold text-gray-100 leading-tight">@{state.lastParticipant.username}</p>
-                  <p className="text-xs text-green-400">{state.lastParticipant.giftName}</p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-600 text-sm italic font-medium">Nadie todavía...</p>
-            )}
-          </div>
-          <div className="text-right">
-            <p className="tkc-label text-gray-500">
-              {timerLabel}
-            </p>
-            <p className={`text-4xl font-black tabular-nums transition-colors ${timerColorClass}`}>
-              {formatMMSS(state.timeLeft)}
-            </p>
-          </div>
-        </div>
-      </div>
+      </GameStage>
 
       {/* Panel principal de configuración */}
       <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
-        </div>
+        <SettingsTitle />
 
         <HowItWorks storageKey="king">
         <p>Quien manda el <span className="font-bold text-white">regalo objetivo</span> se queda con el trono y arranca su reloj. Si otra persona manda el regalo antes de que se acabe, le quita el lugar.</p>
@@ -177,8 +157,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
           <div>
 
             {/* Selector regalo normal */}
-            <div className="mb-4 relative z-20">
-              <label className="tkc-label block text-gray-400 mb-1">REGALO OBJETIVO<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
+            <div className="tkc-field relative z-20">
+              <label className="tkc-field-label">Regalo objetivo<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList.filter(g => g.coins > 0)}
                 selected={selectedGift}
@@ -191,8 +171,8 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             </div>
 
             {/* Selector Insta-Win */}
-            <div className="mb-6 relative z-10">
-              <label className="tkc-label block text-yellow-500 mb-1">INSTA-WIN<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
+            <div className="tkc-field relative z-10">
+              <label className="tkc-field-label" data-tone="warning">Insta-Win<LiveTag active={state.isActive} title="Los regalos que lleguen desde ahora cuentan con el nuevo valor" /></label>
               <GiftPicker
                 gifts={giftsList}
                 selected={selectedInstaWin}
@@ -206,17 +186,17 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             </div>
 
             {/* Base Time */}
-            <div className="pt-2 mb-4">
-              <label className="theme-label tkc-label block mb-1">
-                TIEMPO BASE<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo; si no, se usa la próxima vez que alguien tome el trono" />
+            <div className="tkc-field">
+              <label className="tkc-field-label">
+                Tiempo base<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo; si no, se usa la próxima vez que alguien tome el trono" />
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
-            <div className="mb-6">
-              <label className="tkc-label text-red-400 block mb-1">
-                TIEMPO DE SNIPE<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo; si no, se usa cuando empiece" />
+            <div className="tkc-field">
+              <label className="tkc-field-label" data-tone="danger">
+                Tiempo de snipe<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo; si no, se usa cuando empiece" />
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
@@ -232,7 +212,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
           después de los ajustes, como antes (ver .tkc-game-layout). */}
       <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
         <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-        {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+        {!state.isActive && connectionStatus === 'connected' && !selectedGift && <p role="status" className="theme-notice theme-notice-warning mb-3">Elige el regalo objetivo para iniciar.</p>}
 
         {/* Botones */}
         <div className="flex flex-wrap gap-3">
@@ -240,7 +220,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
             <button
               onClick={() => runLocked(startContest)}
               disabled={connectionStatus !== 'connected' || !selectedGift || actionLocked}
-              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
             </button>
@@ -249,7 +229,7 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
               <button
                 onClick={togglePause}
                 disabled={state.mode === 'finished'}
-                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-secondary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
@@ -257,16 +237,16 @@ export default function AdminPanel({ state, socket, username, connectionStatus, 
                 needsConfirm={hasProgress}
                 onConfirm={() => runLocked(restartContest)}
                 disabled={actionLocked}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-warning theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                REINICIAR ⟲
+                REINICIAR
               </ConfirmButton>
             </>
           )}
           <ConfirmButton
             needsConfirm={hasProgress}
             onConfirm={stopContest}
-            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+            className="theme-btn-danger theme-btn-lg flex-1 sm:flex-none font-extrabold tracking-wider uppercase transition-all"
           >
             DETENER
           </ConfirmButton>

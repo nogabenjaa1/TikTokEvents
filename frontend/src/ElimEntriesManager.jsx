@@ -86,7 +86,7 @@ export default function ElimEntriesManager({ state, socket }) {
   return (
     <div className="mb-6 pt-4 border-t border-white/10 space-y-4">
       <div>
-        <p className="tkc-label text-gray-400">PARTICIPANTES Y ENTRADAS</p>
+        <h3 className="tkc-section-title">Participantes y entradas</h3>
         <p className="tkc-hint mt-1">Agrega, corrige, quita o combina entradas. Cuentan igual que las que llegan por regalo. Con Locked Mode solo se pueden cambiar durante el tiempo para unirse.</p>
       </div>
 
@@ -100,7 +100,7 @@ export default function ElimEntriesManager({ state, socket }) {
 
       {/* Agregar entradas */}
       <div>
-        <label htmlFor="elim-add-user" className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADAS</label>
+        <label htmlFor="elim-add-user" className="tkc-field-label block mb-1.5">Agregar entradas</label>
         <div className="flex gap-2">
           <input
             id="elim-add-user" list="elim-known-users"
@@ -119,7 +119,7 @@ export default function ElimEntriesManager({ state, socket }) {
             className="theme-input w-16 p-2 text-center text-sm outline-none"
           />
           <button type="button" onClick={addEntries} disabled={!canAdd || !addUser.trim()}
-            className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+            className="theme-btn-secondary theme-btn-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
             Agregar
           </button>
         </div>
@@ -131,7 +131,7 @@ export default function ElimEntriesManager({ state, socket }) {
 
         {recentGifters.length > 0 && (
           <div className="mt-2">
-            <p className="tkc-label text-gray-500 mb-1">REGALARON EN ESTA RONDA</p>
+            <p className="tkc-field-label mb-1.5">Regalaron en esta ronda</p>
             <div className="flex flex-wrap gap-1.5">
               {recentGifters.map((g) => {
                 const inList = participantNames.has(g.username.toLowerCase());
@@ -155,7 +155,7 @@ export default function ElimEntriesManager({ state, socket }) {
       {/* Lista editable */}
       {rows.length > 0 && (
         <div>
-          <p className="tkc-label text-gray-400 mb-1">EN LA LISTA ({rows.length})</p>
+          <p className="tkc-field-label mb-1.5">En la lista <span className="tkc-meta">({rows.length})</span></p>
           {state.mode === 'revealing' && !lockedOut && <p className="tkc-hint mb-1">Espera a que termine el sorteo para editar las entradas.</p>}
           <ul className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
             {rows.map((r) => {
@@ -180,12 +180,12 @@ export default function ElimEntriesManager({ state, socket }) {
                   />
                   {changed ? (
                     <button type="button" onClick={() => saveEntries(r.username)} disabled={!canEdit}
-                      className="theme-btn-primary theme-btn-sm font-black uppercase flex-shrink-0 disabled:opacity-40">
+                      className="theme-btn-primary theme-btn-sm font-bold flex-shrink-0 disabled:opacity-40">
                       Guardar
                     </button>
                   ) : (
                     <ConfirmButton needsConfirm onConfirm={() => removeParticipant(r.username)} disabled={!canEdit} confirmLabel="¿Quitar?"
-                      className="theme-btn-danger theme-btn-sm font-black uppercase flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="theme-btn-danger theme-btn-sm font-bold flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
                       Quitar
                     </ConfirmButton>
                   )}
@@ -200,12 +200,12 @@ export default function ElimEntriesManager({ state, socket }) {
       {/* Combinar */}
       {rowA && rowB && (
         <fieldset className="theme-surface-featured p-4 space-y-3">
-          <legend className="tkc-label text-gray-400 px-1">COMBINAR PARTICIPANTES</legend>
+          <legend className="tkc-field-label px-1">Combinar participantes</legend>
           <p className="text-sm text-white">
             @{rowA.username} ({rowA.total}) + @{rowB.username} ({rowB.total}) = <span className="font-black">{rowA.total + rowB.total} entradas</span>
           </p>
           <div className="space-y-1.5 text-sm">
-            <p className="tkc-label text-gray-400">¿A QUIÉN SE LE QUEDAN?</p>
+            <p className="tkc-field-label">¿A quién se le quedan?</p>
             {[
               { id: 'a', label: `A @${rowA.username}`, hint: `@${rowB.username} sale de la lista` },
               { id: 'b', label: `A @${rowB.username}`, hint: `@${rowA.username} sale de la lista` },
@@ -233,10 +233,10 @@ export default function ElimEntriesManager({ state, socket }) {
           <div className="flex flex-wrap gap-2">
             <ConfirmButton needsConfirm onConfirm={mergeSelected} disabled={!canEdit || !destination}
               confirmLabel={destination ? `¿Combinar en @${destination}?` : undefined}
-              className="theme-btn-primary theme-btn-md flex-1 font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+              className="theme-btn-primary theme-btn-md flex-1 font-bold disabled:opacity-40 disabled:cursor-not-allowed">
               Combinar
             </ConfirmButton>
-            <button type="button" onClick={() => setSelected([])} className="theme-btn-secondary theme-btn-md font-black uppercase tracking-widest">
+            <button type="button" onClick={() => setSelected([])} className="theme-btn-secondary theme-btn-md font-bold">
               Cancelar
             </button>
           </div>

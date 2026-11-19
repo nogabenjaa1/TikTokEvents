@@ -1,4 +1,4 @@
-import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton, GameStage, SettingsTitle } from './PanelHelp';
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef } from 'react';
 import PrizeEditor from './PrizeEditor';
@@ -8,11 +8,6 @@ import { useEventDraft } from './app/eventSettingsContext';
 
 
 
-const MODE_LABEL = {
-  main:     'TIEMPO',
-  snipe:    'SNIPE',
-  tiebreak: 'DESEMPATE',
-};
 
 // ─────────────────────────────────────────────
 // ZUBASTINIS — Top 3 gifters en un tiempo dado
@@ -87,78 +82,52 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
   // explícito); solo el botón START exige "connected" a secas.
   const top3 = state.top3 || [];
 
-  const timerLabel = state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIMER');
-  const timerColorClass = state.paused
-    ? 'text-gray-500'
-    : state.mode === 'snipe' ? 'text-red-500'
-    : state.mode === 'tiebreak' ? 'text-amber-400'
-    : 'text-white';
-
   const noWinnerMessage = state.mode === 'finished' && !state.winner
     ? (state.noWinnerReason === 'minimum'
-        ? `Nadie alcanzó el mínimo de ${state.minCoins} monedas — SIN GANADOR`
-        : 'SIN GANADOR — nadie participó')
+        ? `Nadie alcanzó el mínimo de ${state.minCoins} monedas: sin ganador.`
+        : 'Sin ganador: nadie participó.')
     : null;
+
+  // Fase del juego para el escenario: qué está pasando y con qué tono.
+  const stage = !state.isActive ? { phase: 'Sin iniciar', tone: 'idle' }
+    : state.mode === 'finished' ? (state.winner ? { phase: 'Terminado', tone: 'finished' } : { phase: 'Sin ganador', tone: 'nowinner' })
+    : state.paused ? { phase: 'En pausa', tone: 'paused' }
+    : state.mode === 'snipe' ? { phase: 'Snipe: último aviso', tone: 'snipe' }
+    : state.mode === 'tiebreak' ? { phase: 'Desempate', tone: 'tiebreak' }
+    : { phase: 'En curso', tone: 'live' };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
       {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
       <div className="tkc-game-layout">
 
-      {/* Preview del leaderboard */}
-      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
-        {state.mode === 'finished' && (
-          <div className={`absolute inset-0 animate-pulse ${state.winner ? 'bg-yellow-500/20' : 'bg-red-500/10'}`} />
-        )}
-
-        {/* Mínimo configurado, siempre visible arriba */}
-        <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text tkc-eyebrow">ZUBASTINIS</p>
-          <span className="theme-input tkc-label px-2 py-1 text-gray-300">
-            MÍNIMO: {minCoins > 0 ? `${minCoins} monedas` : 'SIN MÍNIMO'}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center relative z-10 mb-3">
-          {state.mode === 'tiebreak' && (
-            <span className="tkc-label text-amber-400 animate-pulse">EMPATE</span>
-          )}
-          <div className="text-right ml-auto">
-            <p className="tkc-label text-gray-500">{timerLabel}</p>
-            <p className={`text-3xl font-black tabular-nums transition-colors ${timerColorClass}`}>
-              {formatMMSS(state.timeLeft || 0)}
-            </p>
-          </div>
-        </div>
-
+      {/* Escenario: el top 3 en vivo y cuánto falta. */}
+      <GameStage title="Zubastinis" phase={stage.phase} tone={stage.tone} timer={formatMMSS(state.timeLeft || 0)}>
+        <p className="tkc-meta -mt-2">Mínimo para ganar: {minCoins > 0 ? `${minCoins} monedas` : 'sin mínimo'}</p>
         {top3.length > 0 ? (
-          <div className="flex flex-col gap-2 relative z-10">
+          <ol className="flex flex-col gap-2">
             {top3.map((g, i) => (
-              <div key={g.username} className="theme-input flex items-center gap-3 px-3 py-2">
-                <span className="theme-accent-text text-sm font-black w-6 text-center">{i + 1}</span>
-                <img alt="" src={g.avatar} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: 'var(--accent)' }} />
-                <span className="flex-1 font-bold text-gray-100 text-sm truncate">@{g.username}</span>
-                <span className="text-yellow-400 text-xs font-black">{g.coins} monedas</span>
-              </div>
+              <li key={g.username} className="tkc-stage-row">
+                <span className={`tkc-rank ${i === 0 ? 'tkc-rank-1' : ''}`} aria-label={`Puesto ${i + 1}`}>{i + 1}</span>
+                <img alt="" src={g.avatar} className="w-8 h-8 rounded-full object-cover" />
+                <span className="flex-1 font-bold text-white text-sm truncate">@{g.username}</span>
+                <span className="tkc-coins">{g.coins} monedas</span>
+              </li>
             ))}
-          </div>
+          </ol>
         ) : (
-          <p className="text-gray-600 text-sm italic font-medium relative z-10">Nadie ha regalado todavía...</p>
+          <p className="tkc-stage-empty">Nadie ha regalado todavía. Aquí aparece el top 3 en cuanto lleguen regalos.</p>
         )}
-
         {state.mode === 'finished' && (
-          <p className={`relative z-10 mt-3 text-center text-sm font-black ${state.winner ? 'text-yellow-300' : 'text-red-400'}`}>
-            {state.winner ? `@${state.winner.username} — ${state.winner.coins} monedas` : noWinnerMessage}
+          <p className="tkc-stage-result" data-tone={state.winner ? 'finished' : 'nowinner'}>
+            {state.winner ? `Ganador: @${state.winner.username} con ${state.winner.coins} monedas` : noWinnerMessage}
           </p>
         )}
-      </div>
+      </GameStage>
 
       {/* Panel principal de configuración */}
       <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
-        </div>
+        <SettingsTitle />
 
         <HowItWorks storageKey="zub">
         <p>El reloj arranca en cuanto pulsas iniciar. Al terminar el tiempo gana quien <span className="font-bold text-white">más monedas haya regalado</span> en total.</p>
@@ -169,40 +138,38 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
           <div>
 
             {/* Base Time */}
-            <div className="pt-2 mb-4">
-              <label className="theme-label tkc-label block mb-1">
-                TIEMPO BASE<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo" />
+            <div className="tkc-field">
+              <label className="tkc-field-label">
+                Tiempo base<LiveTag active={state.isActive} title="Si el reloj principal está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={mainTime} onChange={setMainTime} />
             </div>
 
             {/* Snipe Time */}
-            <div className="mb-4">
-              <label className="tkc-label text-red-400 block mb-1">
-                TIEMPO DE SNIPE<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo" />
+            <div className="tkc-field">
+              <label className="tkc-field-label" data-tone="danger">
+                Tiempo de snipe<LiveTag active={state.isActive} title="Si el snipe está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={snipeTime} onChange={setSnipeTime} />
             </div>
 
             {/* Tiebreak Time */}
-            <div className="mb-4">
-              <label className="tkc-label text-amber-400 block mb-1">
-                TIEMPO DE DESEMPATE<LiveTag active={state.isActive} title="Si el desempate está corriendo, salta al tiempo nuevo" />
+            <div className="tkc-field">
+              <label className="tkc-field-label" data-tone="warning">
+                Tiempo de desempate<LiveTag active={state.isActive} title="Si el desempate está corriendo, salta al tiempo nuevo" />
               </label>
               <TimeInput seconds={tiebreakTime} onChange={setTiebreakTime} />
             </div>
 
             {/* Minimum */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-1">
-                <label className="tkc-label text-gray-400">
-                  MÍNIMO PARA GANAR<LiveTag active={state.isActive} title="Se revisa al terminar el tiempo" />
-                </label>
-              </div>
+            <div className="tkc-field">
+              <label className="tkc-field-label">
+                Mínimo para ganar<LiveTag active={state.isActive} title="Se revisa al terminar el tiempo" />
+              </label>
               <input
                 type="number" min="0" step="50" value={minCoins || ''}
                 onChange={e => setMinCoins(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
-                placeholder="SIN MÍNIMO"
+                placeholder="Sin mínimo"
                 className="theme-input w-full p-3 outline-none text-sm placeholder-gray-600"
               />
               <p className="tkc-hint mt-1">Si nadie llega a este monto, el concurso termina sin ganador.</p>
@@ -226,7 +193,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
             <button
               onClick={() => runLocked(startZubastinis)}
               disabled={connectionStatus !== 'connected' || actionLocked}
-              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
             </button>
@@ -235,7 +202,7 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
               <button
                 onClick={togglePause}
                 disabled={state.mode === 'finished'}
-                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-secondary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
@@ -243,16 +210,16 @@ export default function Zubastinis({ state, socket, username, connectionStatus, 
                 needsConfirm={hasProgress}
                 onConfirm={() => runLocked(restartZubastinis)}
                 disabled={actionLocked}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-warning theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                REINICIAR ⟲
+                REINICIAR
               </ConfirmButton>
             </>
           )}
           <ConfirmButton
             needsConfirm={hasProgress}
             onConfirm={stopZubastinis}
-            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+            className="theme-btn-danger theme-btn-lg flex-1 sm:flex-none font-extrabold tracking-wider uppercase transition-all"
           >
             DETENER
           </ConfirmButton>

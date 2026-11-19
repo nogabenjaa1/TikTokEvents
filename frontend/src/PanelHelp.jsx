@@ -19,8 +19,8 @@ export function HowItWorks({ storageKey, children }) {
   };
   return (
     <details open={open} onToggle={onToggle} className="theme-input mb-6 px-4 py-3">
-      <summary className="cursor-pointer tkc-label theme-accent-text">¿Cómo funciona?</summary>
-      <div className="mt-2 text-xs text-gray-400 leading-relaxed space-y-2">{children}</div>
+      <summary className="cursor-pointer tkc-field-label">¿Cómo funciona?</summary>
+      <div className="mt-2 text-[13px] text-gray-300 leading-relaxed space-y-2">{children}</div>
     </details>
   );
 }
@@ -34,9 +34,9 @@ export function StartRequirement({ connectionStatus, active, error }) {
   const connecting = connectionStatus === 'connecting' || connectionStatus === 'checking';
   return (
     <>
-      {error && <p role="alert" className="text-xs text-red-500 font-bold mb-3 leading-snug">{error}</p>}
+      {error && <p role="alert" className="theme-notice mb-3">{error}</p>}
       {needsLive && (
-        <p role="status" className="text-xs text-amber-500 font-bold mb-3 leading-snug">
+        <p role="status" className="theme-notice theme-notice-warning mb-3">
           {connecting
             ? 'Conectando con tu LIVE... en cuanto se confirme podrás iniciar.'
             : 'Para iniciar necesitas estar conectado a un LIVE (hazlo desde Inicio). Mientras tanto puedes dejar todo configurado.'}
@@ -88,7 +88,7 @@ export function LiveTag({ active, when = 'now', title }) {
   return (
     <span
       title={title}
-      className={`ml-2 inline-flex items-center gap-1 align-middle px-1.5 py-px rounded-full border text-[9px] font-bold uppercase tracking-wider normal-case ${live ? 'text-green-300 border-green-500/40' : 'text-gray-400 border-gray-600/50'}`}
+      className={`ml-2 inline-flex items-center gap-1 align-middle px-1.5 py-px rounded-full border text-[11px] font-semibold ${live ? 'text-green-300 border-green-500/40' : 'text-gray-400 border-gray-600/50'}`}
     >
       {live && <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />}
       {LIVE_TAG_TEXT[when]}
@@ -137,4 +137,33 @@ export function ConfirmButton({ needsConfirm, onConfirm, confirmLabel = '¿Segur
       {armed ? confirmLabel : children}
     </button>
   );
+}
+
+// Escenario de un juego (Rey del Trono, Zubastinis, Eliminación, Ruleta): el
+// nombre, la fase en curso y el reloj arriba; lo propio de cada juego (quién
+// tiene el trono, el top 3, los participantes) debajo. La fase da el tono: una
+// línea fina arriba se enciende en el acento mientras el juego corre, en rojo
+// durante el snipe o el reingreso, en ámbar en un desempate y en verde al
+// terminar. Nada se mueve en reposo salvo el punto de "en curso".
+// `tone`: idle | live | snipe | tiebreak | paused | finished | nowinner.
+export function GameStage({ title, phase, tone = 'idle', timer, children }) {
+  return (
+    <section className="tkc-stage w-full" data-tone={tone} aria-label={`Estado de ${title}`}>
+      <div className="tkc-stage-head">
+        <div className="flex flex-col gap-2 min-w-0">
+          <h2 className="tkc-card-title">{title}</h2>
+          <span role="status" className={`tkc-phase tkc-phase-${tone}`}>
+            <span className="tkc-phase-pip" aria-hidden="true" />{phase}
+          </span>
+        </div>
+        {timer !== undefined && <p className={`tkc-timer tkc-timer-${tone}`} aria-label={`Tiempo: ${timer}`}>{timer}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Encabezado de la tarjeta de ajustes de un juego.
+export function SettingsTitle({ children = 'Ajustes' }) {
+  return <h2 className="tkc-section-title text-base mb-4">{children}</h2>;
 }

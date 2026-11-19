@@ -516,7 +516,8 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
   transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 .tkc-option:hover { background: var(--surface-raised); }
-.tkc-option[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tkc-option:is([aria-checked="true"], [aria-pressed="true"]) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tkc-option[aria-pressed="true"] .tkc-option-label { color: var(--accent-text); }
 .tkc-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tkc-option-stacked { flex-direction: column; align-items: flex-start; gap: 0.125rem; }
 .tkc-option-label { font-size: 0.8125rem; font-weight: 700; color: var(--ink); }
@@ -588,6 +589,81 @@ body.tkc-overlay-transparent .themed-app { background: transparent; }
 .tkc-tab[aria-current="page"], .tkc-tab[aria-current="page"]:hover { color: var(--accent-text); }
 .tkc-tab-label { font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
 .tkc-tab-indicator { border-radius: var(--surface-radius-sm); }
+
+/* Escenario de un juego (GameStage en PanelHelp.jsx). */
+.tkc-stage {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: var(--surface-radius);
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border-color);
+  box-shadow: var(--surface-shadow);
+}
+.tkc-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: transparent;
+  transition: background var(--motion-base) ease;
+}
+.tkc-stage[data-tone="live"]::before { background: var(--accent); }
+.tkc-stage[data-tone="snipe"]::before, .tkc-stage[data-tone="nowinner"]::before { background: #EF4444; }
+.tkc-stage[data-tone="tiebreak"]::before { background: #F59E0B; }
+.tkc-stage[data-tone="finished"] { border-color: color-mix(in oklch, #10B981 40%, var(--surface-border-color)); }
+.tkc-stage[data-tone="finished"]::before { background: #10B981; }
+.tkc-stage-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.tkc-timer { font-size: 3rem; line-height: 1; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--ink); transition: color var(--motion-base) ease; }
+.tkc-timer-idle, .tkc-timer-paused { color: var(--ink-3); }
+.tkc-timer-snipe, .tkc-timer-nowinner { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); }
+.tkc-timer-tiebreak { color: color-mix(in oklch, var(--ink-warning) 85%, var(--status-mix)); }
+.tkc-timer-finished { color: color-mix(in oklch, var(--ink-premio) 85%, var(--status-mix)); }
+.tkc-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-start;
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: color-mix(in oklch, var(--ink) 7%, transparent);
+}
+.tkc-phase-pip { width: 0.4375rem; height: 0.4375rem; border-radius: 999px; background: currentColor; }
+.tkc-phase-live { color: color-mix(in oklch, var(--ink-success) 85%, var(--status-mix)); background: color-mix(in oklch, #10B981 12%, transparent); }
+.tkc-phase-live .tkc-phase-pip { animation: tkc-phase-pip 2s var(--ease-out-soft) infinite; }
+@keyframes tkc-phase-pip { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent); } 100% { box-shadow: 0 0 0 6px transparent; } }
+.tkc-phase-snipe, .tkc-phase-nowinner { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); background: color-mix(in oklch, #EF4444 12%, transparent); }
+.tkc-phase-tiebreak { color: color-mix(in oklch, var(--ink-warning) 85%, var(--status-mix)); background: color-mix(in oklch, #F59E0B 12%, transparent); }
+.tkc-phase-paused { color: color-mix(in oklch, var(--ink-amber) 85%, var(--status-mix)); background: color-mix(in oklch, #F59E0B 10%, transparent); }
+.tkc-phase-finished { color: color-mix(in oklch, var(--ink-premio) 85%, var(--status-mix)); background: color-mix(in oklch, #10B981 12%, transparent); }
+/* Filas de una lista del escenario (top 3, participantes, slots). */
+.tkc-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--surface-radius-sm);
+  background: var(--surface-bg-alt);
+  border: 1px solid var(--surface-border-color);
+}
+.tkc-rank { width: 1.5rem; text-align: center; font-size: 0.875rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.tkc-rank-1 { color: var(--accent-text); }
+.tkc-coins { font-size: 0.8125rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.tkc-stage-empty { font-size: 0.875rem; color: var(--ink-3); }
+.tkc-stage-result { padding: 0.625rem 0.75rem; border-radius: var(--surface-radius-sm); font-size: 0.875rem; font-weight: 700; text-align: center; color: color-mix(in oklch, var(--ink-premio) 85%, var(--status-mix)); background: color-mix(in oklch, #10B981 10%, transparent); }
+.tkc-stage-result[data-tone="nowinner"] { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); background: color-mix(in oklch, #EF4444 10%, transparent); }
+/* Etiqueta de un ajuste con significado de estado (Insta-Win, snipe...). */
+.tkc-field-label[data-tone="danger"] { color: color-mix(in oklch, var(--ink-danger) 85%, var(--status-mix)); }
+.tkc-field-label[data-tone="warning"] { color: color-mix(in oklch, var(--ink-warning) 85%, var(--status-mix)); }
+.tkc-field-label[data-tone="premio"] { color: color-mix(in oklch, var(--ink-premio) 85%, var(--status-mix)); }
+.tkc-field + .tkc-field { margin-top: 1.25rem; }
+.tkc-field .tkc-field-label { display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 0.375rem; }
 
 /* Navegación principal (AppSidebar.jsx). Escritorio: columna de 224px por
    áreas. Celular: barra superior (marca + estado del LIVE) y barra inferior

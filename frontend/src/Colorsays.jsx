@@ -187,8 +187,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
   };
 
   return (
-    <div className="flex-1 min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-16 font-sans">
-      <p className="theme-accent-text text-[10px] uppercase tracking-[0.3em] font-black">Colores</p>
+    <div className="flex-1 min-h-screen text-white flex flex-col items-center gap-6 p-6 pt-10 font-sans">
 
       <div className="flex gap-x-3 gap-y-1 justify-center flex-wrap max-w-sm">
         {/* El nombre va en tinta legible y el color lo da el círculo de al
@@ -210,24 +209,22 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
       </div>
 
       <button onClick={doRoll} disabled={rolling}
-        className="theme-btn-primary px-12 py-4 rounded-xl font-black tracking-widest uppercase text-sm transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+        className="theme-btn-primary theme-btn-lg px-12 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed">
         {rolling ? 'TIRANDO...' : 'TIRAR DADOS'}
       </button>
 
       {/* Selector de cantidad de dados: disponible para todas las licencias.
           Va DEBAJO del botón a propósito, para no mover la zona de dados de
           donde esté calibrado el recorte de captura en OBS. */}
-      <div className="flex items-center gap-2">
-        <span className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mr-1">Dados</span>
+      <div className="flex items-center gap-1.5" role="group" aria-label="Cantidad de dados">
+        <span className="tkc-field-label mr-1.5">Dados</span>
         {Array.from({ length: MAX_DICE - MIN_DICE + 1 }, (_, i) => MIN_DICE + i).map(n => (
           <button
             key={n}
             onClick={() => changeDiceCount(n)}
             disabled={rolling}
-            className={[
-              'w-7 h-7 rounded-lg border text-xs font-black transition-all disabled:opacity-40 disabled:cursor-not-allowed',
-              diceCount === n ? 'theme-btn-primary border-transparent' : 'theme-input text-gray-400',
-            ].join(' ')}
+            aria-pressed={diceCount === n}
+            className="tkc-filter w-9 justify-center disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {n}
           </button>
@@ -240,13 +237,13 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
       <div className="theme-surface flex flex-col gap-1.5 w-full max-w-xs h-72 overflow-y-auto p-3">
         {history.length > 0 ? history.map((roll, i) => (
           <div key={i} className="theme-input flex items-center gap-3 px-3 py-2 flex-shrink-0">
-            <span className="text-[10px] text-gray-600 w-4 flex-shrink-0">{history.length - i}</span>
+            <span className="tkc-meta tabular-nums w-5 flex-shrink-0">{history.length - i}</span>
             <div className="flex gap-1.5">
               {roll.map((ci, d) => <span key={d} className="text-lg leading-none">{COLORS[ci].emoji}</span>)}
             </div>
           </div>
         )) : (
-          <p className="text-gray-600 text-xs italic text-center mt-2">Sin tiradas todavía...</p>
+          <p className="tkc-stage-empty text-center mt-2">Las tiradas aparecen aquí, la más reciente arriba.</p>
         )}
       </div>
 
@@ -269,17 +266,17 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           Modo Seguro). En mobile no hay espacio libre a la derecha para
           flotar, así que queda en el flujo normal debajo del resto. */}
       {isGuest && (
-        <div className="theme-surface w-full max-w-xs md:fixed md:top-48 md:right-4 md:w-56 p-3">
-          <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black mb-1">Modo invitado</p>
-          <p className="text-[10px] text-gray-500 leading-snug mb-2">
+        <div className="theme-surface w-full max-w-xs md:fixed md:top-40 md:right-4 md:w-56 p-3">
+          <p className="tkc-card-title mb-1">Modo invitado</p>
+          <p className="tkc-hint mb-2">
             {bankedActive
               ? `Sin anuncios por ${formatBankedDuration(bankedRemainingMs)} más.`
-              : 'Vas a ver anuncios cada tanto mientras juegas.'}
+              : 'Verás anuncios de vez en cuando mientras juegas.'}
           </p>
           <button
             onClick={() => setRewardGateOpen(true)}
             disabled={bankedRemainingMs >= GUEST_BANK_CAP_MS}
-            className="theme-btn-secondary theme-btn-sm w-full font-black uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="theme-btn-secondary theme-btn-sm w-full font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Ver anuncio: +1h sin anuncios
           </button>
@@ -311,21 +308,21 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           Antes cada uno tenía su propia posición fija y, en pantallas bajas,
           los botones Asegurar/Bloquear quedaban fuera de la pantalla. */}
       {((hasWinBonus && !winBonusHidden) || (isAdmin && !safeModeHidden)) && (
-      <div className="w-full max-w-xs flex flex-col gap-3 md:fixed md:top-24 md:right-4 md:w-60 md:max-h-[calc(100vh-12rem)] md:overflow-y-auto z-40">
+      <div className="w-full max-w-xs flex flex-col gap-3 md:fixed md:top-40 md:right-4 md:w-60 md:max-h-[calc(100vh-13rem)] md:overflow-y-auto z-40">
       {/* WIN BONUS: discreto, chico, y ocultable igual que Modo Seguro — va
           arriba de ese panel. Solo visible para Admin o para una excepción
           manual habilitada por un admin (ver winBonusUnlocked). */}
       {hasWinBonus && !winBonusHidden && (
         <div className="theme-surface w-full flex-shrink-0 p-3">
           <div className="flex items-center justify-between gap-2 mb-1">
-            <p className="theme-accent-text text-[9px] uppercase tracking-widest font-black">Win Bonus</p>
+            <p className="tkc-card-title">Win Bonus</p>
             <WinBonusToggle checked={winBonusEnabled} onChange={setWinBonusEnabled} />
           </div>
-          <p className="text-[9px] text-gray-500 leading-snug">A favor del streamer: más tiradas donde el espectador pierde.</p>
+          <p className="tkc-hint">A favor del streamer: más tiradas donde el espectador pierde.</p>
           {winBonusEnabled && (
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
-                <label className="theme-label text-[9px] uppercase tracking-widest font-semibold">Intensidad</label>
+                <label className="tkc-field-label">Intensidad</label>
                 <span className="theme-chip font-bold px-1.5 rounded text-[10px]">{winBonusPct}%</span>
               </div>
               <input type="range" min="0" max="100" step="5" value={winBonusPct} onChange={e => setWinBonusPct(Number(e.target.value))} />
@@ -338,7 +335,7 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           con session.isAdmin, ver comentario arriba del componente). */}
       {isAdmin && !safeModeHidden && (
         <div className="theme-surface w-full flex-shrink-0 p-4">
-          <p className="theme-accent-text text-[10px] uppercase tracking-widest font-black mb-3">Modo Seguro</p>
+          <p className="tkc-card-title mb-3">Modo Seguro</p>
 
           <div className="flex flex-col gap-1 mb-3 max-h-32 overflow-y-auto">
             {COLORS.map((c, i) => (
@@ -354,19 +351,19 @@ export default function ColorSays({ tier = 'regular', winBonusUnlocked = false, 
           <div className="flex gap-2">
             <button onClick={() => safeModeColor !== null && setSafeAction(safeModeColor, 'ensure')}
               disabled={safeModeColor === null}
-              className={['flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed',
+              className={['flex-1 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed',
                 safeModeColor !== null && safeModeAction === 'ensure' ? 'bg-green-600 text-white' : 'bg-[var(--surface-bg-alt)] border border-green-800/50 text-green-400 hover:bg-green-950/50'].join(' ')}>
               Asegurar
             </button>
             <button onClick={() => safeModeColor !== null && setSafeAction(safeModeColor, 'block')}
               disabled={safeModeColor === null}
-              className={['flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed',
+              className={['flex-1 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed',
                 safeModeColor !== null && safeModeAction === 'block' ? 'bg-red-600 text-white' : 'bg-[var(--surface-bg-alt)] border border-red-800/50 text-red-400 hover:bg-red-950/50'].join(' ')}>
               Bloquear
             </button>
           </div>
 
-          <p className="text-[9px] text-gray-500 mt-3 leading-snug">
+          <p className="tkc-hint mt-3">
             {safeModeAction === 'none' && 'Elige un color y una acción. Sin nada activo, tira normal (o con el Win Bonus si está encendido).'}
             {safeModeAction === 'ensure' && safeModeColor !== null && <>Asegurando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale exactamente 1 vez (el espectador gana).</>}
             {safeModeAction === 'block' && safeModeColor !== null && <>Bloqueando <span className="font-black">{COLORS[safeModeColor].emoji} {COLORS[safeModeColor].name}</span>: sale 0 o 2 veces (el espectador pierde).</>}

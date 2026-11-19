@@ -1,4 +1,4 @@
-import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton } from './PanelHelp';
+import { HowItWorks, StartRequirement, LiveTag, LiveAppliedNote, ConfirmButton, GameStage, SettingsTitle } from './PanelHelp';
 import { liveKey, useLiveApplied, useActionLock } from './liveApply';
 import { useState, useEffect, useRef } from 'react';
 import GiftPicker from './GiftPicker';
@@ -28,7 +28,12 @@ function EntryBlock({ e, size }) {
 }
 
 const WINNER_RULE_LABELS = { first: 'Primero en salir', last: 'Último en quedar', position: 'Número específico' };
-const MODE_LABEL = { joining: 'TIEMPO PARA ENTRAR', spinning: 'GIRANDO...', result: 'RESULTADO' };
+// Nombre de cada fase en el escenario.
+const PHASE = {
+  joining:  { phase: 'Tiempo para entrar', tone: 'live' },
+  spinning: { phase: 'Girando…', tone: 'live' },
+  result:   { phase: 'Resultado del giro', tone: 'live' },
+};
 
 // ─────────────────────────────────────────────
 // RULETA
@@ -153,65 +158,49 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
   const [actionLocked, runLocked] = useActionLock(`${state.isActive}:${state.mode}`);
   const hasProgress = state.isActive && state.mode !== 'finished' && entries.length > 0;
   const size = sizeFor(entries.length);
-  const timerTitle = state.mode === 'finished' ? 'FINALIZADO' : state.paused ? 'PAUSADO' : (MODE_LABEL[state.mode] || 'TIEMPO');
+  // Fase del juego para el escenario: qué está pasando y con qué tono.
+  const stage = !state.isActive || state.mode === 'idle' ? { phase: 'Sin iniciar', tone: 'idle' }
+    : state.mode === 'finished' ? (state.winner ? { phase: 'Terminado', tone: 'finished' } : { phase: 'Sin ganador', tone: 'nowinner' })
+    : state.paused ? { phase: 'En pausa', tone: 'paused' }
+    : PHASE[state.mode] || { phase: 'En curso', tone: 'live' };
 
   return (
     <div className="min-h-screen text-white flex flex-col items-center px-4 py-6 sm:p-6 sm:pt-8 font-sans flex-1">
       {/* Vista previa + premio a la izquierda y ajustes a la derecha en escritorio; una columna en móvil (ver .tkc-game-layout). */}
       <div className="tkc-game-layout">
 
-      {/* Preview */}
-      <div className="theme-surface-featured w-full p-5 relative overflow-hidden">
-        {state.mode === 'finished' && <div className="absolute inset-0 bg-yellow-500/20 animate-pulse" />}
-
-        <div className="flex justify-between items-center relative z-10 mb-3">
-          <p className="theme-accent-text tkc-eyebrow">RULETA</p>
-          {state.mode !== 'idle' && (
-            <div className="text-right">
-              <p className="tkc-label text-gray-500">{timerTitle}</p>
-              {state.mode === 'joining' && (
-                <p className="text-3xl font-black tabular-nums text-white">
-                  {formatMMSS(state.timeLeft || 0)}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
+      {/* Escenario: las entradas en juego y, mientras se puede entrar, el reloj. */}
+      <GameStage title="Ruleta" phase={stage.phase} tone={stage.tone} timer={state.mode === 'joining' ? formatMMSS(state.timeLeft || 0) : undefined}>
         {(state.lastEliminatedList || []).length > 0 && (state.mode === 'spinning' || state.mode === 'result') && (
-          <div className="flex flex-col gap-1.5 mb-3 relative z-10">
+          <ul className="flex flex-col gap-1.5" aria-label="Último paso del giro">
             {state.lastEliminatedList.map((e, i) => (
-              <div key={e.username + i} className="flex items-center gap-2 theme-notice">
-                <img alt="" src={e.avatar} className="w-7 h-7 rounded-full border-2 border-red-500 object-cover grayscale" />
-                <span className="text-xs font-bold text-red-300">@{e.username} quedó fuera</span>
-              </div>
+              <li key={e.username + i} className="theme-notice flex items-center gap-2">
+                <img alt="" src={e.avatar} className="w-7 h-7 rounded-full object-cover grayscale" />
+                <span>@{e.username} quedó fuera</span>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
 
         {state.mode === 'finished' ? (
-          <p className="relative z-10 text-center text-sm font-black text-yellow-300">
-            {state.winner ? `GANADOR: @${state.winner.username}` : 'SIN GANADOR — nadie participó'}
+          <p className="tkc-stage-result" data-tone={state.winner ? 'finished' : 'nowinner'}>
+            {state.winner ? `Ganador: @${state.winner.username}` : 'Sin ganador: nadie participó.'}
           </p>
         ) : entries.length > 0 ? (
-          <div className="flex flex-wrap gap-2 justify-center relative z-10 max-h-52 overflow-y-auto">
-            {entries.map(e => <EntryBlock key={e.id} e={e} size={size} />)}
-          </div>
+          <>
+            <p className="tkc-meta -mt-2">{entries.length} entrada{entries.length === 1 ? '' : 's'}</p>
+            <div className="flex flex-wrap gap-2 justify-center max-h-52 overflow-y-auto">
+              {entries.map(e => <EntryBlock key={e.id} e={e} size={size} />)}
+            </div>
+          </>
         ) : (
-          <p className="text-gray-600 text-sm italic font-medium relative z-10">Nadie se ha unido todavía...</p>
+          <p className="tkc-stage-empty">{entryMode === 'chat' ? 'Nadie ha entrado todavía. Entran al comentar la palabra clave.' : 'Nadie ha entrado todavía. Entran al mandar el regalo para participar.'}</p>
         )}
-
-        {entries.length > 0 && state.mode !== 'finished' && (
-          <p className="tkc-hint text-center mt-2 relative z-10">{entries.length} entrada{entries.length === 1 ? '' : 's'}</p>
-        )}
-      </div>
+      </GameStage>
 
       {/* Settings */}
       <div className="theme-surface tkc-game-main w-full p-6 sm:p-8 relative">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="theme-accent-bg w-3 h-8 rounded-full" />
-          <h2 className="theme-heading text-2xl font-semibold tracking-wide">AJUSTES</h2>
-        </div>
+        <SettingsTitle />
 
         <HowItWorks storageKey="roulette">
         <p>Se abre un tiempo para entrar: por <span className="font-bold text-white">chat</span> (comentando una palabra clave) o por <span className="font-bold text-white">regalo</span> (cada regalo suma entradas).</p>
@@ -222,23 +211,23 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
           <div>
 
             {/* Modo de entrada */}
-            <div className="mb-4">
-              <label className="tkc-label block text-gray-400 mb-2">CÓMO SE CONSIGUE UNA ENTRADA<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
+            <div className="tkc-field">
+              <label className="tkc-field-label">Cómo se consigue una entrada<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setEntryMode('chat')} aria-pressed={entryMode === 'chat'}
-                  className={`flex-1 font-black uppercase tracking-widest transition-all theme-btn-sm ${entryMode === 'chat' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                  Modo Chat
+                  className="tkc-option flex-1 justify-center">
+                  <span className="tkc-option-label">Modo Chat</span>
                 </button>
                 <button type="button" onClick={() => setEntryMode('gift')} aria-pressed={entryMode === 'gift'}
-                  className={`flex-1 font-black uppercase tracking-widest transition-all theme-btn-sm ${entryMode === 'gift' ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                  Modo Gift
+                  className="tkc-option flex-1 justify-center">
+                  <span className="tkc-option-label">Modo Gift</span>
                 </button>
               </div>
             </div>
 
             {entryMode === 'chat' ? (
-              <div className="mb-4">
-                <label className="tkc-label block text-gray-400 mb-1">PALABRA CLAVE<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
+              <div className="tkc-field">
+                <label className="tkc-field-label">Palabra clave<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
                 <input
                   value={keyword} onChange={e => setKeyword(e.target.value)}
                   placeholder="ej: participo"
@@ -247,8 +236,8 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 <p className="tkc-hint mt-1">Cualquier comentario que la contenga cuenta — no hace falta que sea exacto.</p>
               </div>
             ) : (
-              <div className="mb-4 relative z-20">
-                <label className="tkc-label block text-gray-400 mb-1">REGALO PARA PARTICIPAR<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
+              <div className="tkc-field relative z-20">
+                <label className="tkc-field-label">Regalo para participar<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
                 <GiftPicker
                   gifts={giftsList.filter(g => g.coins > 0)}
                   selected={selectedGift}
@@ -262,17 +251,17 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             )}
 
             {/* Ventana de entrada */}
-            <div className="mb-4">
-              <label className="theme-label tkc-label block mb-1">
-                TIEMPO PARA ENTRAR<LiveTag active={state.isActive} when={liveWhen} title={liveEditable ? 'El tiempo que queda salta al valor nuevo' : liveTitle} />
+            <div className="tkc-field">
+              <label className="tkc-field-label">
+                Tiempo para entrar<LiveTag active={state.isActive} when={liveWhen} title={liveEditable ? 'El tiempo que queda salta al valor nuevo' : liveTitle} />
               </label>
               <TimeInput seconds={entryWindowSec} onChange={setEntryWindowSec} />
               <p className="tkc-hint mt-1">Al vencer, se cierran las entradas y el giro arranca solo.</p>
             </div>
 
             {/* Cuántas caen por paso del sorteo */}
-            <div className="mb-4">
-              <label className="tkc-label block text-gray-400 mb-1">ELIMINADAS POR PASO<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
+            <div className="tkc-field">
+              <label className="tkc-field-label">Eliminadas por paso<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
               <input
                 type="number" min="1" inputMode="numeric" value={eliminationsPerRound}
                 onChange={e => setEliminationsPerRound(Math.max(1, Number(e.target.value) || 1))}
@@ -286,9 +275,9 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 Gift — no hay nada que un toggle pudiera cambiar de verdad). */}
             <div className="mb-6">
               <button type="button" onClick={() => setFastMode(f => !f)} aria-pressed={!!fastMode}
-                className={`w-full font-black uppercase tracking-wide transition-all theme-btn-md ${fastMode ? 'theme-btn-primary' : 'theme-btn-secondary'}`}
+                className="tkc-option w-full justify-center"
                 title="Reduce las animaciones de giro/resultado a la mitad (1s en vez de 2s)">
-                Fast Mode
+                <span className="tkc-option-label">Fast Mode</span>
               </button>
             </div>
 
@@ -297,8 +286,8 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 real — cuenta exactamente igual que una entrada por regalo.
                 Solo mientras la ventana de entrada sigue abierta: una vez
                 que arranca el giro, el orden ya quedó barajado y fijo. */}
-            <div className="mb-6 pt-4 border-t border-white/10">
-              <label className="tkc-label block text-gray-400 mb-1">AGREGAR ENTRADA MANUAL</label>
+            <div className="tkc-field pt-4 border-t" style={{ borderColor: 'var(--surface-border-color)' }}>
+              <label className="tkc-field-label">Agregar entrada manual</label>
               <div className="flex gap-2">
                 <input
                   value={manualUsername} onChange={e => setManualUsername(e.target.value)}
@@ -312,7 +301,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 />
                 <button type="button" onClick={addManualEntry}
                   disabled={!state.isActive || state.mode !== 'joining' || !manualUsername.trim()}
-                  className="theme-btn-secondary theme-btn-sm font-black uppercase disabled:opacity-40 disabled:cursor-not-allowed">
+                  className="theme-btn-secondary theme-btn-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
                   Agregar
                 </button>
               </div>
@@ -320,13 +309,13 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             </div>
 
             {/* Regla de ganador */}
-            <div className="mb-6">
-              <label className="tkc-label block text-gray-400 mb-2">POSICIÓN GANADORA<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
+            <div className="tkc-field">
+              <label className="tkc-field-label">Posición ganadora<LiveTag active={state.isActive} when={liveWhen} title={liveTitle} /></label>
               <div className="flex gap-2 mb-2">
                 {Object.entries(WINNER_RULE_LABELS).map(([value, label]) => (
                   <button key={value} type="button" onClick={() => setWinnerRule(value)} aria-pressed={winnerRule === value}
-                    className={`flex-1 font-black uppercase tracking-wide transition-all theme-btn-sm ${winnerRule === value ? 'theme-btn-primary' : 'theme-btn-secondary'}`}>
-                    {label}
+                    className="tkc-option flex-1 justify-center">
+                    <span className="tkc-option-label">{label}</span>
                   </button>
                 ))}
               </div>
@@ -342,7 +331,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <p className="tkc-hint mt-1">El sorteo es al azar de verdad — esto solo dice en qué lugar del sorteo tiene que salir la ganadora.</p>
             </div>
             {state.isActive && !liveEditable && state.mode !== 'finished' && (
-              <p role="status" className="tkc-hint text-amber-500 mb-2">La ronda ya está girando: lo que cambies se guarda y se usa al reiniciar.</p>
+              <p role="status" className="theme-notice theme-notice-warning mb-3">La ronda ya está girando: lo que cambies se guarda y se usa al reiniciar.</p>
             )}
             <LiveAppliedNote phase={appliedPhase} />
 
@@ -356,7 +345,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
           después de los ajustes, como antes (ver .tkc-game-layout). */}
       <div className="theme-surface tkc-game-controls w-full p-4 sm:p-5">
         <StartRequirement connectionStatus={connectionStatus} active={state.isActive} error={startError} />
-        {!state.isActive && connectionStatus === 'connected' && (entryMode === 'gift' && !selectedGift) && <p role="status" className="text-xs text-amber-500 mb-3">Selecciona un regalo para iniciar.</p>}
+        {!state.isActive && connectionStatus === 'connected' && (entryMode === 'gift' && !selectedGift) && <p role="status" className="theme-notice theme-notice-warning mb-3">Elige el regalo para participar para iniciar.</p>}
 
         {/* Botones */}
         <div className="flex flex-wrap gap-3">
@@ -364,7 +353,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
             <button
               onClick={() => runLocked(startRoulette)}
               disabled={connectionStatus !== 'connected' || (entryMode === 'gift' && !selectedGift) || actionLocked}
-              className="theme-btn-primary theme-btn-lg flex-1 font-bold tracking-wide transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="theme-btn-primary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connectionStatus === 'connecting' ? 'CONECTANDO...' : 'INICIAR'}
             </button>
@@ -373,7 +362,7 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
               <button
                 onClick={togglePause}
                 disabled={state.mode !== 'joining'}
-                className="theme-btn-secondary theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-secondary theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {state.paused ? 'REANUDAR' : 'PAUSAR'}
               </button>
@@ -381,16 +370,16 @@ export default function Roulette({ state, socket, username, connectionStatus, gi
                 needsConfirm={hasProgress}
                 onConfirm={() => runLocked(restartRoulette)}
                 disabled={state.mode === 'spinning' || actionLocked}
-                className="theme-btn-warning theme-btn-lg flex-1 font-bold tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="theme-btn-warning theme-btn-lg flex-1 font-extrabold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                REINICIAR ⟲
+                REINICIAR
               </ConfirmButton>
             </>
           )}
           <ConfirmButton
             needsConfirm={hasProgress}
             onConfirm={stopRoulette}
-            className="theme-btn-danger theme-btn-lg font-bold transition-all"
+            className="theme-btn-danger theme-btn-lg flex-1 sm:flex-none font-extrabold tracking-wider uppercase transition-all"
           >
             DETENER
           </ConfirmButton>
